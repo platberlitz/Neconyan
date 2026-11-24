@@ -836,24 +836,18 @@ export function removeLatestSwipeHighlight() {
 }
 
 /**
- * Add UI to all messages with retry
- * @param {number} [retryCount=0] - Current retry count
+ * Add UI to all rendered messages
  */
-export function addUiToAllMessages(retryCount = 0) {
+export function addUiToAllMessages() {
     cancelPendingSwipeNavigation();
     const settings = getSettings();
     if (!settings?.enabled || !settings.swipeNavigation) return;
 
     // Walk what is actually on screen. The chat is virtualised, so messages outside
-    // the render window have no element - comparing against chat.length would make
-    // the retry below fire all ten times on every long chat.
-    // Scoped to #chat so the mesid-less #message_template is not picked up.
+    // the render window have no element. Scoped to #chat so #message_template is not picked up.
     const rendered = document.querySelectorAll('#chat .mes[mesid]');
 
     if (rendered.length === 0) {
-        if (retryCount < 10) {
-            setTimeout(() => addUiToAllMessages(retryCount + 1), 500);
-        }
         return;
     }
 

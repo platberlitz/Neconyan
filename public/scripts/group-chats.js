@@ -22,6 +22,7 @@ import {
     uuidv4,
 } from './utils.js';
 import { ensureMewmoryMessageIds } from './mewmory/message-identity.js';
+import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages } from './chat-patch-save.js';
 import { evaluateCharacterPurrks } from './purrks/model.js';
 import { RA_CountCharTokens, humanizedDateTime, dragElement, favsToHotswap, getMessageTimeStamp } from './RossAscends-mods.js';
 import { power_user, loadMovingUIState, sortEntitiesList } from './power-user.js';
@@ -56,6 +57,7 @@ import {
     chat_metadata,
     updateChatMetadata,
     getThumbnailUrl,
+    getThumbnailUrlForViewport,
     setMenuType,
     menu_type,
     select_selected_character,
@@ -117,12 +119,14 @@ import {
     appendGroupSpeakerStops,
     buildDirectorPrompt,
     buildOwnLinesReminder,
+    getGroupDirectorTimeoutMs,
+    getGroupDirectorTimeoutSeconds,
     getGroupTalkBurstCount,
     getOtherMemberNames,
     GROUP_DIRECTOR_MAX_SPEAKERS,
     GROUP_DIRECTOR_RESPONSE_TOKENS,
     GROUP_DIRECTOR_STRATEGY,
-    GROUP_DIRECTOR_TIMEOUT_MS,
+    isHearReplyTargetEnabled,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
     pickNextListSpeaker,
@@ -130,11 +134,14 @@ import {
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
-import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { addGroupHearer, beginGroupPromptScope, canGroupMemberSee, changeGroupHearers, filterGroupPromptMessages, groupHeardCount, groupMessageAudience, groupSceneCardMembers, groupScenePrompt, groupSceneTurnNeedsPage, groupWhisperPrompt, readGroupScene, readGroupSceneRules } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
+import { initGroupHeardEditor, refreshGroupHeardBadges } from './group-chat-heard-editor.js';
+import { importPresenceRecords } from './group-chat-heard-tools.js';
 import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
+import { renameGroupMemberFields, renameGroupSceneRecords } from './group-member-rename.js';
 
 export {
     selected_group,
@@ -148,6 +155,7 @@ export {
     deleteGroup,
     getGroupAvatar,
     getGroups,
+    prefetchGroups,
     regenerateGroup,
     resetSelectedGroup,
     select_group_chats,
@@ -178,6 +186,7 @@ export function isGroupEnsembleActive() {
 const groupSaveStates = new Map();
 let groupMetadataSaveQueue = Promise.resolve();
 let groupListReadGeneration = 0;
+let startupGroupListPromise = null;
 const groupReadEvidence = new WeakMap();
 const groupBackgroundState = new WeakMap();
 const queuedGroupMetadataById = new Map();
@@ -391,13 +400,141 @@ function getGroupEnabledMembers(group) {
 
 let activeGroupAudience = null;
 let activeGroupTurnAudience = null;
+let activeGroupReplyTarget = null;
 
+/** Every new group message records who heard it, so members who arrive or step out later only remember what they heard. */
 export function getGroupMessageAudience({ forUser = false } = {}) {
     if (!forUser && (activeGroupAudience || activeGroupTurnAudience)) return structuredClone(activeGroupAudience || activeGroupTurnAudience);
     const group = groups.find(item => item.id === selected_group);
-    if (!group || !chat_metadata.group_scene) return null;
+    if (!group || !Array.isArray(group.members)) return null;
     const scene = readGroupScene(chat_metadata, group.members);
     return groupMessageAudience(scene, group.members, scene.whisper_to);
+}
+
+function getGroupSceneRules(group) {
+    const seesAll = group ? readGroupScene(chat_metadata, group.members).sees_all : [];
+    return seesAll.length ? { seesAll } : {};
+}
+
+/** Lines before the chat's memory starting point, which no member hears in a prompt. */
+function getGroupStartRules() {
+    const before = readGroupSceneRules(chat_metadata, chat).before;
+    return before ? { before } : {};
+}
+
+/** Who sees what when members remember: who heard each line, members who remember only with the group, and the chat's memory starting point. */
+function getGroupMemoryRules(group) {
+    const withGroup = readGroupSceneRules(chat_metadata).withGroup;
+    return { ...getGroupSceneRules(group), ...(withGroup ? { withGroup } : {}), ...getGroupStartRules() };
+}
+
+/** The message a speaker answers: the last line before their turn, or before their own line when they swipe or continue it. */
+function findGroupReplyTarget(group, type) {
+    if (!group || !isHearReplyTargetEnabled(group)) return null;
+    const end = ['swipe', 'continue'].includes(type) ? chat.length - 1 : chat.length;
+    for (let index = end - 1; index >= 0; index--) {
+        if (!chat[index]?.is_system) return chat[index];
+    }
+    return null;
+}
+
+/**
+ * Stamps a new reply with who hears it, and records that its speakers heard the message they answered.
+ * @param {object} message New chat message
+ */
+export function stampGroupReply(message) {
+    const audience = getGroupMessageAudience();
+    if (!audience) return;
+    message.extra = message.extra || {};
+    message.extra.group_scene = audience;
+    const target = activeGroupReplyTarget;
+    if (!target || target.message === message || !chat.includes(target.message)) return;
+    for (const avatar of target.avatars) addGroupHearer(target.message, avatar);
+}
+
+/**
+ * Lets a member hear everything said so far in the open group chat, except whispers to someone else.
+ * @param {string} avatar Member avatar
+ * @returns {Promise<number>} How many messages they newly heard
+ */
+export async function catchUpGroupMember(avatar) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group?.members.includes(avatar)) return 0;
+    let count = 0;
+    for (const message of chat) {
+        if (addGroupHearer(message, avatar, { everySwipe: true })) count++;
+    }
+    if (count) {
+        await saveGroupChat(group.id, false);
+        refreshGroupHeardBadges();
+    }
+    return count;
+}
+
+/**
+ * Makes a member forget everything said so far in the open group chat.
+ * @param {string} avatar Member avatar
+ * @returns {Promise<number>} How many messages they no longer remember
+ */
+export async function forgetGroupMember(avatar) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group?.members.includes(avatar)) return 0;
+    let count = 0;
+    for (const message of chat) {
+        if (message?.is_system) continue;
+        if (changeGroupHearers(message, { remove: [avatar] }, group.members)) count++;
+    }
+    if (count) {
+        await saveGroupChat(group.id, false);
+        refreshGroupHeardBadges();
+    }
+    return count;
+}
+
+/**
+ * How many members of the open group heard a message, when some did not.
+ * @param {object} message Chat message
+ * @returns {{ heard: number, total: number }|null}
+ */
+export function getGroupHeardCount(message) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group || message?.is_system) return null;
+    return groupHeardCount(message, group.members, getGroupSceneRules(group));
+}
+
+/**
+ * Saves edits to who heard messages in the open group chat.
+ * @returns {Promise<boolean>} Whether the chat was saved
+ */
+export async function saveGroupHearers() {
+    return selected_group ? saveGroupChat(selected_group, false) : false;
+}
+
+/** Rules for who sees what in the open group chat. */
+export function getOpenGroupSceneRules() {
+    return getGroupSceneRules(groups.find(item => item.id === selected_group));
+}
+
+/**
+ * Offers to catch up a member who joined the open group chat after it started.
+ * @param {string} groupId Group the member joined
+ * @param {string} avatar New member
+ */
+export function noteLateGroupMember(groupId, avatar) {
+    if (groupId !== selected_group || !Array.isArray(chat)) return;
+    const start = getGroupStartRules();
+    if (!chat.some(message => !message?.is_system && !start.before?.has(message) && !canGroupMemberSee(message, avatar))) return;
+    const name = characters[getCharacterIdByAvatar(avatar)]?.name || avatar;
+    toastr.info(t`Tap here to catch them up on what was said.`, t`${name} has not heard the earlier messages`, {
+        onclick: async () => {
+            if (selected_group !== groupId) return;
+            if (is_send_press || is_group_generating) {
+                toastr.info(t`Wait for the current reply to finish.`);
+                return;
+            }
+            await catchUpGroupMember(avatar);
+        },
+    });
 }
 
 function beginGroupTurnAudience(type) {
@@ -408,22 +545,70 @@ function beginGroupTurnAudience(type) {
     return () => { activeGroupTurnAudience = previous; };
 }
 
-function usesGroupSceneVisibility() {
-    return Boolean(chat_metadata.group_scene || chat.some(message => message.extra?.group_scene));
+/**
+ * Server group replies follow the scene, whispers and the line each speaker answers, but only the page can write a turn for a chosen speaker who is away.
+ * The server refuses the same turns, using the same rule.
+ * @param {number[]} speakerIds Chosen speakers
+ * @returns {boolean}
+ */
+function usesGroupSceneVisibility(speakerIds = []) {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group) return false;
+    const avatars = speakerIds.map(chid => characters[chid]?.avatar).filter(Boolean);
+    return groupSceneTurnNeedsPage(chat_metadata, group.members, avatars);
 }
 
 function getGroupScenePrompt(group) {
     if (!chat_metadata.group_scene) return '';
     const prompt = groupScenePrompt(readGroupScene(chat_metadata, group.members), group.members.map(avatar => ({ avatar, name: characters[getCharacterIdByAvatar(avatar)]?.name || avatar })));
     const targets = getGroupMessageAudience()?.whisper_to || [];
-    return prompt + (targets.length ? `\n[Private whisper between ${name1} and ${targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar).join(', ')}. Other members cannot hear or react to it. Keep the reply private.]` : '');
+    const whisper = groupWhisperPrompt(name1, targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar));
+    return prompt + (whisper ? `\n${whisper}` : '');
 }
 
-async function runWithGroupScene(avatars, callback) {
+async function runWithGroupScene(avatars, callback, type = 'normal') {
     const previous = activeGroupAudience;
+    const previousTarget = activeGroupReplyTarget;
+    const group = groups.find(item => item.id === selected_group);
+    const replyTarget = avatars.length ? findGroupReplyTarget(group, type) : null;
     activeGroupAudience = getGroupMessageAudience();
-    const restore = beginGroupPromptScope(avatars, chat);
-    try { return await callback(); } finally { restore(); activeGroupAudience = previous; }
+    activeGroupReplyTarget = replyTarget ? { message: replyTarget, avatars: [...avatars] } : null;
+    const restore = beginGroupPromptScope(avatars, chat, { ...getGroupMemoryRules(group), ...(replyTarget ? { replyTarget } : {}) });
+    try { return await callback(); } finally { restore(); activeGroupAudience = previous; activeGroupReplyTarget = previousTarget; }
+}
+
+/**
+ * Lists the messages a member's Purrks may react to: what they heard, limited to what this prompt may show.
+ * @param {string} avatar Member avatar
+ * @returns {object[]} Visible chat messages
+ */
+export function getGroupPurrksMessages(avatar) {
+    if (!Array.isArray(chat)) return [];
+    const rules = getGroupMemoryRules(groups.find(item => item.id === selected_group));
+    return filterGroupPromptMessages(chat.filter(message => !message?.is_system && canGroupMemberSee(message, avatar, rules)));
+}
+
+/** The member a prompt preview stands in for: the whisper target, the chosen speaker, else the first member in the scene. */
+export function getGroupPreviewSpeakerChid() {
+    const group = groups.find(item => item.id === selected_group);
+    if (!group) return -1;
+    const members = getGroupEnabledMembers(group);
+    const whispers = (getGroupMessageAudience()?.whisper_to || []).filter(avatar => members.includes(avatar));
+    const avatar = whispers[0] || (members.includes(selectedGroupSpeakerAvatar) ? selectedGroupSpeakerAvatar : members[0]);
+    return avatar ? getCharacterIdByAvatar(avatar) : -1;
+}
+
+/**
+ * Limits a group prompt preview to what the previewed member heard.
+ * @param {number} chid Previewed member
+ * @returns {() => void} Restores the previous scope
+ */
+export function beginGroupPreviewScope(chid) {
+    const avatar = characters[chid]?.avatar;
+    if (!avatar) return () => {};
+    const group = groups.find(item => item.id === selected_group);
+    const replyTarget = findGroupReplyTarget(group, 'normal');
+    return beginGroupPromptScope([avatar], chat, { ...getGroupMemoryRules(group), ...(replyTarget ? { replyTarget } : {}) });
 }
 
 function getSelectedGroupSpeakerChid(group) {
@@ -639,7 +824,7 @@ function findDirectlyAddressedMember(group, text) {
 }
 
 function isAddressedToEntireGroup(text) {
-    return /(^|[^\p{L}\p{N}_])(?:everyone|everybody|you\s+all|y['’]?all|all)([^\p{L}\p{N}_]|$)/iu.test(String(text || ''));
+    return /(^|[^\p{L}\p{N}_])(?:everyone|everybody|you\s+all|y['’]?all|all\s+of\s+you)([^\p{L}\p{N}_]|$)/iu.test(String(text || ''));
 }
 
 
@@ -737,7 +922,7 @@ function updateGroupSpeakerControls() {
             item.attr('data-avatar', avatarId);
             item.toggleClass('selected', avatarId === selectedGroupSpeakerAvatar);
             item.append($('<img alt="">').attr({
-                src: getThumbnailUrl('avatar', avatarId),
+                src: getThumbnailUrlForViewport('avatar', avatarId),
                 loading: 'lazy',
                 decoding: 'async',
             }));
@@ -847,6 +1032,10 @@ export async function letGroupMembersTalk() {
 function initGroupSpeakerControls() {
     initGroupSceneControls();
     initGroupSpeakerMenu({ saveGroup: id => editGroup(id, false, false), editMember: openCharacterDefinition });
+    initGroupHeardEditor();
+    import('./group-chat-scene-commands.js')
+        .then(module => module.registerGroupSceneSlashCommands())
+        .catch(error => console.error('Group scene commands could not load', error));
     if (groupSpeakerControlsInitialized) {
         return;
     }
@@ -895,25 +1084,33 @@ let groupDirectorFallbackNoticeChat = '';
  * Tell the user once per chat that the Scene Director did not choose this turn, and why.
  * @param {string} failure 'timeout', 'error' or 'unusable'
  */
-function notifyGroupDirectorFallback(failure) {
+function notifyGroupDirectorFallback(failure, group = null) {
     const chatId = String(getCurrentChatId() || '');
     if (groupDirectorFallbackNoticeChat === chatId) {
         return;
     }
     groupDirectorFallbackNoticeChat = chatId;
-    const seconds = Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000);
+    const seconds = getGroupDirectorTimeoutSeconds(group);
+    const timeoutMessage = seconds === 1
+        ? t`The Scene Director took longer than 1 second, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`
+        : t`The Scene Director took longer than ${seconds} seconds, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`;
     const message = failure === 'timeout'
-        ? t`The Scene Director took longer than ${seconds} seconds, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`
+        ? timeoutMessage
         : t`The Scene Director's answer could not be used, so the usual order picked who speaks. Check the director's connection profile in the group's settings.`;
     toastr.warning(message, t`Scene Director`);
 }
 
-function describeGroupDirectorStatus(preview, names) {
+function describeGroupDirectorStatus(preview, names, group = null) {
     if (!preview) {
         return t`Scene Director is on: before each reply it picks who answers.`;
     }
     if (preview.fallback === 'timeout') {
-        return t`Last turn: the Scene Director took longer than ${Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000)} seconds, so the usual order picked the speaker.`;
+        const seconds = Number.isFinite(Number(preview.timeoutSeconds))
+            ? Number(preview.timeoutSeconds)
+            : getGroupDirectorTimeoutSeconds(group);
+        return seconds === 1
+            ? t`Last turn: the Scene Director took longer than 1 second, so the usual order picked the speaker.`
+            : t`Last turn: the Scene Director took longer than ${seconds} seconds, so the usual order picked the speaker.`;
     }
     if (preview.fallback) {
         return t`Last turn: the Scene Director's answer could not be used, so the usual order picked the speaker.`;
@@ -963,7 +1160,7 @@ function updateGroupNextUp(directed = null) {
     $('#group_next_up').text(text).toggleClass('displayNone', !text);
     // The scene panel says what the director did last, so its work is visible without reading the console.
     const isDirector = strategy === group_activation_strategy.DIRECTOR;
-    directorStatus.text(isDirector ? describeGroupDirectorStatus(currentPreview, names) : '').toggleClass('displayNone', !isDirector);
+    directorStatus.text(isDirector ? describeGroupDirectorStatus(currentPreview, names, group) : '').toggleClass('displayNone', !isDirector);
     // Ring the avatars instead of spending a row of the composer on the preview.
     avatarButtons.each(function () {
         const avatar = String($(this).data('avatar') || '');
@@ -1062,6 +1259,7 @@ async function _save(job) {
 
 // Group chats
 async function regenerateGroup() {
+    if (is_group_generating) return;
     let generationId = getLastMessageGenerationId();
 
     while (chat.length > 0) {
@@ -1262,6 +1460,8 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         return;
     }
     const metadata = data?.[0]?.chat_metadata ?? {};
+    // What the server holds for this file version, taken before the page changes any message.
+    const savedFingerprints = Array.isArray(data) && data.length > 1 ? fingerprintMessages(data, 1) : null;
 
     // Remove chat file header if present
     if (Array.isArray(data) && data.length && Object.hasOwn(data[0], 'chat_metadata')) {
@@ -1281,6 +1481,7 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         toastr.error(t`The last save has not finished yet. Your current edits are kept, so try again in a moment.`);
         return;
     }
+    if (savedFingerprints) rememberChatPatchBase(loaded.evidence.source, savedFingerprints);
 
     let freshGroupGreetingMessageId = -1;
     let greetingStillCurrent;
@@ -1300,6 +1501,8 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         await printMessages({ reveal: true });
         if (!stillCurrent(chat_id)) return;
     } else if (Array.isArray(data) && data.length) {
+        // Chats from the SillyTavern Presence extension keep who heard each line.
+        importPresenceRecords(data, metadata);
         chat.splice(0, chat.length, ...data);
         chat.forEach(ensureMessageMediaIsArray);
         chatElement.find('.mes').remove();
@@ -1460,6 +1663,7 @@ export function getGroupDepthPrompts(groupId, characterId) {
     }
 
     const depthPrompts = [];
+    const inScene = groupSceneCardMembers(chat_metadata, group.members, [characters[characterId]?.avatar]);
 
     for (const member of group.members) {
         const index = characters.findIndex(x => x.avatar === member);
@@ -1467,6 +1671,11 @@ export function getGroupDepthPrompts(groupId, characterId) {
 
         if (index === -1 || !character) {
             console.debug(`Skipping missing member: ${member}`);
+            continue;
+        }
+
+        if (!inScene.includes(member)) {
+            console.debug(`Skipping away group member: ${member}`);
             continue;
         }
 
@@ -1478,7 +1687,7 @@ export function getGroupDepthPrompts(groupId, characterId) {
         const memberPurrks = typeof evaluateCharacterPurrks === 'function'
             ? evaluateCharacterPurrks(character, {
                 chatMetadata: chat_metadata,
-                messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                messages: getGroupPurrksMessages(member),
                 characterKey: character.avatar || member,
             })
             : null;
@@ -1577,8 +1786,11 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
      */
     function collectField(fieldName, getter, preprocess = null) {
         const values = [];
+        const speakers = ensemble ? ensemble.members.map(speaker => speaker.avatar) : [characters[characterId]?.avatar];
+        const inScene = groupSceneCardMembers(chat_metadata, group.members, speakers);
         for (const member of group.members) {
             if (ensemble && !ensemble.members.some(speaker => speaker.avatar === member)) continue;
+            if (!inScene.includes(member)) continue;
             const index = characters.findIndex(x => x.avatar === member);
             const character = characters[index];
             if (index === -1 || !character) continue;
@@ -1598,7 +1810,7 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
             const memberPurrks = typeof evaluateCharacterPurrks === 'function'
                 ? evaluateCharacterPurrks(c, {
                     chatMetadata: chat_metadata,
-                    messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                    messages: getGroupPurrksMessages(c.avatar),
                     characterKey: c.avatar || '',
                 })
                 : null;
@@ -1618,7 +1830,7 @@ function resetSelectedGroup() {
 
 function cloneGroupChatSavePayload(chatData) {
     ensureMewmoryMessageIds(chatData, uuidv4);
-    return structuredClone(chatData);
+    return snapshotChatMessages(chatData);
 }
 
 function applyQueuedGroupChatIntegrity(metadata, chatId, isActiveGroupChatSave) {
@@ -1833,7 +2045,7 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
             }
 
             // Replace group member avatar id and save the changes
-            group.members[memberIndex] = newAvatar;
+            Object.assign(group, renameGroupMemberFields(group, oldAvatar, newAvatar));
             await editGroup(group.id, true, false, getCurrentUserHandle(), { background: true,
                 backgroundChanges: { memberRename: { from: oldAvatar, to: newAvatar } } });
             console.log(`Renamed character ${newName} in group: ${group.name}`);
@@ -1846,6 +2058,8 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
                 let hadChanges = false;
                 // Chat shouldn't be empty
                 if (Array.isArray(messages) && messages.length) {
+                    // Who heard each message is listed by avatar file, even in chats where they never spoke
+                    const sceneChanged = renameGroupSceneRecords(messages, oldAvatar, newAvatar);
                     // Iterate over every chat message
                     for (const message of messages) {
                         // Skip the chat header
@@ -1868,8 +2082,10 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
                         }
                     }
 
-                    if (hadChanges) {
-                        await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, messages, oldAvatar, newAvatar);
+                    if (hadChanges || sceneChanged) {
+                        if (hadChanges) {
+                            await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, messages, oldAvatar, newAvatar);
+                        }
 
                         const token = beginRoleplaySave({ group: true, chat: String(chatId) }, { operationKey: uuidv4(), evidence });
                         try {
@@ -1890,6 +2106,15 @@ export async function renameGroupMember(oldAvatar, newAvatar, newName) {
     }
 }
 
+/** Starts the group list request beside other start-up work. */
+function prefetchGroups() {
+    startupGroupListPromise ??= fetch('/api/groups/all', {
+        method: 'POST',
+        headers: getRequestHeaders({ omitContentType: true }),
+    });
+    return startupGroupListPromise;
+}
+
 /**
  * Fetches all groups from the server and processes them.
  */
@@ -1898,10 +2123,12 @@ async function getGroups() {
     const account = roleplayAccountStamp();
     const started = new Map(groups.map(group => [group.id, { group, revision: groupSaveStates.get(group.id)?.revision,
         evidence: groupReadEvidence.get(group), background: groupBackgroundState.get(group) }]));
-    const response = await fetch('/api/groups/all', {
+    const pendingResponse = startupGroupListPromise;
+    startupGroupListPromise = null;
+    const response = await (pendingResponse ?? fetch('/api/groups/all', {
         method: 'POST',
         headers: getRequestHeaders({ omitContentType: true }),
-    });
+    }));
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
@@ -2068,7 +2295,7 @@ function getGroupAvatar(group) {
         for (const member of group.members) {
             const charIndex = characters.findIndex(x => x.avatar === member);
             if (charIndex !== -1 && characters[charIndex].avatar !== 'none') {
-                const avatar = getThumbnailUrl('avatar', characters[charIndex].avatar);
+                const avatar = getThumbnailUrlForViewport('avatar', characters[charIndex].avatar);
                 memberAvatars.push(avatar);
             }
             if (memberAvatars.length === 4) {
@@ -2151,9 +2378,7 @@ function reportGroupReplyFailure(error) {
  */
 async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
     function throwIfAborted() {
-        if (params.signal instanceof AbortSignal && params.signal.aborted) {
-            throw new Error('AbortSignal was fired. Group generation stopped');
-        }
+        params.signal?.throwIfAborted();
     }
 
     if (online_status === 'no_connection') {
@@ -2229,12 +2454,12 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             activatedMembers = params.force_chids;
         } else if (params && typeof params.force_chid == 'number') {
             activatedMembers = [params.force_chid];
-        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && isWholeGroupAddress && isUserInput) {
-            activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
         } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && addressedMemberChid !== -1) {
             activatedMembers = [addressedMemberChid];
         } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && selectedSpeakerChid !== -1) {
             activatedMembers = [selectedSpeakerChid];
+        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && isWholeGroupAddress && isUserInput) {
+            activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
         } else if (type === 'quiet') {
             activatedMembers = activateSwipe(enabledMembers, { allowSystem: true }).slice(0, 1);
 
@@ -2246,7 +2471,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
 
             if (activatedMembers.length === 0) {
                 toastr.warning(t`Deleted group member swiped. To get a reply, add them back to the group.`);
-                throw new Error('Deleted group member swiped');
+                return;
             }
         } else if (type === 'impersonate') {
             activatedMembers = activateImpersonate(enabledMembers);
@@ -2304,20 +2529,23 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 }
             } else if (groupDirectorFailure) {
                 directorNote = t`usual order, the Scene Director did not choose`;
-                updateGroupNextUp({ chids: [], reason: '', fallback: groupDirectorFailure });
-                notifyGroupDirectorFallback(groupDirectorFailure);
+                updateGroupNextUp({ chids: [], reason: '', fallback: groupDirectorFailure, timeoutSeconds: getGroupDirectorTimeoutSeconds(group) });
+                notifyGroupDirectorFallback(groupDirectorFailure, group);
             }
         }
 
         activatedMembers = activatedMembers.filter(chid => enabledMembers.includes(characters[chid]?.avatar));
         if (activatedMembers.length === 0) {
+            if (type === 'swipe' || type === 'continue') {
+                toastr.warning(t`The speaker is muted, away or no longer in the group.`);
+            }
             return Promise.resolve();
         }
 
         const ensembleTurn = group.ensemble_replies === true && activatedMembers.length > 1
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type);
         // Scene-specific turns use the browser's prompt and visibility rules.
-        const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility() && activationStrategy !== group_activation_strategy.DIRECTOR
+        const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility(activatedMembers) && activationStrategy !== group_activation_strategy.DIRECTOR
             && !activatedMembers.some(chid => getGroupMemberRole(group, characters[chid]) === 'narrator')
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
         const automaticRouting = ordinaryTurn && params?.skipNativeRoleplay === undefined;
@@ -2357,6 +2585,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         throwIfAborted();
         const useGroupServer = ordinaryTurn && groupReady
             && (params?.skipNativeRoleplay === false || preferServer || serverRequired);
+        let sceneRefused = false;
         if (useGroupServer) {
             deactivateSendButtons();
             setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
@@ -2365,13 +2594,19 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 textResult = await groupWorkflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
                     generationId: group_generation_id, signal: params?.signal ?? null });
             } catch (error) {
-                if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
-                throw error;
+                // The saved scene needs the page for this turn and nothing was started, so write it here.
+                sceneRefused = error?.body?.code === 'roleplay_group_scene' && !params?.signal?.aborted && !await serverMustOwn();
+                if (!sceneRefused) {
+                    if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
+                    throw error;
+                }
             }
-            if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
-                clearSelectedGroupSpeaker();
+            if (!sceneRefused) {
+                if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
+                    clearSelectedGroupSpeaker();
+                }
+                return Promise.resolve(textResult);
             }
-            return Promise.resolve(textResult);
         }
         if (automaticRouting && (preferServer || serverRequired) && await serverMustOwn()) {
             throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
@@ -2394,6 +2629,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         // now the real generation begins: cycle through every activated character
         for (const chId of activatedMembers) {
             throwIfAborted();
+            setSendButtonState(true);
             deactivateSendButtons();
             setCharacterId(chId);
             setCharacterName(characters[chId].name);
@@ -2416,13 +2652,17 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             mergedParams.quiet_prompt = [mergedParams.quiet_prompt, contextPrompt, getGroupScenePrompt(group)].filter(Boolean).join('\n');
             mergedParams.quietToLoud = true;
             mergedParams.suppressUserMessage = didRenderUserMessage || mergedParams.suppressUserMessage;
-            textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })));
+            // Impersonation writes the user's own line, and the user heard everything.
+            const sceneAvatars = type === 'impersonate' ? [] : [characters[chId].avatar];
+            textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })), generateType);
             if (textResult?.generationOutcome) break;
             let messageChunk = textResult?.messageChunk;
 
             if (messageChunk) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
-                    textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
+                    throwIfAborted();
+                    setSendButtonState(true);
+                    textResult = await runWithGroupScene(sceneAvatars, () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })), 'continue');
                     if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
                 }
@@ -2439,6 +2679,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
             clearSelectedGroupSpeaker();
         }
+    } catch (error) {
+        if (!params.signal?.aborted && error?.name !== 'AbortError') throw error;
     } finally {
         restoreAudience();
         setGroupTypingIndicator('');
@@ -2590,9 +2832,10 @@ function getGroupDirectorMembers(members) {
 }
 
 function getGroupDirectorHistory(members) {
+    const start = getGroupStartRules();
     return chat
         .filter(message => message && !message.is_system && !message.extra?.group_scene?.whisper_to?.length
-            && members.every(avatar => canGroupMemberSee(message, avatar)) && String(message.mes || '').trim())
+            && members.every(avatar => canGroupMemberSee(message, avatar, start)) && String(message.mes || '').trim())
         .slice(-12)
         .map(message => ({ name: message.name, text: message.mes, isUser: Boolean(message.is_user) }));
 }
@@ -2645,13 +2888,14 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
     const controller = new AbortController();
     const stop = () => controller.abort();
     signal?.addEventListener?.('abort', stop, { once: true });
+    const timeoutMs = getGroupDirectorTimeoutMs(group);
     let timer = null;
     const timeout = new Promise(resolve => {
         timer = setTimeout(() => {
             timedOut = true;
             controller.abort();
             resolve(null);
-        }, GROUP_DIRECTOR_TIMEOUT_MS);
+        }, timeoutMs);
     });
 
     try {
@@ -2892,7 +3136,7 @@ export async function editGroup(id, immediately, reload = true, account = getCur
         if (typeof from !== 'string' || typeof to !== 'string' || !Array.isArray(base.members) || !base.members.includes(from)) {
             throw new Error('Reload the group before renaming its member.');
         }
-        changes.members = base.members.map(member => member === from ? to : member);
+        Object.assign(changes, renameGroupMemberFields(base, from, to));
         delete changes.memberRename;
     }
     const snapshot = background ? { ...base, ...changes } : snapshotGroupMetadata(group);
@@ -2961,6 +3205,8 @@ async function modifyGroupMember(groupId, groupMember, isDelete) {
         await unshallowGroupMembers(openGroupId);
         await editGroup(openGroupId, false, false);
         updateGroupAvatar(thisGroup);
+        if (!isDelete) noteLateGroupMember(openGroupId, id);
+        if (openGroupId === selected_group) refreshGroupHeardBadges();
     } else {
         markGroupSaveDirty();
     }
@@ -3018,7 +3264,11 @@ async function reorderGroupMember(groupId, groupMember, direction) {
 async function onGroupActivationStrategyInput(e) {
     const strategy = Number(e.target.value);
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
-    syncGroupDirectorProfileBlock(strategy, group ? group.director_profile : $('#rm_group_director_profile').val());
+    syncGroupDirectorProfileBlock(
+        strategy,
+        group ? group.director_profile : $('#rm_group_director_profile').val(),
+        group ? group.director_timeout : $('#rm_group_director_timeout').val(),
+    );
     if (group) {
         group.activation_strategy = strategy;
         await editGroup(openGroupId, false, false);
@@ -3029,6 +3279,16 @@ async function onGroupDirectorProfileInput(e) {
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
     if (group) {
         group.director_profile = String(e.target.value || '');
+        await editGroup(openGroupId, false, false);
+    }
+}
+
+async function onGroupDirectorTimeoutInput(e) {
+    const seconds = getGroupDirectorTimeoutSeconds({ director_timeout: e.target.value });
+    $(e.target).val(seconds);
+    const group = openGroupId && groups.find((x) => x.id == openGroupId);
+    if (group && group.director_timeout !== seconds) {
+        group.director_timeout = seconds;
         await editGroup(openGroupId, false, false);
     }
 }
@@ -3067,9 +3327,11 @@ async function populateGroupDirectorProfiles(selectedId = '') {
     select.val(selected);
 }
 
-function syncGroupDirectorProfileBlock(strategy, profileId = '') {
+function syncGroupDirectorProfileBlock(strategy, profileId = '', timeoutSeconds = undefined) {
     const isDirector = Number(strategy) === group_activation_strategy.DIRECTOR;
     $('#rm_group_director_profile_block').toggleClass('displayNone', !isDirector);
+    $('#rm_group_director_timeout_block').toggleClass('displayNone', !isDirector);
+    $('#rm_group_director_timeout').val(getGroupDirectorTimeoutSeconds({ director_timeout: timeoutSeconds }));
     if (isDirector) {
         void populateGroupDirectorProfiles(profileId);
     }
@@ -3297,7 +3559,7 @@ function printGroupMembers() {
  * @returns {JQuery<HTMLElement>} jQuery element representing the group character block
  */
 function getGroupCharacterBlock(character) {
-    const avatar = getThumbnailUrl('avatar', character.avatar);
+    const avatar = getThumbnailUrlForViewport('avatar', character.avatar);
     const template = $('#group_member_template .group_member').clone();
     const isFav = !!character.fav || character.fav == 'true';
     template.data('id', character.avatar);
@@ -3397,6 +3659,14 @@ async function onGroupKeepOwnLinesClick() {
     }
 }
 
+async function onGroupHearReplyTargetClick() {
+    if (openGroupId) {
+        const _thisGroup = groups.find((x) => x.id == openGroupId);
+        _thisGroup.hear_reply_target = Boolean($(this).prop('checked'));
+        await editGroup(openGroupId, false, false);
+    }
+}
+
 async function onHideMutedSpritesClick(value) {
     if (openGroupId) {
         let _thisGroup = groups.find((x) => x.id == openGroupId);
@@ -3478,7 +3748,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_members_filter').val('').trigger('input');
     $('#rm_group_activation_strategy').val(replyStrategy);
     $(`#rm_group_activation_strategy option[value="${replyStrategy}"]`).prop('selected', true);
-    syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile);
+    syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile, group?.director_timeout);
     $('#rm_group_talk_burst').val(Math.min(8, Math.max(1, Math.round(Number(group?.talk_burst)) || 3)));
     $('#rm_group_generation_mode').val(generationMode);
     $(`#rm_group_generation_mode option[value="${generationMode}"]`).prop('selected', true);
@@ -3501,6 +3771,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_submit').prop('disabled', !groupHasMembers);
     $('#rm_group_allow_self_responses').prop('checked', group && group.allow_self_responses);
     $('#rm_group_keep_own_lines').prop('checked', group?.keep_own_lines !== false);
+    $('#rm_group_hear_reply_target').prop('checked', isHearReplyTargetEnabled(group));
     $('#rm_group_ensemble_replies').prop('checked', group?.ensemble_replies === true);
     $('#rm_group_hidemutedsprites').prop('checked', group && group.hideMutedSprites);
     $('#rm_group_generation_mode_join_prefix').val(group?.generation_mode_join_prefix ?? '').attr('setting', 'generation_mode_join_prefix');
@@ -3849,9 +4120,11 @@ async function createGroup() {
     let name = $('#rm_group_chat_name').val().toString();
     let allowSelfResponses = !!$('#rm_group_allow_self_responses').prop('checked');
     const keepOwnLines = $('#rm_group_keep_own_lines').prop('checked') !== false;
+    const hearReplyTarget = $('#rm_group_hear_reply_target').prop('checked') !== false;
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
     const directorProfile = String($('#rm_group_director_profile').val() || '');
+    const directorTimeout = getGroupDirectorTimeoutSeconds({ director_timeout: $('#rm_group_director_timeout').val() });
     const talkBurst = getGroupTalkBurstCount({ talk_burst: $('#rm_group_talk_burst').val() });
     const members = newGroupMembers.filter(onlyUnique);
     if (members.length === 0) {
@@ -3881,10 +4154,12 @@ async function createGroup() {
         avatar_url: isValidImageUrl(avatarUrl) ? avatarUrl : default_avatar,
         allow_self_responses: allowSelfResponses,
         keep_own_lines: keepOwnLines,
+        hear_reply_target: hearReplyTarget,
         ensemble_replies: $('#rm_group_ensemble_replies').prop('checked') === true,
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
         director_profile: directorProfile,
+        director_timeout: directorTimeout,
         talk_burst: talkBurst,
         generation_mode: generationMode,
         disabled_members: [],
@@ -4315,6 +4590,7 @@ jQuery(() => {
     $('#group_favorite_button').on('click', onFavoriteGroupClick);
     $('#rm_group_allow_self_responses').on('input', onGroupSelfResponsesClick);
     $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
+    $('#rm_group_hear_reply_target').on('input', onGroupHearReplyTargetClick);
     $('#rm_group_ensemble_replies').on('input', async function () {
         const group = groups.find(item => item.id === openGroupId);
         if (group) {
@@ -4324,6 +4600,7 @@ jQuery(() => {
     });
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
     $('#rm_group_director_profile').on('change', onGroupDirectorProfileInput);
+    $('#rm_group_director_timeout').on('change', onGroupDirectorTimeoutInput);
     $('#rm_group_talk_burst').on('change', onGroupTalkBurstInput);
     $('#rm_group_generation_mode').on('change', onGroupGenerationModeInput);
     $('#rm_group_generation_mode_join_prefix').on('input', onGroupGenerationModeTemplateInput);

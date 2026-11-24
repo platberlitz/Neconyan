@@ -16,8 +16,20 @@ import {
     readWorldInfoHistory, renameWorldInfoHistory, validateWorldInfoHistory, worldInfoRevision, writeWorldInfoHistory,
 } from '../world-info-history.js';
 import { sanitizeHealthPrefs } from '../../public/scripts/neconyan-lorebook-health.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
+import { relinkNotebookLorebooksLocked } from '../notebooks/lorebook-links.js';
+import { notifyNotebookChanged } from '../notebooks/events.js';
 
 const WORLD_INFO_EXTENSION = '.json';
+
+/** Tells open Notebooks their lorebook links changed, once the account lock is released. */
+function announceNotebookChanges(request, report) {
+    const owner = request.user?.profile?.handle;
+    if (!owner || !report?.notebooks?.length) return;
+    setImmediate(() => {
+        for (const notebookId of report.notebooks) notifyNotebookChanged({ owner, notebookId, kind: 'lore-links' });
+    });
+}
 // Neconyan divergence: canonical World Info filenames are UTF-8 bounded and written through the fork's safe persistence path.
 const MAX_FILENAME_BYTES = 255;
 const ATOMIC_WRITE_SUFFIX_BYTES = 16;
@@ -60,15 +72,19 @@ function getLegacyWorldInfoFilename(name) {
     return sanitize(`${String(name ?? '')}${WORLD_INFO_EXTENSION}`);
 }
 
-export function getExistingWorldInfoFilename(directories, name) {
-    const legacyFilename = getLegacyWorldInfoFilename(name);
-    if (legacyFilename && fs.existsSync(path.join(directories.worlds, legacyFilename))) {
-        return legacyFilename;
-    }
+/** The two file names a World Info name can be saved under, in the order they are looked up. */
+export function getWorldInfoFilenameCandidates(name) {
+    return [getLegacyWorldInfoFilename(name), getWorldInfoFilename(name)];
+}
 
-    const canonicalFilename = getWorldInfoFilename(name);
-    if (canonicalFilename && fs.existsSync(path.join(directories.worlds, canonicalFilename))) {
-        return canonicalFilename;
+export function getExistingWorldInfoFilename(directories, name, { followSymlinks = true } = {}) {
+    const exists = filename => {
+        if (!filename) return false;
+        const filePath = path.join(directories.worlds, filename);
+        return followSymlinks ? fs.existsSync(filePath) : Boolean(fs.lstatSync(filePath, { throwIfNoEntry: false }));
+    };
+    for (const filename of getWorldInfoFilenameCandidates(name)) {
+        if (exists(filename)) return filename;
     }
 
     return null;
@@ -167,8 +183,7 @@ export function readWorldInfoFile(directories, worldInfoName, allowDummy) {
     const pathToWorldInfo = path.join(directories.worlds, filename);
 
     const worldInfoText = readRoleplayFile(pathToWorldInfo, 32 * 1024 * 1024)?.bytes.toString('utf8');
-    const worldInfo = JSON.parse(worldInfoText);
-    return worldInfo;
+    return parseSavedWorldInfo(worldInfoText);
 }
 
 export const router = express.Router();
@@ -182,7 +197,7 @@ router.post('/history', authoringRoute((request, response, lease) => {
         if (!filename) return response.sendStatus(404);
         const bookPath = path.join(request.user.directories.worlds, filename);
         if (action === 'commit' || action === 'restore') assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
-        let data = JSON.parse(readAuthoringFileLocked(lease, bookPath).bytes.toString('utf8'));
+        let data = parseSavedWorldInfo(readAuthoringFileLocked(lease, bookPath).bytes.toString('utf8'));
         let history = readWorldInfoHistory(bookPath, lease) ?? newWorldInfoHistory();
         if (action === 'lint') {
             // Health check choices live beside the commits so .stproj exports carry them as workspace.lintPrefs.
@@ -279,11 +294,19 @@ router.post('/delete', authoringRoute((request, response, lease) => {
     const pathToWorldInfo = path.join(request.user.directories.worlds, filename);
 
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
-    deleteAuthoringFileLocked(lease, pathToWorldInfo);
+    // Notebook links go first, so a book that cannot be deleted keeps them.
+    const notebooks = relinkNotebookLorebooksLocked(lease, { fromFilename: filename });
+    try {
+        deleteAuthoringFileLocked(lease, pathToWorldInfo);
+    } catch (error) {
+        notebooks.undo();
+        throw error;
+    }
     deleteWorldInfoHistory(pathToWorldInfo, lease);
     removeSourceMemory(request.user.directories, { world: path.parse(filename).name });
+    announceNotebookChanges(request, notebooks.report);
 
-    return response.sendStatus(200);
+    return response.send({ ok: true, notebooks: notebooks.report });
 }));
 
 router.post('/import', authoringRoute((request, response, lease) => {
@@ -321,14 +344,14 @@ router.post('/import', authoringRoute((request, response, lease) => {
         if (request.body.revision !== undefined) {
             const expectedRevision = request.body.revision === '' ? null : request.body.revision;
             const currentFile = readAuthoringFileLocked(lease, pathToNewFile);
-            const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+            const currentRevision = currentFile ? worldInfoRevision(parseSavedWorldInfo(currentFile.bytes.toString('utf8'))) : null;
             if (currentRevision !== expectedRevision) return response.sendStatus(409);
         }
         if (request.body.history !== undefined) {
             const importedHistory = tryParse(request.body.history);
             if (!validateWorldInfoHistory(importedHistory)) return response.sendStatus(400);
             const current = readAuthoringFileLocked(lease, pathToNewFile);
-            const currentBook = current ? JSON.parse(current.bytes.toString('utf8')) : null;
+            const currentBook = current ? parseSavedWorldInfo(current.bytes.toString('utf8')) : null;
             const history = mergeWorldInfoHistory(readWorldInfoHistory(pathToNewFile, lease), importedHistory, currentBook);
             writeWorldInfoWithHistory(pathToNewFile, fileContents, history, lease);
         } else {
@@ -373,7 +396,7 @@ router.post('/edit', authoringRoute((request, response, lease) => {
 
     if (request.body.revision !== undefined) {
         const currentFile = readAuthoringFileLocked(lease, pathToFile);
-        const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+        const currentRevision = currentFile ? worldInfoRevision(parseSavedWorldInfo(currentFile.bytes.toString('utf8'))) : null;
         if (currentRevision !== request.body.revision) return response.sendStatus(409);
     }
 
@@ -401,7 +424,7 @@ router.post('/rename', authoringRoute((request, response, lease) => {
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: newFilename });
     if (request.body.revision !== undefined) {
         const current = readAuthoringFileLocked(lease, oldPath);
-        if (!current || worldInfoRevision(JSON.parse(current.bytes.toString('utf8'))) !== request.body.revision) return response.sendStatus(409);
+        if (!current || worldInfoRevision(parseSavedWorldInfo(current.bytes.toString('utf8'))) !== request.body.revision) return response.sendStatus(409);
     }
     const existingTargetFilename = getExistingWorldInfoFilename(request.user.directories, newName);
     if (existingTargetFilename || fs.existsSync(newPath)) {
@@ -414,16 +437,20 @@ router.post('/rename', authoringRoute((request, response, lease) => {
         fs.renameSync(oldPath, newPath);
         fsyncDirectorySync(path.dirname(oldPath));
         let undoMemory;
+        let notebooks;
         try {
             undoMemory = renameWorldMemory(request.user.directories, getWorldInfoName(oldName), canonicalName);
+            notebooks = relinkNotebookLorebooksLocked(lease, { fromFilename: oldFilename, toFilename: newFilename });
             renameWorldInfoHistory(oldPath, newPath, lease);
         } catch (error) {
+            notebooks?.undo();
             undoMemory?.();
             fs.renameSync(newPath, oldPath);
             fsyncDirectorySync(path.dirname(oldPath));
             throw error;
         }
-        return response.send({ ok: true, name: canonicalName, revision: worldInfoRevision(data) });
+        announceNotebookChanges(request, notebooks.report);
+        return response.send({ ok: true, name: canonicalName, revision: worldInfoRevision(data), notebooks: notebooks.report });
     } catch (err) {
         console.error('World Info rename failed:', err);
         return response.sendStatus(err.status || 500);

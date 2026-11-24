@@ -148,6 +148,74 @@ afterAll(async () => {
 });
 
 describe('character list performance', () => {
+    test('bounds concurrent card work and preserves file order when work completes out of order', async () => {
+        const expectedConcurrentCards = 16;
+        const names = Array.from({ length: 96 }, (_, index) => `Card${String(index).padStart(2, '0')}`);
+        for (const name of names) {
+            fs.writeFileSync(path.join(directories.characters, `${name}.png`), createCard(name, 'bounded scan'));
+            fs.mkdirSync(path.join(directories.chats, name), { recursive: true });
+        }
+        const expected = fs.readdirSync(directories.characters).filter(file => file.endsWith('.png'));
+        const originalReaddir = fs.promises.readdir.bind(fs.promises);
+        const originalOpen = fs.openSync.bind(fs);
+        const opened = [];
+        let nextCardStarted;
+        const nextCardStart = new Promise(resolve => { nextCardStarted = resolve; });
+        jest.spyOn(fs, 'openSync').mockImplementation((file, ...args) => {
+            if (typeof file === 'string' && path.dirname(file) === directories.characters && file.endsWith('.png')) {
+                opened.push(file);
+                if (opened.length === expectedConcurrentCards + 1) nextCardStarted();
+            }
+            return originalOpen(file, ...args);
+        });
+        const pending = [];
+        let releaseAll = false;
+        let firstStarted;
+        const firstStart = new Promise(resolve => { firstStarted = resolve; });
+        const spy = jest.spyOn(fs.promises, 'readdir').mockImplementation((directory, ...args) => {
+            if (path.dirname(directory) !== directories.chats || releaseAll) return originalReaddir(directory, ...args);
+            return new Promise((resolve, reject) => {
+                pending.push(() => originalReaddir(directory, ...args).then(resolve, reject));
+                firstStarted();
+            });
+        });
+        try {
+            const responsePromise = postJson('/api/characters/all');
+            await firstStart;
+            // Parsing is synchronous; after the microtask queue drains, every admitted
+            // card has reached the held readdir before this event-loop turn.
+            await new Promise(resolve => setImmediate(resolve));
+            expect(opened).toHaveLength(expectedConcurrentCards);
+            // Release the last task first, then let all remaining tasks finish.
+            pending.pop()();
+            await nextCardStart;
+            expect(opened).toHaveLength(expectedConcurrentCards + 1);
+            releaseAll = true;
+            for (const release of pending.splice(0).reverse()) release();
+            const response = await responsePromise;
+            expect(response.status).toBe(200);
+            expect(response.body.map(character => character.avatar)).toEqual(expected);
+        } finally {
+            releaseAll = true;
+            for (const release of pending.splice(0)) release();
+            spy.mockRestore();
+        }
+    });
+
+    test('omits malformed, non-card and nameless files while listing valid cards', async () => {
+        expect((await postJson('/api/characters/all')).body).toEqual([]);
+        fs.writeFileSync(path.join(directories.characters, 'Valid.png'), createCard('Valid', 'valid'));
+        fs.writeFileSync(path.join(directories.characters, 'Broken.png'), 'not a PNG');
+        fs.writeFileSync(path.join(directories.characters, 'Noncard.png'), png);
+        fs.writeFileSync(path.join(directories.characters, 'Invalid.png'), writeCard(png, '{invalid'));
+        fs.writeFileSync(path.join(directories.characters, 'Nameless.png'), createCard('', 'nameless'));
+        fs.writeFileSync(path.join(directories.characters, 'Ignored.txt'), createCard('Ignored', 'ignored'));
+        forceListRebuild();
+        const response = await postJson('/api/characters/all');
+        expect(response.status).toBe(200);
+        expect(response.body.map(character => character.avatar)).toEqual(['Valid.png']);
+    });
+
     test('the startup character list supplies assistant metadata without another card parse', async () => {
         const cardPath = path.join(directories.characters, 'Nova.png');
         fs.writeFileSync(cardPath, createCard('Nova', 'SHALLOW_CARD_MARKER assistant', [], { id: 'miso-male', version: 1 }));

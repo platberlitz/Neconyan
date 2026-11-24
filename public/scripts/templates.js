@@ -66,8 +66,12 @@ export async function renderTemplateAsync(templateId, templateData = {}, sanitiz
         if (cached) return cached;
         if (TEMPLATE_REQUESTS.has(pathToTemplate)) return TEMPLATE_REQUESTS.get(pathToTemplate);
 
-        const source = Object.hasOwn(startupTemplates, pathToTemplate)
-            ? Promise.resolve(startupTemplates[pathToTemplate])
+        // Startup templates are embedded without a cache-busting query, so look
+        // the path up without one. Otherwise the embed is skipped and the file is
+        // fetched again before Home can paint.
+        const startupKey = pathToTemplate.split('?')[0];
+        const source = Object.hasOwn(startupTemplates, startupKey)
+            ? Promise.resolve(startupTemplates[startupKey])
             : getUrlAsync(pathToTemplate);
         const request = source.then(templateContent => {
             // A legacy synchronous caller may have populated the cache while we waited.

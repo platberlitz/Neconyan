@@ -450,8 +450,9 @@ async function discussInScratchpad() {
         grantId = shared.grant.id;
         const { openScratchpad } = await import('../scratchpad/index.js');
         if (!isCurrent()) return;
-        await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId } });
-        grantId = null;
+        if (await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId }, canOpen: isCurrent })) {
+            grantId = null;
+        }
     } catch (error) {
         toast('error', error.message || 'The Scratchpad discussion could not start. Try again.');
     } finally {
@@ -1513,6 +1514,18 @@ function showRemoteChange(revision = app.state.remoteRevision) {
     ]);
 }
 
+async function refreshLoreLinks() {
+    const { state } = app;
+    const note = state.note;
+    const { notebookId } = state;
+    if (note) {
+        const result = await request('/notes/read', { notebookId, noteId: note.id });
+        if (result?.status !== 'success' || state.note !== note || state.notebookId !== notebookId) return;
+        note.associations = result.associations ?? [];
+    }
+    app.panels?.renderDetails(app);
+}
+
 function onRemoteChange(change) {
     const { state } = app;
     if (!state.open || change.notebookId !== state.notebookId) {
@@ -1520,6 +1533,10 @@ function onRemoteChange(change) {
         return;
     }
     refreshTreeSoon();
+    if (change.kind === 'lore-links') {
+        void refreshLoreLinks();
+        return;
+    }
     if (change.kind === 'policy' || change.kind === 'lore' || change.kind === 'proposal') app.panels?.renderDetails(app);
     const note = state.note;
     if (!note || change.noteId !== note.id || !change.revision || change.revision === note.revision) return;

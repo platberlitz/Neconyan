@@ -8,7 +8,7 @@ import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { prepareSettingsSave, restoreSettingsSnapshot } from '../settings-version.js';
-import { invalidateParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
+import { invalidateParsedSettingsFile, primeParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
 import { createJsonCatalogueCache } from '../json-catalogue-cache.js';
 import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
@@ -318,7 +318,7 @@ router.post('/save', function (request, response) {
         }
 
         tryWriteFileSync(pathToSettings, JSON.stringify(preparedSave.settings, null, 4));
-        invalidateParsedSettingsFile(pathToSettings, request.user.profile.handle);
+        primeParsedSettingsFile(pathToSettings, preparedSave.settings, request.user.profile.handle);
         triggerAutoSave(request.user.profile.handle);
         response.send({ result: 'ok', version: preparedSave.version, settingsRevision: preparedSave.settingsRevision });
     } catch (err) {
@@ -551,7 +551,9 @@ router.post('/get', (request, response) => {
     } catch (e) {
         return response.sendStatus(500);
     }
-    Object.assign(full, readSettingsSections(request, new Set(['presets', 'worlds', 'quickReplies', 'agents'])));
+    // The Agents extension loads its library itself. Reading it here as well
+    // made every start-up parse the same files twice.
+    Object.assign(full, readSettingsSections(request, new Set(['presets', 'worlds', 'quickReplies'])));
 
     let roleplayAccount = null;
     try {
@@ -578,10 +580,7 @@ router.post('/get', (request, response) => {
         context: full.context,
         sysprompt: full.sysprompt,
         reasoning: full.reasoning,
-        inChatAgents: full.inChatAgents,
-        inChatAgentLoadErrors: full.inChatAgentLoadErrors,
-        inChatAgentRevisions: full.inChatAgentRevisions,
-        inChatAgentAccount: full.inChatAgentAccount,
+        inChatAgentAccount: request.user.profile.handle,
         roleplayAccount,
         enable_extensions: ENABLE_EXTENSIONS,
         enable_extensions_auto_update: ENABLE_EXTENSIONS_AUTO_UPDATE,

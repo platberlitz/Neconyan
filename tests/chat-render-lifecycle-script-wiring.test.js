@@ -312,7 +312,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('removeRenderedChatMessages();');
         expect(source).toContain('querySelector(\'.mes.last_mes\')?.classList.remove(\'last_mes\')');
         expect(source).toContain('lastMessageElement?.classList.add(\'last_mes\')');
-        expect(source).toContain('pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: \'start\' });');
+        expect(source).toContain('pruneRenderedChatMessagesToWindow({ windowSize: pruneWindowSize, pruneFrom: \'start\', anchor: pruneAnchor });');
         expect(source).toContain('syncChatHistoryWindowControls();');
         expect(source).toContain('if (showSwipes) refreshSwipeButtons();');
         expect(source).toContain('applyCharacterTagsToMessageDivs({ mesIds: messageId });');
@@ -437,7 +437,7 @@ describe('chat render lifecycle script wiring', () => {
             && node.key?.name === 'onProgressStreaming');
         const source = getSource(onProgressStreaming.value);
 
-        expect(source).toContain('await this.#checkDomElements(messageId);');
+        expect(source).toContain('await this.#checkDomElements(messageId, null, allowStopped);');
         expect(source).toContain('await updateMessageTokenAccounting(chat[messageId],');
         expect(source).toContain('shouldUpdateMetaBadges: !shouldReduceIntermediateStreamingWork');
         expect(source).toContain('this.setFirstSwipe(messageId);');
@@ -499,7 +499,9 @@ describe('chat render lifecycle script wiring', () => {
         const applySource = getSource(applyStreamingVisibleWrite);
 
         expect(applySource).toContain('applyStreamFadeIn(messageTextDom, formattedText,');
+        expect(applySource).toContain('} else if (isFinal) {');
         expect(applySource).toContain('messageTextDom.innerHTML = formattedText;');
+        expect(applySource).toContain('applyStreamDomPatch(messageTextDom, formattedText);');
         expect(applySource).toContain('messageTokenCounterDom.textContent = `${currentTokenCount}t`;');
         expect(applySource).toContain('messageTimerDom.textContent = timePassed.timerValue;');
         expect(applySource).toContain('messageTimerDom.title = timePassed.timerTitle;');

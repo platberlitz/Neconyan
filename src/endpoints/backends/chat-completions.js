@@ -14,7 +14,8 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS, resolveKnownInvalidNoneEffort } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS, resolveKnownInvalidNoneEffort, stripModelBracketTags } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { coerceRequestBoolean } from '../../../public/scripts/chat-preset-request.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -43,7 +44,6 @@ import {
     flattenSchema,
     summarizeLlmPayloadForLog,
 } from '../../util.js';
-import { isRequestCancellationError } from '../../request-cancellation.js';
 import { getResumableGeneration } from '../../resumable-generations.js';
 import {
     convertClaudeMessages,
@@ -229,6 +229,11 @@ function hasCustomReasoningParamConfig(requestBody) {
 
 function resolveCustomOpenAiReasoningEffort(requestBody) {
     if (!requestBody.reasoning_effort) {
+        return undefined;
+    }
+
+    // Neconyan: Auto means 'send nothing' on every Custom model, not the literal 'auto'.
+    if (String(requestBody.reasoning_effort).trim().toLowerCase() === 'auto') {
         return undefined;
     }
 
@@ -820,11 +825,11 @@ async function sendMakerSuiteRequest(request, response) {
             }
         }
 
-        if (isThinkingConfigModel(model) || (request.reasoningCapabilities?.nativeFallback && reasoningEffort)) {
+        if (isThinkingConfigModel(model) || ((request.reasoningCapabilities?.nativeFallback || request.reasoningCapabilities?.reason === 'documented-native-efforts') && reasoningEffort)) {
             const thinkingConfig = {};
             const shouldIncludeThoughts = includeReasoning;
 
-            const thinkingBudget = request.reasoningCapabilities?.nativeFallback && reasoningEffort
+            const thinkingBudget = (request.reasoningCapabilities?.nativeFallback || request.reasoningCapabilities?.reason === 'documented-native-efforts') && reasoningEffort
                 ? reasoningEffort : calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
             if (typeof thinkingBudget === 'number' && Number.isInteger(thinkingBudget)) {
                 thinkingConfig.thinkingBudget = thinkingBudget;
@@ -2780,10 +2785,6 @@ function transformResponsesApiResponse(data) {
     };
 }
 
-function isExpectedStreamAbort(error) {
-    return isRequestCancellationError(error);
-}
-
 /**
  * Transforms a Responses API SSE stream into Chat Completions SSE format.
  * @param {import('node-fetch').Response} fetchResponse The upstream Responses API response
@@ -2807,7 +2808,8 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     expressResponse.statusMessage = statusText;
 
     if (!fetchResponse.ok || !fetchResponse.body) {
-        fetchResponse.body?.pipe(expressResponse);
+        if (fetchResponse.body) fetchResponse.body.pipe(expressResponse);
+        else expressResponse.end();
         return;
     }
 
@@ -2819,6 +2821,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     // A character can arrive split across two network chunks, so bytes are decoded as one stream.
     const decoder = new StringDecoder('utf8');
     let done = false;
+    const resumableGeneration = getResumableGeneration(request);
     const stopPolling = pollStreamingRequestConnection(request, expressResponse, closeStream);
 
     function closeStream() {
@@ -2836,7 +2839,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
         if (fetchResponse.body && typeof fetchResponse.body.destroy === 'function') {
             fetchResponse.body.destroy();
         }
-        if (!expressResponse.destroyed && !expressResponse.writableEnded) {
+        if (!expressResponse.writableEnded) {
             expressResponse.end();
         }
     }
@@ -2908,23 +2911,17 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
 
     fetchResponse.body.on('error', (err) => {
         stopPolling();
-        if (done || isExpectedStreamAbort(err) || expressResponse.destroyed) {
-            done = true;
-            if (!expressResponse.destroyed && !expressResponse.writableEnded) {
-                expressResponse.end();
-            }
-            return;
-        }
-
+        if (done) return;
         done = true;
-        console.error('Responses API stream error:', err);
-        expressResponse.reportStreamError?.(err);
+        if (resumableGeneration || !expressResponse.destroyed) {
+            console.error('Responses API stream error:', err);
+            expressResponse.reportStreamError?.(err);
+        }
         if (!expressResponse.writableEnded) {
             expressResponse.end();
         }
     });
 
-    const resumableGeneration = getResumableGeneration(request);
     if (resumableGeneration) {
         // Neconyan: a resumable generation finishes without the client; only an explicit cancel stops it.
         resumableGeneration.onCancel(closeStream);
@@ -3089,8 +3086,9 @@ async function sendOpenAIResponsesRequest(request, response) {
             }
         }
     } catch (error) {
-        if (isExpectedStreamAbort(error)) {
-            if (!response.headersSent && !response.destroyed) {
+        if (controller.signal.aborted) {
+            if (!response.writableEnded) {
+                if (!response.headersSent) response.status(499);
                 response.end();
             }
             return;
@@ -3098,7 +3096,9 @@ async function sendOpenAIResponsesRequest(request, response) {
 
         console.error('Error communicating with OpenAI Responses API: ', error);
         if (!response.headersSent) {
-            response.send({ error: true });
+            response.status(502).send({ error: { message: error.message, ...error } });
+        } else if (!response.writableEnded) {
+            response.end();
         }
     }
 }
@@ -3110,6 +3110,7 @@ function getSafeCompletionErrorStatus(status) {
 
 // Neconyan divergence: export the existing handler so Conversation REST can reuse upstream request assembly without forking backend logic.
 export async function handleChatCompletionsGenerate(request, response) {
+    const controller = new AbortController();
     try {
         if (!request.body) return response.status(400).send({ error: true });
 
@@ -3125,6 +3126,9 @@ export async function handleChatCompletionsGenerate(request, response) {
         // reasoning effort the frontend never validated, and the pass-through sources forward it
         // to the provider verbatim.
         applyReasoningEffortNormalization(request.body);
+        if (request.body.custom_reasoning_documented_levels !== undefined) {
+            request.body.custom_reasoning_documented_levels = coerceRequestBoolean(request.body.custom_reasoning_documented_levels);
+        }
         const reasoningIdentity = {
             source: request.body.chat_completion_source,
             model: request.body.model,
@@ -3139,12 +3143,16 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (!reasoningSupport.supported) {
             const labels = { none: 'None', min: 'Minimum', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Maximum' };
             const choices = reasoningSupport.supportedEfforts.map(value => labels[value]).join(' or ');
-            const selected = labels[request.body.reasoning_effort] ?? 'This reasoning level';
-            const message = reasoningSupport.state === 'no-selector'
-                ? 'This model does not expose an effort setting. Remove the effort override or choose another model.'
-                : reasoningSupport.state === 'unknown' && reasoningSupport.forbidden
-                    ? 'Reasoning cannot be disabled for this model. Choose another model to turn it off.'
-                    : `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`;
+            const canonical = request.body.reasoning_effort === 'minimal' ? 'min' : request.body.reasoning_effort;
+            const selected = labels[canonical] ?? 'This reasoning level';
+            const aliasTarget = reasoningSupport.effortAliases?.[canonical];
+            const message = aliasTarget && labels[aliasTarget]
+                ? `${selected} acts as ${labels[aliasTarget]} on this model. Choose ${choices} in Reasoning Effort, then try again.`
+                : reasoningSupport.state === 'no-selector'
+                    ? 'This model does not expose an effort setting. Remove the effort override or choose another model.'
+                    : reasoningSupport.state === 'unknown' && reasoningSupport.forbidden
+                        ? 'Reasoning cannot be disabled for this model. Choose another model to turn it off.'
+                        : `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`;
             return response.status(400).json({ error: {
                 code: 'UNSUPPORTED_REASONING_EFFORT',
                 message,
@@ -3629,7 +3637,8 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (request.body.reasoning_effort
             && shouldUseDefaultOpenAiReasoningEffort
             && [CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.OPENAI, CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES].includes(request.body.chat_completion_source)
-            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback)) {
+            && !(request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM && request.body.reasoning_effort === 'auto')
+            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback || reasoningSupport.reason === 'documented-native-efforts')) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 
@@ -3664,7 +3673,6 @@ export async function handleChatCompletionsGenerate(request, response) {
             return response.status(400).send({ error: { message: error.message } });
         }
 
-        const controller = new AbortController();
         abortOnRequestClose(request, controller, response);
 
         if (!isTextCompletion && Array.isArray(request.body.tools) && request.body.tools.length > 0) {
@@ -3731,7 +3739,7 @@ export async function handleChatCompletionsGenerate(request, response) {
         // Neconyan: Fable 5.1 rejects legacy thinking types supplied by Custom endpoint settings.
         if (!isTextCompletion
             && request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM
-            && /claude-fable-5(?:-1|\.1)(?:[-/:]|$)/i.test(String(requestBody.model))) {
+            && /(?:^|[/:])claude-fable-5(?:-1|\.1)(?:[-/:@]|$)/i.test(stripModelBracketTags(requestBody.model))) {
             requestBody.thinking = { type: 'adaptive' };
         }
 
@@ -3763,7 +3771,7 @@ export async function handleChatCompletionsGenerate(request, response) {
                 }
                 // Neconyan: smol-alibaba answers an empty reply when a plain prefill carries the stock
                 // reasoning, but continues fine without it (it echoes the prefill; the client dedupes).
-                seedKimiK3PartialReasoning(requestBody.messages, { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(String(requestBody.model)) });
+                seedKimiK3PartialReasoning(requestBody.messages, { stockReasoning: !/(?:^|[/:])smol-alibaba\//i.test(stripModelBracketTags(requestBody.model)) });
             }
         }
 
@@ -3813,7 +3821,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             }
         }
     } catch (error) {
-        if (isExpectedStreamAbort(error) || request.socket.destroyed) {
+        if (controller.signal.aborted || (!getResumableGeneration(request) && request.socket.destroyed)) {
             if (!response.headersSent && !response.writableEnded) {
                 response.status(499).end();
             } else if (!response.writableEnded) {

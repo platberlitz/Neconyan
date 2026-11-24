@@ -250,3 +250,45 @@ test('reused environments reset per-string state and default hosts retain histor
     assert.equal(evaluateLegacyMacros('{{char}}/{{input}}/{{pick::only}}', { char: 'Char' }, minimal.extra), 'Char/capability/only');
     assert.equal(minimal.extra.timestampToMoment('2024-07-12@01h31m37s123ms').toISOString(), '2024-07-12T01:31:37.123Z');
 });
+
+test('message number macros keep real numbers when a group speaker missed lines', () => {
+    const chat = [{ mes: 'Hello', is_user: true }, { mes: 'Later line', is_user: false }];
+    const scoped = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, chat, chatMessageIds: [0, 4] } });
+    assert.equal(scoped.evaluate('{{lastMessageId}} {{lastMessage}} {{allChatRange}}'), '4 Later line 0-4');
+    const plain = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, chat } });
+    assert.equal(plain.evaluate('{{lastMessageId}} {{allChatRange}}'), '1 0-1');
+});
+
+test('group scene macros read the open scene, and stay empty where there is none', () => {
+    const groupScene = {
+        present: 'Kit, Mira',
+        away: 'Nova',
+        location: 'The lantern inn',
+        heard: messageId => (messageId === 3 ? 'Kit' : ''),
+    };
+    const scene = createMacroEnvironment({ ...snapshot(), extra: { ...snapshot().extra, groupScene } });
+    assert.equal(
+        scene.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::3}}|{{groupHeard::9}}|{{groupHeard::-1}}'),
+        'Kit, Mira|Nova|The lantern inn|Kit||',
+    );
+    const plain = createMacroEnvironment(snapshot());
+    assert.equal(plain.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::3}}'), '|||');
+});
+
+test('server group snapshots name the scene and hide Agent variables from a speaker who missed a line', () => {
+    const chatMetadata = { group_scene: { away: ['nova.png'], location: 'The archive', whisper_to: [] } };
+    const chat = [
+        { mes: 'Hello', extra: { group_scene: { present: ['kit.png', 'mira.png'], whisper_to: [] } } },
+        { mes: '', is_system: true, extra: { group_scene_unheard: true } },
+    ];
+    const env = createMacroEnvironment({
+        ...snapshot(),
+        variables: { local: { agent_mood: 'tense', plain: 'kept' }, global: {} },
+        hiddenVariablePrefix: 'agent_',
+        groupMembers: [{ avatar: 'kit.png', name: 'Kit' }, { avatar: 'mira.png', name: 'Mira' }, { avatar: 'nova.png', name: 'Nova' }],
+        extra: { ...snapshot().extra, chatMetadata, chat },
+    });
+    assert.equal(env.evaluate('{{getvar::agent_mood}}|{{getvar::plain}}'), '|kept');
+    assert.equal(env.evaluate('{{groupPresent}}|{{groupAway}}|{{sceneLocation}}|{{groupHeard::0}}|{{groupHeard::1}}'),
+        'Kit, Mira|Nova|The archive|Kit, Mira|');
+});

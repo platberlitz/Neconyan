@@ -302,7 +302,7 @@ function mergeGroupBranch(destination, source) {
     }
 }
 
-function mergeGroupThreadStore(destination, source, sourceAvatar) {
+export function mergeGroupThreadStore(destination, source, sourceAvatar) {
     for (const [key, value] of Object.entries(source)) {
         if (['branches', 'settings', 'threadAvatar', 'groupId'].includes(key)) {
             continue;
@@ -333,7 +333,7 @@ function mergeGroupThreadStore(destination, source, sourceAvatar) {
     }
 }
 
-function getGroupThreadRank(threadStore) {
+export function getGroupThreadRank(threadStore) {
     const branches = Object.values(getObject(threadStore?.branches));
     const hasHistory = branches.some(branch => (
         (Array.isArray(branch?.messages) && branch.messages.length)

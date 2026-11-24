@@ -34,14 +34,95 @@ export function getActiveInlineTrackerTags(agents) {
     return tags;
 }
 
-export function buildTrackerEchoGuard(shapes) {
-    const examples = [...shapes].flatMap(([tag, shape]) => [shape === 'bare' ? `[${tag}]` : `[${tag}|...]`, `[/${tag}]`]).join(', ');
-    return 'HARD STOP for your reply: the Companion-owned bracket formats listed here are read-only reference. '
+// Line formats such as `clothing-start` / `outfit|Name|...` / `clothing-end` carry no
+// brackets, so they get their own keys: a lower-case keyword before the first pipe, or a
+// whole `name-start` / `name-end` marker line. Prompts and saved output both declare them.
+const LINE_KEY = '[A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*';
+const LINE_PREFIX = String.raw`^[ \t]*(?:[>*+-][ \t]+)?`;
+const LINE_RECORD = new RegExp(`${LINE_PREFIX}(${LINE_KEY})\\|[ \\t]*[^|\\s]`, 'gm');
+const LINE_MARKER = new RegExp(`${LINE_PREFIX}(${LINE_KEY}[-_](?:start|end|begin|stop))[ \\t]*$`, 'gim');
+const LINE_ECHO = new RegExp(`${LINE_PREFIX}(${LINE_KEY})(?:\\|.*|[ \\t]*)$`);
+const LINE_DECLARATION = new RegExp(`${LINE_PREFIX}(?:${LINE_KEY}\\|[ \\t]*[^|\\s]|${LINE_KEY}[-_](?:start|end|begin|stop)[ \\t]*$)`, 'i');
+const normalizeLineKey = key => String(key ?? '').trim().toLowerCase().replaceAll('_', '-');
+const isLineMarkerKey = key => /-(?:start|end|begin|stop)$/.test(key);
+
+export function extractTrackerLineKeys(text) {
+    const source = String(text ?? '').replace(/\r\n?/g, '\n'), keys = new Set();
+    for (const match of source.matchAll(LINE_RECORD)) keys.add(normalizeLineKey(match[1]));
+    for (const match of source.matchAll(LINE_MARKER)) keys.add(normalizeLineKey(match[1]));
+    return keys;
+}
+
+/** Saved output only declares a line format once it holds at least two tracker lines. */
+export function getOwnedCompanionTrackerLineKeys(agent, text = '') {
+    if (!companion(agent)) return new Set();
+    const keys = extractTrackerLineKeys(agent.prompt);
+    const output = String(text ?? '').replace(/\r\n?/g, '\n');
+    if (output.split('\n').filter(line => LINE_DECLARATION.test(line)).length >= 2) {
+        for (const key of extractTrackerLineKeys(output)) keys.add(key);
+    }
+    return keys;
+}
+
+/** Keys an inline (non-companion) Agent asks the main reply to write stay in the reply. */
+export function getActiveInlineTrackerLineKeys(agents = []) {
+    const keys = new Set();
+    for (const agent of agents) {
+        if (!agent || companion(agent)) continue;
+        for (const key of extractTrackerLineKeys(agent.prompt)) keys.add(key);
+    }
+    return keys;
+}
+
+/** The owned line formats that a fed or retained body actually shows the main model. */
+export function getVisibleCompanionTrackerLineKeys(agent, text, inlineKeys = new Set()) {
+    const owned = getOwnedCompanionTrackerLineKeys(agent, text), visible = new Set();
+    for (const key of extractTrackerLineKeys(text)) if (owned.has(key) && !inlineKeys.has(key)) visible.add(key);
+    return visible;
+}
+
+/** Every active companion owns the line formats its prompt declares, fed back or not. */
+export function getActiveCompanionTrackerLineKeys(agents = [], extraKeys = []) {
+    const inline = getActiveInlineTrackerLineKeys(agents), keys = new Set();
+    for (const agent of agents) for (const key of getOwnedCompanionTrackerLineKeys(agent)) keys.add(key);
+    for (const key of extraKeys) keys.add(normalizeLineKey(key));
+    for (const key of inline) keys.delete(key);
+    keys.delete('');
+    return keys;
+}
+
+export function stripTrackerLineEchoes(text, keys = []) {
+    const source = String(text ?? '').replace(/\r\n?/g, '\n');
+    const owned = new Set([...keys].map(normalizeLineKey).filter(Boolean));
+    if (!owned.size) return source;
+    let removed = false;
+    const kept = source.split('\n').filter(line => {
+        const match = LINE_ECHO.exec(line), key = match && normalizeLineKey(match[1]);
+        if (!key || !owned.has(key)) return true;
+        const marker = !line.includes('|');
+        if (marker && !isLineMarkerKey(key)) return true;
+        removed = true;
+        return false;
+    });
+    if (!removed) return source;
+    return kept.join('\n').replace(/^[ \t]*```[^\n`]*\n(?:[ \t]*\n)*[ \t]*```[ \t]*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function formatLineKeyExamples(lineKeys) {
+    return [...lineKeys].map(normalizeLineKey).filter(Boolean).map(key => isLineMarkerKey(key) ? key : `${key}|...`);
+}
+
+export function buildTrackerEchoGuard(shapes, lineKeys = []) {
+    const bracket = [...shapes].flatMap(([tag, shape]) => [shape === 'bare' ? `[${tag}]` : `[${tag}|...]`, `[/${tag}]`]);
+    const lines = formatLineKeyExamples(lineKeys);
+    const kind = bracket.length && lines.length ? 'bracket and line formats' : lines.length ? 'line formats' : 'bracket formats';
+    return `HARD STOP for your reply: the Companion-owned ${kind} listed here are read-only reference. `
         + 'A separate side-channel agent writes and re-attaches those formats automatically after your reply, so copying them creates duplicates the user has to delete by hand. '
         + 'Do NOT reproduce, paraphrase, update, restate, or wrap reply content in the listed formats. '
-        + 'Do not emit any of: ' + examples + '. '
-        + 'Opening one of these tags without its closing tag is still a violation. '
-        + 'This restriction applies only to the exact tags listed here; continue following any separate instructions that require other pre-generation inline tracker formats. '
+        + 'Do not emit any of: ' + [...bracket, ...lines].join(', ') + '. '
+        + (bracket.length ? 'Opening one of these tags without its closing tag is still a violation. ' : '')
+        + (lines.length ? 'Starting a line with one of these keywords is still a violation. ' : '')
+        + `This restriction applies only to the exact ${bracket.length ? 'tags' : 'formats'} listed here; continue following any separate instructions that require other pre-generation inline tracker formats. `
         + 'Never repeat an "[... - auxiliary notes]" label. '
         + 'Produce your normal story reply, including any other required inline tracker blocks.';
 }
@@ -64,8 +145,9 @@ function boundUnclosed(source, start) {
     return end;
 }
 
-export function stripSavedAuxiliaryTrackerEchoes(text, tags = [], agents = []) {
-    const source = String(text ?? '').replace(/\r\n?/g, '\n'), inline = getActiveInlineTrackerTags(agents), ranges = [];
+export function stripSavedAuxiliaryTrackerEchoes(text, tags = [], agents = [], lineKeys = []) {
+    const lines = stripTrackerLineEchoes(text, getActiveCompanionTrackerLineKeys(agents, lineKeys));
+    const source = lines.replace(/\r\n?/g, '\n'), inline = getActiveInlineTrackerTags(agents), ranges = [];
     for (const value of tags) {
         const tag = String(value ?? '').trim().toUpperCase();
         if (!tag || inline.has(tag)) continue;

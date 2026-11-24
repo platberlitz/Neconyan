@@ -5,6 +5,7 @@ import { buildNameColorLookup, collectFontColorsFromText, parseNamedColorAssignm
 import { cancelMessageDomFollowupRepairs, clearMessageDomRepairTimer, clearStreamingAttributionOverrides, decorateMessageDomFromCurrentRender, decorateObservedMessages, getMessageAttributionFreezeSegments, getMessageQuoteOverrideEntry, getMessageQuoteOverrideOptions, isMessageAttributionVerified, markMessageAttributionVerified, refreshAndDecorateMessageDom, scheduleMessageDomFollowupRepair, setMessageQuoteOverride, setStreamingAttributionOverride, suspendMessageDomWorkForEdit, upsertAttributionReview } from './dom-engine.js';
 import { normalizeRegistryIdentity, normalizeRegistryIdentityName } from './group-profiles.js';
 import { callLLMWithProfile, classifyLlmRequestError } from './llm.js';
+import { captureLoadedMessageBaseline, isUnchangedLoadedMessage } from './message-baseline.js';
 import { hasAttributionVerifierBallotQuorum, isSpeakerNamePresentInText, normalizeAttributionVerifyPasses, reduceAttributionVerifierBallots } from './verify-consensus.js';
 import { commit, repaintDomAfterCharacterDataChange } from './live-colors.js';
 import { filterPromptCharacterEntries, formatPromptLiteralSymbol, getThoughtDelimiterSymbols } from './prompts.js';
@@ -57,8 +58,6 @@ const RESERVED_VERIFIER_SPEAKER_NAMES = new Set([
 ]);
 const RESERVED_VERIFIER_SPEAKER_SYNTAX = /[\u0000-\u001f\u007f\[\]{}<>=,():;]/;
 const activeAttributionVerificationControllers = new Set();
-const loadedAttributionMessageTextsById = new Map();
-let loadedAttributionMessageTextByObject = new WeakMap();
 let blockedStreamingProviderGeneration = null;
 let streamingProviderFailureCount = 0;
 const MAX_STREAMING_PROVIDER_FAILURES = 2;
@@ -186,27 +185,12 @@ function isVerifierPrecedingContextCurrent(snapshot, chat, mesIndex) {
 }
 
 export function captureLoadedAttributionMessageBaseline(chat = getContext()?.chat) {
-    loadedAttributionMessageTextsById.clear();
-    loadedAttributionMessageTextByObject = new WeakMap();
-    if (!Array.isArray(chat)) return;
-    for (const msg of chat) {
-        if (!msg || typeof msg !== 'object') continue;
-        const text = String(msg.mes ?? '');
-        loadedAttributionMessageTextByObject.set(msg, text);
-        const messageId = getAutoAttributionMessageId(msg);
-        if (!messageId) continue;
-        const texts = loadedAttributionMessageTextsById.get(messageId) || new Set();
-        texts.add(text);
-        loadedAttributionMessageTextsById.set(messageId, texts);
-    }
+    captureLoadedMessageBaseline(chat);
 }
 
 function isLoadedAttributionMessage(msg) {
-    if (settings.autoScanOnLoad !== false || !msg || typeof msg !== 'object') return false;
-    const text = String(msg.mes ?? '');
-    if (loadedAttributionMessageTextByObject.get(msg) === text) return true;
-    const messageId = getAutoAttributionMessageId(msg);
-    return !!messageId && loadedAttributionMessageTextsById.get(messageId)?.has(text) === true;
+    if (settings.autoScanOnLoad !== false) return false;
+    return isUnchangedLoadedMessage(msg);
 }
 
 function captureVerifierSettings(options = {}) {

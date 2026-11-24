@@ -67,6 +67,7 @@ describe('in-chat agent post-processing runner', () => {
     let contextCharacterId;
     let contextGroups;
     let contextGroupId;
+    let contextUserAvatar;
     let getWorldInfoPrompt;
     let pathfinderRuntimeSettings;
     let replacePathfinderSettings;
@@ -182,6 +183,7 @@ describe('in-chat agent post-processing runner', () => {
         contextCharacterId = undefined;
         contextGroups = [];
         contextGroupId = null;
+        contextUserAvatar = '';
         getWorldInfoPrompt = jest.fn(async () => ({ worldInfoString: '' }));
         pathfinderRuntimeSettings = { pipelinePrompts: {}, pipelines: {} };
         replacePathfinderSettings = jest.fn(settings => {
@@ -317,6 +319,7 @@ describe('in-chat agent post-processing runner', () => {
                 characterId: contextCharacterId,
                 groups: contextGroups,
                 groupId: contextGroupId,
+                userAvatar: contextUserAvatar,
                 name2: 'Mira',
                 extensionPrompts,
                 getCharacterCardFields: jest.fn(({ chid = contextCharacterId } = {}) => {
@@ -3192,6 +3195,61 @@ describe('in-chat agent post-processing runner', () => {
         expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('A door opens.');
     });
 
+    test('a newer kept Plot Compass note takes precedence over an older opening pick', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { includeInChatHistory: true, feedback: { enabled: true, depth: 1 } } });
+        enabledAgents = [agent];
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const content = '**Possible developments:**\n1. A storm arrives.\n2. The host confesses.\n**Next move:** 2. The host confesses.';
+        chatMetadata.inChatAgentPlotCompassOpeningNotes = { plot: { status: 'done', content,
+            plotCompassChoice: { number: 2, text: 'The host confesses.' } } };
+        const host = { mes: 'A reply.', name: 'Mira', is_user: false, extra: {} };
+        chat.push(host);
+        runner.setCompanionResult(host, agent, { status: 'done', content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } });
+
+        runner.injectCompanionFeedbackPrompts([agent]);
+        let injected = extensionPrompts.inchat_agent_companion_plot.value;
+        expect(injected).toContain('[User\'s chosen direction at the time]\n2. The host confesses.');
+        expect(injected).toContain('[User\'s chosen direction]\n1. A storm arrives.\nThe user picked this direction for the next response.');
+        expect(injected).not.toContain('2. The host confesses.\nThe user picked this direction for the next response.');
+
+        runner.updateCompanionResult(host, agent.id, { plotCompassChoice: undefined });
+        runner.injectCompanionFeedbackPrompts([agent]);
+        injected = extensionPrompts.inchat_agent_companion_plot.value;
+        expect(injected).not.toContain('The user picked this direction for the next response.');
+    });
+
+    test('a Plot Compass pick is sent with feedback disabled, respecting visible notes and the rewrite boundary', async () => {
+        const agent = createCompanionAgent({ id: 'plot', sourceTemplateId: 'tpl-plot-compass-companion',
+            companion: { includeInChatHistory: true, feedback: { enabled: false, depth: 1 } } });
+        enabledAgents = [agent];
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
+        const content = '**Possible developments:**\n1. A storm arrives.\n2. The host confesses.\n**Next move:** 2. The host confesses.';
+        const visible = { mes: 'Visible.', name: 'Mira', is_user: false, extra: { group_scene: { present: ['mira.png'], whisper_to: [] } } };
+        const hidden = { mes: 'Private.', name: 'Kit', is_user: false, extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } };
+        chat.push(visible, hidden);
+        runner.setCompanionResult(visible, agent, { status: 'done', content, plotCompassChoice: { number: 1, text: 'A storm arrives.' } });
+        runner.setCompanionResult(hidden, agent, { status: 'done', content, plotCompassChoice: { number: 2, text: 'The host confesses.' } });
+
+        const restore = beginGroupPromptScope(['mira.png'], chat);
+        try {
+            runner.injectCompanionFeedbackPrompts([agent]);
+            expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
+            expect(extensionPrompts.inchat_agent_companion_plot.value).not.toContain('The host confesses.');
+        } finally {
+            restore();
+        }
+        runner.deleteCompanionResult(hidden, agent.id);
+        const tail = { mes: 'Rewrite me.', name: 'Mira', is_user: false, extra: {} };
+        chat.push(tail);
+        runner.setCompanionResult(tail, agent, { status: 'done', content, plotCompassChoice: { number: 2, text: 'The host confesses.' } });
+        runner.injectCompanionFeedbackPrompts([agent], { excludeMessage: tail });
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n1. A storm arrives.');
+        runner.injectCompanionFeedbackPrompts([agent]);
+        expect(extensionPrompts.inchat_agent_companion_plot.value).toContain('[User\'s chosen direction]\n2. The host confesses.');
+    });
+
     test('includes the system prompt and authors note sections when toggled on', async () => {
         const contextCompanion = createCompanionAgent({
             id: 'context-companion',
@@ -3215,6 +3273,158 @@ describe('in-chat agent post-processing runner', () => {
         const plainMessages = await companionRunner.buildCompanionPromptMessages(plainCompanion, 1);
         expect(plainMessages[1].content).not.toContain('[System Prompt]');
         expect(plainMessages[1].content).not.toContain('[Author\'s Note]');
+    });
+
+    test('composes character, persona and chat Author\'s Notes for single and batched companions', async () => {
+        const companionA = createCompanionAgent({
+            id: 'note-companion-a',
+            name: 'Note Companion A',
+            prompt: 'Check note: {{active-authors-note}}',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false, batch: true, batchAgentIds: ['note-companion-b'] },
+        });
+        const companionB = createCompanionAgent({
+            id: 'note-companion-b',
+            name: 'Note Companion B',
+            prompt: 'Track scene details.',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false },
+        });
+        enabledAgents = [companionA, companionB];
+        globalSettings.companionExecutionMode = 'sequential';
+        generateQuietPrompt.mockResolvedValueOnce([
+            '<<<companion:note-companion-a>>>A ok<<<end:note-companion-a>>>',
+            '<<<companion:note-companion-b>>>B ok<<<end:note-companion-b>>>',
+        ].join('\n'));
+        contextCharacters = [{ name: 'Mira', avatar: 'Mira.png' }];
+        contextCharacterId = 0;
+        contextUserAvatar = 'sam.png';
+        chatMetadata.note_prompt = 'Chat rain note for {{char}}.';
+        extensionSettings.note = {
+            default: 'Fallback default note.',
+            chara: [{
+                name: 'individual:Mira',
+                useChara: true,
+                perPersona: true,
+                profiles: [{ id: 'shared', name: 'Shared', prompt: 'Shared note.', position: 1 }],
+                activeProfiles: ['shared'],
+                personaNoteLibraries: {
+                    'sam.png': {
+                        profiles: [
+                            { id: 'before', name: 'Before', prompt: 'Character before note.', position: 1 },
+                            { id: 'after', name: 'After', prompt: 'Character after note.', position: 2 },
+                        ],
+                        activeProfile: 'before',
+                        activeProfiles: ['before', 'after'],
+                    },
+                },
+            }],
+            persona: {
+                'sam.png': {
+                    useNote: true,
+                    prompt: 'Persona note for {{user}}.',
+                    position: 1,
+                },
+            },
+        };
+
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push(
+            { mes: 'Hello there.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Assistant reply', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+
+        const expectedSectionNote = [
+            'Character before note.',
+            'Persona note for Traveler.',
+            'Chat rain note for Assistant.',
+            'Character after note.',
+        ].join('\n');
+        const expectedMacroNote = [
+            'Character before note.',
+            'Persona note for {{user}}.',
+            'Chat rain note for Mira.',
+            'Character after note.',
+        ].join('\n');
+
+        const singleMessages = await companionRunner.buildCompanionPromptMessages(companionA, 1);
+        expect(singleMessages[1].content).toContain(`[Author's Note]\n${expectedSectionNote}`);
+
+        await companionRunner.runCompanionStage({
+            messageIndex: 1,
+            message: chat[1],
+            activeAgents: [companionA, companionB],
+        });
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain(`[Author's Note]\n${expectedSectionNote}`);
+
+        const dynamicMacros = buildPromptDynamicMacros(chat[1].mes, chat[1], companionA, 'normal');
+        expect(dynamicMacros['active-authors-note']).toBe(expectedMacroNote);
+    });
+
+    test('respects cleared chat notes, replace position, insertion frequency and group notes in companions', async () => {
+        const companion = createCompanionAgent({
+            id: 'note-edge-companion',
+            companion: { includeAuthorsNote: true, includeCharacterCard: false },
+        });
+        enabledAgents = [companion];
+        contextCharacters = [{ name: 'Mira', avatar: 'Mira.png' }];
+        contextCharacterId = 0;
+        contextUserAvatar = 'sam.png';
+        extensionSettings.note = {
+            default: 'Should not reappear when cleared.',
+            chara: [{
+                name: 'individual:Mira',
+                useChara: true,
+                prompt: 'Character replaces chat.',
+                position: 0,
+            }],
+            persona: {
+                'sam.png': { useNote: true, prompt: 'Persona note stays.', position: 2 },
+            },
+        };
+        chatMetadata.note_prompt = 'Chat note to replace.';
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push(
+            { mes: 'First user turn.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'First reply.', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+
+        const replaced = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(replaced[1].content).toContain('[Author\'s Note]\nCharacter replaces chat.\nPersona note stays.');
+        expect(replaced[1].content).not.toContain('Chat note to replace.');
+
+        // Insertion frequency 0 turns Author's Notes off completely.
+        chatMetadata.note_interval = 0;
+        const disabled = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(disabled[1].content).not.toContain('[Author\'s Note]');
+
+        // Insertion frequency 2 skips odd user turns and fires on turn 2.
+        chatMetadata.note_interval = 2;
+        const skippedTurn = await companionRunner.buildCompanionPromptMessages(companion, 1);
+        expect(skippedTurn[1].content).not.toContain('[Author\'s Note]');
+        chat.push(
+            { mes: 'Second user turn.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'Second reply.', name: 'Mira', is_user: false, is_system: false, extra: {} },
+        );
+        const activeTurn = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(activeTurn[1].content).toContain('[Author\'s Note]\nCharacter replaces chat.\nPersona note stays.');
+
+        // Clearing the chat note does not fall back to extension_settings.note.default.
+        chatMetadata.note_interval = 1;
+        chatMetadata.note_prompt = '';
+        extensionSettings.note.chara[0].useChara = false;
+        extensionSettings.note.persona['sam.png'].useNote = false;
+        const cleared = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(cleared[1].content).not.toContain('[Author\'s Note]');
+        expect(cleared[1].content).not.toContain('Should not reappear when cleared.');
+
+        // Group chats read chat_metadata.note_chara and persona Author's Notes.
+        contextGroupId = 'grp-notes';
+        contextGroups = [{ id: 'grp-notes', members: ['Mira.png'] }];
+        chatMetadata.note_chara = { name: 'group:grp-notes', useChara: true, prompt: 'Group note rule.', position: 1 };
+        extensionSettings.note.persona['sam.png'].useNote = true;
+        const groupMessages = await companionRunner.buildCompanionPromptMessages(companion, 3);
+        expect(groupMessages[1].content).toContain('[Author\'s Note]\nGroup note rule.\nPersona note stays.');
     });
 
     test('excludes the rewritten tail message from feedback on swipes', async () => {
@@ -3837,6 +4047,58 @@ describe('in-chat agent post-processing runner', () => {
 
         expect(generatedReply.mes).toBe('Narrative reply.');
         expect(saveChatDebounced).toHaveBeenCalled();
+    });
+
+    test('removes echoed line-format Companion trackers that are never fed back', async () => {
+        const clothing = createCompanionAgent({
+            id: 'clothing-tracker',
+            prompt: 'Write the outfits as plain lines:\nclothing-start\noutfit|{{user}}|items\nclothing-end',
+        });
+        const custom = createCompanionAgent({
+            id: 'mood-tracker',
+            prompt: 'Track moods.\nmood|name|feeling',
+        });
+        enabledAgents = [clothing, custom];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const { initAgentRunner, registerCompanionRuntime } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        registerCompanionRuntime({ stripAuxiliaryTrackerEchoes: companionRunner.stripAuxiliaryTrackerEchoes });
+        initAgentRunner();
+        const generatedReply = {
+            mes: 'Narrative reply.\n\nclothing-start\noutfit|Kris|Linen shirt\noutfit|Kaveh|Apron\nclothing-end\nmood|Kris|Flustered',
+            name: 'Assistant',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        };
+        chat.push({ mes: 'Hello', name: 'User', is_user: true, is_system: false, extra: {} }, generatedReply);
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+
+        expect(generatedReply.mes).toBe('Narrative reply.');
+    });
+
+    test('guards fed line-format Companion output in the main prompt', async () => {
+        const vitals = createCompanionAgent({
+            id: 'vitals-companion',
+            prompt: 'Report vitals:\nvitals|{{user}}|summary\nbar|Name|value|change|reason\nvitals-end',
+            companion: { feedback: { enabled: true, depth: 2 } },
+        });
+        enabledAgents = [vitals];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const reply = { mes: 'Reply', name: 'Assistant', is_user: false, is_system: false, extra: {} };
+        chat.push(reply, { mes: 'Continue.', name: 'User', is_user: true, is_system: false, extra: {} });
+        companionRunner.setCompanionResult(reply, vitals, {
+            status: 'done',
+            content: 'vitals|Kris|Tired\nbar|Health|90|-5|scraped knee\nvitals-end',
+        });
+
+        companionRunner.injectCompanionFeedbackPrompts([vitals]);
+        const prompt = extensionPrompts['inchat_agent_companion_vitals-companion'].value;
+
+        expect(prompt).toContain('HARD STOP for your reply: the Companion-owned line formats listed here are read-only reference.');
+        expect(prompt).toContain('Do not emit any of: vitals|..., bar|..., vitals-end. Starting a line with one of these keywords is still a violation.');
+        expect(prompt).toContain('bar|Health|90|-5|scraped knee');
+        expect(companionRunner.stripAuxiliaryTrackerEchoes('Story.\nvitals|Kris|Fine\nbar|Health|90|0|steady\nvitals-end')).toBe('Story.');
     });
 
     test('preserves active inline tracker output for post-processing', async () => {
@@ -10963,6 +11225,41 @@ describe('in-chat agent post-processing runner', () => {
         buildPromptDynamicMacros('Reply', null, { phase: 'pre', prompt });
         expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBe(true);
         setPreparedMewmoryContext(null, null);
+    });
+
+    test('an Agent reads memories recalled for one speaker only when it writes for that speaker', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { getPreparedMewmoryContext, setPreparedMewmoryContext } = await import('../public/scripts/extensions/in-chat-agents/agent-context-macros.js');
+        const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
+        const scene = present => ({ group_scene: { present, whisper_to: [] } });
+        const miraReply = { name: 'Mira', original_avatar: 'mira.png', mes: 'Mira answers', extra: scene(['kit.png', 'mira.png']) };
+        const kitReply = { name: 'Kit', original_avatar: 'kit.png', mes: 'Kit answers', extra: scene(['kit.png', 'mira.png']) };
+        const saved = chat.splice(0, chat.length, { mes: 'Public' }, { mes: 'Kit only', extra: scene(['kit.png']) }, miraReply, kitReply);
+        const agent = { phase: 'pre', prompt: '{{mewmory-facts}}' };
+        const facts = message => buildPromptDynamicMacros('Reply', message, agent)['mewmory-facts'];
+        try {
+            setPreparedMewmoryContext('chat-a', { enabled: true, factsText: 'Mira facts', viewers: ['mira.png'] });
+            expect(facts(kitReply)).toBe('');
+            expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBeUndefined();
+            expect(facts(miraReply)).toBe('Mira facts');
+            expect(getPreparedMewmoryContext('chat-a').mewmoryMacrosUsed).toBe(true);
+            const restore = beginGroupPromptScope(['mira.png'], chat);
+            try {
+                expect(facts(null)).toBe('Mira facts');
+            } finally {
+                restore();
+            }
+
+            setPreparedMewmoryContext('chat-a', { enabled: true, factsText: 'Chat facts' });
+            expect(facts(kitReply)).toBe('Chat facts');
+            expect(facts(miraReply)).toBe('');
+            chatMetadata.group_scene = { sees_all: ['mira.png'] };
+            expect(facts(miraReply)).toBe('Chat facts');
+        } finally {
+            delete chatMetadata.group_scene;
+            chat.splice(0, chat.length, ...saved);
+            setPreparedMewmoryContext(null, null);
+        }
     });
 
     test('fills the active lore, Author\'s Note and tracker macros for agent prompts', async () => {

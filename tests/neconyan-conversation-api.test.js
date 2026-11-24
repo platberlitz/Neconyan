@@ -1132,6 +1132,394 @@ describe('Neconyan Conversation REST API', () => {
         expect(fs.readdirSync(userDirectories.groups)).toEqual([]);
     });
 
+    // Deleting a DM edits the server's latest copy, so the settings version moves under the caller.
+    function rewriteConversationStore(mutate) {
+        const settings = readSettings();
+        mutate(settings.extension_settings[CONVERSATION_STORE_KEY], settings);
+        settings._version = (settings._version || 0) + 1;
+        fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings, null, 4));
+        return settings._version;
+    }
+
+    async function saveSoloThread(avatar, text = 'Hello') {
+        const saved = await postJson('/thread/save', { avatar, version: readSettings()._version, messages: [{ role: 'user', mes: text, name: 'User' }] });
+        expect(saved.status).toBe(200);
+    }
+
+    test('thread/delete removes a solo DM from the latest store without a client version', async () => {
+        const storeSyncUtils = await import('../public/scripts/neconyan-conversation/store-sync-utils.js');
+        const { collectSoloConversationMemorySummary } = await import('../public/scripts/neconyan-conversation/memory-utils.js');
+        const { normalizeConversationSettings } = await import('../src/endpoints/conversation-generation.js');
+        const { scopeConversationStorageKey } = await import('../src/endpoints/conversation-utils.js');
+        const schedule = { generatedAt: 5, days: Array.from({ length: 7 }, () => [{ time: '00:00-23:59', status: 'busy', activity: 'baking bread' }]) };
+        const reminder = (id, extra) => ({ id, avatar: 'nova.png', groupId: '', personaId: '', branchId: 'main', triggerAt: Date.now() + 3600000, text: id, fired: false, createdAt: 1, ...extra });
+
+        // A without a schedule: the key goes, whatever the version moved to meanwhile.
+        await saveSoloThread('nova.png');
+        await saveSoloThread('echo.png');
+        const moved = rewriteConversationStore(store => {
+            store.reminders = [
+                reminder('r-solo'), reminder('r-persona', { personaId: 'riley.png' }), reminder('r-group', { groupId: 'g-other' }),
+                reminder('r-other-avatar', { avatar: 'echo.png' }),
+            ];
+        });
+        const first = await postJson('/thread/delete', { avatar: 'nova.png' });
+        expect(first.status).toBe(200);
+        const firstBody = await first.json();
+        expect(firstBody.changed).toBe(true);
+        expect(firstBody.scope.removeKeys).toContain('nova.png');
+        expect(firstBody.scope.reminderIds).toEqual(['r-solo']);
+        expect(firstBody.store.characters['nova.png']).toBeUndefined();
+        expect(firstBody.store.characters['echo.png']).toBeDefined();
+        expect(firstBody.version).toBe(moved + 1);
+        expect(readConversationStore().characters['nova.png']).toBeUndefined();
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-persona', 'r-group', 'r-other-avatar']);
+        const repeat = await postJson('/thread/delete', { avatar: 'nova.png' });
+        expect(repeat.status).toBe(200);
+        const repeatBody = await repeat.json();
+        expect(repeatBody.changed).toBe(false);
+        expect(repeatBody.version).toBe(firstBody.version);
+        expect(readSettings()._version).toBe(firstBody.version);
+
+        // The same reminder survives under another persona, and the server's own scope lists a key it never had.
+        const other = await postJson('/thread/delete', { avatar: 'ghost.png', personaId: 'morgan.png' });
+        const otherBody = await other.json();
+        expect(otherBody.scope.removeKeys).toContain(scopeConversationStorageKey('ghost.png', 'morgan.png'));
+        expect(otherBody.changed).toBe(false);
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-persona', 'r-group', 'r-other-avatar']);
+        const persona = await postJson('/thread/delete', { avatar: 'nova.png', personaId: 'riley.png' });
+        expect((await persona.json()).scope.reminderIds).toEqual(['r-persona']);
+        expect(readConversationStore().reminders.map(item => item.id)).toEqual(['r-group', 'r-other-avatar']);
+
+        // An unscoped legacy key assigned to the persona goes with its assignment; an unassigned one stays.
+        const riley = scopeConversationStorageKey('ava.png', 'riley.png');
+        await saveSoloThread('ava.png');
+        rewriteConversationStore(store => {
+            store.characters[riley] = JSON.parse(JSON.stringify(store.characters['ava.png']));
+            store.legacyThreadPersonaAssignments = { 'ava.png': 'riley.png', 'echo.png': 'morgan.png' };
+        });
+        const legacy = await postJson('/thread/delete', { avatar: 'ava.png', personaId: 'riley.png' });
+        const legacyBody = await legacy.json();
+        expect(legacyBody.scope.removeKeys).toEqual(expect.arrayContaining([riley, 'ava.png']));
+        expect(readConversationStore().characters[riley]).toBeUndefined();
+        expect(readConversationStore().characters['ava.png']).toBeUndefined();
+        expect(readConversationStore().legacyThreadPersonaAssignments).toEqual({ 'echo.png': 'morgan.png' });
+        expect(readConversationStore().characters['echo.png']).toBeDefined();
+
+        // A with a schedule, settings, memory and messages: only the schedule survives, as a record nothing can answer from.
+        await saveSoloThread('zed.png', 'Remember me');
+        rewriteConversationStore(store => {
+            const record = store.characters['zed.png'];
+            record.schedule = schedule;
+            record.settings = { enabled: true, auto_message: true, cooldown: 0 };
+            record.memorySummary = 'Thread memory.';
+            record.memoryMessageCount = 1;
+            record.memoryUpdatedAt = 7;
+            record.memorySummaryThrough = record.branches.main.messages[0].id;
+            record.branches.main.memorySummary = 'Branch memory.';
+        });
+        expect(collectSoloConversationMemorySummary(readConversationStore().characters, 'zed.png')).toBeTruthy();
+        const kept = await postJson('/thread/delete', { avatar: 'zed.png' });
+        expect(kept.status).toBe(200);
+        const keptBody = await kept.json();
+        expect(keptBody.changed).toBe(true);
+        expect(Object.keys(keptBody.scope.replaceKeys)).toEqual(['zed.png']);
+        const record = readConversationStore().characters['zed.png'];
+        expect(storeSyncUtils.isScheduleOnlyConversationRecord(record)).toBe(true);
+        for (const field of ['memorySummary', 'memoryMessageCount', 'memoryUpdatedAt', 'memorySummaryThrough']) expect(record[field]).toBeUndefined();
+        expect(record.branches.main.memorySummary || '').toBe('');
+        expect(record.branches.main.messages).toEqual([]);
+        expect(collectSoloConversationMemorySummary(readConversationStore().characters, 'zed.png')).toBeNull();
+        expect(record.schedule).toEqual(schedule);
+        expect(normalizeConversationSettings(record.settings).enabled).toBe(false);
+        expect(keptBody.scope.replaceKeys['zed.png']).toEqual(record);
+        const keptRepeat = await (await postJson('/thread/delete', { avatar: 'zed.png' })).json();
+        expect(keptRepeat.changed).toBe(false);
+        expect(keptRepeat.version).toBe(keptBody.version);
+    });
+
+    test('thread/delete refuses a group target and group/delete refuses a missing group', async () => {
+        expect((await postJson('/thread/delete', { avatar: 'nova.png', groupId: 'some-group' })).status).toBe(400);
+        expect((await postJson('/group/delete', {})).status).toBe(400);
+    });
+
+    test('group/delete removes the record and every member thread for that group only', async () => {
+        const created = [];
+        for (const [name, members] of [['Nova and Echo', ['nova.png', 'echo.png']], ['Echo and Riley', ['echo.png', 'riley.png']]]) {
+            const response = await postJson('/group/create', { name, members, version: readSettings()._version });
+            expect(response.status).toBe(200);
+            created.push((await response.json()).group);
+        }
+        const [doomed, kept] = created;
+        for (const [group, avatar] of [[doomed, 'nova.png'], [doomed, 'echo.png'], [kept, 'echo.png']]) {
+            const appended = await postJson('/message/append', { avatar, groupId: group.id, text: `in ${group.name}`, version: readSettings()._version });
+            expect(appended.status).toBe(200);
+        }
+        await saveSoloThread('echo.png');
+        const doomedPrefix = `group:${doomed.id}:`;
+        rewriteConversationStore(store => {
+            const base = { avatar: 'nova.png', personaId: '', branchId: 'main', triggerAt: Date.now() + 3600000, fired: false, createdAt: 1 };
+            store.reminders = [{ ...base, id: 'r-doomed', groupId: doomed.id, text: 'a' }, { ...base, id: 'r-kept', groupId: kept.id, text: 'b' }, { ...base, id: 'r-solo', groupId: '', text: 'c' }];
+        });
+        // Members of a group share one canonical thread key per group, whichever member the message went to.
+        const doomedKeys = Object.keys(readConversationStore().characters).filter(key => key.startsWith(doomedPrefix)).sort();
+        const keptKeys = Object.keys(readConversationStore().characters).filter(key => key.startsWith(`group:${kept.id}:`)).sort();
+        expect(doomedKeys.length).toBeGreaterThan(0);
+        expect(keptKeys.length).toBeGreaterThan(0);
+
+        const response = await postJson('/group/delete', { groupId: doomed.id });
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.changed).toBe(true);
+        expect(body.scope.keyPrefix).toBe(doomedPrefix);
+        expect(body.scope.groupId).toBe(doomed.id);
+        expect(body.scope.removeKeys.sort()).toEqual(doomedKeys);
+        expect(body.scope.reminderIds).toEqual(['r-doomed']);
+        const store = readConversationStore();
+        expect(store.groups.map(group => group.id)).toEqual([kept.id]);
+        expect(Object.keys(store.characters).filter(key => key.includes(doomed.id))).toEqual([]);
+        expect(Object.keys(store.characters).sort()).toEqual(['echo.png', ...keptKeys].sort());
+        expect(store.reminders.map(item => item.id)).toEqual(['r-kept', 'r-solo']);
+        expect((await (await postJson('/group/list', {})).json()).groups.map(group => group.id)).toEqual([kept.id]);
+        const repeat = await (await postJson('/group/delete', { groupId: doomed.id })).json();
+        expect(repeat.changed).toBe(false);
+        expect(repeat.version).toBe(body.version);
+    });
+
+    describe('group/members', () => {
+        const PERSONA = 'me.png';
+        const NAV = '3f2b8c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e';
+        let clock = 1000;
+
+        function writeCards(...avatars) {
+            for (const avatar of avatars) fs.writeFileSync(path.join(userDirectories.characters, avatar), 'card');
+        }
+
+        const keyOf = async (groupId, avatar, persona = PERSONA) => {
+            const { scopeConversationStorageKey } = await import('../src/endpoints/conversation-utils.js');
+            return scopeConversationStorageKey(`group:${groupId}:${avatar}`, persona);
+        };
+
+        const message = (id, role, extra = {}, name = 'Someone') => ({ id, role, name: role === 'user' ? 'User' : name, mes: `text ${id}`, created_at: ++clock, extra });
+
+        const branchOf = (messages, extra = {}) => ({ id: 'main', name: 'Main', createdAt: 1000, updatedAt: 1000, lastActivity: 1000, lifetimeSeed: 'seed', messages, ...extra });
+        const threadOf = (avatar, groupId, messages, extra = {}) => ({ threadAvatar: avatar, groupId, settings: {}, activeBranchId: 'main', branches: { main: branchOf(messages, extra) } });
+
+        /** Write the whole Conversation store as a second writer would, moving the settings version. */
+        function seedStore({ groups = [], characters = {}, reminders = [], navigationTargets = {}, automation } = {}) {
+            const settings = readSettings();
+            settings.extension_settings[CONVERSATION_STORE_KEY] = {
+                version: 1,
+                settings: {},
+                groups: groups.map(group => ({
+                    personaId: PERSONA, createdAt: 5, updatedAt: 5, disabled_members: [], conversation_settings: {}, ...group,
+                })),
+                reminders,
+                characters,
+                navigationTargets,
+                ...(automation ? { automation } : {}),
+            };
+            settings._version = (settings._version || 0) + 1;
+            fs.writeFileSync(path.join(userDirectories.root, SETTINGS_FILE), JSON.stringify(settings, null, 4));
+            return settings._version;
+        }
+
+        const edit = (body) => postJson('/group/members', { personaId: PERSONA, ...body });
+        const keysOf = (groupId) => Object.keys(readConversationStore().characters).filter(key => key.includes(`group:${groupId}:`));
+        const groupOf = (groupId) => readConversationStore().groups.find(group => group.id === groupId);
+
+        test('adds and removes in one write and keeps the group', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const N0 = 'Group: Nova, Kit, Zed';
+            const m1 = message('m1', 'user');
+            const m2 = message('m2', 'character', {}, 'Nova');
+            seedStore({
+                groups: [{ id: 'G', personaId: '', name: N0, members: ['A.png', 'B.png', 'C.png'] }],
+                characters: { 'group:G:A.png': threadOf('A.png', 'G', [m1, m2]) },
+            });
+            const before = readSettings()._version;
+            const response = await postJson('/group/members', {
+                groupId: 'G', add: ['D.png'], remove: ['B.png'], rename: { from: N0, to: 'Group: Nova, Zed, Dot' },
+            });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(body.changed).toBe(true);
+            expect(readSettings()._version).toBe(before + 1);
+            expect(body.version).toBe(before + 1);
+            expect(groupOf('G').members).toEqual(['A.png', 'C.png', 'D.png']);
+            expect(groupOf('G').name).toBe('Group: Nova, Zed, Dot');
+            const messages = readConversationStore().characters['group:G:A.png'].branches.main.messages;
+            expect(messages.map(item => [item.id, item.role])).toEqual([['m1', 'user'], ['m2', 'character']]);
+            expect(keysOf('G')).toEqual(['group:G:A.png']);
+            expect(body.anchor.avatar).toBe('A.png');
+            expect(body.scope.keyPrefix).toBe('');
+            expect(body.scope.removeKeys).toEqual([]);
+            expect(body.group.members).toEqual(['A.png', 'C.png', 'D.png']);
+            const repeat = await (await postJson('/group/members', { groupId: 'G', add: ['D.png'], remove: ['B.png'] })).json();
+            expect(repeat.changed).toBe(false);
+            expect(readSettings()._version).toBe(before + 1);
+        });
+
+        test('a rename from a name that is no longer stored changes the members and keeps the name', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            seedStore({ groups: [{ id: 'G', name: 'Book club', members: ['A.png', 'B.png', 'C.png'] }] });
+            const response = await edit({
+                groupId: 'G', add: ['D.png'], remove: [], rename: { from: 'Group: Nova, Kit, Zed', to: 'Group: Nova, Kit, Zed +1' },
+            });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            expect((await response.json()).changed).toBe(true);
+            expect(groupOf('G').members).toEqual(['A.png', 'B.png', 'C.png', 'D.png']);
+            expect(groupOf('G').name).toBe('Book club');
+        });
+
+        test('removing the holder moves the thread, keeps its records and keeps it theirs', async () => {
+            writeCards('A.png', 'B.png', 'C.png');
+            const messages = [
+                message('m1', 'character', {}, 'Nova'),
+                message('m2', 'partner', { partner_avatar: 'B.png' }, 'Kit'),
+                message('m3', 'character', { partner_avatar: 'C.png' }, 'Zed'),
+                message('m4', 'system', { partner_avatar: 'C.png' }, 'Zed'),
+            ];
+            const oldKey = await keyOf('G', 'A.png');
+            const newKey = await keyOf('G', 'B.png');
+            const prefix = await keyOf('G', '');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: {
+                    [oldKey]: threadOf('A.png', 'G', messages, {
+                        navigationId: NAV,
+                        serverOperations: { job: { at: 1, messageCount: 4, messagesHash: 'x', effects: {} } },
+                        readThrough: 'm1',
+                        pendingPresentations: { m2: { at: 1, job: 'j', narration: null } },
+                    }),
+                },
+                navigationTargets: { [NAV]: { threadKey: oldKey, branchId: 'main' } },
+                reminders: [{ id: 'r1', avatar: 'A.png', groupId: 'G', personaId: PERSONA, branchId: 'main', triggerAt: Date.now() + 3600000, text: 'r', fired: false, createdAt: 1 }],
+            });
+            const response = await edit({ groupId: 'G', add: [], remove: ['A.png'] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(body.changed).toBe(true);
+            const store = readConversationStore();
+            expect(store.characters[oldKey]).toBeUndefined();
+            const branch = store.characters[newKey].branches.main;
+            expect(branch.messages.map(item => item.id)).toEqual(['m1', 'm2', 'm3', 'm4']);
+            expect(branch.messages[0]).toMatchObject({ role: 'partner', extra: { partner_avatar: 'A.png' } });
+            expect(branch.messages[1].role).toBe('character');
+            expect(branch.messages[1].extra.partner_avatar).toBeUndefined();
+            expect(branch.messages[2]).toMatchObject({ role: 'character', extra: { partner_avatar: 'C.png' } });
+            expect(branch.messages[3]).toMatchObject({ role: 'system', extra: { partner_avatar: 'C.png' } });
+            expect(branch.navigationId).toBe(NAV);
+            expect(store.navigationTargets[NAV].threadKey).toBe(newKey);
+            expect(branch.serverOperations).toBeTruthy();
+            expect(branch.pendingPresentations).toBeTruthy();
+            expect(branch.readThrough).toBe('m1');
+            expect(store.reminders[0].avatar).toBe('B.png');
+            expect(body.anchor).toEqual({ avatar: 'B.png', threadKey: newKey });
+            expect(body.scope.keyPrefix).toBe(prefix);
+            expect(body.scope.removeKeys).toEqual([oldKey]);
+            expect(Object.keys(store.characters).filter(key => key.startsWith(prefix))).toEqual([newKey]);
+        });
+
+        test('a stray member thread merges into the holder', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const aKey = await keyOf('G', 'A.png');
+            const bKey = await keyOf('G', 'B.png');
+            const prefix = await keyOf('G', '');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: {
+                    [aKey]: threadOf('A.png', 'G', [message('a1', 'user'), message('a2', 'character', {}, 'Nova')], { updatedAt: 5000, lastActivity: 5000 }),
+                    [bKey]: threadOf('B.png', 'G', [message('s1', 'character', {}, 'Kit')], { updatedAt: 2000, lastActivity: 2000 }),
+                },
+            });
+            const response = await edit({ groupId: 'G', add: ['D.png'], remove: [] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            const store = readConversationStore();
+            expect(Object.keys(store.characters).filter(key => key.startsWith(prefix))).toEqual([aKey]);
+            const messages = store.characters[aKey].branches.main.messages;
+            expect(messages.map(item => item.id).sort()).toEqual(['a1', 'a2', 's1']);
+            expect(messages.find(item => item.id === 's1')).toMatchObject({ role: 'partner', extra: { partner_avatar: 'B.png' } });
+            expect(body.scope.removeKeys).toEqual([bKey]);
+            expect(body.scope.keyPrefix).toBe(prefix);
+            expect(body.anchor.avatar).toBe('A.png');
+        });
+
+        test('refuses what would break the group', async () => {
+            writeCards('A.png', 'B.png', 'C.png');
+            const base = { id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] };
+            const seedBase = (extra = {}) => seedStore({ groups: [{ ...base, ...extra }] });
+            seedBase();
+            fs.writeFileSync(path.join(userDirectories.groups, 'rp.json'), JSON.stringify({ id: 'rp', members: ['A.png', 'B.png'], chats: [] }));
+            const extra = Array.from({ length: 126 }, (_, index) => `X${index}.png`);
+            writeCards(...extra);
+            const refusals = [
+                [{ groupId: 'G', add: [], remove: ['A.png', 'B.png'] }, 400, 'members_required'],
+                [{ groupId: 'G', add: ['Z.png'], remove: [] }, 400, 'member_not_found'],
+                [{ groupId: 'nope', add: [], remove: ['A.png'] }, 404, 'group_not_found'],
+                [{ groupId: 'rp', add: [], remove: ['A.png'] }, 404, 'group_not_found'],
+                [{ groupId: 'G', add: extra, remove: [] }, 400, 'too_many_members'],
+                [{ groupId: 'G', add: ['../x.png'], remove: [] }, 400, 'invalid_members'],
+                [{ groupId: 'G', add: ['A.png'], remove: ['A.png'] }, 400, 'invalid_members'],
+                [{ groupId: 'G', add: [], remove: [], rename: { from: 'x', to: '' } }, 400, 'invalid_group_name'],
+                [{ add: [], remove: ['C.png'] }, 400, 'group_required'],
+            ];
+            const versionBefore = readSettings()._version;
+            const storeBefore = structuredClone(readConversationStore());
+            for (const [body, status, error] of refusals) {
+                const response = await edit(body);
+                expect({ body: body.groupId, status: response.status, error: (await response.json()).error }).toEqual({ body: body.groupId, status, error });
+                expect(readSettings()._version).toBe(versionBefore);
+                expect(readConversationStore()).toEqual(storeBefore);
+            }
+            // Every remaining member muted: nobody can hold the thread.
+            seedBase({ disabled_members: ['A.png', 'B.png'] });
+            const muted = structuredClone(readConversationStore());
+            const mutedVersion = readSettings()._version;
+            const noHolder = await edit({ groupId: 'G', add: [], remove: ['C.png'] });
+            expect(noHolder.status).toBe(400);
+            expect((await noHolder.json()).error).toBe('no_available_members');
+            expect(readSettings()._version).toBe(mutedVersion);
+            expect(readConversationStore()).toEqual(muted);
+            // A request that changes nothing never fails on the holder.
+            seedBase({ disabled_members: ['A.png', 'B.png', 'C.png'] });
+            const allMutedVersion = readSettings()._version;
+            const unchanged = await edit({ groupId: 'G', add: [], remove: [] });
+            expect(unchanged.status).toBe(200);
+            expect((await unchanged.json()).changed).toBe(false);
+            expect(readSettings()._version).toBe(allMutedVersion);
+            // A rename alone changes nothing.
+            seedBase({ name: 'N0' });
+            const renameVersion = readSettings()._version;
+            const renameOnly = await edit({ groupId: 'G', add: [], remove: [], rename: { from: 'N0', to: 'Renamed' } });
+            expect(renameOnly.status).toBe(200);
+            expect((await renameOnly.json()).changed).toBe(false);
+            expect(groupOf('G').name).toBe('N0');
+            expect(readSettings()._version).toBe(renameVersion);
+        });
+
+        test('skips a member whose card is gone', async () => {
+            writeCards('A.png', 'B.png', 'C.png', 'D.png');
+            const aKey = await keyOf('G', 'A.png');
+            const bKey = await keyOf('G', 'B.png');
+            seedStore({
+                groups: [{ id: 'G', name: 'Crew', members: ['A.png', 'B.png', 'C.png'] }],
+                characters: { [aKey]: threadOf('A.png', 'G', [message('a1', 'character', {}, 'Nova'), message('a2', 'user')]) },
+            });
+            fs.rmSync(path.join(userDirectories.characters, 'A.png'));
+            const response = await edit({ groupId: 'G', add: ['D.png'], remove: [] });
+            expect(`${response.status} ${(await response.clone().text()).slice(0, 300)}`).toMatch(/^200 /);
+            const body = await response.json();
+            expect(groupOf('G').members).toEqual(['A.png', 'B.png', 'C.png', 'D.png']);
+            const store = readConversationStore();
+            expect(store.characters[aKey]).toBeUndefined();
+            expect(body.anchor.avatar).toBe('B.png');
+            const messages = store.characters[bKey].branches.main.messages;
+            expect(messages.find(item => item.id === 'a1')).toMatchObject({ role: 'partner', extra: { partner_avatar: 'A.png' } });
+        });
+    });
+
     test('message/send adds group reference context for unnamed replies', async () => {
         upstreamReplyText = 'I was talking about the keys.';
 

@@ -26,6 +26,7 @@ import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-
 import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/service-tiers.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { runLegacyProfile } from './legacy-request.js';
+import { notifyPromptReady } from './prompt-ready.js';
 import { validFunctionTools } from '../../public/scripts/chat-input-capabilities.js';
 import { reasoningOnlyResult, separateConfiguredReasoning } from './reasoning-only-result.js';
 
@@ -93,6 +94,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         if (validationError) throw validationError;
         throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;
     }
+    if (response == null) throw Object.assign(new Error('The AI service ended the reply before it was finished.'), { status: 502 });
     const text = resolvedBackend === 'text'
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })
@@ -125,6 +127,7 @@ export async function validateActiveGenerationContext(material, macroEnvironment
                 name1: isolated.names.user, name2: isolated.names.char, selectedGroup: groupNames.length > 0, substitute });
         const settings = { ...material.active, openai_max_tokens: rawOptions.preserveReasoningBudget ? material.active.openai_max_tokens : maxTokens };
         if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        if (typeof rawOptions.reasoningEffort === 'string') settings.reasoning_effort = rawOptions.reasoningEffort;
         // Exercise the shared formatter's actual stop passes without catalogue or tokeniser requests.
         await createChatGenerationParameters(settings, material.profile.model, 'quiet', prompt, {
             getReasoningRoute: () => getNativeReasoningRoute(settings, { googleApiVersion: settings.chat_completion_source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
@@ -168,7 +171,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', lastAssistant = null, stepNamespace = '', captureMacroState = false, parseInlineReasoning = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', lastAssistant = null, stepNamespace = '', captureMacroState = false, parseInlineReasoning = false, onPromptReady,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -191,7 +194,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const raw = binding?.kind === 'active';
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
-        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState });
+        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState, onPromptReady });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct', 'resolvedStoppingStrings'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
@@ -222,7 +225,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         }
         if (raw) await validateActiveGenerationContext(material, macroEnvironment, messages, rawOptions, { maxTokens, groupNames, ephemeralStops, preparedText, preparedMessages });
         if (raw) {
-            const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
+            const allowed = ['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames', 'temperature', 'reasoningEffort', 'jsonSchema', 'cacheScope', 'preserveReasoningBudget'];
             if (Object.keys(rawOptions).some(key => !allowed.includes(key))) fail('This raw generation option cannot run on the server.', 409);
             if (['proxy_password', 'custom_include_headers', 'custom_include_body'].some(key => Object.hasOwn(overridePayload, key))) {
                 fail('Save authentication overrides in the active connection before generating a reply.', 409);
@@ -283,6 +286,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             }
             const requestPayload = payload;
+            notifyPromptReady(onPromptReady, requestPayload, current, binding);
             const result = separateConfiguredReasoning(await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
                 beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
                 onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),
@@ -334,6 +338,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         if (!dispatchValidation) {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
         }
+        notifyPromptReady(onPromptReady, payload, material, binding);
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
             beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
             onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),

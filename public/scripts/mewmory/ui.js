@@ -53,11 +53,13 @@ const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory',
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
     source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
-    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '',
+    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, scope: '',
     sort: 'story', flag: '', importance: '', state: '', from: '', to: '', moreFilters: false, selected: new Set(), history: null, duplicates: null,
     estimate: null, loreName: '', loreNote: '', transferNote: '',
     layout: 'list', message: null, person: '', question: '', answer: null, askError: '', conflicts: null, conflictError: '', shareNote: '',
     settingsQuery: '', settingsOpen: null };
+const keyEndpoints = new WeakMap();
+let pendingKeyEdits = new WeakSet();
 
 /** Where a memory's newest message sits in the open chat, or -1 when it is not on screen (inherited or a card). */
 function chatIndex(asOf) {
@@ -85,7 +87,7 @@ function numberValue(text) {
 }
 
 function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false, autosave = false,
-    placeholder = '', hideLabel = false } = {}) {
+    placeholder = '', hideLabel = false, keyEndpoint = '' } = {}) {
     const wrapper = node('div', 'mewmory-field');
     const control = node(options ? 'select' : multiline ? 'textarea' : 'input', 'text_pole');
     control.id = 'mewmory-field-' + key;
@@ -104,10 +106,21 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     control.value = value ?? '';
     control.disabled = disabled || ui.running;
     if (placeholder) control.placeholder = placeholder;
-    control.addEventListener(options ? 'change' : 'input', () => {
+    const change = () => {
         onChange(type === 'number' ? numberValue(control.value) : control.value);
         if (autosave) scheduleConfigSave({ immediate: Boolean(options) });
-    });
+    };
+    if (type === 'password' && autosave) {
+        // Leave a partly typed credential out of every autosave, including flushes from other controls.
+        const account = currentUser?.handle;
+        keyEndpoints.set(control, keyEndpoint);
+        control.addEventListener('input', () => pendingKeyEdits.add(control));
+        control.addEventListener('blur', () => {
+            if (pendingKeyEdits.delete(control) && currentUser?.handle === account) change();
+        });
+    } else {
+        control.addEventListener(options ? 'change' : 'input', change);
+    }
     const caption = node('label', hideLabel ? 'mewmory-sr-only' : '', label);
     caption.htmlFor = control.id;
     wrapper.append(caption, control);
@@ -214,6 +227,7 @@ export async function act(action, { refresh = true } = {}) {
 }
 
 async function switchTab(tab) {
+    retryFailedViews();
     ui.tab = tab;
     ui.offset = 0;
     ui.source = null;
@@ -599,6 +613,7 @@ function renderQuickSetup(root) {
                 }, {
                     type: 'password',
                     key: 'now-selector-api-key',
+                    keyEndpoint: selectorRole.endpoint,
                     autosave: true,
                     hint: selectorRole.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials (leave blank for local endpoints that need no key).',
                 }),
@@ -760,6 +775,12 @@ function renderPawspective(root) {
 }
 
 const loads = {};
+
+function retryFailedViews() {
+    for (const [key, entry] of Object.entries(loads)) {
+        if (entry.error) delete loads[key];
+    }
+}
 
 /** Read-only views that are not part of the inspection, cached until the archive changes. */
 function loadView(key, route, body = {}) {
@@ -931,11 +952,13 @@ function renderAsk(root) {
         event.preventDefault();
         ui.question = form.querySelector('input')?.value ?? ui.question;
         if (!ui.question.trim()) return;
-        void act(async () => {
+        void act(async scope => {
             ui.askError = '';
             try {
-                ui.answer = await requestMewmory('ask', { question: ui.question });
+                const answer = await requestMewmory('ask', { question: ui.question }, { scope });
+                if (scope === getMewmoryScope()) ui.answer = answer;
             } catch (error) {
+                if (scope !== getMewmoryScope()) return;
                 ui.answer = null;
                 ui.askError = error.message;
             }
@@ -963,11 +986,13 @@ function renderAsk(root) {
 }
 
 function renderConflicts(root) {
-    const block = section('Check for contradictions', button('Check now', () => act(async () => {
+    const block = section('Check for contradictions', button('Check now', () => act(async scope => {
         ui.conflictError = '';
         try {
-            ui.conflicts = await requestMewmory('conflicts');
+            const conflicts = await requestMewmory('conflicts', {}, { scope });
+            if (scope === getMewmoryScope()) ui.conflicts = conflicts;
         } catch (error) {
+            if (scope !== getMewmoryScope()) return;
             ui.conflicts = null;
             ui.conflictError = error.message;
         }
@@ -1383,9 +1408,11 @@ function renderRecall(root) {
         empty(root, 'Nothing to show yet', 'Preview memories or write the next reply to see what was picked and why.');
         return;
     }
-    root.append(node('p', 'mewmory-caption', [{ complete: 'Done', needs_evidence: 'Needed more detail', uncertain: 'Unsure' }[run.status] || run.status,
-        run.retrieval && !run.retrieval.aiSelection ? 'Ranked retrieval' : run.fallbackUsed ? 'Picked by Recall fallback' : 'Picked by Recall selector',
-        new Date(run.at).toLocaleString()].join(' · ')));
+    const caption = { complete: t`Done`, needs_evidence: t`Needed more detail`, uncertain: t`Unsure`,
+        local: t`Prepared for the reply`, degraded: t`Recall could not finish` }[run.status] || t`Unsure`;
+    const method = run.status === 'local' ? '' : run.retrieval && !run.retrieval.aiSelection ? t`Ranked retrieval`
+        : run.fallbackUsed ? t`Picked by Recall fallback` : t`Picked by Recall selector`;
+    root.append(node('p', 'mewmory-caption', [caption, method, new Date(run.at).toLocaleString()].filter(Boolean).join(' · ')));
     root.append(stats([
         { name: 'Picked', value: String(run.selections?.length ?? 0) },
         { name: 'Left out', value: String(run.rejections?.length ?? 0) },
@@ -1711,7 +1738,16 @@ function handleConfigState() {
 }
 
 function handleConfigSaved(saved) {
-    if (!mewmory.config || saved.revision >= mewmory.config.revision) mewmory.config = saved;
+    if (!mewmory.config || saved.revision >= mewmory.config.revision) {
+        const previous = mewmory.config?.roles?.embedding?.native;
+        const native = saved.roles?.embedding?.native;
+        mewmory.config = saved;
+        // These controls are read-only and the server resolves their values only after saving.
+        if (ui.tab === 'settings' && ui.role === 'embedding' &&
+            (Boolean(previous) !== Boolean(native) || ['source', 'model', 'queryPrefix', 'documentPrefix'].some(key => previous?.[key] !== native?.[key]))) {
+            queueRender();
+        }
+    }
     window.dispatchEvent(new Event('mewmory:configured'));
     try {
         window.localStorage?.setItem(MEWMORY_CONFIG_CHANGED_KEY, String(saved.revision ?? Date.now()));
@@ -1733,8 +1769,10 @@ function discardSettingsDraft() {
 mewmoryConfigAutosave.configure({
     readDraft: () => ui.draft,
     writeDraft: draft => {
-        if (!draft) ui.draft = null;
-        else if (!ui.draft) ui.draft = draft;
+        if (!draft) {
+            pendingKeyEdits = new WeakSet();
+            ui.draft = null;
+        } else if (!ui.draft) ui.draft = draft;
         else replaceDraftContents(ui.draft, draft);
     },
     getAccount: () => currentUser?.handle || null,
@@ -1890,7 +1928,7 @@ function foldSettingsSections(page) {
         fold.append(summary, body);
         fold.open = openSettingsFolds().has(key);
         fold.addEventListener('toggle', () => {
-            if (!searchTerms(ui.settingsQuery).length) rememberSettingsFold(key, fold.open);
+            if (fold.isConnected && !searchTerms(ui.settingsQuery).length) rememberSettingsFold(key, fold.open);
         });
         part.replaceWith(fold);
     }
@@ -2263,7 +2301,7 @@ function renderSettings(root) {
             if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.endpoint || '').trim()) role.enabled = true;
             render();
         }, { key: 'model-' + ui.role }),
-        configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
+        configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role, keyEndpoint: role.endpoint }),
     );
     const usedProfileId = usesShared ? draft.sharedProfileId : role.profileId;
     const usedOverride = usesShared ? draft.sharedModelOverride : role.modelOverride;
@@ -2562,20 +2600,18 @@ export function pickRestoreBackup(file, view) {
     return { format: 'mewmory-export-1', exportedAt: match.exportedAt || file.exportedAt, state: match.state };
 }
 
-async function exportEveryChat() {
+async function exportEveryChat(scope) {
     const stories = mewmory.stories || [];
     if (!stories.length) throw new Error('No chat has any memories to export yet.');
     const parts = ['{"format":"mewmory-export-all-1","exportedAt":' + Date.now() + ',"chats":['];
     let first = true;
-    for (const [index, story] of stories.entries()) {
-        ui.progress = 'Exporting chat ' + (index + 1) + ' of ' + stories.length + '…';
-        render();
-        const data = await requestMewmory('export', { locator: story.locator });
+    for (const story of stories) {
+        const data = await requestMewmory('export', { locator: story.locator }, { scope });
         parts.push((first ? '' : ',') + JSON.stringify({ locator: story.locator, exportedAt: data.exportedAt, state: data.state }));
         first = false;
     }
     parts.push(']}');
-    ui.progress = '';
+    if (scope !== getMewmoryScope()) return;
     download('Mewmory-every-chat.json', parts, 'application/json');
     ui.transferNote = 'Exported ' + stories.length + (stories.length === 1 ? ' chat.' : ' chats.');
 }
@@ -2752,16 +2788,36 @@ function createNavigation() {
 }
 
 let renderFrame = null;
+let renderAfterPress = false;
+let activePress = null;
+
+function startPress(event) {
+    if (!event.isPrimary || event.button !== 0) return;
+    const control = event.target.closest('summary, button, label, input, select, textarea, a');
+    if (control) activePress = { control, id: event.pointerId, scope: getMewmoryScope() };
+}
+
+function finishPress(event) {
+    if (!activePress || (event.type !== 'blur' && event.pointerId !== activePress.id)) return;
+    activePress = null;
+    if (renderAfterPress) queueRender();
+}
 
 function queueRender() {
     if (renderFrame !== null) return;
     renderFrame = window.requestAnimationFrame(() => {
         renderFrame = null;
+        // Replacing the pressed node before pointerup loses the native click.
+        if (ui.root?.contains(activePress?.control) && activePress.scope === getMewmoryScope()) {
+            renderAfterPress = true;
+            return;
+        }
         render();
     });
 }
 
 function render() {
+    renderAfterPress = false;
     if (renderFrame !== null) {
         window.cancelAnimationFrame(renderFrame);
         renderFrame = null;
@@ -2775,6 +2831,8 @@ function render() {
     }
     const active = root.contains(document.activeElement) ? document.activeElement : null;
     const focusId = active?.id;
+    // A redraw is not the user leaving the credential field. Transfer only to the same connection.
+    const pendingKey = pendingKeyEdits.delete(active);
     const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password', 'search'].includes(active.type))
         ? [active.selectionStart, active.selectionEnd] : null;
     const scope = getMewmoryScope();
@@ -2810,7 +2868,6 @@ function render() {
         ui.loreName = '';
         ui.loreNote = '';
         ui.transferNote = '';
-        ui.progress = '';
         ui.running = false;
     }
     if (mewmory.focusMessage) {
@@ -2857,7 +2914,10 @@ function render() {
     status.dataset.state = mewmory.error || restoration?.status === 'failed' ? 'error'
         : mewmory.loading || mewmory.busy || mewmory.preparing || restoration?.status === 'pending' ? 'busy'
             : mewmory.view?.enabled ? extractorOn && !waiting ? 'ready' : 'warning' : 'off';
-    heading.append(where, status, button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
+    heading.append(where, status, button('Refresh', () => {
+        retryFailedViews();
+        return act(() => refreshMewmory(filters(), { force: true }), { refresh: false });
+    }));
     header.append(heading);
     if (mewmory.view) renderOverview(header);
     root.prepend(header);
@@ -2902,6 +2962,10 @@ function render() {
     }
     if (focusId && !(active instanceof HTMLSelectElement)) {
         const target = document.getElementById(focusId);
+        if (pendingKey && keyEndpoints.has(target) && keyEndpoints.get(target) === keyEndpoints.get(active)) {
+            target.value = active.value;
+            pendingKeyEdits.add(target);
+        }
         target?.focus({ preventScroll: true });
         if (selection && target?.setSelectionRange) target.setSelectionRange(...selection);
     }
@@ -2913,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261120-simple-guided';
+        style.href = 'css/mewmory.css?v=20261130-authors-note-fullscreen';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
@@ -2937,7 +3001,12 @@ export async function mountMewmory(root) {
     initMewmory();
     await loadMewmoryStyles();
     if (ui.root !== root) {
+        ui.root?.removeEventListener('pointerdown', startPress, true);
         ui.root = root;
+        root.addEventListener('pointerdown', startPress, true);
+        window.addEventListener('pointerup', finishPress, true);
+        window.addEventListener('pointercancel', finishPress, true);
+        window.addEventListener('blur', finishPress);
         window.addEventListener('mewmory:updated', queueRender);
     }
     render();

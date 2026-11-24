@@ -5,7 +5,7 @@ import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock, getChatFileLockPath } from './chat-file-lock.js';
 import { assertDataRootRepairOwner } from './data-root-owner.js';
-import { canonical, getJob, retireJobStore, validateOwner } from './jobs/store.js';
+import { canonical, canonicalSha256, getJob, isStrictJsonTree, retireJobStore, validateOwner } from './jobs/store.js';
 import { preserveMeowerReceipts } from './meower-retirement.js';
 import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
@@ -47,6 +47,11 @@ export function roleplayError(code, message, status = 409) {
 }
 
 export function roleplayHash(value) {
+    // A value that is already a strict JSON tree needs no stringify, parse and compare round trip,
+    // which for a whole chat held three extra copies of it. Anything else takes the checked path.
+    let strict = false;
+    try { strict = isStrictJsonTree(value); } catch { /* The checked path below reports it as it always has. */ }
+    if (strict) return canonicalSha256(value);
     const json = JSON.stringify(value);
     if (json === undefined || !isDeepStrictEqual(JSON.parse(json), value)) {
         throw roleplayError('ROLEPLAY_INVALID', 'Roleplay identity requires JSON-only values.', 400);
@@ -385,16 +390,36 @@ export function inspectRoleplayFileStat(filename, limit = ROLEPLAY_STORE_MAX_BYT
     return stat;
 }
 
-function sameFileStat(left, right) {
-    return left.isFile() && right.isFile() && left.nlink === 1n && right.nlink === 1n
+/** Whether two bigint stats are one single-linked regular file with the same size and change times. */
+export function sameRoleplayFileStat(left, right) {
+    return Boolean(left && right) && left.isFile() && right.isFile() && left.nlink === 1n && right.nlink === 1n
         && ['dev', 'ino', 'birthtimeNs', 'size', 'mtimeNs', 'ctimeNs'].every(key => left[key] === right[key]);
+}
+
+/** The physical identity protected records keep for a file, from its bigint stat. */
+export function roleplayFilePhysical(stat) {
+    return { dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) };
+}
+
+// The final stat of each protected read, kept by its result, so a holder of that result can prove the path still
+// names the very file it read, unchanged, without reading it again.
+const observedStats = new WeakMap();
+
+/**
+ * Whether `filename` still names the exact file `file` was read from: the same safe path, identity, size and
+ * change times. Only a result of a protected read in this process carries that proof; anything else is false.
+ */
+export function sameRoleplayFile(filename, file, limit = ROLEPLAY_STORE_MAX_BYTES) {
+    const observed = file && observedStats.get(file);
+    return Boolean(observed) && sameRoleplayFileStat(inspectRoleplayFileStat(filename, limit), observed);
 }
 
 function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat = inspectRoleplayFileStat(filename, limit)) {
     const current = fs.fstatSync(fd, { bigint: true });
-    if (!stat || !sameFileStat(current, stat)) throw protectedReadRefusal('opened-file-changed');
+    if (!stat || !sameRoleplayFileStat(current, stat)) throw protectedReadRefusal('opened-file-changed');
     const size = Number(stat.size);
-    const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
+    // A short read is refused below, so a collected buffer is always fully written before it is used.
+    const bytes = collectBytes ? Buffer.allocUnsafe(size) : Buffer.alloc(Math.min(size, 64 * 1024));
     const hash = crypto.createHash('sha256');
     let offset = 0;
     while (offset < size) {
@@ -411,16 +436,17 @@ function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat 
     const after = fs.fstatSync(fd, { bigint: true });
     if (offset !== size) throw protectedReadRefusal('short-read');
     const finalPath = inspectRoleplayFileStat(filename, limit);
-    if (!finalPath || !sameFileStat(finalPath, after)) throw protectedReadRefusal('path-changed');
-    if (!sameFileStat(after, stat)) {
+    if (!finalPath || !sameRoleplayFileStat(finalPath, after)) throw protectedReadRefusal('path-changed');
+    if (!sameRoleplayFileStat(after, stat)) {
         const changedFields = ['dev', 'ino', 'birthtimeNs', 'size', 'mtimeNs', 'ctimeNs', 'nlink']
             .filter(key => after[key] !== stat[key]);
         const metadataOnly = after.isFile() && stat.isFile() && after.nlink === 1n && stat.nlink === 1n
             && changedFields.length > 0 && changedFields.every(key => key === 'birthtimeNs' || key === 'ctimeNs');
         throw protectedReadRefusal(metadataOnly ? 'metadata-changed' : 'file-changed', changedFields);
     }
-    return { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'),
-        physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
+    const result = { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'), physical: roleplayFilePhysical(after) };
+    observedStats.set(result, after);
+    return result;
 }
 
 function readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes }) {
@@ -1186,18 +1212,25 @@ export function readRoleplayPayload(lease, transactionId, name, expectedHash, li
     const filename = payloadPath(lease, transactionId, name);
     const file = readRoleplayFile(filename, limit, { flush: true });
     if (!file || file.rawHash !== expectedHash) throw damaged();
-    return { ...file, filename };
+    const payload = { ...file, filename };
+    observedStats.set(payload, observedStats.get(file));
+    return payload;
 }
 
-export function stageRoleplayPayload(lease, transactionId, name, bytes, limit = 64 * 1024 * 1024) {
+/**
+ * Durably stages `bytes` and reads them back, flushed and verified. `rawHash` is their SHA-256 when the caller
+ * already has it. `readBack: false` is only for a caller that itself reads the payload back through
+ * `readRoleplayPayload` before anything depends on it; the write is still flushed, and so is an earlier attempt's file.
+ */
+export function stageRoleplayPayload(lease, transactionId, name, bytes, limit = 64 * 1024 * 1024, { rawHash = null, readBack = true } = {}) {
     const filename = payloadPath(lease, transactionId, name);
     if (!Buffer.isBuffer(bytes) || bytes.length > limit) throw roleplayError('ROLEPLAY_INVALID', 'Invalid prepared Roleplay payload.', 413);
     createRoleplayDirectory(path.dirname(filename), roleplayLease(lease).root);
-    const existing = readRoleplayFile(filename, limit);
-    const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+    const existing = readBack ? readRoleplayFile(filename, limit) : inspectRoleplayFile(filename, limit, { flush: true });
+    const hash = rawHash ?? crypto.createHash('sha256').update(bytes).digest('hex');
     if (existing && existing.rawHash !== hash) throw damaged();
     if (!existing) tryWriteFileSync(filename, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
-    return readRoleplayPayload(lease, transactionId, name, hash, limit);
+    return readBack ? readRoleplayPayload(lease, transactionId, name, hash, limit) : null;
 }
 
 function locked(scope, operation, initialise = false) {

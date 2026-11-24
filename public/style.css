@@ -192,6 +192,9 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
     -moz-osx-font-smoothing: grayscale;
+}
+
+body.neconyan-text-shadow * {
     text-shadow: 0px 0px calc(var(--shadowWidth) * 1px) var(--SmartThemeShadowColor);
 }
 
@@ -560,11 +563,11 @@ input[type='checkbox']:focus-visible {
 .mes_bias:empty,
 .mes:not(.reasoning) .mes_reasoning_details,
 .mes_reasoning_details:not([open]) .mes_reasoning_actions,
-.mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning,
-.mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning_header,
-.mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning_actions .mes_button:not(.edit_button),
-.mes_reasoning_details:not(:has(.reasoning_edit_textarea)) .mes_reasoning_actions .edit_button,
-.mes_block:has(.edit_textarea):has(.reasoning_edit_textarea) .mes_reasoning_actions,
+.mes.is_reasoning_editing .mes_reasoning,
+.mes.is_reasoning_editing .mes_reasoning_header,
+.mes.is_reasoning_editing .mes_reasoning_actions .mes_button:not(.edit_button),
+.mes:not(.is_reasoning_editing) .mes_reasoning_actions .edit_button,
+.mes.is_editing.is_reasoning_editing .mes_reasoning_actions,
 .mes.reasoning:not([data-reasoning-state="hidden"]) .mes_edit_add_reasoning,
 .mes:has(.mes_reasoning:empty) .mes_reasoning_arrow,
 .mes:has(.mes_reasoning:empty) .mes_reasoning,
@@ -578,7 +581,7 @@ input[type='checkbox']:focus-visible {
 
 /** If hidden reasoning should not be shown, we hide all blocks that don't have content */
 /* Scoped per message: a #chat-level :has() made Chromium restyle the whole chat (about 0.4s) whenever a message was added. */
-#chat:not([data-show-hidden-reasoning="true"]) .mes:has(.mes_reasoning:empty):not(:has(.reasoning_edit_textarea)) .mes_reasoning_details {
+#chat:not([data-show-hidden-reasoning="true"]) .mes:has(.mes_reasoning:empty):not(.is_reasoning_editing) .mes_reasoning_details {
     display: none;
 }
 
@@ -824,7 +827,7 @@ small {
     margin-right: unset !important;
 }
 
-.mes.smallSysMes:not(:has(.edit_textarea)) .ch_name {
+.mes.smallSysMes:not(.is_editing) .ch_name {
     display: none;
 }
 
@@ -1724,7 +1727,7 @@ body.hideAllSwipeButtons .swipe_right,
     opacity: 0.4;
 }
 
-.mes_text.inline_media:not(:has(.edit_textarea)) {
+.mes:not(.is_editing) .mes_text.inline_media {
     display: none;
 }
 
@@ -5884,8 +5887,7 @@ body:not(.caption) .mes_img_caption {
 
 }
 
-body:has(.drawer-content.maximized) #top-settings-holder:has(.drawer-content.openDrawer:not(.fillLeft):not(.fillRight)),
-body:has(.drawer-content.open) #top-settings-holder:has(.drawer-content.openDrawer:not(.fillLeft):not(.fillRight)),
+#top-settings-holder:has(.drawer-content.maximized):has(.drawer-content.openDrawer:not(.fillLeft):not(.fillRight)),
 .drawer {
     align-items: center;
     justify-content: center;

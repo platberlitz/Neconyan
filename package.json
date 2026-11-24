@@ -92,7 +92,7 @@
         "seedrandom": "^3.0.5",
         "showdown": "^2.1.0",
         "sillytavern-transformers": "2.14.6",
-        "simple-git": "^3.33.0",
+        "simple-git": "^4.1.0",
         "slidetoggle": "^4.0.0",
         "tiktoken": "^1.0.22",
         "url-join": "^5.0.0",
@@ -126,7 +126,7 @@
     "type": "module",
     "license": "AGPL-3.0",
     "description": "Neconyan, a server-driven character chat workspace",
-    "version": "1.5.7",
+    "version": "1.6.0",
     "scripts": {
         "start": "bun server.js",
         "start:node": "node --no-warnings server.js",

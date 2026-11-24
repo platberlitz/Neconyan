@@ -110,6 +110,14 @@ describe('World Info scan normalization', () => {
         expect(normalizeWorldInfoKey('  {{user}}  ', () => ' Alice ')).toBe('Alice');
     });
 
+    test('skips the macro pass for plain keys', () => {
+        const substitute = jest.fn(value => value);
+        expect(normalizeWorldInfoKey('  cat  ', substitute)).toBe('cat');
+        expect(substitute).not.toHaveBeenCalled();
+        expect(normalizeWorldInfoKey('{{user}}', substitute)).toBe('{{user}}');
+        expect(substitute).toHaveBeenCalledWith('{{user}}');
+    });
+
     test('parses unique nonempty inclusion-group names', () => {
         expect(getWorldInfoGroupNames(' alpha, beta, alpha, , gamma ')).toEqual(['alpha', 'beta', 'gamma']);
         expect(getWorldInfoGroupNames(null)).toEqual([]);
@@ -134,6 +142,14 @@ describe('World Info scan normalization', () => {
         expect(matchesWorldInfoEntry({ key: ['/ca.t/i'] }, 'The caat')).toBe(true);
         expect(parseWorldInfoKeyRegex('/a\\/b/i')?.test('A/b')).toBe(true);
         expect(parseWorldInfoKeyRegex('/a/b/')).toBeNull();
+    });
+
+    test('reuses a global regex key without carrying lastIndex between entries', () => {
+        const entry = { key: ['/cat/g'] };
+        expect(matchesWorldInfoEntry(entry, 'a cat')).toBe(true);
+        expect(matchesWorldInfoEntry(entry, 'a cat')).toBe(true);
+        expect(matchesWorldInfoEntry(entry, 'a dog')).toBe(false);
+        expect(matchesWorldInfoEntry({ key: ['/cat/gi'] }, 'A CAT')).toBe(true);
     });
 });
 

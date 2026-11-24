@@ -4,6 +4,42 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 const extension = '/scripts/extensions/third-party/sillytavern-character-colors/src';
 
+test('the tracked characters list keeps its German accessible name after refresh', async ({ app }) => {
+    test.setTimeout(180000);
+    const account = await app.account();
+    await account.context.addInitScript(() => window.localStorage.setItem('language', 'de-de'));
+    const page = await account.open({ workspace: false, timeout: 60000 });
+    const list = page.locator('#dc-char-list');
+    const name = 'Erfasste Charaktere';
+    async function openPanel() {
+        await expect(page.locator('html')).toHaveAttribute('lang', 'de-de');
+        await page.waitForFunction(() => Boolean(window.NeconyanNativeTools?.getDefinitions));
+        await page.evaluate(() => {
+            const tools = window.NeconyanNativeTools;
+            return tools.openSettings(tools.getDefinitions().find(tool => tool.unit === '#dc-ext'));
+        });
+        await expect(list).toBeVisible();
+        await expect(list).toHaveRole('list');
+        await expect(list).toHaveAccessibleName(name);
+    }
+    await openPanel();
+    const refreshed = await list.evaluate(async (node, extension) => {
+        const { updateCharList } = await import(`${extension}/ui.js`);
+        updateCharList();
+        return { sameNode: node === node.ownerDocument.getElementById('dc-char-list'), label: node.getAttribute('aria-label') };
+    }, extension);
+    expect(refreshed).toEqual({ sameNode: true, label: name });
+    await page.locator('#dc-search').fill('no matching character');
+    await expect(list.locator('#dc-clear-search')).toBeVisible();
+    await expect(list).toHaveAccessibleName(name);
+    await list.locator('#dc-clear-search').click();
+    await expect(page.locator('#dc-search')).toHaveValue('');
+    await expect(list).toHaveAccessibleName(name);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/);
+    await openPanel();
+});
+
 for (const phone of [true, false]) {
     test(`dialogue colours only list the equipped persona on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);

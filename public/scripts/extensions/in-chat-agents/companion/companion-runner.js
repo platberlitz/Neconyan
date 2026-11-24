@@ -12,9 +12,10 @@ import {
     substituteParamsExtended,
 } from '../../../../script.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
-import { canGroupTargetSee, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
+import { canGroupTargetSee, readGroupSceneRules, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
 import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
+import { resolveActiveAuthorsNote } from '../../../authors-note-profiles.js';
 import { eventSource, event_types } from '../../../events.js';
 import { getWorldInfoPrompt } from '../../../world-info.js';
 import { getStringHash } from '../../../utils.js';
@@ -74,6 +75,8 @@ import {
     isExpressionsAgent,
     isLocalCompanionAgent,
     isPlotCompassAgent,
+    getPlotCompassChoiceDirective,
+    getPlotCompassContentWithChoice,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
@@ -90,6 +93,7 @@ import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { isLikelyCompanionNoteRefusal } from '../prompt-transform-refusal.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
+import { buildTrackerEchoGuard, getActiveCompanionTrackerLineKeys, getActiveInlineTrackerLineKeys, getOwnedCompanionTrackerLineKeys, getVisibleCompanionTrackerLineKeys, stripTrackerLineEchoes } from './companion-tracker-context.js';
 
 export { COMPANION_RESULTS_EXTRA_KEY };
 export const COMPANION_RESULTS_UPDATED_EVENT = 'in_chat_agent_companion_results_updated';
@@ -778,6 +782,7 @@ function beginCompanionRun(message, agent, content = '') {
         : stored ? structuredClone(stored) : null;
     const run = {
         previousResult,
+        controller: new AbortController(),
         isCurrent: () => runs.get(key) === run && (message.swipe_id ?? 0) === swipe && isMessageCurrent(),
         async finish(messageIndex) {
             if (runs.get(key) !== run) return;
@@ -810,6 +815,130 @@ function beginCompanionRun(message, agent, content = '') {
     });
     run.swipeInfo = message.swipe_info?.[swipe];
     return run;
+}
+
+const isCompanionRunStopped = run => Boolean(run?.controller?.signal.aborted);
+const stoppedCompanionRun = () => new DOMException('Companion stopped.', 'AbortError');
+
+/**
+ * Companions running as a server Agent job. The chat is left alone while the job
+ * runs (the server saves the result), so the running state lives here instead.
+ */
+const serverCompanionRuns = new WeakMap();
+
+function trackServerCompanionRun(message, agentIds) {
+    if (!message || typeof message !== 'object') return { accept() {}, release() {} };
+    let runs = serverCompanionRuns.get(message);
+    if (!runs) serverCompanionRuns.set(message, runs = new Map());
+    const entry = { jobId: '', agentIds: [...agentIds], stopping: new Set(), startedAt: new Date().toISOString() };
+    for (const agentId of entry.agentIds) runs.set(agentId, entry);
+    return {
+        accept(jobId) { entry.jobId = String(jobId ?? ''); },
+        release() {
+            for (const agentId of entry.agentIds) {
+                if (runs.get(agentId) === entry) runs.delete(agentId);
+            }
+        },
+    };
+}
+
+/** Stored results plus Companions that are still running in a server job. */
+export function getDisplayedCompanionResults(message) {
+    const results = getCompanionResults(message);
+    const remote = serverCompanionRuns.get(message);
+    if (!remote?.size) return results;
+    const shown = { ...results };
+    for (const [agentId, entry] of remote) {
+        const stored = results[agentId];
+        if (stored?.status === 'pending') continue;
+        const agent = getAgentById(agentId);
+        shown[agentId] = {
+            agentName: String(agent?.name ?? '').trim() || 'Companion',
+            icon: String(agent?.icon ?? '').trim(),
+            displayMode: agent ? getCompanionConfig(agent).displayMode : undefined,
+            ...(stored ?? {}),
+            status: 'pending',
+            content: '',
+            error: '',
+            updatedAt: stored?.updatedAt ?? entry.startedAt,
+            previousResult: stored?.status === 'done' ? { ...stored, previousResult: undefined } : null,
+        };
+    }
+    return shown;
+}
+
+/** Whether a running Companion on this message can still be stopped. */
+export function isCompanionRunStoppable(message, agentId) {
+    if (!message || !agentId) return false;
+    const remote = serverCompanionRuns.get(message)?.get(agentId);
+    if (remote) return Boolean(remote.jobId) && !remote.stopping.has(agentId);
+    const run = companionRuns.get(message)?.get(`${message.swipe_id ?? 0}:${agentId}`);
+    return Boolean(run?.isCurrent()) && !isCompanionRunStopped(run);
+}
+
+/**
+ * Stops one running Companion, leaving the others in its pass running.
+ * @returns {Promise<boolean>} false when nothing was running
+ */
+export async function stopCompanionRun(messageIndex, agentId) {
+    const message = chat[messageIndex];
+    if (!message || !agentId) return false;
+    const remote = serverCompanionRuns.get(message)?.get(agentId);
+    if (remote) {
+        if (!remote.jobId || remote.stopping.has(agentId)) return false;
+        remote.stopping.add(agentId);
+        await emitCompanionResultsUpdated(messageIndex, agentId);
+        try {
+            const jobs = await import('../../../jobs.js');
+            if (await jobs.stopJobCompanion(remote.jobId, agentId)) return true;
+            // The job has not reached its Companions yet. Stopping every one of
+            // them is the same as cancelling the job; one of several has to wait.
+            if (remote.agentIds.every(id => remote.stopping.has(id))) {
+                await jobs.cancelJob(remote.jobId, { reason: 'Companion stopped.' });
+                return true;
+            }
+            remote.stopping.delete(agentId);
+            await emitCompanionResultsUpdated(messageIndex, agentId);
+            return false;
+        } catch (error) {
+            remote.stopping.delete(agentId);
+            await emitCompanionResultsUpdated(messageIndex, agentId);
+            throw error;
+        }
+    }
+    const run = companionRuns.get(message)?.get(`${message.swipe_id ?? 0}:${agentId}`);
+    if (!run?.isCurrent() || isCompanionRunStopped(run)) return false;
+    run.controller.abort(stoppedCompanionRun());
+    await emitCompanionResultsUpdated(messageIndex, agentId);
+    return true;
+}
+
+/** Reply previews whose Companions were asked to stop, by job id. */
+const serverReplyCompanionStops = new Map();
+
+export function isServerReplyCompanionStopping(jobId, agentId) {
+    return Boolean(serverReplyCompanionStops.get(String(jobId ?? ''))?.has(agentId));
+}
+
+/** Stops one Companion in a server reply that is still being written. */
+export async function stopServerReplyCompanion(jobId, agentId) {
+    const key = String(jobId ?? '');
+    if (!key || !agentId || isServerReplyCompanionStopping(key, agentId)) return false;
+    let stops = serverReplyCompanionStops.get(key);
+    if (!stops) {
+        serverReplyCompanionStops.set(key, stops = new Set());
+        while (serverReplyCompanionStops.size > 20) serverReplyCompanionStops.delete(serverReplyCompanionStops.keys().next().value);
+    }
+    stops.add(agentId);
+    try {
+        const { stopJobCompanion } = await import('../../../jobs.js');
+        if (await stopJobCompanion(key, agentId)) return true;
+    } catch (error) {
+        stops.delete(agentId);
+        throw error;
+    }
+    stops.delete(agentId);
+    return false;
 }
 
 export async function emitCompanionResultsUpdated(messageIndex, agentId = '') {
@@ -867,10 +996,11 @@ function getRecentConversationSection(messageIndex, companion, contextCapture = 
     const minContextTokens = Math.max(0, Number(companion.minContextTokens) || 0);
     const selected = [];
     let tokenTotal = 0;
+    const rules = readGroupSceneRules(chat_metadata, chat);
 
     for (let index = Math.min(messageIndex, chat.length - 1); index >= 0; index--) {
         const message = chat[index];
-        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex])
+        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex], rules)
             || (companion.skipUserMessages && message.is_user)) {
             continue;
         }
@@ -968,8 +1098,9 @@ async function getWorldInfoSection(messageIndex, companion) {
     }
 
     try {
+        const rules = readGroupSceneRules(chat_metadata, chat);
         const scanLines = chat.slice(0, messageIndex + 1)
-            .filter(message => isValidCompanionMessage(message) && canGroupTargetSee(message, chat[messageIndex]))
+            .filter(message => isValidCompanionMessage(message) && canGroupTargetSee(message, chat[messageIndex], rules))
             .map(message => normalizeText(message?.mes ?? ''))
             .filter(Boolean)
             .reverse();
@@ -985,12 +1116,13 @@ export function collectRecentCompanionResults(agentId, { beforeMessageIndex = ch
     const results = [];
     const maxDepth = Math.max(1, Math.min(10, Number(depth) || 1));
 
+    const rules = readGroupSceneRules(chat_metadata, chat);
     for (let index = Math.min(beforeMessageIndex - 1, chat.length - 1); index >= 0 && results.length < maxDepth; index--) {
         const message = chat[index];
         // Hidden hosts still count: "hide story above this shard" turns every earlier shard's
         // message into a system note, and dropping those here left the shard with no prior
         // shards to consolidate and trackers with no last known state.
-        if (!holdsReadableCompanionResults(message, { allowUserMessage: isPlotCompassAgent(getAgentById(agentId)) }) || !canGroupTargetSee(message, chat[beforeMessageIndex])) {
+        if (!holdsReadableCompanionResults(message, { allowUserMessage: isPlotCompassAgent(getAgentById(agentId)) }) || !canGroupTargetSee(message, chat[beforeMessageIndex], rules)) {
             continue;
         }
 
@@ -1025,11 +1157,12 @@ function getPreviousNotesSection(agent, messageIndex, companion) {
     return collectRecentCompanionResults(agent.id, {
         beforeMessageIndex: messageIndex,
         depth: companion.historyDepth,
-    }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex)}`).join('\n\n');
+    }).map(result => `${result.messageIndex < 0 ? 'Before the conversation' : `Message ${result.messageIndex}`}:\n${getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass: isPlotCompassAgent(agent) })}`).join('\n\n');
 }
 
-function getResolvedCompanionResultContent(result = {}, messageIndex = -1) {
-    return normalizeText(resolveCompanionContentMacros(result.content ?? '', chat[messageIndex]));
+function getResolvedCompanionResultContent(result = {}, messageIndex = -1, { plotCompass = false, instruction = false, historical = false } = {}) {
+    const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction, historical }) : result.content ?? '';
+    return normalizeText(resolveCompanionContentMacros(content, chat[messageIndex]));
 }
 
 function getSystemPromptSection(companion) {
@@ -1040,13 +1173,37 @@ function getSystemPromptSection(companion) {
     return normalizeText(substituteParams(String(power_user?.sysprompt?.content ?? '')));
 }
 
-function getAuthorsNoteSection(companion) {
+function getAuthorsNoteSection(companion, messageIndex = chat.length - 1) {
     if (!companion.includeAuthorsNote) {
         return '';
     }
 
-    const note = String(chat_metadata?.note_prompt ?? '').trim()
-        || String(extension_settings?.note?.default ?? '').trim();
+    const context = getContext();
+    const message = chat[messageIndex];
+    const groupId = context?.groupId || '';
+    const activeGroup = groupId && Array.isArray(context?.groups)
+        ? context.groups.find(group => String(group?.id ?? '') === String(groupId))
+        : null;
+    const hasCharacterId = context?.characterId !== undefined && context?.characterId !== null && context?.characterId !== '';
+    const characterAvatar = (!groupId && hasCharacterId ? context?.characters?.[context.characterId]?.avatar : '')
+        || message?.original_avatar
+        || '';
+    const groupAvatars = groupId
+        ? [message?.original_avatar, ...(Array.isArray(activeGroup?.members) ? activeGroup.members : [])].filter(Boolean)
+        : [];
+    const safeEnd = Number.isInteger(messageIndex)
+        ? Math.min(chat.length, Math.max(0, messageIndex + 1))
+        : chat.length;
+    const userMessages = chat.slice(0, safeEnd).filter(item => item?.is_user).length;
+    const note = resolveActiveAuthorsNote({
+        chatMetadata: chat_metadata,
+        noteSettings: extension_settings?.note,
+        groupId,
+        characterAvatar,
+        groupAvatars,
+        personaAvatar: context?.userAvatar || '',
+        userMessages,
+    });
     return normalizeText(substituteParams(note));
 }
 
@@ -1066,10 +1223,10 @@ function normalizeExtraContextSections(extraContextSections = []) {
 async function buildCompanionContextSections(agent, messageIndex, { extraContextSections = [], includePreviousNotes = true, contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
     const sections = [];
-    const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion));
+    const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion), readGroupSceneRules(chat_metadata, chat));
     const characterCard = getCharacterCardSection(companion, messageIndex);
     const worldInfo = await getWorldInfoSection(messageIndex, companion);
-    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion));
+    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion, messageIndex), readGroupSceneRules(chat_metadata, chat));
     const previousNotes = includePreviousNotes ? getPreviousNotesSection(agent, messageIndex, companion) : '';
     const recentConversation = getRecentConversationSection(messageIndex, companion, contextCapture);
 
@@ -1121,6 +1278,8 @@ const COMPANION_TRACKER_BARE_TAG_PATTERN = /^[ \t>*_]*\[\/?([A-Z][A-Z0-9_]+)(?::
 const COMPANION_TRACKER_BOUNDARY_LINE_PATTERN = /^[ \t]*\[\/?[A-Z][A-Z0-9_]*(?::[^|\]\n]+)?[|\]]/;
 const COMPANION_TRACKER_ECHO_GUARD_KEY = 'inchat_agent_companion_tracker_echo_guard';
 let activeFeedbackTrackerShapes = new Map();
+let activeFeedbackTrackerLineKeys = new Set();
+const COMPANION_OUTPUT_LINE_KEY_SCAN_DEPTH = 12;
 let standaloneTrackerGuardInjected = false;
 
 /**
@@ -1184,21 +1343,55 @@ function getActiveInlineTrackerTags(activeAgents = []) {
     return tags;
 }
 
-function formatTrackerTagExamples(shapes) {
-    return [...shapes]
-        .flatMap(([tag, shape]) => [shape === 'bare' ? `[${tag}]` : `[${tag}|...]`, `[/${tag}]`])
-        .join(', ');
+function collectRetainedTrackerLineKeys({ excludeMessage = null, inlineLineKeys = new Set() } = {}) {
+    const keys = new Set();
+
+    for (const message of chat) {
+        if (message === excludeMessage) {
+            continue;
+        }
+        for (const [agentId, result] of Object.entries(getCompanionResults(message))) {
+            if (result?.status !== 'done' || result.includeInChatHistory !== true) continue;
+
+            const agent = getAgentById(agentId);
+            if (!agent) continue;
+            for (const key of getVisibleCompanionTrackerLineKeys(agent, result.content, inlineLineKeys)) {
+                keys.add(key);
+            }
+        }
+    }
+
+    return keys;
 }
 
-function buildTrackerEchoGuard(shapes) {
-    return 'HARD STOP for your reply: the Companion-owned bracket formats listed here are read-only reference. '
-        + 'A separate side-channel agent writes and re-attaches those formats automatically after your reply, so copying them creates duplicates the user has to delete by hand. '
-        + 'Do NOT reproduce, paraphrase, update, restate, or wrap reply content in the listed formats. '
-        + 'Do not emit any of: ' + formatTrackerTagExamples(shapes) + '. '
-        + 'Opening one of these tags without its closing tag is still a violation. '
-        + 'This restriction applies only to the exact tags listed here; continue following any separate instructions that require other pre-generation inline tracker formats. '
-        + 'Never repeat an "[... - auxiliary notes]" label. '
-        + 'Produce your normal story reply, including any other required inline tracker blocks.';
+// Custom companions may only imply their line format in prose, so what they wrote lately counts too.
+function collectRecentCompanionOutputLineKeys(activeAgents = []) {
+    const companions = new Map(activeAgents.filter(isCompanionAgent).map(agent => [agent.id, agent]));
+    const keys = new Set();
+    if (companions.size === 0) {
+        return keys;
+    }
+
+    for (let index = chat.length - 1; index >= 0 && index >= chat.length - COMPANION_OUTPUT_LINE_KEY_SCAN_DEPTH; index--) {
+        for (const [agentId, result] of Object.entries(getCompanionResults(chat[index]))) {
+            const agent = companions.get(agentId);
+            if (!agent || result?.status !== 'done' || !result.content?.trim()) continue;
+            for (const key of getOwnedCompanionTrackerLineKeys(agent, result.content)) {
+                keys.add(key);
+            }
+        }
+    }
+
+    return keys;
+}
+
+function getAuxiliaryTrackerLineKeys(activeAgents = []) {
+    const inlineLineKeys = getActiveInlineTrackerLineKeys(activeAgents);
+    return getActiveCompanionTrackerLineKeys(activeAgents, [
+        ...activeFeedbackTrackerLineKeys,
+        ...collectRetainedTrackerLineKeys({ inlineLineKeys }),
+        ...collectRecentCompanionOutputLineKeys(activeAgents),
+    ]);
 }
 
 function collectRetainedTrackerTagShapes({ excludeMessage = null } = {}) {
@@ -1339,8 +1532,8 @@ function mergeTrackerRanges(ranges) {
  * @param {object[]} activeAgents
  * @returns {string}
  */
-export function stripAuxiliaryTrackerEchoes(text, tags = getAuxiliaryTrackerTags(), activeAgents = []) {
-    const source = String(text ?? '').replaceAll(/\r\n?/g, '\n');
+export function stripAuxiliaryTrackerEchoes(text, tags = getAuxiliaryTrackerTags(), activeAgents = [], lineKeys = getAuxiliaryTrackerLineKeys(activeAgents)) {
+    const source = stripTrackerLineEchoes(text, lineKeys).replaceAll(/\r\n?/g, '\n');
     const ranges = [];
     const inlineTrackerTags = getActiveInlineTrackerTags(activeAgents);
 
@@ -1412,7 +1605,7 @@ function expandCompanionPrompt(agent, messageIndex, generationType = 'normal', r
 
 export async function buildCompanionPromptMessages(agent, messageIndex, generationType = 'normal', { repair = false, extraContextSections = [], contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
-    const expandedPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => expandCompanionPrompt(agent, messageIndex, generationType, repair));
+    const expandedPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => expandCompanionPrompt(agent, messageIndex, generationType, repair), readGroupSceneRules(chat_metadata, chat));
     const contextSections = await buildCompanionContextSections(agent, messageIndex, { extraContextSections, contextCapture });
     // rawPrompt sends the agent prompt verbatim: tracker prompts define their own exact output
     // format and break when extra format instructions are appended around them. The guard
@@ -1878,10 +2071,11 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         const previous = previousContent ?? getCompanionResultContent(message, agent.id);
         const isMessageCurrent = captureCompanionTarget(messageIndex);
         const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
+        const isStopped = () => isCompanionRunStopped(run);
         const generate = async ({ repair: repairPass, extraContextSections: sections }) => {
             const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
             const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair: repairPass, extraContextSections: sections, contextCapture });
-            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
             onGenerationStart?.();
@@ -1898,10 +2092,10 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
                 return inspectCompanionTrackerOutput(agent, text, display).action === 'keep';
             };
             const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, {
-                diagnosticHandle, acceptOutput, isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent: isTargetCurrent,
+                diagnosticHandle, acceptOutput, isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent: isTargetCurrent, signal: run?.controller?.signal,
             }).catch(markCompanionConnectionFailure);
 
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
 
@@ -1909,14 +2103,14 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             const rawContent = capResultContent(response.output);
             // Token usage reflects the companion's own generation; post passes run after counting.
             const tokenUsage = await buildCompanionTokenUsage(promptMessages, rawContent);
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion target changed.', 'AbortError');
             }
             return { rawContent, tokenUsage, profileId: response.profileId, model: response.model, contextCoverage: contextCapture?.coverage };
         };
 
         try {
-            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
 
@@ -1932,7 +2126,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             const { rawContent, tokenUsage } = attempt;
             let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
             // A caller-supplied finishing step, such as appending a Chatroom reply to its feed.
@@ -1974,7 +2168,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             const targetChanged = !isTargetCurrent();
             if (targetChanged) return { agentId: agent.id, changed: false, result: null };
-            const cancelled = targetChanged || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
+            const cancelled = targetChanged || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
             const restoreResult = previousResult ?? run?.previousResult ?? null;
             if (repair && cancelled) {
                 restoreCompanionResult(message, agent.id, restoreResult);
@@ -2063,6 +2257,27 @@ async function cancelCompanionAgentResults(message, agents, messageIndex, profil
     }
 }
 
+/** A signal for a shared batch request that aborts once every member has been stopped. */
+function watchBatchCompanionStops(agents, runs) {
+    const controller = new AbortController();
+    const signals = agents.map(agent => runs?.get(agent.id)?.controller?.signal).filter(Boolean);
+    if (signals.length !== agents.length) return { signal: controller.signal, release() {} };
+    const check = () => {
+        if (!controller.signal.aborted && signals.every(signal => signal.aborted)) controller.abort(stoppedCompanionRun());
+    };
+    for (const signal of signals) signal.addEventListener('abort', check);
+    check();
+    return { signal: controller.signal, release: () => signals.forEach(signal => signal.removeEventListener('abort', check)) };
+}
+
+async function settleStoppedBatchMember(message, agent, runs, messageIndex, profileId = '') {
+    const run = runs?.get(agent.id);
+    if (!isCompanionRunStopped(run)) return false;
+    settleFailedCompanionRun(message, agent, run.previousResult ?? null, { cancelled: true, profileId });
+    await emitCompanionResultsUpdated(messageIndex, agent.id);
+    return true;
+}
+
 async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
     agents = agents.filter(agent => !isLocalCompanionAgent(agent));
     if (agents.length === 0) {
@@ -2106,7 +2321,13 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 throw new DOMException('A batch companion became unavailable.', 'AbortError');
             }
             const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
-            const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents, diagnosticHandle: diagnosticHandles.get(agents[0].id) }).catch(markCompanionConnectionFailure);
+            const batchStop = watchBatchCompanionStops(agents, runs);
+            let response;
+            try {
+                response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents, diagnosticHandle: diagnosticHandles.get(agents[0].id), signal: batchStop.signal }).catch(markCompanionConnectionFailure);
+            } finally {
+                batchStop.release();
+            }
             if (!isTargetCurrent()) return getResults();
 
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
@@ -2137,6 +2358,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                     return getResults();
                 }
                 if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                if (await settleStoppedBatchMember(message, agent, runs, messageIndex, response.profileId)) continue;
                 if (!parsed.has(agent.id)) {
                     missingAgents.push(agent);
                     continue;
@@ -2182,6 +2404,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                     return getResults();
                 }
                 if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                if (await settleStoppedBatchMember(message, agent, runs, messageIndex, response.profileId)) continue;
                 setCompanionResult(message, agent, {
                     status: 'done',
                     content,
@@ -2535,6 +2758,9 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     const feedbackTrackerShapes = new Map();
     const feedbackPrompts = [];
     activeFeedbackTrackerShapes = feedbackTrackerShapes;
+    const inlineLineKeys = getActiveInlineTrackerLineKeys(activeAgents);
+    const feedbackLineKeys = new Set();
+    activeFeedbackTrackerLineKeys = feedbackLineKeys;
 
     // Dice Roller writes one short settled-result note for the newest user roll.
     // It has no saved note and no model call, so it never enters feedbackPrompts.
@@ -2567,20 +2793,28 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
         }
 
         const companion = getCompanionConfig(agent);
-        if (!companion.feedback?.enabled) {
+        const plotCompass = isPlotCompassAgent(agent);
+        if (!companion.feedback?.enabled && !plotCompass) {
             continue;
         }
 
-        const notes = collectRecentCompanionResults(agent.id, {
+        // Find the newest note before excluding kept notes, or an older pick can become current.
+        const latest = plotCompass ? collectRecentCompanionResults(agent.id, { beforeMessageIndex, depth: 1 })[0] : null;
+        const notes = companion.feedback?.enabled ? collectRecentCompanionResults(agent.id, {
             beforeMessageIndex,
             depth: companion.feedback.depth,
             excludeChatHistory: true,
-        });
-        if (notes.length === 0) {
-            continue;
-        }
+        }) : [];
 
-        const body = notes.map(result => getResolvedCompanionResultContent(result, result.messageIndex)).filter(Boolean).join('\n\n');
+        const parts = notes.map(result => {
+            const current = plotCompass && result.messageIndex === latest?.messageIndex;
+            return getResolvedCompanionResultContent(result, result.messageIndex, { plotCompass, instruction: current, historical: plotCompass && !current });
+        });
+        if (latest && !notes.some(result => result.messageIndex === latest.messageIndex)) {
+            const directive = getPlotCompassChoiceDirective(latest);
+            if (directive) parts.push(normalizeText(resolveCompanionContentMacros(directive, chat[latest.messageIndex])));
+        }
+        const body = parts.filter(Boolean).join('\n\n');
         if (!body) {
             continue;
         }
@@ -2590,7 +2824,9 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
         if (trackerTags.length > 0) {
             feedbackTrackerShapes.set(trackerShape.tag, trackerShape.shape);
         }
-        feedbackPrompts.push({ agent, body, trackerTags });
+        const lineKeys = getVisibleCompanionTrackerLineKeys(agent, body, inlineLineKeys);
+        lineKeys.forEach(key => feedbackLineKeys.add(key));
+        feedbackPrompts.push({ agent, body, guarded: trackerTags.length > 0 || lineKeys.size > 0 });
     }
 
     // Retained-history companions inject their blocks as prior assistant turns, which is stronger
@@ -2601,13 +2837,14 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
             guardShapes.set(tag, shape);
         }
     }
+    const guardLineKeys = new Set([...feedbackLineKeys, ...collectRetainedTrackerLineKeys({ excludeMessage, inlineLineKeys })]);
 
     let trackerGuardInjected = false;
-    for (const { agent, body, trackerTags } of feedbackPrompts) {
-        const echoGuard = trackerTags.length > 0 && !trackerGuardInjected
-            ? buildTrackerEchoGuard(guardShapes) + '\n\n'
+    for (const { agent, body, guarded } of feedbackPrompts) {
+        const echoGuard = guarded && !trackerGuardInjected
+            ? buildTrackerEchoGuard(guardShapes, guardLineKeys) + '\n\n'
             : '';
-        trackerGuardInjected ||= trackerTags.length > 0;
+        trackerGuardInjected ||= guarded;
         const label = `[${String(agent.name ?? 'Companion').trim()} - auxiliary notes]`;
 
         setExtensionPrompt(
@@ -2625,10 +2862,10 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     // Depth 0 IN_CHAT lands after the retained assistant turns that carry the tracker blocks, which
     // is the recency slot the model weighs hardest. Nothing clears companion prompt keys between
     // generations, so the fallback clears itself once the tags stop appearing.
-    if (guardShapes.size > 0 && !trackerGuardInjected) {
+    if ((guardShapes.size > 0 || guardLineKeys.size > 0) && !trackerGuardInjected) {
         setExtensionPrompt(
             COMPANION_TRACKER_ECHO_GUARD_KEY,
-            buildTrackerEchoGuard(guardShapes),
+            buildTrackerEchoGuard(guardShapes, guardLineKeys),
             extension_prompt_types.IN_CHAT,
             0,
             false,
@@ -2647,7 +2884,24 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
  * @returns {Promise<object[]|null>} null when the page should run them itself
  */
 async function runCompanionsOnServer(agents, messageIndex, { repair = false } = {}) {
-    const remote = await runAgentActionOnServer({ mode: repair ? 'repair-companions' : 'companions', agentIds: agents.map(agent => agent.id), messageIndex });
+    const agentIds = agents.map(agent => agent.id);
+    let tracked = null;
+    let remote;
+    try {
+        remote = await runAgentActionOnServer({
+            mode: repair ? 'repair-companions' : 'companions', agentIds, messageIndex,
+            onAccepted(jobId) {
+                tracked = trackServerCompanionRun(chat[messageIndex], agentIds);
+                tracked.accept(jobId);
+                void emitCompanionResultsUpdated(messageIndex);
+            },
+        });
+    } finally {
+        if (tracked) {
+            tracked.release();
+            if (!remote?.current) void emitCompanionResultsUpdated(messageIndex);
+        }
+    }
     if (!remote) return null;
     if (!remote.current) return [];
     await emitCompanionResultsUpdated(messageIndex);

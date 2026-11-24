@@ -324,6 +324,19 @@ body.neconyan #floatingPrompt .an-field-head {
     gap: 8px;
 }
 
+body.neconyan #floatingPrompt .an-field-heading {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-field-heading > .an-note-fullscreen {
+    padding: 6px 8px;
+}
+
 body.neconyan #floatingPrompt .an-field-label {
     margin: 0;
     color: var(--neco-ink, var(--SmartThemeBodyColor));
@@ -738,6 +751,28 @@ body.neconyan:not(.sbterm) #persona_author_note_button.has-note i {
 
     body.neconyan #floatingPrompt .an-note-check {
         width: 44px;
+    }
+
+    body.neconyan dialog.popup:has(textarea.maximized_textarea[data-for^='extension_floating_']) {
+        inset: 0 !important;
+        margin: 0 !important;
+        width: 100vw !important;
+        width: 100dvw !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-height: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        scale: 1 !important;
+        padding: max(10px, env(safe-area-inset-top)) 6px max(8px, var(--sb-popup-safe-area-bottom, env(safe-area-inset-bottom))) 6px !important;
+        --sb-popup-fills-screen: 1;
+    }
+
+    body.neconyan dialog.popup:has(textarea.maximized_textarea[data-for^='extension_floating_']) .popup-content {
+        padding: 4px !important;
     }
 }
 

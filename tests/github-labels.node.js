@@ -81,6 +81,14 @@ test('sizes retain their boundary and old labels are usable before normal promot
     assert.ok(plan({ totalLines: 5000, files: Array.from({ length: 3000 }, () => ({ filename: 'file.js', changes: 0 })) }).add.includes(labels['size-xl'].name));
 });
 
+test('PR labelling can write PR labels while checking out only trusted code', () => {
+    const { jobs: { classify } } = yaml.load(read('.github/workflows/pr-auto-manager.yml'));
+    assert.deepEqual(classify.permissions, { contents: 'read', 'pull-requests': 'write' });
+    const checkout = classify.steps.find(step => step.uses?.startsWith('actions/checkout@'));
+    assert.equal(checkout.with.ref, '${{ github.event.pull_request.base.sha || github.sha }}');
+    assert.equal(checkout.with['persist-credentials'], false);
+});
+
 test('issue forms use canonical types, platform tags only read environment and system fields', () => {
     assert.deepEqual(yaml.load(read('.github/ISSUE_TEMPLATE/bug-report.yml')).labels, [labels.bug.name]);
     assert.deepEqual(yaml.load(read('.github/ISSUE_TEMPLATE/feature-request.yml')).labels, [labels['feature-request'].name]);

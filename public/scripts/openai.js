@@ -12,7 +12,7 @@ import { capturePresetPrompts, setPreparedPresetPrompts } from './extensions/in-
 */
 import { Fuse, DOMPurify } from '../lib.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, customReasoningLevelsApplicable, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
 import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
@@ -64,6 +64,7 @@ import { getEventSourceStream } from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish } from './generation-request-controls.js';
 import { createChatGenerationParameters } from './chat-provider-parameters.js';
+import { coerceRequestBoolean } from './chat-preset-request.js';
 import { settingsToUpdate } from './chat-preset-mapping.js';
 export { settingsToUpdate } from './chat-preset-mapping.js';
 import {
@@ -126,6 +127,7 @@ import { isKimiK3Model, buildChatCompletionSamplerMetadata, getChatCompletionSam
 import { TOOL_CALL_RECURSE_LIMIT_DEFAULT, normalizeToolCallRecurseLimit } from './tool-call-recurse-limit.js';
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, RUNTIME_AGENTS_IDENTIFIER, collectInChatAgentInspectionRecords, getInChatAgentContributionKind, isInChatAgentPromptIdentifier, trimOldestRetainedContribution } from './in-chat-agent-inspection.js';
+import { recordRequestFailure, requestText } from './text-backend-failures.js';
 
 export {
     openai_messages_count,
@@ -551,6 +553,7 @@ const default_settings = {
     custom_reasoning_param_format: custom_reasoning_param_formats.OPENAI,
     custom_reasoning_enabled_value: 'enabled',
     custom_reasoning_disabled_value: 'disabled',
+    custom_reasoning_documented_levels: false,
     enable_web_search: false,
     request_images: false,
     request_image_aspect_ratio: '',
@@ -1958,16 +1961,18 @@ export function keepPromptBiasLast(chat, bias) {
  * @param {string} decoded - response text or decoded stream data
  * @param {object} [options]
  * @param {boolean?} [options.quiet=false] Suppress toast messages
+ * @param {{ provider: string, model: string, request?: { data: unknown, received: string } }?} [options.failure] Provider, model and request to note in the app evidence log
  */
-export function tryParseStreamingError(response, decoded, { quiet = false, eventType = '' } = {}) {
+export function tryParseStreamingError(response, decoded, { quiet = false, eventType = '', failure = null } = {}) {
     let data;
     try { data = JSON.parse(decoded); } catch { return; }
     if (!generationErrorEnvelope(data, eventType)) return;
     const outcome = classifyGenerationOutcome(data);
     if (outcome) throw providerBlockedError(outcome);
+    const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
+    if (failure) recordRequestFailure({ ...failure, status: Number(data.provider_status) || (response.ok ? 0 : response.status), message });
     checkQuotaError(data, { quiet });
     checkModerationError(data, { quiet });
-    const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
     if (!quiet) toastr.error(message, 'Chat Completion API');
     throw new Error(message || 'The AI service rejected the reply.');
 }
@@ -3790,6 +3795,12 @@ const CHAT_COMPLETION_SAMPLER_CONTROLS = Object.freeze({
     seed: { selector: '#seed_openai', setting: 'seed' },
 });
 
+/** Show the 'Hide unsupported reasoning levels' switch only where it can do something. */
+function syncCustomReasoningLevelsSwitch() {
+    $('#custom_reasoning_documented_levels_block').toggle(customReasoningLevelsApplicable({ ...oai_settings, chat_completion_source: 'custom' }));
+    $('#custom_reasoning_documented_levels').prop('checked', oai_settings.custom_reasoning_documented_levels === true);
+}
+
 function updateChatCompletionReasoningAvailability() {
     const select = document.getElementById('openai_reasoning_effort');
     if (!(select instanceof HTMLSelectElement)) return;
@@ -3822,12 +3833,15 @@ function updateChatCompletionReasoningAvailability() {
     for (const option of select.options) {
         const label = labels[option.value] ?? option.textContent;
         option.disabled = support.state === 'no-selector' || support.forbiddenEfforts.includes(option.value)
-            || (option.value !== 'auto' && support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
+            || (option.value !== 'auto' && !(option.value === 'none' && support.noneAlwaysOffered)
+                && support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
         option.hidden = option.disabled;
         option.textContent = option.disabled
             ? translate('${0} (unavailable)', 'scoped.nanogpt.reasoning.unavailable').replace('${0}', () => label) : label;
     }
-    const unavailable = !support.supported;
+    const invalidNone = oai_settings.reasoning_effort != null && resolveKnownInvalidNoneEffort({ source, model,
+        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort }) === undefined;
+    const unavailable = !support.supported && !(invalidNone && support.noneAlwaysOffered);
     const label = labels[select.value] ?? select.value;
     select.disabled = support.state === 'no-selector';
     select.dataset.reasoningNoSelector = String(select.disabled);
@@ -3837,24 +3851,28 @@ function updateChatCompletionReasoningAvailability() {
     select.dataset.reasoningUnavailable = String(unavailable);
     const noSelectorMessage = t`This model does not expose an effort setting. Your saved choice is kept for other models.`;
     const mandatoryMessage = t`Reasoning cannot be disabled for this model. Choose another model to turn it off.`;
-    const invalidNone = oai_settings.reasoning_effort != null && resolveKnownInvalidNoneEffort({ source, model,
-        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort }) === undefined;
     const omittedNoneMessage = t`None is unavailable for this model. No reasoning effort override is sent.`;
-    select.dataset.reasoningTitle = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
+    const noneSendsNothingMessage = t`None isn't a documented level for this model, so no reasoning setting is sent.`;
+    const noneMessage = invalidNone && support.noneAlwaysOffered ? noneSendsNothingMessage : omittedNoneMessage;
+    const aliasTarget = support.effortAliases?.[select.value];
+    const aliasMessage = aliasTarget && unavailable ? t`${label} acts as ${labels[aliasTarget]} on this model. Choose ${choices}.` : '';
+    select.dataset.reasoningTitle = invalidNone ? noneMessage : support.state === 'no-selector' ? noSelectorMessage
         : unavailable && support.state === 'unknown' && support.forbidden ? mandatoryMessage
-            : unavailable && !names.length ? t`No listed reasoning effort is available for this model.`
-                : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
-                    : `${t`Reasoning Effort`}: ${label}`;
+            : aliasMessage ? aliasMessage
+                : unavailable && !names.length ? t`No listed reasoning effort is available for this model.`
+                    : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
+                        : `${t`Reasoning Effort`}: ${label}`;
     const hint = document.getElementById(source === 'openrouter' ? 'openrouter_reasoning_effort_hint'
         : source === 'nanogpt' ? 'nanogpt_reasoning_effort_hint' : 'native_reasoning_effort_hint');
     if (hint) {
-        hint.textContent = invalidNone ? omittedNoneMessage : support.state === 'no-selector' ? noSelectorMessage
+        hint.textContent = invalidNone ? noneMessage : support.state === 'no-selector' ? noSelectorMessage
             : support.state === 'unknown' && support.forbiddenEfforts.length ? mandatoryMessage
-                : support.state === 'effort-list' && !names.length ? t`No listed reasoning effort is available for this model.`
-                    : support.state === 'effort-list'
-                        ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
-                        : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
-                            : t`Available reasoning levels are not known for this model.`;
+                : aliasMessage ? aliasMessage
+                    : support.state === 'effort-list' && !names.length ? t`No listed reasoning effort is available for this model.`
+                        : support.state === 'effort-list'
+                            ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
+                            : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
+                                : t`Available reasoning levels are not known for this model.`;
     }
     $('#native_reasoning_effort_hint').toggle(support.nativeFallback || (support.state === 'effort-list' && !['nanogpt', 'openrouter'].includes(source)));
     const signature = JSON.stringify([source, model, support.nativeFallback, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
@@ -4293,7 +4311,8 @@ async function saveServerChatCompletionConfig({ restart = false } = {}) {
         setServerChatCompletionConfigMessage(result?.message || 'Chat completion server config saved.');
         toastr.success(result?.message || 'Chat completion server config saved.', 'Server config');
 
-        if (restart) {
+        // The iPhone app saves without restarting: its server runs inside the app.
+        if (restart && result?.restarting !== false) {
             serverChatCompletionConfigState.busy = false;
             serverChatCompletionConfigState.restarting = true;
             updateServerChatCompletionConfigInteractivity();
@@ -5496,14 +5515,16 @@ export async function createGenerationParameters(settings, model, type, messages
  * @returns {Promise<unknown>}
  * @throws {Error}
  */
-async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null, temperature, stream: streamOverride } = {}) {
+async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null, temperature, reasoningEffort, stream: streamOverride } = {}) {
     // Provide default abort signal
     if (!signal) {
         signal = new AbortController().signal;
     }
 
     const model = getChatCompletionModel(oai_settings);
-    const settings = Number.isFinite(temperature) ? { ...oai_settings, temp_openai: temperature } : oai_settings;
+    const settings = Number.isFinite(temperature) || typeof reasoningEffort === 'string' ? { ...oai_settings,
+        ...(Number.isFinite(temperature) ? { temp_openai: temperature } : {}),
+        ...(typeof reasoningEffort === 'string' ? { reasoning_effort: reasoningEffort } : {}) } : oai_settings;
     let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(settings, model, type, messages, { jsonSchema, cacheScope });
 
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
@@ -5534,6 +5555,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
     console.log(`[OpenAI frontend] sendOpenAIRequest: type=${type} source=${generate_data.chat_completion_source} model=${generate_data.model} stream=${generate_data.stream}`);
 
+    const failureSource = { provider: generate_data.chat_completion_source, model: generate_data.model, request: requestText(generate_data) };
     const generate_url = '/api/backends/chat-completions/generate';
     const response = await fetchResumable(generate_url, {
         method: 'POST',
@@ -5542,16 +5564,18 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         signal: signal,
     }).catch(async error => {
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
+        if (!signal?.aborted && error?.name !== 'AbortError') recordRequestFailure({ ...failureSource, status: 0, message: error?.message });
         throw error;
     });
 
     if (!response.ok) {
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
-        tryParseStreamingError(response, await response.text());
+        tryParseStreamingError(response, await response.text(), { failure: failureSource });
+        recordRequestFailure({ ...failureSource, status: response.status, message: response.statusText });
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
-        return readChatCompletionStream(response, { canMultiSwipe, expectedPrefill: Boolean(generate_data.structured_prefill), overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null });
+        return readChatCompletionStream(response, { canMultiSwipe, expectedPrefill: Boolean(generate_data.structured_prefill), overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null, failure: failureSource });
     } else {
         const data = await response.json();
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus(data.choices?.[0]?.structured_prefill ?? { verification: data.error ? 'failed' : 'skipped' });
@@ -5562,6 +5586,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
         if (data.error) {
             const message = data.error.message || response.statusText || t`Unknown error`;
+            recordRequestFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
             toastr.error(message, t`API returned an error`);
             throw new Error(message);
         }
@@ -5592,7 +5617,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
  * @param {boolean?} [options.overrideShowThoughts] Read any reasoning supplied for an auxiliary viewer.
  * @returns {() => AsyncGenerator<{text: string, swipes: string[], logprobs: any, toolCalls: any[], state: object}>}
  */
-export function readChatCompletionStream(response, { canMultiSwipe = false, expectedPrefill = false, chatCompletionSource = null, overrideShowThoughts = null } = {}) {
+export function readChatCompletionStream(response, { canMultiSwipe = false, expectedPrefill = false, chatCompletionSource = null, overrideShowThoughts = null, failure = null } = {}) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();
@@ -5620,7 +5645,18 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, expe
             }
             const rawData = value.data;
             if (rawData === '[DONE]') { await reportUnused(); return; }
-            const parsed = JSON.parse(rawData);
+            let parsed;
+            try {
+                parsed = JSON.parse(rawData);
+            } catch (error) {
+                console.warn('The provider sent an incomplete reply frame.', error);
+                await reportUnused();
+                state.outcomes ??= {};
+                state.outcome = state.outcomes[0] ??= truncatedGenerationOutcome();
+                void reader.cancel().catch(() => {});
+                yield { text, swipes, logprobs: null, toolCalls, state };
+                return;
+            }
             completed ||= streamCompletionSignal(parsed);
             state.outcomes ??= {};
             const choices = Array.isArray(parsed.choices) ? parsed.choices : null;
@@ -5644,7 +5680,8 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, expe
                 // The red toast is gone for a classified error, so keep the provider's own message in the console.
                 if (!previous && state.outcomes[index]?.status === 'error' && frame.error) console.warn('The provider ended the reply with an error.', frame.error);
                 if (generationErrorEnvelope(frame, value.type)) {
-                    if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type });
+                    if (failure?.request) failure.request.received = text;
+                    if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type, failure });
                     if (!state.outcome) throw new Error('The AI service rejected the reply.');
                     continue;
                 }
@@ -6787,6 +6824,9 @@ export class ChatCompletion {
  */
 function migrateChatCompletionSettings(settings) {
     migrateNanoGptProviderSettings(settings);
+    if (settings.custom_reasoning_documented_levels !== undefined) {
+        settings.custom_reasoning_documented_levels = coerceRequestBoolean(settings.custom_reasoning_documented_levels);
+    }
     const migrateMap = [
         { oldKey: 'group_nudge_prompt', oldValue: legacy_group_nudge_prompt, newKey: 'group_nudge_prompt', newValue: default_group_nudge_prompt },
         { oldKey: 'names_in_completion', oldValue: true, newKey: 'names_behavior', newValue: character_names_behavior.COMPLETION },
@@ -6935,6 +6975,7 @@ function loadOpenAISettings(data, settings) {
 
     restoreOpenAIPresetSelection();
     $('#bind_preset_to_connection').prop('checked', oai_settings.bind_preset_to_connection);
+    syncCustomReasoningLevelsSwitch();
     $('#bind_preset_to_sampling').prop('checked', shouldIncludeSamplingFieldsInPreset(oai_settings));
     updateBindPresetToConnectionHelp();
     updateBindPresetToSamplingHelp();
@@ -9293,6 +9334,8 @@ async function onCustomizeParametersClick() {
     template.find('#custom_reasoning_param_format').val(oai_settings.custom_reasoning_param_format).on('input', function () {
         oai_settings.custom_reasoning_param_format = String($(this).val());
         syncCustomReasoningFormatView(template);
+        syncCustomReasoningLevelsSwitch();
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
 
@@ -9300,6 +9343,8 @@ async function onCustomizeParametersClick() {
     const bindTrimmedTextSetting = (selector, key) => {
         template.find(selector).val(oai_settings[key]).on('input', function () {
             oai_settings[key] = String($(this).val()).trim();
+            syncCustomReasoningLevelsSwitch();
+            updateChatCompletionReasoningAvailability();
             saveSettingsDebounced();
         }).on('blur', function () {
             $(this).val(oai_settings[key]);
@@ -10217,14 +10262,14 @@ function registerChatCompletionProfileSlashCommands() {
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-format',
-        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), () => syncCustomReasoningFormatView()),
+        callback: runEnumChatCompletionSettingCallback('custom-reasoning-param-format', 'custom_reasoning_param_format', '#custom_reasoning_param_format', Object.values(custom_reasoning_param_formats), () => { syncCustomReasoningFormatView(); syncCustomReasoningLevelsSwitch(); updateChatCompletionReasoningAvailability(); }),
         description: 'custom reasoning parameter format',
         enumList: Object.values(custom_reasoning_param_formats),
         forceEnum: true,
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-reasoning-param-name',
-        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name'),
+        callback: runStringChatCompletionSettingCallback('custom-reasoning-param-name', 'custom_reasoning_param_name', '#custom_reasoning_param_name', () => { syncCustomReasoningLevelsSwitch(); updateChatCompletionReasoningAvailability(); }),
         description: 'custom reasoning parameter name',
     });
     registerChatCompletionProfileSlashCommand({
@@ -10236,6 +10281,12 @@ function registerChatCompletionProfileSlashCommands() {
         name: 'custom-reasoning-disabled-value',
         callback: runStringChatCompletionSettingCallback('custom-reasoning-disabled-value', 'custom_reasoning_disabled_value', '#custom_reasoning_disabled_value'),
         description: 'custom reasoning disabled value',
+    });
+    registerChatCompletionProfileSlashCommand({
+        name: 'custom-reasoning-documented-levels',
+        callback: runBooleanChatCompletionSettingCallback('custom-reasoning-documented-levels', 'custom_reasoning_documented_levels', '#custom_reasoning_documented_levels', () => updateChatCompletionReasoningAvailability()),
+        description: 'custom hide unsupported reasoning levels',
+        typeList: [ARGUMENT_TYPE.BOOLEAN],
     });
     registerChatCompletionProfileSlashCommand({
         name: 'custom-include-body',
@@ -10902,6 +10953,12 @@ export function initOpenAI() {
     });
     $('#vertexai_model_id').on('input', function () {
         oai_settings.vertexai_model = String($(this).val());
+        saveSettingsDebounced();
+    });
+
+    $('#custom_reasoning_documented_levels').on('input', function () {
+        oai_settings.custom_reasoning_documented_levels = !!$(this).prop('checked');
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
 

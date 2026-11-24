@@ -2874,6 +2874,9 @@ export function initChatUtilities() {
             textarea.dataset.macrosAutocomplete = 'always'; // Always show autocomplete in expanded editor
             textarea.dataset.macrosAutocompleteStyle = 'expanded'; // Use expanded autocomplete style
         }
+        if (bro[0].dataset.macroDialect) {
+            textarea.dataset.macroDialect = bro[0].dataset.macroDialect;
+        }
         textarea.value = String(contentEditable ? bro[0].innerText : bro.val());
         textarea.readOnly = !contentEditable && (bro.prop('readonly') || bro.prop('disabled'));
         textarea.classList.add('height100p', 'wide100p', 'maximized_textarea');

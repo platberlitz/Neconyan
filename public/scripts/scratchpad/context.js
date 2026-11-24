@@ -16,14 +16,24 @@ import { user_avatar } from '../personas.js';
 import { t } from '../i18n.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
-import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
-import { readCurrentPreset } from './preset.js';
+import { isKnownLorebook } from '../lorebook-links.js';
+import { loadWorldInfo, selected_world_info, world_info, world_info_budget, world_info_budget_cap, world_info_case_sensitive, world_info_depth, world_info_match_whole_words, world_info_max_recursion_steps, world_info_recursive, world_names } from '../world-info.js';
+import { currentLimits, readCurrentPreset } from './preset.js';
+import { checkCharacterCard } from './checks/card.js';
+import { checkLorebook } from './checks/lorebook.js';
+import { formatLorebookTrace, MAX_TRACE_CHARS, MAX_TRACE_LINES, traceLorebooks } from './checks/lorebook-trace.js';
+import { checkPreset } from './checks/preset.js';
+import { formatChecks, formatLorebookDetails, formatPresetValues, MAX_DETAIL_CHARS, MAX_DETAIL_LINES } from './checks/index.js';
 import { sameSourceContext } from './source.js';
 import { homePersonaChoice } from './home-persona.js';
+import { shareScenarioNotes } from './scenario-note-references.js';
 
 export { clearHomePersonaChoice, noteHomePersonaChoice } from './home-persona.js';
 
 export const MAX_CONTEXT_BYTES = 1_400_000;
+// Room kept for the chat messages when 'Last prompt sent' is shared, and the least room worth sharing it in.
+const LAST_PROMPT_RESERVE_BYTES = 128 * 1024;
+const LAST_PROMPT_MIN_BYTES = 8 * 1024;
 const MAX_LORE_ENTRIES = 40;
 const MAX_LORE_CHARS = 24_000;
 const LORE_SCAN_MESSAGES = 5;
@@ -285,11 +295,43 @@ function sourceLorebooks(source, settings) {
         const extra = world_info.charLore?.find(item => item.name === filename)?.extraBooks;
         if (Array.isArray(extra)) books.push(...extra);
     }
-    books.push(...selected_world_info, power_user.persona_description_lorebook);
-    books.push(source?.kind === 'conversation'
-        ? getConversationSettings(source.avatar, source).lorebook_override
-        : chat_metadata.world_info);
+    if (source?.kind === 'conversation') {
+        books.push(power_user.persona_descriptions?.[source.personaId]?.lorebook, getConversationSettings(source.avatar, source).lorebook_override);
+    } else {
+        books.push(...selected_world_info, power_user.persona_description_lorebook, chat_metadata.world_info);
+    }
     return [...new Set(books.filter(book => typeof book === 'string' && book.trim()))];
+}
+
+/**
+ * Every hidden lorebook entry the chat's prompt could hold, so 'Last prompt sent' can scrub it.
+ * Returns null when a lorebook could not be read, so the prompt is left out rather than risk a leak.
+ */
+async function hiddenLoreEntries(source) {
+    const worlds = new Set([...sourceLorebooks(source, {}), ...selected_world_info].filter(book => typeof book === 'string' && book.trim()));
+    const loaded = await Promise.all([...worlds].map(async world => {
+        try {
+            const data = await loadWorldInfo(world);
+            if (!data || typeof data !== 'object' || !data.entries || typeof data.entries !== 'object') {
+                return isKnownLorebook(world_names, world) === false ? [] : null;
+            }
+            return Object.values(data.entries);
+        } catch (error) {
+            console.warn('Scratchpad could not read lorebook', world, error);
+            return null;
+        }
+    }));
+    if (loaded.some(entries => entries === null)) return null;
+    return loaded.flat().filter(entry => entry && typeof entry === 'object' && entry.agentBlacklisted);
+}
+
+/** Lorebooks attached to this source, for the Context tab and quick prompts. */
+export function sourceLorebookNames(source) {
+    try {
+        return sourceLorebooks(source, {});
+    } catch {
+        return [];
+    }
 }
 
 export function loreScanText({ source, settings, pendingText = '', sessionText = '' }) {
@@ -300,6 +342,68 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
     ].join('\n');
 }
 
+const RAW_BOOK = Symbol('rawLorebook');
+
+function loreKeys(entry) {
+    return (Array.isArray(entry.key) ? entry.key : typeof entry.key === 'string' ? [entry.key] : []).map(String);
+}
+
+function loreSecondaryKeys(entry) {
+    return (Array.isArray(entry.keysecondary) ? entry.keysecondary : typeof entry.keysecondary === 'string' ? [entry.keysecondary] : []).map(String);
+}
+
+function loreActivation(entry) {
+    return {
+        secondaryKeys: loreSecondaryKeys(entry),
+        selective: Boolean(entry.selective),
+        selectiveLogic: Number(entry.selectiveLogic) || 0,
+        probability: entry.probability === undefined || entry.probability === null ? 100 : Number(entry.probability),
+        useProbability: entry.useProbability !== false,
+        order: entry.order ?? 100,
+        position: entry.position ?? 0,
+        role: entry.role,
+        outletName: entry.outletName,
+        depth: entry.depth,
+        scanDepth: entry.scanDepth,
+        caseSensitive: entry.caseSensitive,
+        matchWholeWords: entry.matchWholeWords,
+        excludeRecursion: Boolean(entry.excludeRecursion),
+        preventRecursion: Boolean(entry.preventRecursion),
+        delayUntilRecursion: entry.delayUntilRecursion,
+        group: entry.group,
+        groupOverride: Boolean(entry.groupOverride),
+        groupWeight: entry.groupWeight ?? 100,
+        useGroupScoring: entry.useGroupScoring,
+        ignoreBudget: Boolean(entry.ignoreBudget),
+        disabled: Boolean(entry.disable),
+        hiddenFromAgents: Boolean(entry.agentBlacklisted),
+        sticky: entry.sticky,
+        cooldown: entry.cooldown,
+        delay: entry.delay,
+    };
+}
+
+function compactSkippedEntry(entry) {
+    return {
+        uid: entry.uid,
+        title: String(entry.comment || loreKeys(entry)[0] || `Entry ${entry.uid}`),
+        keys: loreKeys(entry),
+        reason: 'disabled',
+    };
+}
+
+function bookSettings() {
+    return {
+        scanDepth: Number(world_info_depth) || 0,
+        tokenBudget: Number(world_info_budget) || 0,
+        tokenBudgetCap: Number(world_info_budget_cap) || 0,
+        recursive: Boolean(world_info_recursive),
+        maxRecursionSteps: Number(world_info_max_recursion_steps) || 0,
+        caseSensitive: Boolean(world_info_case_sensitive),
+        matchWholeWords: Boolean(world_info_match_whole_words),
+    };
+}
+
 /**
  * Picks the lorebook entries to share: entries marked 'always', constant
  * entries, and entries whose keywords appear in the recent chat or the
@@ -308,7 +412,7 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
 export async function collectLore({ source, settings, scanText = '' }) {
     requireCurrentSource(source);
     const general = source.kind === 'general';
-    if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [] };
+    if (source.kind === 'notebook' || (general && !generalLorebook(source, settings))) return { books: [], entries: [], details: { books: [] } };
     const loaded = await Promise.all(sourceLorebooks(source, settings).map(async world => {
         try {
             const data = await loadWorldInfo(world);
@@ -331,23 +435,26 @@ export async function collectLore({ source, settings, scanText = '' }) {
     const listed = usable.map(entry => {
         const key = loreOverrideKey(entry);
         const override = overrides[key] || null;
+        const keys = loreKeys(entry);
         let reason = null;
         if (override === 'always') reason = 'always';
         else if (override === 'never') reason = null;
         else if (entry.constant) reason = 'constant';
-        else if (Array.isArray(entry.key) && entry.key.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
+        else if (keys.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
         if (!general && settings?.include?.lore === false) reason = null;
         return {
             key,
             world: String(entry.world),
             uid: entry.uid,
-            title: String(entry.comment || (entry.key || [])[0] || `Entry ${entry.uid}`),
-            keys: Array.isArray(entry.key) ? entry.key.map(String) : [],
+            title: String(entry.comment || keys[0] || `Entry ${entry.uid}`),
+            keys,
             content: String(entry.content ?? ''),
             constant: Boolean(entry.constant),
             override,
             reason,
             included: false,
+            shareReason: null,
+            ...loreActivation(entry),
         };
     });
     const rank = { always: 0, constant: 1, keyword: 2 };
@@ -362,7 +469,24 @@ export async function collectLore({ source, settings, scanText = '' }) {
         used += size;
         count += 1;
     }
-    return { books, entries: listed };
+    for (const item of listed) {
+        if (item.included) continue;
+        if (item.reason) item.shareReason = 'limit';
+        else if (item.override === 'never') item.shareReason = 'marked Never';
+        else item.shareReason = 'no keyword matched';
+    }
+    const details = loaded.filter(Boolean).map(book => {
+        const detail = {
+            name: book.world,
+            settings: bookSettings(),
+            shared: listed.filter(item => item.world === book.world),
+            skipped: book.entries.filter(entry => entry.disable && !entry.agentBlacklisted).map(compactSkippedEntry),
+            hiddenCount: book.entries.filter(entry => entry.agentBlacklisted).length,
+        };
+        Object.defineProperty(detail, RAW_BOOK, { value: book, enumerable: false });
+        return detail;
+    });
+    return { books, entries: listed, details: { books: details } };
 }
 
 function formatLore(lore, substitute, general = false) {
@@ -728,6 +852,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         `User: ${names.user}`,
     ].join('\n'));
 
+    let sharedPersona;
     if (include.persona) {
         const description = sourcePersonaDescription(source);
         const raw = String(description ?? '').trim();
@@ -737,8 +862,9 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (target) {
             const descriptor = power_user.persona_descriptions?.[target.avatar];
             sections.push(`## Editable persona fields (base values, exactly as saved)\n${JSON.stringify({ name: target.name, description: descriptor?.description || '', title: descriptor?.title || '' })}\nPersona edits replace only these base fields; chat-specific additions stay separate.`);
-            const notes = Array.isArray(descriptor?.appendices) ? descriptor.appendices.map(({ id, name, description, avatar }) => ({ id, name, description, hasAvatar: Boolean(avatar) })) : [];
-            if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nEdit a note by its exact id. Changes affect every chat using that note; keep its activation unchanged.`);
+            const { notes, noteRefs } = shareScenarioNotes(target.avatar, descriptor?.appendices);
+            sharedPersona = { ...target, noteRefs };
+            if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nCopy the chosen note's ref into noteRef. A note without a ref is read-only. Changes affect every chat using that note; keep its activation unchanged.`);
         }
     }
 
@@ -788,23 +914,187 @@ export async function buildContext({ source, settings, pendingText = '', session
     }
 
     let lore = { books: [], entries: [] };
+    let loreScan = '';
     const loreShared = general ? Boolean(generalLorebook(source, settings)) : Boolean(include.lore);
     if (loreShared) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
+        loreScan = scanText;
         lore = await collectLore({ source, settings, scanText });
         const text = formatLore(lore, general ? value => String(value ?? '') : substituteSource, general);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
     let preset = null;
+    let presetSnapshot = null;
     let presetTargets = [];
     if (include.preset && (general || source.kind === 'roleplay')) {
         // General uses the account's prompt order, not the character behind Home.
         const snapshot = readCurrentPreset({ globalOnly: general });
+        presetSnapshot = snapshot;
         sections.push(formatPreset(snapshot, { editable: !general }));
         if (!general) presetTargets = (snapshot?.targets ?? []).map(({ api, name }) => ({ api, name }));
         const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
+    }
+
+    let problemsShared = false;
+    if (include.problems) {
+        const results = [];
+        let knownMacros = null;
+        let macroRegistryLoaded = true;
+        const macroNames = async () => {
+            if (knownMacros !== null) return knownMacros;
+            knownMacros = await loadKnownMacroNames();
+            if (!knownMacros.length) macroRegistryLoaded = false;
+            return knownMacros;
+        };
+        if (include.card && people.length) {
+            const names = await macroNames();
+            const knownLorebooks = Array.isArray(world_names) ? world_names : null;
+            const contextSize = currentLimits().contextSize;
+            for (const character of people) {
+                const filename = String(character?.avatar ?? '').replace(/\.[^.]+$/, '');
+                const extraBooks = world_info.charLore?.find(item => item.name === filename)?.extraBooks ?? [];
+                results.push(await checkCharacterCard(character, {
+                    name: character.name,
+                    contextSize,
+                    knownMacros: names,
+                    knownLorebooks,
+                    extraBooks,
+                    countTokens: estimateTokens,
+                }));
+            }
+        }
+        if (presetSnapshot) {
+            const names = await macroNames();
+            results.push(checkPreset(presetSnapshot, { knownMacros: names, modelContext: presetSnapshot.connection?.modelContext || 0 }));
+        }
+        if (loreShared && lore.details?.books?.length) {
+            const sanitizedBooks = [];
+            for (const detail of lore.details.books) {
+                const raw = detail[RAW_BOOK];
+                // Entries hidden from Agents never reach a check or the trace: findings and trace lines quote titles and keys.
+                const book = raw ? { entries: Object.fromEntries(raw.entries
+                    .filter(entry => !entry.agentBlacklisted)
+                    .map(entry => [entry.uid, entry.disable ? { ...entry, content: '' } : entry])) } : null;
+                if (book) sanitizedBooks.push({ name: detail.name, source: 'global', raw: book });
+                results.push(await checkLorebook({
+                    name: detail.name,
+                    book,
+                    scanText: loreScan,
+                    contextSize: currentLimits().contextSize,
+                    scanDepth: detail.settings.scanDepth,
+                    budget: { percent: detail.settings.tokenBudget, cap: detail.settings.tokenBudgetCap },
+                    defaults: { caseSensitive: detail.settings.caseSensitive, matchWholeWords: detail.settings.matchWholeWords },
+                }));
+            }
+            if (results.length) {
+                const macroNote = !macroRegistryLoaded && results.some(item => item.kind === 'card' || item.kind === 'preset')
+                    ? '\n- info | Macro names | Unknown macro names were not checked because the macro list could not be loaded.'
+                    : '';
+                sections.push(`## Checks\n${formatChecks(results)}${macroNote}`);
+                problemsShared = true;
+            }
+            const firstSettings = lore.details.books[0]?.settings || bookSettings();
+            const chatMessages = general
+                ? [pendingText, sessionText].map(item => String(item ?? '').trim()).filter(Boolean)
+                : all
+                    .filter(item => !item.hidden)
+                    .map(item => (item.name ? `${item.name}: ${item.text}` : String(item.text ?? '')))
+                    .reverse();
+            const primaryCharacter = general ? null : (people[0] || null);
+            const trace = sanitizedBooks.length ? await traceLorebooks({
+                books: sanitizedBooks,
+                messages: chatMessages,
+                settings: {
+                    depth: firstSettings.scanDepth,
+                    ...(firstSettings.tokenBudget > 0 ? { budgetPercent: firstSettings.tokenBudget } : {}),
+                    budgetCap: firstSettings.tokenBudgetCap,
+                    recursive: firstSettings.recursive,
+                    maxRecursionSteps: firstSettings.maxRecursionSteps,
+                    caseSensitive: firstSettings.caseSensitive,
+                    matchWholeWords: firstSettings.matchWholeWords,
+                },
+                maxContext: currentLimits().contextSize || 4096,
+                globalScanData: general ? {} : {
+                    personaDescription: include.persona ? String(sourcePersonaDescription(source) ?? '') : '',
+                    characterDescription: include.card ? String(primaryCharacter?.description ?? '') : '',
+                    characterPersonality: include.card ? String(primaryCharacter?.personality ?? '') : '',
+                    characterDepthPrompt: include.card ? String(primaryCharacter?.data?.extensions?.depth_prompt?.prompt ?? '') : '',
+                    scenario: include.card ? String(primaryCharacter?.scenario ?? '') : '',
+                    creatorNotes: include.card ? String(primaryCharacter?.creator_notes ?? '') : '',
+                },
+                character: general
+                    ? { filename: '', tags: [], tagsAvailable: false }
+                    : { filename: String(primaryCharacter?.avatar ?? '').replace(/\.[^/.]+$/, ''), tags: [], tagsAvailable: false },
+                chatMetadata: source.kind === 'roleplay' ? chat_metadata : null,
+                chatLength: general ? 0 : chatMessages.length,
+                hasChatState: source.kind === 'roleplay',
+                hasChatMessages: !general,
+                expand: general ? value => String(value ?? '') : substituteSource,
+                tokenCount: estimateLocalTokens,
+            }) : null;
+            const hasTrace = Boolean(trace && (trace.activated.length || trace.notActivated.length));
+            const details = formatLorebookDetails(lore, {
+                traced: hasTrace,
+                maxLines: hasTrace ? MAX_DETAIL_LINES - MAX_TRACE_LINES : MAX_DETAIL_LINES,
+                maxChars: hasTrace ? MAX_DETAIL_CHARS - MAX_TRACE_CHARS : MAX_DETAIL_CHARS,
+            });
+            if (details) sections.push(`## Lorebook details\n${details}`);
+            if (hasTrace) {
+                const detailLines = details ? details.split('\n').length : 0;
+                const traceText = formatLorebookTrace(trace, {
+                    maxLines: Math.min(MAX_TRACE_LINES, Math.max(10, MAX_DETAIL_LINES - detailLines)),
+                    maxChars: Math.min(MAX_TRACE_CHARS, Math.max(1000, MAX_DETAIL_CHARS - details.length)),
+                });
+                if (traceText) {
+                    sections.push(`## Lorebook activation trace\n${traceText}`);
+                    problemsShared = true;
+                }
+            }
+        } else if (results.length) {
+            const macroNote = !macroRegistryLoaded && results.some(item => item.kind === 'card' || item.kind === 'preset')
+                ? '\n- info | Macro names | Unknown macro names were not checked because the macro list could not be loaded.'
+                : '';
+            sections.push(`## Checks\n${formatChecks(results)}${macroNote}`);
+            problemsShared = true;
+        }
+        if (presetSnapshot) sections.push(`## Preset values (read only)\n${formatPresetValues(presetSnapshot)}`);
+    }
+
+    let appEvidenceShared = false;
+    if (include.appEvidence === true) {
+        const { gatherAppEvidence } = await import('./evidence-gather.js');
+        const evidence = await gatherAppEvidence();
+        requireCurrentSource(source);
+        if (evidence) {
+            sections.push(evidence);
+            appEvidenceShared = true;
+        }
+    }
+
+    let lastPromptShared = false;
+    if (include.lastPrompt === true && (source.kind === 'roleplay' || source.kind === 'conversation')) {
+        const [{ gatherLastPrompt }, { formatMissingLastPrompt, LAST_PROMPT_MAX_BYTES }] = await Promise.all([
+            import('./last-prompt-gather.js'), import('./last-prompt.js')]);
+        const hiddenEntries = await hiddenLoreEntries(source);
+        requireCurrentSource(source);
+        const room = MAX_CONTEXT_BYTES - byteLength(sections.join('\n\n')) - LAST_PROMPT_RESERVE_BYTES;
+        if (!hiddenEntries) {
+            sections.push(formatMissingLastPrompt('Scratchpad could not read every lorebook for this chat, so it left the last prompt out to keep hidden entries private. Try again in a moment.'));
+        } else if (room < LAST_PROMPT_MIN_BYTES) {
+            sections.push(formatMissingLastPrompt('The rest of the shared context leaves no room for the last prompt. Turn off something you do not need, then try again.'));
+        } else {
+            const substitutes = [
+                text => substituteSourceNames(text, names),
+                ...people.map(item => item.name).filter(Boolean).map(character => text => substituteSourceNames(text, { user: names.user, character })),
+                substituteSource,
+            ];
+            const lastPrompt = await gatherLastPrompt(source, { wire: wireSource(source), hiddenEntries, substitutes, maxBytes: Math.min(LAST_PROMPT_MAX_BYTES, room) });
+            requireCurrentSource(source);
+            sections.push(lastPrompt.text);
+            lastPromptShared = lastPrompt.shared;
+        }
     }
 
     // The head is explicit input, so it keeps its bytes and is never trimmed for messages.
@@ -868,7 +1158,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
             ...(presetTargets.length ? { preset: presetTargets } : {}),
-            ...(include.persona && sourcePersona(source) ? { persona: sourcePersona(source) } : {}),
+            ...(sharedPersona ? { persona: sharedPersona } : {}),
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),
             chat: source.kind === 'roleplay',
@@ -878,15 +1168,33 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(cssSnippetsShared ? { cssSnippets: true } : {}),
             ...(dialogueColorsShared ? { dialogueColors: true } : {}),
             ...(include.authorsNote && source.kind === 'roleplay' ? { authorsNote: true } : {}),
+            ...(problemsShared ? { problems: true } : {}),
+            ...(appEvidenceShared ? { appEvidence: true } : {}),
+            ...(lastPromptShared ? { lastPrompt: true } : {}),
         },
     };
+}
+
+/** The live macro names, or an empty list when the registry cannot load here. */
+async function loadKnownMacroNames() {
+    try {
+        const { MacroRegistry } = await import('../macros/engine/MacroRegistry.js');
+        const macros = MacroRegistry?.getAllMacros?.() ?? [];
+        return macros.map(item => item?.name).filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
+function estimateLocalTokens(text) {
+    return Math.ceil(byteLength(String(text ?? '')) / 4);
 }
 
 export async function estimateTokens(text) {
     try {
         return await getTokenCountAsync(text);
     } catch {
-        return Math.ceil(new TextEncoder().encode(text).length / 4);
+        return estimateLocalTokens(text);
     }
 }
 

@@ -4,10 +4,12 @@ import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { setConfigFilePath } from '../src/util.js';
 import { CHAT_COMPLETION_SOURCES } from '../src/constants.js';
+import { resumableGenerationMiddleware, router as resumableRouter, testExports } from '../src/resumable-generations.js';
 import { MockServer } from './util/mock-server.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
@@ -57,6 +59,7 @@ describe('OpenAI Responses integration', () => {
     let SecretManager;
     let SECRET_KEYS;
     const tempDirs = [];
+    const disconnects = new Map();
 
     beforeAll(async () => {
         ({ SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js'));
@@ -73,12 +76,17 @@ describe('OpenAI Responses integration', () => {
 
         const app = express();
         app.use(express.json());
-        app.use((req, _res, next) => {
+        app.use((req, res, next) => {
             req.user = {
                 directories: userDirectories,
+                profile: { handle: 'responses-tester' },
             };
+            const notify = disconnects.get(req.get('X-Generation-Id'));
+            if (notify) res.once('close', notify);
             next();
         });
+        app.use('/resumable-generations', resumableRouter);
+        app.use('/api/backends/chat-completions/generate', resumableGenerationMiddleware);
         app.use('/api/backends/chat-completions', chatCompletionsRouter);
 
         await new Promise((resolve) => {
@@ -165,6 +173,53 @@ describe('OpenAI Responses integration', () => {
                 total_tokens: 17,
             },
         });
+    });
+
+    test.each(['upstream error', 'explicit Stop'])('ends a held Responses reply after disconnect and %s', async ending => {
+        const id = ending === 'upstream error' ? 'responses-upstream-error' : 'responses-stop';
+        const disconnected = new Promise(resolve => disconnects.set(id, resolve));
+        const client = new AbortController();
+        const body = new PassThrough();
+        createProviderFetchSpy(async () => {
+            body.write('data: {"type":"response.output_text.delta","delta":"Keep these words."}\n\n');
+            return { ok: true, status: 200, statusText: 'OK', body };
+        });
+        const post = (url, data, { headers, signal } = {}) => fetch(`http://127.0.0.1:3010${url}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(data), signal,
+        });
+
+        try {
+            const response = await post('/api/backends/chat-completions/generate', {
+                chat_completion_source: CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES,
+                reverse_proxy: 'https://provider.invalid/v1', proxy_password: 'test-key',
+                model: 'gpt-5.4', stream: true, messages: [{ role: 'user', content: 'Hello.' }],
+            }, { headers: { 'X-Generation-Id': id }, signal: client.signal });
+            const reader = response.body.getReader();
+            expect(Buffer.from((await reader.read()).value).toString()).toContain('Keep these words.');
+            client.abort();
+            await reader.cancel().catch(() => {});
+            await disconnected;
+
+            const stopped = ending === 'explicit Stop';
+            const cancelled = stopped ? await post('/resumable-generations/cancel', { id }) : null;
+            expect(cancelled?.status).toBe(stopped ? 204 : undefined);
+            if (!stopped) {
+                body.destroy(Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' }));
+            }
+
+            const resumed = await post('/resumable-generations/resume', { id, offset: 0 }, { signal: AbortSignal.timeout(3000) });
+            expect(resumed.ok).toBe(true);
+            expect(await resumed.text()).toContain('Keep these words.');
+            const status = await (await post('/resumable-generations/status', { id })).json();
+            expect(status).toMatchObject({ done: true });
+            expect(testExports.generations.get(`responses-tester:${id}`).cancelled).toBe(ending === 'explicit Stop');
+        } finally {
+            client.abort();
+            body.destroy();
+            testExports.generations.get(`responses-tester:${id}`)?.forceDiscard();
+            disconnects.delete(id);
+            resetNodeFetchMock();
+        }
     });
 
     test('logs full Responses payloads only when prompt logging is enabled', async () => {

@@ -30,13 +30,13 @@ function owned(app) {
     return { base, account: { accountId, dataEpoch }, directories, scope: { ...base, accountId, dataEpoch } };
 }
 
-async function savedChat(account, name, firstMessageExtra = {}) {
+async function savedChat(account, name, firstMessageExtra = {}, chatMetadata = {}) {
     const fields = { avatar_url: account.avatar, file_name: name };
     const source = await account.context.request.post('/api/chats/get', { headers: account.headers, data: { ...fields, allow_create: true } });
     expect(source.ok(), await source.text()).toBe(true);
     const vacancy = JSON.parse(source.headers()['x-neconyan-roleplay']);
     await account.post('/api/chats/save', { ...fields, chat: [
-        { user_name: 'User', character_name: 'Durable Nova', chat_metadata: { stage9: true } },
+        { user_name: 'User', character_name: 'Durable Nova', chat_metadata: { stage9: true, ...chatMetadata } },
         { name: 'Durable Nova', is_user: false, mes: 'Retained answer.', extra: firstMessageExtra,
             swipes: ['Retained answer.', 'Retained alternative.'], swipe_id: 0 },
         { name: 'User', is_user: true, mes: 'Retained question.', extra: {} },
@@ -1390,9 +1390,16 @@ for (const phone of [false, true]) {
 
     test(`${viewport} a named Roleplay reply from the browser completes once, closes its page and reopens without replaying`, async ({ app, browser }, info) => {
         app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
-        const account = await app.account({ phone, activeConnection: true });
+        const account = await app.account({ phone, activeConnection: true, configureSettings(settings) {
+            settings.world_info_settings.world_info.globalSelect = ['Harbour'];
+            settings.world_info_settings.world_info_budget = 100;
+        } });
+        await account.post('/api/worldinfo/edit', { name: 'Harbour', data: { entries: {
+            1: { uid: 1, key: ['one question'], keysecondary: [], content: 'The harbour is still open.',
+                order: 100, position: 0, probability: 100, useProbability: true },
+        } } });
         const native = owned(app);
-        const locator = await savedChat(account, `Stage9 ${viewport} reply`);
+        const locator = await savedChat(account, `Stage9 ${viewport} reply`, {}, { world_info: 'Deleted chat lore' });
         const page = await account.open({ workspace: false });
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
@@ -1410,8 +1417,10 @@ for (const phone of [false, true]) {
         const job = await account.settled(accepted.jobId);
         expect(job.result.result.status).toBe('completed');
         expect(app.provider.calls).toHaveLength(1);
+        expect(JSON.stringify(app.provider.calls[0].messages)).toContain('The harbour is still open.');
 
         const records = readRoleplayChat(native.scope, locator).records;
+        expect(records[0].chat_metadata.world_info).toBe('Deleted chat lore');
         expect(records[1].swipes).toEqual(['Retained answer.', 'Retained alternative.']);
         expect(records[1].swipe_id).toBe(0);
         expect(records.at(-1).mes).toBe(ANSWER);

@@ -357,7 +357,7 @@ for (const phone of [false, true]) {
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions.length).toBe(sessionCount + 1);
         await composer.fill('A separate session draft.');
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
-        await page.locator('.scratchpad-session:not(.is-active)').getByRole('button', { name: 'Open', exact: true }).click();
+        await page.locator('.scratchpad-session:not(.is-active)').getByRole('button', { name: /^Open / }).click();
         await expect(composer).toHaveValue('Keep this next message.');
 
         const toggle = page.locator('.scratchpad-overview-toggle');

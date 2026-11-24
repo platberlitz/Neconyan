@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { expect, jest, test } from '@jest/globals';
 import { beginRoleplaySave, bindRoleplayAccount, finishRoleplaySave, rememberRoleplayRead, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 
 const source = fs.readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const functions = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
@@ -21,7 +22,7 @@ function fixture() {
         this_chid: 0, selected_group: null, characters: [{ avatar: 'nova.png' }], is_delete_mode: false,
         isChatSaving: false, this_edit_mes_id: undefined, hasPendingChatSave: () => false,
         getCurrentChatId: () => 'chat', captureChatRenderValidity: () => () => runtime.chatGeneration === 1,
-        loadRoleplayChat: read, rememberRoleplayRead: () => true,
+        loadRoleplayChat: read, rememberRoleplayRead: () => true, rememberChatPatchBase, fingerprintMessages,
         reloadChatMutex: { isBusy: false }, reloadCurrentChat: reload,
         chatElement: { 0: { querySelector: selector => selector.startsWith('.mes') ? {} : null }, find: selector => ({ remove: () => remove(selector) }) },
         getRenderedChatMessageWindow: () => ({ renderedMessageCount: 1, firstMessageId: 0, lastMessageId: 0 }),

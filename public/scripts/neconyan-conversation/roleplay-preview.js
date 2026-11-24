@@ -55,7 +55,7 @@ function hasUnfinishedReasoning(preview) {
  * reply when the server reports no keeper text (an older server or a retryable
  * restart), instead of letting the visible text vanish.
  */
-export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, onStage, name, messageIndex }) {
+export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, onStage, onSpeakerChange, name, messageIndex }) {
     let node = null;
     let latest = null;
     let receivedAt = 0;
@@ -77,6 +77,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let isReplacementPreview = false;
     let placementObserver = null;
     let placementChat = null;
+    let speakerReadback = null;
+    let retrySpeakerReadbackAt = 0;
     const remove = () => {
         if (node) {
             thinkingIndicator.clear();
@@ -112,9 +114,24 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         placementObserver.observe(chat, { childList: true });
     };
     const render = (force = false) => {
-        if (frozen) return;
+        if (frozen || stopped) return;
         if (!isCurrent()) { remove(); restoreReplacement(); return; }
         if (!latest) return;
+        // The next speaker starts only after the previous one is saved. Hand
+        // the preview over to that saved row before drawing the next speaker.
+        if (onSpeakerChange && rendered?.avatar && latest.avatar && rendered.avatar !== latest.avatar) {
+            if (!speakerReadback && performance.now() >= retrySpeakerReadbackAt) {
+                const controller = new AbortController();
+                speakerReadback = controller;
+                void Promise.resolve().then(() => onSpeakerChange(controller.signal)).then(() => {
+                    if (!controller.signal.aborted) remove();
+                }).catch(() => { retrySpeakerReadbackAt = performance.now() + 1000; }).finally(() => {
+                    speakerReadback = null;
+                    requestDraw(true);
+                });
+            }
+            return;
+        }
         const chat = document.querySelector('#chat');
         if (!chat) return;
         if (!chat.querySelector('[data-roleplay-replacement]')) {
@@ -126,7 +143,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const finishedAt = latest.gen_finished || (['preparing', 'waiting-memory', 'generating'].includes(latest.stage || 'preparing') ? now : serverTime ?? receivedAt);
         const reasoningDuration = typeof latest.reasoning_duration === 'number'
             ? latest.reasoning_duration + (thinking ? elapsed : 0) : undefined;
-        if (node?.isConnected && latest === rendered && !thinking) {
+        const replacement = chat.querySelector('[data-roleplay-replacement]');
+        const pendingReplacement = replacement && !isReplacementPreview;
+        if (node?.isConnected && latest === rendered && !thinking && !pendingReplacement) {
             // A quiet stream still has an elapsed time. Update only the badge,
             // preserving the message text, selection and display-only colours.
             const { timerValue, timerTitle } = formatGenerationTimer(latest.gen_started || startedAt, finishedAt,
@@ -149,8 +168,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             if (waitNow - rewriteWaitingSince < REWRITE_SCROLL_WAIT_MS) return;
         }
         rewriteWaitingSince = 0;
-        const replacement = chat.querySelector('[data-roleplay-replacement]');
-        if (!node?.isConnected && replacement) isReplacementPreview = true;
+        if (replacement) isReplacementPreview = true;
         // Follow an ordinary new reply while it is written; replacements do not follow the
         // bottom as they grow, and Agent/Companion output added after
         // the reply lands below the reader instead of pulling the page down to it.
@@ -195,9 +213,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             // child identity for the handover to match a completed group speaker.
             const currentChild = String(latest.childId ?? '');
             if (node.dataset.roleplayChild !== currentChild) node.dataset.roleplayChild = currentChild;
+            if (node.dataset.roleplayJob !== String(jobId)) node.dataset.roleplayJob = String(jobId);
             // Display-only decorators run before the browser paints. Saved-message
             // events would incorrectly treat this draft as part of the chat history.
-            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
+            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node, jobId } }));
             rendered = latest;
             renderedMessageId = messageId;
         };
@@ -239,6 +258,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 // after rows already on screen, then watch the chat for later batches.
                 observePlacement(chat);
                 place(chat);
+            } else if (pendingReplacement) {
+                commitRoleplayReplacement(replacement, node, chat);
             }
             finishDraw();
         };
@@ -320,6 +341,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     globalThis.addEventListener?.('pageshow', reconnect);
     globalThis.addEventListener?.('online', reconnect);
     const run = async () => {
+        let retryDelay = 1000;
         while (!stopped) {
             if (hidden()) {
                 await new Promise(resolve => { wake = resolve; });
@@ -339,8 +361,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
                     credentials: 'same-origin', signal: current.signal,
                 }), current.signal);
-                // A missing job has no preview to wait for; other refusals are retried.
-                if (response.status === 404) { stop.freeze(); return; }
+                if ([401, 403, 404, 409].includes(response.status)) { stop.freeze(); return; }
                 if (!response.ok || !response.body) throw new Error(`Reply preview returned ${response.status}.`);
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 try {
@@ -349,6 +370,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                     while (!stopped) {
                         const chunk = await withAbortSignal(reader.read(), current.signal);
                         if (chunk.done) break;
+                        retryDelay = 1000;
                         heard();
                         pending += chunk.value;
                         if (pending.length > MAX_PREVIEW_EVENT_LENGTH) throw new Error('Reply preview exceeded its limit.');
@@ -401,7 +423,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 current.abort();
             }
             if (!stopped && !hidden() && !reconnectRequested) await new Promise(resolve => {
-                const backoff = setTimeout(() => { wake = null; resolve(); }, 1000);
+                const backoff = setTimeout(() => { wake = null; resolve(); }, retryDelay);
+                retryDelay = Math.min(15000, retryDelay * 2);
                 wake = () => { clearTimeout(backoff); resolve(); };
             });
         }
@@ -409,6 +432,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     void run();
     const stop = () => {
         stopped = true;
+        speakerReadback?.abort();
         diagnostic(null);
         cancelPendingDraws();
         attempt?.abort();
@@ -422,7 +446,14 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
-    stop.freeze = () => { cancelPendingDraws(); render(true); frozen = true; thinkingIndicator.clear(); clearInterval(timer); timer = null; };
+    stop.freeze = () => {
+        cancelPendingDraws();
+        render(true);
+        frozen = true;
+        speakerReadback?.abort();
+        thinkingIndicator.clear();
+        clearInterval(timer); timer = null;
+    };
     // The last reply text shown, so a reply the server did not save can be kept.
     stop.reply = () => {
         if (!latest || !/\S/.test(latest.text || '')) return null;

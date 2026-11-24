@@ -3,20 +3,48 @@ import UniformTypeIdentifiers
 import WebKit
 
 @MainActor
-final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, UIDocumentPickerDelegate {
+final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
+    private struct Popup {
+        let web: WKWebView
+        let controller: UINavigationController
+        let print: UIBarButtonItem
+        let title: NSKeyValueObservation
+    }
+
     private var web: WKWebView!
     private var server: LocalServer?
     private var keeper: BackgroundKeeper?
     private var notifications: NativeNotifications?
     private var pickReply: (@MainActor @Sendable (Any?, String?) -> Void)?
+    private weak var picker: UIDocumentPickerViewController?
     private let status = UILabel()
+    private let spinner = UIActivityIndicatorView(style: .large)
+    private let retry = UIButton(type: .system)
+    private let logs = UIButton(type: .system)
     private let actions = UIStackView()
     private var downloads: [ObjectIdentifier: URL] = [:]
     private var connecting = false
     private var recoveryRequired = false
+    // WebKit reports these through separate callbacks, so the controller keeps its own record
+    // instead of reading the accessibility identifier the UI tests look for.
+    private var workspaceReady = false
+    private var loadingWorkspace = false
+    private var signedIn = false
+    private var skippedSignIn = false
+    private var previousProblemShown = false
+    private var lastAutoReload: Date?
+    private var sharingLog = false
+    private var pendingPresentations: [UIViewController] = []
+    private var presentationScheduled = false
+    private var popup: Popup?
+    private var observations: [NSKeyValueObservation] = []
+    private var darkChrome: Bool?
     private let diagnostics = StartupDiagnostics.shared
+    private let deviceName = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
     #if DEBUG
     private var injectedStartupFailure = false
+    private var injectedReload = false
+    private var injectedPageScript = false
     #endif
 
     override func viewDidLoad() {
@@ -29,6 +57,10 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         }
         let build = (try? Bundle.main.url(forResource: "payload-version", withExtension: "txt").map { try String(contentsOf: $0, encoding: .utf8) }) ?? "unknown"
         diagnostics.record("app-launch", detail: "version=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "unknown") build=\(build.trimmingCharacters(in: .whitespacesAndNewlines)) device=\(model) os=\(ProcessInfo.processInfo.operatingSystemVersionString) physicalMemoryBytes=\(ProcessInfo.processInfo.physicalMemory)")
+        // Shares and exports left behind by a previous run that ended before its sheet closed.
+        Task.detached(priority: .utility) {
+            try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("exports", isDirectory: true))
+        }
         view.backgroundColor = .systemBackground
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
@@ -38,6 +70,10 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.userContentController.add(self, name: "neconyanBackground")
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanImport")
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanNotifications")
+        // WKWebView's user agent has no Version token and Safari 26+ freezes the OS token at 18,
+        // so the page reads the real iOS version and memory size from here.
+        let device = "{platform:'ios',device:'\(deviceName.lowercased())',osMajor:\(ProcessInfo.processInfo.operatingSystemVersion.majorVersion),memoryBytes:\(ProcessInfo.processInfo.physicalMemory)}"
+        config.userContentController.addUserScript(WKUserScript(source: "Object.defineProperty(window,'neconyanNativeDevice',{value:Object.freeze(\(device))});", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: #"""
         (() => {
             const resources = new Set();
@@ -117,28 +153,40 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         web.accessibilityIdentifier = "workspace-loading"
         web.navigationDelegate = self
         web.uiDelegate = self
+        web.allowsLinkPreview = false
+        #if DEBUG
+        web.isInspectable = true
+        #endif
         web.isHidden = true
         web.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(web)
+        // Every edge follows the safe area, so landscape content stays clear of the notch and the
+        // bands around the page take its theme colour.
         NSLayoutConstraint.activate([
-            web.leadingAnchor.constraint(equalTo: view.leadingAnchor), web.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            web.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor), web.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             web.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), web.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
-        status.text = "Starting Neconyan on this iPhone…"
+        observations = [
+            web.observe(\.themeColor, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateChrome() } },
+            web.observe(\.underPageBackgroundColor, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateChrome() } },
+        ]
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (controller: BrowserController, _: UITraitCollection) in controller.updateChrome() }
+        status.text = "Starting Neconyan on this \(deviceName)…"
         status.numberOfLines = 0
         status.textAlignment = .center
         status.font = .preferredFont(forTextStyle: .body)
         status.adjustsFontForContentSizeCategory = true
         status.accessibilityIdentifier = "startup-status"
-        let retry = UIButton(type: .system)
+        spinner.hidesWhenStopped = true
         retry.setTitle("Try again", for: .normal)
+        retry.titleLabel?.adjustsFontForContentSizeCategory = true
         retry.addTarget(self, action: #selector(retryConnection), for: .touchUpInside)
-        let logs = UIButton(type: .system)
         logs.setTitle("Share startup log", for: .normal)
+        logs.titleLabel?.adjustsFontForContentSizeCategory = true
         logs.addTarget(self, action: #selector(shareLog), for: .touchUpInside)
         actions.axis = .vertical
         actions.spacing = 16
-        [status, retry, logs].forEach(actions.addArrangedSubview)
+        [spinner, status, retry, logs].forEach(actions.addArrangedSubview)
         actions.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(actions)
         NSLayoutConstraint.activate([
@@ -151,6 +199,27 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         connect()
     }
 
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        guard let darkChrome else { return .default }
+        return darkChrome ? .lightContent : .darkContent
+    }
+
+    private func updateChrome() {
+        guard let web else { return }
+        let colour = web.isHidden ? nil : (web.themeColor ?? web.underPageBackgroundColor)
+        view.backgroundColor = colour ?? .systemBackground
+        let dark = colour.map { Self.isDark($0.resolvedColor(with: traitCollection)) }
+        guard dark != darkChrome else { return }
+        darkChrome = dark
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    private static func isDark(_ colour: UIColor) -> Bool {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return false }
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 0.5
+    }
+
     @objc private func retryConnection() {
         guard !connecting else { return }
         diagnostics.record("explicit-retry")
@@ -158,13 +227,22 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         connect()
     }
 
+    private func showProgress(_ text: String) {
+        status.text = text
+        spinner.startAnimating()
+        retry.isHidden = true
+        actions.isHidden = false
+    }
+
     private func connect() {
         guard !connecting, !recoveryRequired else { return }
         connecting = true
+        workspaceReady = false
+        loadingWorkspace = false
         diagnostics.beginAttempt()
         web.isHidden = true
-        actions.isHidden = false
-        status.text = "Starting Neconyan on this iPhone…"
+        updateChrome()
+        showProgress("Starting Neconyan on this \(deviceName)…")
         Task {
             defer { connecting = false }
             do {
@@ -177,18 +255,37 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 #endif
                 if server == nil { server = try LocalServer() }
                 guard let server else { return }
+                if !server.started {
+                    // Installing the payload and starting Node must not block UIKit's main thread.
+                    let needsInstall = await Task.detached { server.needsInstall }.value
+                    showProgress(needsInstall ? "Preparing app files after the update…" : "Starting the local server…")
+                    try await Task.detached { try server.start() }.value
+                }
                 if keeper == nil {
                     notifications = NativeNotifications(inbox: server.state.appendingPathComponent("native-notifications.json"))
                     keeper = BackgroundKeeper(marker: server.state.appendingPathComponent("ios-busy"), pollNotifications: { [weak self] in self?.notifications?.drain() })
                     keeper?.start()
                 }
-                // Installing the payload and starting Node must not block UIKit's main thread.
-                try await Task.detached { try server.start() }.value
-                let cookies = try await server.signIn()
-                diagnostics.stage("install-session-cookies", detail: "count=\(cookies.count)")
-                for cookie in cookies { await web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) }
+                if let problem = server.previousRunProblem, !previousProblemShown {
+                    previousProblemShown = true
+                    showRecovery(problem + " Your saved data has been kept. Tap Try again to open Neconyan, or share the startup log first.", reason: "previous-launch-died")
+                    return
+                }
+                showProgress("Opening your workspace…")
+                // The remembered session cookie survives a page reload, so a reconnect reuses it
+                // instead of creating another 30-day session each time.
+                skippedSignIn = signedIn
+                if signedIn {
+                    if let message = server.nodeExitMessage { throw LocalServerError.message(message) }
+                } else {
+                    let cookies = try await server.signIn()
+                    diagnostics.stage("install-session-cookies", detail: "count=\(cookies.count)")
+                    for cookie in cookies { await web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) }
+                    signedIn = true
+                }
                 guard !recoveryRequired else { return }
                 diagnostics.stage("load-workspace")
+                loadingWorkspace = true
                 web.load(URLRequest(url: server.origin))
             } catch { showRecovery(error.localizedDescription, reason: "connection-failed", error: error) }
         }
@@ -196,7 +293,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     @objc private func resume() {
         notifyMemoryLifecycle("foreground")
-        guard !connecting, !recoveryRequired, let url = web.url else { return }
+        guard !connecting, !recoveryRequired, !loadingWorkspace, let url = web.url else { return }
         if url.path == "/login" || web.isHidden { connect() }
     }
 
@@ -214,26 +311,72 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc private func shareLog() {
-        do {
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("exports/\(UUID().uuidString)", isDirectory: true)
-            let report = try diagnostics.export(serverLog: server?.logURL, to: destination)
-            share(report, removeAfterwards: true)
-        } catch {
-            diagnostics.record("share-failed", detail: StartupDiagnostics.errorDetails(error))
-            status.text = "Could not prepare the startup log: \(error.localizedDescription)"
+        guard !sharingLog else { return }
+        sharingLog = true
+        let diagnostics = self.diagnostics
+        let serverLog = server?.logURL
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("exports/\(UUID().uuidString)", isDirectory: true)
+        Task {
+            defer { sharingLog = false }
+            do {
+                // Reading and packing the log tails can take a while on a slow device.
+                let report = try await Task.detached(priority: .userInitiated) { try diagnostics.export(serverLog: serverLog, to: destination) }.value
+                share(report, removeAfterwards: true)
+            } catch {
+                diagnostics.record("share-failed", detail: StartupDiagnostics.errorDetails(error))
+                status.text = "Could not prepare the startup log: \(error.localizedDescription)"
+            }
         }
     }
 
     private func share(_ url: URL, removeAfterwards: Bool = false) {
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        if removeAfterwards {
-            sheet.completionWithItemsHandler = { _, _, _, _ in
-                try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
-            }
+        sheet.completionWithItemsHandler = { [weak self] _, _, _, _ in
+            if removeAfterwards { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            MainActor.assumeIsolated { self?.presentPendingSoon() }
         }
-        sheet.popoverPresentationController?.sourceView = view
-        sheet.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
-        present(sheet, animated: true)
+        enqueue(sheet)
+    }
+
+    // One sheet or dialog shows at a time; the rest wait here instead of being dropped.
+    private func enqueue(_ controller: UIViewController) {
+        pendingPresentations.append(controller)
+        presentPending()
+    }
+
+    private var topController: UIViewController {
+        var top: UIViewController = self
+        while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
+        return top
+    }
+
+    private func presentPending() {
+        guard let next = pendingPresentations.first else { return }
+        let top = topController
+        if viewIfLoaded?.window == nil || top.isBeingPresented || top.isBeingDismissed || top.presentedViewController != nil {
+            presentPendingSoon()
+            return
+        }
+        // These call presentPendingSoon when they close.
+        if top is UIAlertController || top is UIActivityViewController || top is UIDocumentPickerViewController { return }
+        pendingPresentations.removeFirst()
+        if let popover = next.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+        top.present(next, animated: true)
+    }
+
+    private func presentPendingSoon() {
+        guard !presentationScheduled else { return }
+        presentationScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self else { return }
+            self.presentationScheduled = false
+            self.presentPending()
+        }
     }
 
     private func isLocal(_ url: URL) -> Bool {
@@ -241,23 +384,59 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         return url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port && url.user == nil && url.password == nil
     }
 
+    // about:blank, about:srcdoc and blob: frames inherit the workspace origin from the page that made them.
+    private func isLocal(_ frame: WKFrameInfo?) -> Bool {
+        guard let frame, let origin = server?.origin else { return false }
+        if let url = frame.request.url, isLocal(url) { return true }
+        let security = frame.securityOrigin
+        return security.protocol == origin.scheme && security.host == origin.host && security.port == (origin.port ?? 0)
+    }
+
+    // WebKit can report no source frame for some navigations despite the non-optional annotation.
+    private func sourceFrame(of action: WKNavigationAction) -> WKFrameInfo? {
+        action.value(forKey: "sourceFrame") as? WKFrameInfo
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source) else { return }
+        guard message.webView === web, message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source) else { return }
         if message.name == "neconyanBackground" {
             if let busy = (message.body as? [String: Any])?["busy"] as? Bool { keeper?.setPageBusy(busy) }
             return
         }
         guard let body = message.body as? [String: String], let text = body["text"] else { return }
         let kind = body["kind"] ?? "diagnostic"
+        diagnostics.record("web-\(kind)", detail: text)
         if kind == "ready", !recoveryRequired {
+            workspaceReady = true
             web.accessibilityIdentifier = "workspace-ready"
             diagnostics.stage("workspace-ready")
+            #if DEBUG
+            debugAfterReady()
+            #endif
         }
-        diagnostics.record("web-\(kind)", detail: text)
     }
 
+    #if DEBUG
+    private func debugAfterReady() {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["NECONYAN_TEST_STARTUP_FAILURE"] == "reload-after-ready" {
+            if injectedReload {
+                web.accessibilityIdentifier = "workspace-ready-after-reload"
+                return
+            }
+            injectedReload = true
+            handleWebProcessLoss(allowReload: true)
+            return
+        }
+        if !injectedPageScript, let script = environment["NECONYAN_TEST_PAGE_SCRIPT"] {
+            injectedPageScript = true
+            web.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+    #endif
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
-        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
+        guard message.webView === web, message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
               let body = message.body as? [String: Any] else {
             replyHandler(nil, "Unsupported request.")
             return
@@ -276,16 +455,22 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             replyHandler(nil, "Unsupported request.")
             return
         }
-        guard pickReply == nil, presentedViewController == nil else {
-            replyHandler(nil, "A file picker is already open.")
-            return
+        if let previous = pickReply {
+            guard picker == nil else {
+                replyHandler(nil, "A file picker is already open.")
+                return
+            }
+            // The last picker closed without calling back, so release the page's earlier request.
+            pickReply = nil
+            previous(nil, nil)
         }
         pickReply = replyHandler
         // A copy keeps the original in Files untouched; the server removes this one once it is retained.
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip], asCopy: true)
         picker.delegate = self
         picker.allowsMultipleSelection = false
-        present(picker, animated: true)
+        self.picker = picker
+        enqueue(picker)
     }
 
     private struct PickedArchive: Sendable { let token: String; let name: String; let size: Int; let lastModified: Int64 }
@@ -293,9 +478,11 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         pickReply?(nil, nil)
         pickReply = nil
+        presentPendingSoon()
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        presentPendingSoon()
         guard let reply = pickReply else { return }
         pickReply = nil
         guard let picked = urls.first, let inbox = server?.importInbox else { reply(nil, "No ZIP was picked."); return }
@@ -322,18 +509,36 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let fromLocal = isLocal(sourceFrame(of: navigationAction))
+        let download = navigationAction.shouldPerformDownload
         if isLocal(url) {
-            decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
-        } else if url.scheme == "blob", navigationAction.sourceFrame.isMainFrame, let source = navigationAction.sourceFrame.request.url, isLocal(source) {
-            decisionHandler(.download)
-        } else {
-            decisionHandler(.cancel)
-            if navigationAction.targetFrame?.isMainFrame != false, navigationAction.navigationType == .linkActivated, ["https", "http", "mailto"].contains(url.scheme ?? "") { UIApplication.shared.open(url) }
+            decisionHandler(download ? .download : .allow)
+            return
         }
+        let target = navigationAction.targetFrame
+        let isSubframe = target.map { !$0.isMainFrame } ?? false
+        let isPopup = webView !== web
+        if ["about", "blob", "data"].contains(scheme) {
+            if isSubframe || isPopup || target == nil {
+                // Card scripts, previews and print views render in srcdoc, blob and blank frames.
+                decisionHandler(download ? (fromLocal ? .download : .cancel) : .allow)
+            } else {
+                // A blob or data link in the workspace itself is an export.
+                decisionHandler(fromLocal && scheme != "about" ? .download : .cancel)
+            }
+            return
+        }
+        if isSubframe, ["https", "http"].contains(scheme) {
+            decisionHandler(.allow)
+            return
+        }
+        decisionHandler(.cancel)
+        if navigationAction.navigationType == .linkActivated || target == nil, ["https", "http", "mailto"].contains(scheme) { UIApplication.shared.open(url) }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse {
+        if navigationResponse.isForMainFrame, webView === web, let response = navigationResponse.response as? HTTPURLResponse {
             diagnostics.record("navigation-response", detail: "status=\(response.statusCode) path=\(response.url?.path ?? "unknown")")
         }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
@@ -342,64 +547,215 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard !recoveryRequired else { return }
+        guard webView === web, !recoveryRequired else { return }
         #if DEBUG
         // Exercise the real recovery callbacks without private WebKit process APIs.
-        if !injectedStartupFailure, let failure = ProcessInfo.processInfo.environment["NECONYAN_TEST_STARTUP_FAILURE"] {
+        if !injectedStartupFailure, let failure = ProcessInfo.processInfo.environment["NECONYAN_TEST_STARTUP_FAILURE"], ["termination", "navigation"].contains(failure) {
             injectedStartupFailure = true
-            if failure == "termination" { webViewWebContentProcessDidTerminate(webView) }
+            if failure == "termination" { handleWebProcessLoss(allowReload: false) }
             if failure == "navigation" { self.webView(webView, didFailProvisionalNavigation: navigation, withError: URLError(.cannotConnectToHost)) }
             // A late completion must not hide the recovery controls.
             self.webView(webView, didFinish: navigation)
             return
         }
         #endif
+        loadingWorkspace = false
         if webView.url?.path == "/login" {
+            if skippedSignIn {
+                // The remembered session has expired; sign in again once before asking for help.
+                diagnostics.record("session-expired", detail: "Signing in again after the saved session was refused.")
+                signedIn = false
+                skippedSignIn = false
+                connect()
+                return
+            }
             showRecovery("Local sign-in did not finish. Try again or share the startup log.", reason: "sign-in-redirect")
             return
         }
         web.isHidden = false
         actions.isHidden = true
-        diagnostics.record("navigation-finished", detail: "path=\(webView.url?.path ?? "unknown") ready=\(web.accessibilityIdentifier == "workspace-ready")")
+        spinner.stopAnimating()
+        updateChrome()
+        diagnostics.record("navigation-finished", detail: "path=\(webView.url?.path ?? "unknown") ready=\(workspaceReady)")
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === web else { return }
         web.accessibilityIdentifier = "workspace-loading"
         diagnostics.record("navigation-started", detail: "path=\(webView.url?.path ?? "unknown")")
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === web else { return }
         diagnostics.record("navigation-committed", detail: "path=\(webView.url?.path ?? "unknown")")
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === web else {
+            closePopup()
+            return
+        }
+        handleWebProcessLoss(allowReload: true)
+    }
+
+    // iOS reclaims the page's process under memory pressure. A workspace that was already working
+    // reloads once on its own; a page that never got ready, or keeps stopping, waits for the user.
+    private func handleWebProcessLoss(allowReload: Bool) {
+        let wasReady = workspaceReady
+        workspaceReady = false
+        loadingWorkspace = false
+        let now = Date()
+        if allowReload, wasReady, !recoveryRequired, !connecting, lastAutoReload.map({ now.timeIntervalSince($0) > 60 }) ?? true {
+            lastAutoReload = now
+            diagnostics.record("web-process-reload", detail: "The page stopped after the workspace was ready; reloading it once.")
+            keeper?.setPageBusy(false)
+            connect()
+            return
+        }
         showRecovery("The Neconyan page stopped unexpectedly. Try again or share the startup log.", reason: "web-process-terminated; cause unavailable from WebKit")
     }
+
+    // A cancelled load or a link that turned into a download is not a failure.
+    private func isBenign(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return true }
+        return error.domain == "WebKitErrorDomain" && error.code == 102
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code == NSURLErrorCancelled { return }
+        guard webView === web else { return }
+        if isBenign(error) {
+            if !web.isLoading { loadingWorkspace = false }
+            return
+        }
         showRecovery(error.localizedDescription, reason: "provisional-navigation-failed", error: error)
     }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        if (error as NSError).code == NSURLErrorCancelled { return }
+        guard webView === web else { return }
+        if isBenign(error) {
+            if !web.isLoading { loadingWorkspace = false }
+            return
+        }
         showRecovery(error.localizedDescription, reason: "committed-navigation-failed", error: error)
+    }
+
+    // The server already answers with the session cookie; this covers a page that asks for the
+    // password again, for example after the cookie store was cleared.
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let space = challenge.protectionSpace
+        if let server, space.authenticationMethod == NSURLAuthenticationMethodHTTPBasic, space.host == server.origin.host,
+           space.port == (server.origin.port ?? 0), challenge.previousFailureCount == 0 {
+            completionHandler(.useCredential, URLCredential(user: "neconyan", password: server.password, persistence: .forSession))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
 
     private func showRecovery(_ message: String, reason: String, error: Error? = nil) {
         diagnostics.record("recovery", detail: "reason=\(reason) page=\(web.url?.path ?? "not loaded") state=\(web.accessibilityIdentifier ?? "unknown") \(error.map { StartupDiagnostics.errorDetails($0) } ?? message)")
         recoveryRequired = true
+        workspaceReady = false
+        loadingWorkspace = false
         keeper?.setPageBusy(false)
         web.stopLoading()
         web.isHidden = true
+        updateChrome()
         status.text = message
+        spinner.stopAnimating()
+        retry.isHidden = false
         actions.isHidden = false
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url {
-            if isLocal(url) { webView.load(navigationAction.request) }
-            else if ["https", "http"].contains(url.scheme ?? "") { UIApplication.shared.open(url) }
+        let url = navigationAction.request.url
+        let scheme = url?.scheme?.lowercased() ?? "about"
+        if let url, !isLocal(url), ["https", "http", "mailto"].contains(scheme) {
+            UIApplication.shared.open(url)
+            return nil
         }
-        return nil
+        // Print views (window.open('')) and local pages opened in a new tab get their own sheet.
+        guard webView === web, popup == nil, isLocal(sourceFrame(of: navigationAction)),
+              url.map { isLocal($0) } == true || ["about", "blob", "data"].contains(scheme) else { return nil }
+        return openPopup(configuration)
+    }
+
+    private func openPopup(_ configuration: WKWebViewConfiguration) -> WKWebView {
+        let child = WKWebView(frame: .zero, configuration: configuration)
+        child.navigationDelegate = self
+        child.uiDelegate = self
+        child.allowsLinkPreview = false
+        #if DEBUG
+        child.isInspectable = true
+        #endif
+        let page = UIViewController()
+        page.view = child
+        page.title = "Neconyan"
+        let print = UIBarButtonItem(image: UIImage(systemName: "printer"), style: .plain, target: self, action: #selector(printPopup))
+        print.accessibilityLabel = "Print"
+        page.navigationItem.leftBarButtonItem = print
+        page.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(closePopup))
+        let controller = UINavigationController(rootViewController: page)
+        controller.presentationController?.delegate = self
+        let title = child.observe(\.title, options: [.new]) { [weak page] webView, _ in
+            MainActor.assumeIsolated {
+                let text = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                page?.title = text.isEmpty ? "Neconyan" : text
+            }
+        }
+        popup = Popup(web: child, controller: controller, print: print, title: title)
+        enqueue(controller)
+        return child
+    }
+
+    @objc private func printPopup() {
+        guard let popup else { return }
+        let printer = UIPrintInteractionController.shared
+        let info = UIPrintInfo(dictionary: nil)
+        info.jobName = popup.web.title?.isEmpty == false ? popup.web.title! : "Neconyan"
+        info.outputType = .general
+        printer.printInfo = info
+        printer.printFormatter = popup.web.viewPrintFormatter()
+        _ = printer.present(from: popup.print, animated: true)
+    }
+
+    @objc private func closePopup() {
+        guard let popup else { return }
+        self.popup = nil
+        releasePopup(popup)
+        pendingPresentations.removeAll { $0 === popup.controller }
+        if popup.controller.presentingViewController != nil {
+            popup.controller.dismiss(animated: true) { [weak self] in MainActor.assumeIsolated { self?.presentPendingSoon() } }
+        }
+    }
+
+    private func releasePopup(_ popup: Popup) {
+        popup.title.invalidate()
+        popup.web.stopLoading()
+        popup.web.navigationDelegate = nil
+        popup.web.uiDelegate = nil
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        if webView === popup?.web { closePopup() }
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard let popup, presentationController.presentedViewController === popup.controller else { return }
+        self.popup = nil
+        releasePopup(popup)
+        presentPendingSoon()
+    }
+
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        // iOS still asks for camera and microphone access the first time; this only skips
+        // WebKit's second prompt for the app's own page.
+        guard let local = server?.origin, webView === web, frame.isMainFrame, origin.protocol == local.scheme,
+              origin.host == local.host, origin.port == (local.port ?? 0) else {
+            decisionHandler(.deny)
+            return
+        }
+        decisionHandler(.grant)
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
@@ -420,43 +776,42 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         if let url = downloads.removeValue(forKey: ObjectIdentifier(download)) { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let alert = UIAlertController(title: "Export failed", message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in MainActor.assumeIsolated { self?.presentPendingSoon() } })
+        enqueue(alert)
     }
-    private func presentJavaScriptDialog<T>(_ message: String, from frame: WKFrameInfo, defaultValue: T, completionHandler: @escaping (T) -> Void, configure: (UIAlertController, @escaping (T) -> Void) -> Void) {
+    private func presentJavaScriptDialog<T>(_ message: String, in webView: WKWebView, from frame: WKFrameInfo, defaultValue: T, completionHandler: @escaping (T) -> Void, configure: (UIAlertController, @escaping (T) -> Void) -> Void) {
         var completed = false
-        let complete: (T) -> Void = { value in
+        let complete: (T) -> Void = { [weak self] value in
             guard !completed else { return }
             completed = true
             completionHandler(value)
+            self?.presentPendingSoon()
         }
-        guard frame.isMainFrame, let source = frame.request.url, isLocal(source),
-              !web.isHidden, pickReply == nil, presentedViewController == nil,
-              !isBeingPresented, !isBeingDismissed, viewIfLoaded?.window != nil else {
+        guard frame.isMainFrame, isLocal(frame), !(webView === web && web.isHidden), webView === web || webView === popup?.web,
+              viewIfLoaded?.window != nil else {
             complete(defaultValue)
             return
         }
         let alert = UIAlertController(title: "Neconyan", message: message, preferredStyle: .alert)
         configure(alert, complete)
-        present(alert, animated: true)
-        if presentedViewController !== alert { complete(defaultValue) }
+        enqueue(alert)
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        presentJavaScriptDialog(message, from: frame, defaultValue: (), completionHandler: { _ in completionHandler() }) { alert, complete in
+        presentJavaScriptDialog(message, in: webView, from: frame, defaultValue: (), completionHandler: { _ in completionHandler() }) { alert, complete in
             alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(()) })
         }
     }
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        presentJavaScriptDialog(message, from: frame, defaultValue: false, completionHandler: completionHandler) { alert, complete in
+        presentJavaScriptDialog(message, in: webView, from: frame, defaultValue: false, completionHandler: completionHandler) { alert, complete in
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in complete(false) })
             alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(true) })
         }
     }
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
-        presentJavaScriptDialog(prompt, from: frame, defaultValue: nil, completionHandler: completionHandler) { alert, complete in
+        presentJavaScriptDialog(prompt, in: webView, from: frame, defaultValue: nil, completionHandler: completionHandler) { alert, complete in
             alert.addTextField { $0.text = defaultText }
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in complete(nil) })
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(alert.textFields?.first?.text ?? "") })
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak alert] _ in complete(alert?.textFields?.first?.text ?? "") })
         }
     }
 }

@@ -20,16 +20,16 @@ describe('Neconyan project boundaries', () => {
     test('uses independent 1.0 package metadata and executable naming', () => {
         expect(packageJson).toMatchObject({
             name: 'neconyan',
-            version: '1.5.7',
+            version: '1.6.0',
             bin: { neconyan: './src/server-global.js' },
         });
         expect(packageJson.repository).toBeUndefined();
         expect(Object.keys(packageJson.bin)).toEqual(['neconyan']);
 
-        expect(packageLock).toMatchObject({ name: 'neconyan', version: '1.5.7' });
+        expect(packageLock).toMatchObject({ name: 'neconyan', version: '1.6.0' });
         expect(packageLock.packages['']).toMatchObject({
             name: 'neconyan',
-            version: '1.5.7',
+            version: '1.6.0',
             bin: { neconyan: 'src/server-global.js' },
         });
         expect(Object.keys(packageLock.packages[''].bin)).toEqual(['neconyan']);
@@ -51,7 +51,9 @@ describe('Neconyan project boundaries', () => {
         expect(iosProjectSource).not.toMatch(/^\s*CURRENT_PROJECT_VERSION:/m);
         expect(iosProjectSource).toMatch(/configFiles:\s+Debug: generated\/version\.xcconfig\s+Release: generated\/version\.xcconfig/);
         expect(iosPayloadBuilderSource).toContain('ios/generated/version.xcconfig');
-        expect(iosPayloadBuilderSource).toContain('MARKETING_VERSION = ${provenance.version}');
+        expect(iosPayloadBuilderSource).toContain('iosVersions(provenance.version)');
+        expect(iosPayloadBuilderSource).toContain('MARKETING_VERSION = ${marketingVersion}');
+        expect(iosPayloadBuilderSource).toContain('CURRENT_PROJECT_VERSION = ${buildNumber}');
     });
 
     test('uses Neconyan-specific global config and data paths', () => {

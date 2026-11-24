@@ -18,7 +18,7 @@ import {
 import { applySettingsToPanel, saveCurrentPanelSettings, updateConversationChrome } from './interface.js';
 import { isConversationActiveThread } from './notifications.js';
 import { getScheduleEditorTargets } from './pals-rail.js';
-import { bindPartnerList, bindWeeklyScheduleEditor, updateUserFooter } from './pickers.js';
+import { bindPartnerList, bindWeeklyScheduleEditor, renderConversationGroupMemberSummary, updateUserFooter } from './pickers.js';
 import { updateConversationMemorySummary } from './prompt.js';
 import { escapeHtmlAttribute, escapeHtmlText } from './render-utils.js';
 import {
@@ -651,7 +651,7 @@ export function openConversationSettings() {
         profileSelect.innerHTML = buildConnectionProfileOptions(settings.connection_profile);
     }
     const partnerList = document.getElementById('sb_conv_chiming_partner_list');
-    if (partnerList instanceof HTMLElement) {
+    if (partnerList instanceof HTMLElement && !renderConversationGroupMemberSummary(partnerList, groupId)) {
         partnerList.innerHTML = buildChimingPartnerOptions(settings.multi_char_names);
     }
 
@@ -666,10 +666,13 @@ export function openConversationSettings() {
     chrome.drawer.querySelector('input, select, textarea, button')?.focus?.({ preventScroll: true });
 }
 
-export function closeConversationSettings(identity = null) {
+/**
+ * Close the settings drawer. `save: false` closes it without writing its fields back, for a drawer whose DM was deleted elsewhere.
+ */
+export function closeConversationSettings(identity = null, { save = true } = {}) {
     const drawer = document.getElementById(CHROME_IDS.settingsDrawer);
     if (drawer instanceof HTMLElement) {
-        const shouldSave = drawer.hidden === false && !isUiClosing(drawer);
+        const shouldSave = save && drawer.hidden === false && !isUiClosing(drawer);
         const capturedIdentity = {
             avatar: identity?.avatar || drawer.dataset.conversationAvatar || getCurrentCharAvatar(),
             groupId: Object.prototype.hasOwnProperty.call(identity || {}, 'groupId')

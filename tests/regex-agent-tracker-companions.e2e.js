@@ -33,31 +33,93 @@ for (const phone of [true, false]) {
             await page.locator('#rat_toggle_browse').click();
             await page.locator('#rat_drawer [data-focus-key="stage-next"]').click();
             const picker = page.locator('#rat_preview_archetype');
-            for (const [value, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker']]) {
+            for (const [value, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker'], ['plot-compass', 'Plot Compass']]) {
                 await expect(picker.locator(`option[value="${value}"]`)).toHaveText(label);
                 await picker.selectOption(value);
                 await expect(page.locator(`#rat_drawer [data-rat-key="${value}"]`).first()).toBeVisible();
             }
+            await picker.selectOption('clothing');
             await expect(page.locator('#rat_drawer [data-clothing-outfit]').first()).toBeVisible();
+            await picker.selectOption('plot-compass');
+            await expect(page.locator('#rat_drawer [data-pc-card="1"]').first()).toBeVisible();
 
-            // Verify the installed agent, not just the preview's copy of the regexes.
+            // Verify the installed Clothing Tracker and bundled Plot Compass template through the real formatter.
             await expect.poll(() => page.evaluate(async () => {
                 const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const installed = getAgents().filter(agent => agent.sourceTemplateId === 'tpl-clothing-tracker-companion');
                 return installed.map(agent => ({ enabled: agent.enabled, execution: agent.execution, phase: agent.phase }));
             })).toEqual([{ enabled: false, execution: 'companion', phase: 'post' }]);
             const storedNote = await page.evaluate(async () => {
-                const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const { getAgents, loadAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const { formatCompanionContent } = await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js');
                 const { SAMPLES } = await import('/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js');
-                const agent = getAgents().find(item => item.sourceTemplateId === 'tpl-clothing-tracker-companion');
+                const originalAgents = getAgents();
+                const agent = originalAgents.find(item => item.sourceTemplateId === 'tpl-clothing-tracker-companion');
                 const render = content => formatCompanionContent(agent.id, { content, format: 'html', status: 'done' });
                 const note = document.createElement('div');
                 note.innerHTML = render(SAMPLES.clothing.full);
-                return { wearers: [...note.querySelectorAll('[data-clothing-wearer]')].map(el => el.textContent), empty: render('tracker-none') };
+
+                const plotTemplate = await fetch('/scripts/extensions/in-chat-agents/templates/plot-compass-companion.json').then(r => r.json());
+                const transientPlotAgent = {
+                    ...structuredClone(plotTemplate),
+                    id: 'rat-e2e-plot-compass',
+                    sourceTemplateId: plotTemplate.id,
+                    enabled: true,
+                    postProcess: { promptTransformEnabled: false },
+                };
+                const plotResult = { content: SAMPLES['plot-compass'].full, format: 'markdown', status: 'done' };
+                const ctx = window.SillyTavern.getContext();
+                const syntheticMessage = {
+                    mes: 'Reply',
+                    name: 'Mira',
+                    is_user: false,
+                    extra: { inChatAgentCompanionResults: { [transientPlotAgent.id]: plotResult } },
+                };
+                loadAgents([...originalAgents, transientPlotAgent], { fromServer: false });
+                ctx.chat.push(syntheticMessage);
+                let plotNode;
+                let plotFallback;
+                try {
+                    plotNode = document.createElement('div');
+                    plotNode.innerHTML = formatCompanionContent(transientPlotAgent.id, plotResult, syntheticMessage);
+                    plotFallback = formatCompanionContent(transientPlotAgent.id, { content: 'Bring a sealed letter into the scene.', format: 'markdown', status: 'done' }, syntheticMessage);
+                } finally {
+                    ctx.chat.pop();
+                    loadAgents(originalAgents, { fromServer: false });
+                }
+                return {
+                    wearers: [...note.querySelectorAll('[data-clothing-wearer]')].map(el => el.textContent),
+                    empty: render('tracker-none'),
+                    plotMeta: {
+                        version: plotTemplate.version,
+                        enabled: plotTemplate.enabled,
+                        execution: plotTemplate.execution,
+                        phase: plotTemplate.phase,
+                        format: plotTemplate.companion?.format,
+                        regexCount: plotTemplate.regexScripts?.length ?? 0,
+                    },
+                    plotCard: Boolean(plotNode.querySelector('[data-pc-card="1"]')),
+                    plotChoices: plotNode.querySelectorAll('button.ica--plot-choice').length,
+                    plotSuggested: [...plotNode.querySelectorAll('.ica--plot-choice-tag')].map(el => el.textContent.trim()),
+                    plotFallbackHasCard: plotFallback.includes('data-pc-card="1"'),
+                    plotFallbackText: plotFallback,
+                };
             });
             expect(storedNote.wearers).toEqual([expect.stringMatching(/^(?!.*\{\{user\}\}).+$/), 'Mira', 'Léa O’Connor']);
             expect(storedNote.empty).toBe('');
+            expect(storedNote.plotMeta).toEqual({
+                version: 2,
+                enabled: false,
+                execution: 'companion',
+                phase: 'post',
+                format: 'markdown',
+                regexCount: 10,
+            });
+            expect(storedNote.plotCard).toBe(true);
+            expect(storedNote.plotChoices).toBe(3);
+            expect(storedNote.plotSuggested).toEqual(['Suggested']);
+            expect(storedNote.plotFallbackHasCard).toBe(false);
+            expect(storedNote.plotFallbackText).toContain('Bring a sealed letter into the scene.');
 
             // Keep the real formatter and app styles, but show the cards together
             // so the stock and themed screenshots use the same sample data and layout.
@@ -83,7 +145,7 @@ for (const phone of [true, false]) {
                     const { getTheme } = await import(`${base}themes/index.js`);
                     const host = document.querySelector('#tracker-captures');
                     host.textContent = '';
-                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker']]) {
+                    for (const [archetype, label] of [['position', 'Position Tracker'], ['visual-map', 'Visual Map'], ['vitals', 'Vitals'], ['clothing', 'Clothing Tracker'], ['plot-compass', 'Plot Compass']]) {
                         const section = document.createElement('section');
                         section.dataset.capture = archetype;
                         section.style.cssText = 'min-width:0;align-self:start';
@@ -164,11 +226,29 @@ for (const phone of [true, false]) {
                 expect(clothingAppearance.iconsDrawn).toBe(true);
                 expect(clothingAppearance.fits).toBe(true);
                 expect(clothingAppearance.readable).toBe(true);
-                appearanceChecks.push({ fontSizes, inheritedInk, clothingAppearance });
+                const plotAppearance = await page.locator('[data-capture="plot-compass"] [data-pc-card="1"]').evaluate(card => {
+                    const { color, backgroundColor } = getComputedStyle(card);
+                    const opts = [...card.querySelectorAll('[data-pc-opts="1"] > div')];
+                    const rose = card.querySelector('svg');
+                    const roseBox = rose?.getBoundingClientRect();
+                    return {
+                        color,
+                        backgroundColor,
+                        options: opts.length,
+                        roseDrawn: Boolean(roseBox && roseBox.width >= 16 && roseBox.height >= 16),
+                        fits: card.scrollWidth <= card.clientWidth + 1 && opts.every(opt => opt.scrollWidth <= opt.clientWidth + 1),
+                    };
+                });
+                expect(plotAppearance.options).toBe(3);
+                expect(plotAppearance.roseDrawn).toBe(true);
+                expect(plotAppearance.fits).toBe(true);
+                appearanceChecks.push({ fontSizes, inheritedInk, clothingAppearance, plotAppearance });
             }
             expect(appearanceChecks.map(check => check.fontSizes)).toEqual(Array(3).fill(appearanceChecks[0].fontSizes));
             expect(new Set(appearanceChecks.map(check => check.clothingAppearance.background)).size).toBe(3);
             expect(appearanceChecks[1].clothingAppearance.color).not.toBe(appearanceChecks[2].clothingAppearance.color);
+            expect(new Set(appearanceChecks.map(check => check.plotAppearance.backgroundColor)).size).toBe(3);
+            expect(appearanceChecks[1].plotAppearance.color).not.toBe(appearanceChecks[2].plotAppearance.color);
             for (const { inheritedInk } of appearanceChecks.slice(1)) {
                 expect(inheritedInk.count).toBeGreaterThan(10);
                 expect(inheritedInk.mismatches).toEqual([]);
@@ -210,6 +290,22 @@ for (const phone of [true, false]) {
             });
             expect(await mapStyles()).toEqual(firstMap);
 
+            const plotStyles = () => page.evaluate(() => {
+                const card = document.querySelector('[data-capture="plot-compass"] [data-pc-card="1"]');
+                const style = getComputedStyle(card);
+                return { backgroundColor: style.backgroundColor, color: style.color, borderColor: style.borderTopColor };
+            });
+            const firstPlot = await plotStyles();
+            await page.evaluate(async () => {
+                const base = '/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/';
+                const { mountPreview } = await import(`${base}preview.js`);
+                const { getTheme } = await import(`${base}themes/index.js`);
+                const host = document.createElement('section');
+                document.querySelector('#tracker-captures').append(host);
+                mountPreview(host, 'plot-compass', getTheme('obsidian-ink'));
+            });
+            expect(await plotStyles()).toEqual(firstPlot);
+
             // Exercise the additional selectors used by the real chat, including Tide's
             // phone rules, rather than relying on the gallery wrapper alone.
             await page.evaluate(async () => {
@@ -223,7 +319,7 @@ for (const phone of [true, false]) {
                 chat.id = 'chat';
                 chat.style.cssText = 'display:block;position:relative;width:100%;height:auto;max-height:none;overflow:visible';
                 document.querySelector('#tracker-captures').append(chat);
-                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain']]) {
+                for (const [archetype, slug] of [['position', 'delft-porcelain'], ['visual-map', 'obsidian-ink'], ['vitals', 'delft-porcelain'], ['clothing', 'delft-porcelain'], ['plot-compass', 'obsidian-ink']]) {
                     const message = document.createElement('div');
                     message.className = 'mes';
                     message.dataset.chatCapture = archetype;
@@ -234,7 +330,7 @@ for (const phone of [true, false]) {
                     mountPreview(block, archetype, getTheme(slug));
                 }
             });
-            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat']]) {
+            for (const [archetype, value] of [['position', 'Rain easing'], ['visual-map', 'Docks'], ['vitals', 'Bruised ribs'], ['clothing', 'Wool waistcoat'], ['plot-compass', 'Have the courier pause under the bridge lamp']]) {
                 const message = page.locator(`#chat [data-chat-capture="${archetype}"]`);
                 await expect(message).toContainText(value);
                 await expect(message.locator('[data-rat]').first()).toBeVisible();

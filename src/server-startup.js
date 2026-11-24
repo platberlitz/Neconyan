@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { APP_NAME } from './runtime.js';
 import { BUN_SOCKET_INHERIT_ISSUE_URL, isAddressInUseError, reportPortHolders, retryOnAddressInUse, trackListeningServer } from './server-listen.js';
 import { color, urlHostnameToIPv6, getHasIP } from './util.js';
+import { writeStartupNote } from './startup-note.js';
 
 // Express routers
 import { router as userDataRouter } from './users.js';
@@ -182,6 +183,7 @@ export class ServerStartup {
      */
     #fatal(message) {
         console.error(color.red(message));
+        writeStartupNote(message);
         process.exit(1);
     }
 
@@ -345,15 +347,19 @@ export class ServerStartup {
         let v4Error;
 
         const createFunc = this.cliArgs.ssl ? this.#createHttpsServer.bind(this) : this.#createHttpServer.bind(this);
+        const inApp = process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
 
         // A restart can outrun the previous process releasing the port, so wait
         // it out briefly instead of aborting the relaunch on the first failure.
         const listen = (url, ipVersion) => retryOnAddressInUse(() => createFunc(url, ipVersion), {
+            // App launchers wait for their previous process to exit and bind only
+            // loopback. Most mobile conflicts won't clear by waiting a minute.
+            attempts: inApp ? 3 : undefined,
             onRetry: (attempt, attempts) => {
                 if (attempt === 1 || attempt % 10 === 0) {
                     console.warn(`${this.#getListenAddress(url, ipVersion)} is still in use; waiting for it to be released (attempt ${attempt} of ${attempts}).`);
                 }
-                if (attempt === 1) {
+                if (attempt === 1 && !inApp) {
                     // Fire-and-forget: names the holder while the retries run.
                     void reportPortHolders(this.#getListenPort(url));
                 }
@@ -405,6 +411,14 @@ export class ServerStartup {
      * @returns {void}
      */
     async #handleServerListenFail({ v6Failed, v4Failed, v6Error, v4Error, useIPv6, useIPv4 }) {
+        // IPv6 cannot serve the launcher's fixed IPv4 WebView origin. Never
+        // publish readiness after a partial-stack Android startup.
+        if (process.env.NECONYAN_ANDROID_APP === '1') {
+            if (!useIPv4) throw new Error('Android native sign-in requires IPv4, but IPv4 was disabled or not detected.');
+            if (v4Failed) throw v4Error;
+        }
+        // Keep the original error code for the mobile launcher's recovery note.
+        if ((process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1') && v4Failed && !useIPv6) throw v4Error;
         // A final look at who occupies the port makes the abort actionable: a
         // still-listed holder after a minute of retries is not a transient race.
         const reportBeforeFatal = async (...urls) => {

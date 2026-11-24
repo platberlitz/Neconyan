@@ -82,6 +82,7 @@ const CC_COMMANDS = [
     'custom-reasoning-param-name',
     'custom-reasoning-enabled-value',
     'custom-reasoning-disabled-value',
+    'custom-reasoning-documented-levels',
     'custom-include-body',
     'custom-exclude-body',
     'custom-include-headers',
@@ -136,6 +137,7 @@ const FANCY_NAMES = {
     'custom-reasoning-param-name': 'Custom Reasoning Parameter Name',
     'custom-reasoning-enabled-value': 'Custom Reasoning Enabled Value',
     'custom-reasoning-disabled-value': 'Custom Reasoning Disabled Value',
+    'custom-reasoning-documented-levels': 'Custom Hide Unsupported Reasoning Levels',
     'custom-include-body': 'Custom Include Body Parameters',
     'custom-exclude-body': 'Custom Exclude Body Parameters',
     'custom-include-headers': 'Custom Include Request Headers',
@@ -263,6 +265,7 @@ const profilesProvider = () => [
  * @property {string} [custom-reasoning-param-name] Custom reasoning parameter name
  * @property {string} [custom-reasoning-enabled-value] Custom reasoning enabled value
  * @property {string} [custom-reasoning-disabled-value] Custom reasoning disabled value
+ * @property {string} [custom-reasoning-documented-levels] Custom hide unsupported reasoning levels
  * @property {string} [custom-include-body] Custom endpoint include body parameters (YAML)
  * @property {string} [custom-exclude-body] Custom endpoint exclude body parameters (YAML)
  * @property {string} [custom-include-headers] Custom endpoint include request headers (YAML)
@@ -1184,6 +1187,7 @@ function renderConnectionProfiles(profiles) {
 
         const optgroup = document.createElement('optgroup');
         optgroup.label = `📁 ${folder.name}`;
+        optgroup.setAttribute('data-i18n-ignore', '');
         for (const profile of folderProfiles) {
             optgroup.appendChild(createProfileOption(profile));
         }

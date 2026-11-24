@@ -62,5 +62,177 @@
       "normal",
       "continue"
     ]
-  }
+  },
+  "regexScripts": [
+    {
+      "id": "plot-compass-card",
+      "scriptName": "Plot Compass: Card",
+      "findRegex": "/(?:^|\\n)[ \\t]*(?:```[^\\r\\n]*\\r?\\n)?(?=(?:[\\s\\S]*?(?:^|\\n)[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*(?:Direction|Where we are|Possible developments|Next move)[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)){2})([\\s\\S]+?)(?:\\r?\\n[ \\t]*```)?\\s*$/i",
+      "replaceString": "<style>.pc{--pc-accent:var(--neco-ginger,var(--SmartThemeQuoteColor,#d9822b));--pc-on-accent:var(--neco-on-accent,#ffffff);--pc-ink:var(--neco-ink,var(--SmartThemeBodyColor,#e8e6e3));--pc-muted:var(--neco-muted,color-mix(in oklch,var(--pc-ink) 72%,transparent));--pc-paper:color-mix(in oklch,var(--neco-surface,var(--SmartThemeBlurTintColor,#1c1d22)) 95%,var(--pc-accent) 5%);--pc-raised:var(--neco-raised,color-mix(in oklch,var(--pc-paper) 90%,var(--pc-ink) 10%));--pc-line:var(--neco-border,color-mix(in oklch,var(--pc-ink) 16%,transparent));--pc-label:color-mix(in oklch,var(--pc-ink) 76%,var(--pc-accent) 24%);--pc-accent-line:color-mix(in oklch,var(--pc-accent) 82%,var(--pc-ink) 18%);--pc-head-from:color-mix(in oklch,var(--pc-accent) 12%,var(--pc-raised));--pc-head-to:color-mix(in oklch,var(--pc-accent) 4%,var(--pc-paper));--pc-head-ink:var(--pc-ink);--pc-head-sub:var(--pc-muted);--pc-head-pill-bg:color-mix(in oklch,var(--pc-paper) 78%,transparent);--pc-head-pill-ink:var(--pc-label);--pc-head-pill-line:color-mix(in oklch,var(--pc-accent-line) 36%,var(--pc-line));--pc-radius:14px;--pc-head-font:var(--sb-font-display,var(--mainFontFamily,system-ui,sans-serif));--pc-head-weight:400;--pc-body-font:var(--mainFontFamily,system-ui,sans-serif);--messageTextFontSize:13px;--messageLineHeight:1.5;--mesParagraphSpacingTop:0px;--mesParagraphSpacingBottom:0px;position:relative;display:block;width:100%;container-type:inline-size;max-width:100%;box-sizing:border-box;margin:2px 0;border-radius:var(--pc-radius);border:1px solid color-mix(in oklch,var(--pc-accent-line) 24%,var(--pc-line));border-top:2px solid color-mix(in oklch,var(--pc-accent-line) 68%,var(--pc-line));background:var(--pc-paper);color:var(--pc-ink);font-family:var(--pc-body-font);font-size:13.5px;line-height:1.5;overflow:hidden;box-shadow:0 2px 10px color-mix(in srgb,var(--SmartThemeShadowColor,#000) 14%,transparent);}.pc *{box-sizing:border-box;}.pc strong{font-weight:700;color:var(--pc-ink);}.pc em,.pc i,.pc small{color:inherit;}.pc .pc-hd{display:flex;align-items:center;gap:10px;padding:10px 12px;background:linear-gradient(135deg,var(--pc-head-from) 0%,var(--pc-head-to) 100%);border-bottom:1px solid var(--pc-line);}.pc .pc-rose{flex:0 0 30px;width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--pc-accent);color:var(--pc-on-accent);box-shadow:0 0 0 3px color-mix(in oklch,var(--pc-accent-line) 24%,transparent),inset 0 0 0 1px color-mix(in oklch,var(--pc-on-accent) 22%,transparent);}.pc .pc-ht{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;gap:1px;}.pc .pc-ttl{font-family:var(--pc-head-font);font-size:14px;font-weight:var(--pc-head-weight);letter-spacing:.02em;line-height:1.2;color:var(--pc-head-ink);}.pc .pc-sub{font-size:10px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;line-height:1.25;color:var(--pc-head-sub);}.pc .pc-cardinal{flex:0 0 auto;margin-left:auto;padding:2px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.14em;line-height:1.5;color:var(--pc-head-pill-ink);background:var(--pc-head-pill-bg);border:1px solid var(--pc-head-pill-line);white-space:nowrap;}.pc .pc-body{display:flex;flex-direction:column;gap:8px;padding:10px 10px 12px;}.pc .pc-sec{min-width:0;overflow-wrap:anywhere;}.pc .pc-k{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;line-height:1.2;color:var(--pc-label);}.pc .pc-pip{width:6px;height:6px;flex:0 0 6px;border-radius:1px;background:var(--pc-accent-line);transform:rotate(45deg);}.pc .pc-now .pc-pip{background:transparent;border:1.5px solid var(--pc-label);}.pc .pc-dir{padding:9px 11px;border-radius:10px;background:color-mix(in oklch,var(--pc-accent) 9%,var(--pc-raised));border:1px solid color-mix(in oklch,var(--pc-accent-line) 28%,var(--pc-line));border-left:3px solid var(--pc-accent-line);color:var(--pc-ink);}.pc .pc-now{padding:8px 11px;border-radius:10px;background:color-mix(in oklch,var(--pc-raised) 74%,var(--pc-paper));border:1px solid var(--pc-line);color:var(--pc-ink);}.pc .pc-dev{padding:2px 0 0;}.pc .pc-opts{display:flex;flex-direction:column;gap:6px;margin-top:5px;}.pc .pc-body .pc-sec .pc-opts .pc-opt{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 9px;width:100%;max-width:100%;min-height:40px;margin:0;padding:8px 10px;border:1px solid color-mix(in oklch,var(--pc-accent-line) 26%,var(--pc-line));border-radius:10px;background:color-mix(in oklch,var(--pc-raised) 88%,var(--pc-paper));box-shadow:0 1px 2px color-mix(in srgb,var(--SmartThemeShadowColor,#000) 7%,transparent);color:var(--pc-ink);font:inherit;line-height:1.45;text-align:left;transition:background .14s ease,border-color .14s ease,box-shadow .14s ease;}.pc .pc-body .pc-sec .pc-opts button.pc-opt{cursor:pointer;}.pc .pc-body .pc-sec .pc-opts button.pc-opt:hover{background:color-mix(in oklch,var(--pc-accent) 11%,var(--pc-raised));border-color:color-mix(in oklch,var(--pc-accent-line) 56%,var(--pc-line));}.pc .pc-body .pc-sec .pc-opts button.pc-opt:focus-visible{outline:2px solid var(--pc-accent-line);outline-offset:2px;}.pc .pc-body .pc-sec .pc-opts button.pc-opt[aria-pressed=\"true\"]{background:color-mix(in oklch,var(--pc-accent) 15%,var(--pc-raised));border-color:var(--pc-accent-line);box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--pc-accent-line) 74%,transparent),0 2px 8px color-mix(in oklch,var(--pc-accent) 14%,transparent);}.pc .pc-num{flex:0 0 22px;width:22px;height:22px;margin-top:1px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;background:color-mix(in oklch,var(--pc-accent) 14%,var(--pc-paper));color:var(--pc-label);border:1px solid color-mix(in oklch,var(--pc-accent-line) 36%,var(--pc-line));transition:background .14s ease,color .14s ease,border-color .14s ease;}.pc .pc-body .pc-sec .pc-opts button.pc-opt[aria-pressed=\"true\"] .pc-num{background:var(--pc-accent);color:var(--pc-on-accent);border-color:color-mix(in oklch,var(--pc-on-accent) 22%,var(--pc-accent-line));}.pc .pc-opt-t{flex:1 1 116px;min-width:0;overflow-wrap:anywhere;}.pc .pc-body .pc-sec .pc-opts button.pc-opt span[class*=\"ica--plot-choice-tag\"]{flex:0 0 auto;display:inline-flex;align-items:center;padding:2px 8px;margin-left:auto;align-self:center;border-radius:999px;background:color-mix(in oklch,var(--pc-accent) 13%,var(--pc-paper));color:var(--pc-ink);box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--pc-accent-line) 46%,var(--pc-line));font-size:11px;font-weight:700;letter-spacing:.03em;line-height:1.45;white-space:nowrap;opacity:1;vertical-align:baseline;}.pc .pc-body .pc-sec .pc-opts button.pc-opt span[class*=\"ica--plot-choice-tag-picked\"]{background:var(--pc-accent);color:var(--pc-on-accent);box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--pc-on-accent) 24%,transparent);opacity:1;}.pc .pc-body .pc-dev p[class*=\"ica--plot-choice-hint\"]{margin:6px 2px 0;padding:0;font-size:11.5px;line-height:1.4;color:var(--pc-muted);opacity:1;}.pc .pc-foot{padding:9px 11px;border-radius:10px;background:linear-gradient(135deg,color-mix(in oklch,var(--pc-accent) 13%,var(--pc-raised)) 0%,color-mix(in oklch,var(--pc-accent) 5%,var(--pc-paper)) 100%);border:1px solid color-mix(in oklch,var(--pc-accent-line) 38%,var(--pc-line));color:var(--pc-ink);}@media (prefers-reduced-motion:reduce){.pc .pc-body .pc-sec .pc-opts .pc-opt,.pc .pc-num{transition:none;}}@container (max-width:280px){.pc .pc-hd{gap:8px;padding:9px 10px;}.pc .pc-cardinal{display:none;}}</style><div class=\"pc\" data-pc-card=\"1\"><div class=\"pc-hd\"><span class=\"pc-rose\" aria-hidden=\"true\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9.5\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-opacity=\"0.55\"/><path d=\"M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\"/><polygon points=\"12,4.5 14.3,12 12,10.3 9.7,12\" fill=\"currentColor\"/><polygon points=\"12,19.5 14.3,12 12,13.7 9.7,12\" fill=\"currentColor\" fill-opacity=\"0.48\"/><polygon points=\"19.5,12 12,14.3 13.7,12 12,9.7\" fill=\"currentColor\" fill-opacity=\"0.72\"/><polygon points=\"4.5,12 12,14.3 10.3,12 12,9.7\" fill=\"currentColor\" fill-opacity=\"0.48\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\"/></svg></span><span class=\"pc-ht\"><span class=\"pc-ttl\">Plot Compass</span><span class=\"pc-sub\">Story Bearings</span></span><span class=\"pc-cardinal\" aria-hidden=\"true\">N &middot; E &middot; S &middot; W</span></div><div class=\"pc-body\">\n$1\n</div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-direction",
+      "scriptName": "Plot Compass: Direction",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?:^|\\n)[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*Direction[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)[ \\t]*\\r?\\n?([\\s\\S]+?)(?=\\r?\\n[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*(?:Direction|Where we are|Possible developments|Next move)[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)|\\r?\\n?<\\/?div\\b|(?![\\s\\S]))/gi",
+      "replaceString": "\n<div class=\"pc-sec pc-dir\"><div class=\"pc-k\"><span class=\"pc-pip\" aria-hidden=\"true\"></span>Direction</div>$1</div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-where",
+      "scriptName": "Plot Compass: Where we are",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?:^|\\n)[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*Where we are[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)[ \\t]*\\r?\\n?([\\s\\S]+?)(?=\\r?\\n[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*(?:Direction|Where we are|Possible developments|Next move)[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)|\\r?\\n?<\\/?div\\b|(?![\\s\\S]))/gi",
+      "replaceString": "\n<div class=\"pc-sec pc-now\"><div class=\"pc-k\"><span class=\"pc-pip\" aria-hidden=\"true\"></span>Where we are</div>$1</div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-developments",
+      "scriptName": "Plot Compass: Possible developments",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?:^|\\n)[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*Possible developments[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)[ \\t]*\\r?\\n?([\\s\\S]+?)(?=\\r?\\n[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*(?:Direction|Where we are|Possible developments|Next move)[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)|\\r?\\n?<\\/?div\\b|(?![\\s\\S]))/gi",
+      "replaceString": "\n<div class=\"pc-sec pc-dev\"><div class=\"pc-k\"><span class=\"pc-pip\" aria-hidden=\"true\"></span>Possible developments</div><div class=\"pc-opts\" data-pc-opts=\"1\">\n$1\n</div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-next",
+      "scriptName": "Plot Compass: Next move",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?:^|\\n)[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*Next move[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)[ \\t]*\\r?\\n?([\\s\\S]+?)(?=\\r?\\n[ \\t]*(?:#{1,6}[ \\t]+)?(?:\\*\\*|__)?[ \\t]*(?:Direction|Where we are|Possible developments|Next move)[ \\t]*(?::[ \\t]*(?:\\*\\*|__)|(?:\\*\\*|__)[ \\t]*:|:)|\\r?\\n?<\\/?div\\b|(?![\\s\\S]))/gi",
+      "replaceString": "\n<div class=\"pc-sec pc-foot\"><div class=\"pc-k\"><span class=\"pc-pip\" aria-hidden=\"true\"></span>Next move</div>$1</div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-choice",
+      "scriptName": "Plot Compass: Choice",
+      "findRegex": "/(?<=data-pc-opts=\"1\">(?:(?!<\\/div>)[\\s\\S])*\\r?\\n)[ \\t]*(?:[-*+][ \\t]+)?(?:\\*\\*|__)?\\(?(\\d{1,2})[.):](?:\\*\\*|__)?[ \\t]+([^\\r\\n]+)/g",
+      "replaceString": "<div class=\"pura-choice pc-opt\"><span class=\"pc-num\">$1</span><span class=\"pc-opt-t\">$2</span></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-bold",
+      "scriptName": "Plot Compass: Bold",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)\\*\\*([^\\n\\r*<>][^\\n\\r<>]*?)\\*\\*/g",
+      "replaceString": "<strong>$1</strong>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-italic",
+      "scriptName": "Plot Compass: Italic",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?<!\\*)\\*([^\\n\\r*<>][^\\n\\r*<>]*?)\\*(?!\\*)/g",
+      "replaceString": "<em>$1</em>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-tag-breaks",
+      "scriptName": "Plot Compass: Tag Breaks",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)(?:(?<=>)[ \\t\\r\\n]*\\r?\\n[ \\t\\r\\n]*|[ \\t\\r\\n]*\\r?\\n[ \\t\\r\\n]*(?=<))/g",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "plot-compass-line-breaks",
+      "scriptName": "Plot Compass: Line Breaks",
+      "findRegex": "/(?<=data-pc-card=\"1\"[\\s\\S]*)\\r?\\n+/g",
+      "replaceString": "<br>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    }
+  ]
 }

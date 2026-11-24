@@ -78,7 +78,7 @@ function collectHtml($) {
     });
     $('[data-i18n]').each((_index, element) => {
         for (const spec of $(element).attr('data-i18n').split(';')) {
-            const match = spec.match(/^\[([^\]]+)\](.+)$/);
+            const match = spec.match(/^\[([^\]]+)\](.+)$/s);
             const value = match ? $(element).attr(match[1]) : $(element).text().trim();
             if (!String(match ? match[2] : spec).includes(hole) && !String(value).includes(hole)) add(match ? match[2] : spec, value);
         }
@@ -89,7 +89,7 @@ function collectHtml($) {
     });
     $('[title],[placeholder],[aria-label]').each((_index, element) => {
         // An attribute that data-i18n reaches through a scoped key is looked up by that key alone, never as an exact caption.
-        const scopedAttributes = new Set(($(element).attr('data-i18n') || '').split(';').map(spec => spec.match(/^\[([^\]]+)\](.+)$/)).filter(match => match?.[2].startsWith(scopedPrefix)).map(match => match[1]));
+        const scopedAttributes = new Set(($(element).attr('data-i18n') || '').split(';').map(spec => spec.match(/^\[([^\]]+)\](.+)$/s)).filter(match => match?.[2].startsWith(scopedPrefix)).map(match => match[1]));
         for (const attribute of captionAttributes) if (!scopedAttributes.has(attribute)) addCaption($(element).attr(attribute));
     });
 }
@@ -223,6 +223,14 @@ function writeCatalogue() {
     const temp = filename + '.tmp';
     fs.writeFileSync(temp, JSON.stringify(source, null, 2) + '\n');
     fs.renameSync(temp, filename);
+
+    // A non-English page only needs the English strings that differ from
+    // their key. Keeping the alias file small avoids loading the full catalogue.
+    const aliases = Object.fromEntries(Object.entries(source).filter(([key, value]) => key !== value));
+    const aliasFile = path.join(output, 'en-aliases.json');
+    const aliasTemp = aliasFile + '.tmp';
+    fs.writeFileSync(aliasTemp, JSON.stringify(aliases, null, 2) + '\n');
+    fs.renameSync(aliasTemp, aliasFile);
 }
 if (process.argv.includes('--write-catalogue')) {
     writeCatalogue();

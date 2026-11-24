@@ -56,6 +56,8 @@ for (const phone of [false, true]) {
         // Your own messages are not offered for reading.
         await page.locator('.scratchpad-message.is-user summary[aria-label="Message actions"]').click();
         await expect(page.locator('.scratchpad-message.is-user').getByRole('button', { name: 'Read aloud', exact: true })).toHaveCount(0);
+        await expect(read).toBeHidden();
+        await reply.locator('summary[aria-label="Message actions"]').click();
         await page.screenshot({ path: `../screenshots/scratchpad-read-aloud/${phone ? 'phone' : 'desktop'}-button.png` });
 
         await read.click();

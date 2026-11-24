@@ -1,0 +1,293 @@
+import {
+    characters,
+    chat_metadata,
+    getChatGeneration,
+    getCurrentChatId,
+    getOneCharacter,
+    getRequestHeaders,
+    loadRoleplayChat,
+    saveMetadata,
+    saveRoleplayChatRequest,
+    saveSettings,
+    this_chid,
+} from '../script.js';
+import { selected_group } from './group-chats.js';
+import { t } from './i18n.js';
+import { clearLorebookNotice } from './lorebook-links.js';
+import {
+    linkPointsAt,
+    planCardLinkRewrites,
+    planPersonaLorebookRewrites,
+    rewriteCharLore,
+    rewriteChatLorebook,
+    rewriteConversationOverrides,
+    runLorebookLinkSteps,
+} from './lorebook-link-rewrite.js';
+import { setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
+import { power_user } from './power-user.js';
+import { beginRoleplaySave, finishRoleplaySave } from './roleplay-save-chain.js';
+import { escapeHtml, uuidv4 } from './utils.js';
+import { world_info } from './world-info.js';
+
+const METADATA_KEY = 'world_info';
+
+/** The chat that is open, as the chat list names it, so the sweep of closed chats leaves it to the page. */
+function isOpenChat(item) {
+    const chatId = getCurrentChatId();
+    if (chatId === undefined || chatId === null || String(item.file_id) !== String(chatId)) return false;
+    if (item.group) return Boolean(selected_group) && String(item.group) === String(selected_group);
+    return this_chid !== undefined && characters[this_chid]?.avatar === item.avatar;
+}
+
+async function rewriteOpenChat(from, to) {
+    const { changed, value } = rewriteChatLorebook(chat_metadata, from, to);
+    if (!changed) return 0;
+    const previous = chat_metadata[METADATA_KEY];
+    const generation = getChatGeneration();
+    if (value === null) {
+        delete chat_metadata[METADATA_KEY];
+        $('.chat_lorebook_button').removeClass('world_set');
+    } else {
+        chat_metadata[METADATA_KEY] = value;
+    }
+    const restore = () => {
+        if (generation !== getChatGeneration()) return;
+        chat_metadata[METADATA_KEY] = previous;
+        $('.chat_lorebook_button').toggleClass('world_set', Boolean(previous));
+    };
+    try {
+        if (await saveMetadata() === false) {
+            restore();
+            throw new Error(t`The chat could not be saved.`);
+        }
+    } catch (error) {
+        restore();
+        throw error;
+    }
+    return 1;
+}
+
+async function rewriteExtraBooks(from, to) {
+    const previous = world_info.charLore;
+    const { charLore, cards } = rewriteCharLore(previous, from, to);
+    if (!cards.length) return 0;
+    Object.assign(world_info, { charLore });
+    try {
+        if (!await saveSettings(0, { returnResult: true })) {
+            throw new Error(t`Settings could not be saved.`);
+        }
+    } catch (error) {
+        if (world_info.charLore === charLore) Object.assign(world_info, { charLore: previous });
+        throw error;
+    }
+    return cards.length;
+}
+
+function showPersonaLorebook(activeChanged) {
+    if (activeChanged) setPersonaDescription();
+    $('#persona_lore_button').toggleClass('world_set', Boolean(power_user.persona_description_lorebook));
+    updatePersonaLorebookActions();
+}
+
+/** Every persona's lorebook, active or not, saved at once; on a failed save the old names come back. */
+async function rewritePersonaLinks(from, to) {
+    const descriptions = power_user.persona_descriptions ?? {};
+    const plan = planPersonaLorebookRewrites({ active: power_user.persona_description_lorebook, descriptions, avatar: user_avatar }, from, to);
+    if (!plan) return 0;
+    const previousActive = power_user.persona_description_lorebook;
+    const activeAvatar = user_avatar;
+    const previous = new Map(plan.avatars.map(avatar => [avatar, descriptions[avatar].lorebook]));
+    for (const avatar of plan.avatars) descriptions[avatar].lorebook = plan.lorebook;
+    if (plan.active) power_user.persona_description_lorebook = plan.lorebook;
+    try {
+        if (!await saveSettings(0, { returnResult: true })) {
+            throw new Error(t`Settings could not be saved.`);
+        }
+    } catch (error) {
+        for (const [avatar, lorebook] of previous) {
+            const descriptor = power_user.persona_descriptions?.[avatar];
+            if (descriptor?.lorebook === plan.lorebook) descriptor.lorebook = lorebook;
+        }
+        if (plan.active && user_avatar === activeAvatar && power_user.persona_description_lorebook === plan.lorebook) {
+            power_user.persona_description_lorebook = previousActive;
+        }
+        showPersonaLorebook(plan.active);
+        throw error;
+    }
+    showPersonaLorebook(plan.active);
+    return plan.personas;
+}
+
+async function rewriteCard({ avatar, update }) {
+    const response = await fetch('/api/characters/merge-attributes', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ avatar, data: update }),
+    });
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body?.message || t`The server answered ${response.status}.`);
+    }
+    await getOneCharacter(avatar);
+    return 1;
+}
+
+async function listChats() {
+    const response = await fetch('/api/chats/recent', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ metadata: true }),
+    });
+    if (!response.ok) throw new Error(t`The server answered ${response.status}.`);
+    const list = await response.json();
+    if (!Array.isArray(list)) throw new Error(t`The chat list was not readable.`);
+    return list;
+}
+
+/** Edits one chat that is not open: reads it with its save authority, changes only the header's link and saves it back. */
+async function rewriteClosedChat(item, from, to) {
+    const chat = String(item.file_id);
+    const locator = item.group ? { group: true, chat } : { group: false, avatar: item.avatar, chat };
+    const { records, evidence } = await loadRoleplayChat(locator);
+    const header = records[0]?.chat_metadata;
+    const { changed, value } = rewriteChatLorebook(header, from, to);
+    if (!changed) return 0;
+    if (value === null) delete header[METADATA_KEY];
+    else header[METADATA_KEY] = value;
+    const token = beginRoleplaySave(locator, { operationKey: uuidv4(), evidence });
+    try {
+        const payload = item.group
+            ? { id: chat, chat: records }
+            : { ch_name: characters.find(card => card?.avatar === item.avatar)?.name ?? item.avatar, file_name: chat, chat: records, avatar_url: item.avatar };
+        const saved = await saveRoleplayChatRequest(token, payload);
+        if (!saved.ok) throw new Error(t`The server refused the save.`);
+    } finally {
+        await finishRoleplaySave(token);
+    }
+    return 1;
+}
+
+async function closedChatSteps(from, to, handledOpenGeneration) {
+    const steps = [];
+    for (const item of await listChats()) {
+        if (!item?.file_id || !(item.avatar || item.group) || !rewriteChatLorebook(item.chat_metadata, from, to).changed) continue;
+        // Step 1 already tried the chat that was open when cleanup started; do not retry or report it twice.
+        if (isOpenChat(item) && getChatGeneration() === handledOpenGeneration) continue;
+        const where = item.group ? t`group chat ${item.file_id}` : t`chat ${item.file_id} of ${characters.find(card => card?.avatar === item.avatar)?.name ?? item.avatar}`;
+        steps.push({
+            label: where,
+            run: () => (isOpenChat(item) ? rewriteOpenChat(from, to) : rewriteClosedChat(item, from, to)),
+        });
+    }
+    return steps;
+}
+
+async function rewriteConversation(from, to) {
+    const { refreshConversationStore, flushConversationStore } = await import('./neconyan-conversation/store-sync.js');
+    const { getConversationStore } = await import('./neconyan-conversation/context.js');
+    const refreshed = await refreshConversationStore();
+    if (refreshed?.conflict) throw new Error(t`The Conversation settings changed on another device. Reload the page and try again.`);
+    const changed = rewriteConversationOverrides(getConversationStore(), from, to);
+    if (!changed.length) return 0;
+    if (!await flushConversationStore()) throw new Error(t`The Conversation settings could not be saved.`);
+    const select = document.getElementById('sb_conv_lorebook_override');
+    if (select instanceof HTMLSelectElement && linkPointsAt(select.value, from)) {
+        if (to) {
+            if (!Array.from(select.options).some(option => option.value === to)) select.append(new Option(to, to));
+            select.value = to;
+        } else {
+            select.value = '';
+        }
+        Array.from(select.options).filter(option => option.value === from).forEach(option => option.remove());
+    }
+    return changed.length;
+}
+
+function reportFailures(from, to, failed) {
+    const list = failed.map(item => `<li>${escapeHtml(item.label)}: ${escapeHtml(item.reason)}</li>`).join('');
+    const intro = to === null
+        ? t`'${from}' was deleted, but these links to it could not be removed. Everything else was updated.`
+        : t`'${from}' was renamed to '${to}', but these links could not be moved. Everything else was updated.`;
+    // The missing-lorebook notice covers chats and cards; a skipped Notebook part already says why in its own line.
+    const advice = failed.every(item => item.notebook)
+        ? ''
+        : t`Until they are fixed, the missing-lorebook notice names them when you open them. Try again, or choose another lorebook there.`;
+    toastr.error(`${escapeHtml(intro)}<ul class="justifyLeft">${list}</ul>${escapeHtml(advice)}`, t`Lorebook links not fully updated`, {
+        timeOut: 0,
+        extendedTimeOut: 0,
+        tapToDismiss: false,
+        closeButton: true,
+        escapeHtml: false,
+    });
+}
+
+/**
+ * Why one skipped part of a notebook was left alone. A whole notebook is only skipped when its manifest cannot be
+ * read; a damaged part leaves just that part, and the rest of the notebook was still updated.
+ * @param {{ part?: string, code?: string }} item
+ * @returns {string}
+ */
+function skippedReason(item) {
+    switch (item?.part) {
+        case 'bindings': return t`Its lore links could not be updated, so they were left as they are. Everything else in it was updated.`;
+        case 'associations': return t`Its related lorebooks and entries could not be updated, so they were left as they are. Everything else in it was updated.`;
+        case 'policies': return t`Its context settings could not be updated, so they were left as they are. Everything else in it was updated.`;
+    }
+    return item?.code === 'NOTEBOOK_SCHEMA_UNSUPPORTED'
+        ? t`It was saved by a newer version of Neconyan, so it was left as it is.`
+        : t`It could not be read, so it was left as it is.`;
+}
+
+/**
+ * What the server did to Notebook links while it renamed or deleted the lorebook, in the same shape as the steps here.
+ * @param {{ links?: number, skipped?: Array<{ notebookId: string, name?: string|null, part?: string, code?: string }> }|null} report
+ * @returns {{ moved: number, failed: Array<{ label: string, reason: string, notebook: true }> }}
+ */
+function notebookResults(report) {
+    const seen = new Set();
+    const failed = [];
+    for (const item of Array.isArray(report?.skipped) ? report.skipped : []) {
+        const key = `${item?.notebookId}\u0000${item?.part}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        failed.push({ label: t`Notebook '${item?.name || item?.notebookId}'`, reason: skippedReason(item), notebook: true });
+    }
+    return { moved: Number(report?.links) || 0, failed };
+}
+
+/**
+ * Moves every link to a lorebook to its new name, or removes it when the lorebook is deleted: the open chat, the
+ * extra lorebooks of cards, the lorebook of every persona, the main lorebook of each card (saved through the card's
+ * own route, changing only that link), the chats that are not open, and the Conversation 'Lorebook Override' of
+ * every thread. Notebook links are moved by the server with the lorebook itself; its report joins this one. A step
+ * that fails is reported in one error and the rest still run.
+ * @param {string} from Name that was renamed or deleted
+ * @param {string|null} [to] New name, or null for a delete
+ * @param {{ notebooks?: object|null }} [options] The server's report on Notebook links
+ * @returns {Promise<{ moved: number, failed: Array<{ label: string, reason: string }> }>}
+ */
+export async function rewriteLorebookLinks(from, to = null, { notebooks = null } = {}) {
+    const initialChatGeneration = getChatGeneration();
+    const steps = [
+        { label: t`this chat`, run: () => rewriteOpenChat(from, to) },
+        { label: t`extra lorebooks of characters`, run: () => rewriteExtraBooks(from, to) },
+        { label: t`personas`, run: () => rewritePersonaLinks(from, to) },
+        ...planCardLinkRewrites(characters, from, to).map(plan => ({ label: plan.owner || plan.avatar, run: () => rewriteCard(plan) })),
+    ];
+    const cardsAndSettings = await runLorebookLinkSteps(steps);
+    let chatSteps = [];
+    const chatListing = await runLorebookLinkSteps([{ label: t`the list of chats`, run: async () => { chatSteps = await closedChatSteps(from, to, initialChatGeneration); } }]);
+    const chats = await runLorebookLinkSteps(chatSteps);
+    const conversation = await runLorebookLinkSteps([{ label: t`Conversation lorebook overrides`, run: () => rewriteConversation(from, to) }]);
+    const results = [cardsAndSettings, chatListing, chats, conversation, notebookResults(notebooks)];
+    const moved = results.reduce((sum, result) => sum + result.moved, 0);
+    const failed = results.flatMap(result => result.failed);
+    clearLorebookNotice(link => linkPointsAt(link.name, from));
+    if (failed.length) {
+        for (const item of failed) console.error('[WI] Could not update a lorebook link', item.label, item.reason);
+        reportFailures(from, to, failed);
+    } else if (moved) {
+        toastr.success(to === null ? t`Removed ${moved} link(s) to the deleted lorebook.` : t`Moved ${moved} link(s) to '${to}'.`);
+    }
+    return { moved, failed };
+}

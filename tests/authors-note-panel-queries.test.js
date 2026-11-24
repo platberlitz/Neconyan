@@ -53,6 +53,16 @@ describe('author\'s note panel queries', () => {
         expect(indexSource).toContain('css/neconyan-authors-note.css');
     });
 
+    test('every Note text field has a full screen button wired to its textarea', () => {
+        const noteFields = ['prompt', 'chara', 'persona', 'default'];
+        for (const slot of noteFields) {
+            const id = `extension_floating_${slot}`;
+            expect(indexSource).toContain(`<label for="${id}" class="an-field-label" data-i18n="Note text">Note text</label>`);
+            expect(indexSource).toContain(`<button type="button" class="menu_button menu_button_icon an-note-fullscreen editor_maximize" data-for="${id}" title="Open the note in full screen" aria-label="Full screen" data-i18n="[title]Open the note in full screen;[aria-label]Full screen">`);
+        }
+        expect(indexSource.match(/class="menu_button menu_button_icon an-note-fullscreen editor_maximize"/g)).toHaveLength(noteFields.length);
+    });
+
     test('wires direct Persona Author\'s Note entry points in Persona Management and the Persona Picker', () => {
         expect(indexSource).toContain('id="persona_author_note_button"');
         expect(indexSource).toContain('id="persona_author_note_open_button"');

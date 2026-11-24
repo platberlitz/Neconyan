@@ -9,6 +9,7 @@ import { captureLabChat, captureLabConnection, readLabSettings } from '../labs/s
 import { captureLabBookLocked } from '../labs/books.js';
 import { captureSavedTranslationPolicy } from '../generation/roleplay-translation.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
+import { canGroupMemberSee, readGroupSceneRules } from '../../public/scripts/group-chat-visibility.js';
 import { captureVectorPolicy } from './vector-provider.js';
 import { captureVectorIndex, vectorIndexPath } from './vector-index.js';
 import { operationError } from './store.js';
@@ -125,8 +126,14 @@ export async function captureVectors(base, account, input, captured = {}) {
     if (!Number.isFinite(threshold) || threshold < -1 || threshold > 1) throw operationError('Choose a similarity threshold between -1 and 1.', 400);
     const queryScope = input.action === 'query' ? input.queryScope : undefined;
     if (queryScope && !['chat', 'files', 'world'].includes(queryScope)) throw operationError('Choose a valid search source.', 400);
+    const viewers = input.viewers ?? null;
+    if (viewers !== null && (input.action !== 'prompt' || !Array.isArray(viewers) || viewers.length > 64
+        || viewers.some(avatar => typeof avatar !== 'string' || !avatar))) throw operationError('Choose valid group speakers for vector search.', 400);
     const chat = captured.chat ?? (input.locator ? captureLabChat(base, account, input.locator) : null);
-    const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: {} };
+    // A group speaker's search and prompt rows leave out what they did not hear.
+    const sceneRules = readGroupSceneRules(chat?.records?.[0]?.chat_metadata, chat?.records?.slice(1));
+    const heard = row => !viewers || viewers.every(avatar => canGroupMemberSee(row, avatar, sceneRules));
+    const macros = captured.macros ?? chat?.macros ?? { macroEnhanced: captureEnhancedMacros(settings), names: { user: settings.username || 'User', char: 'Character' }, character: {}, variables: {}, extra: { characterScope: 'none' } };
     const environment = createMacroEnvironment(macros);
     const sources = [];
     if (chat) sources.push({ relative: path.relative(base.directories.root, roleplayChatPath(base, chat.locator)),
@@ -168,7 +175,7 @@ export async function captureVectors(base, account, input, captured = {}) {
         for (const collection of collections) collection.indexes = choices(lease, policy, collection.id);
     });
     let query = input.query ?? null;
-    const queryItems = chat ? chat.records.slice(1).filter(row => !row.is_system || options.keepHidden).map(row =>
+    const queryItems = chat ? chat.records.slice(1).filter(row => (!row.is_system || options.keepHidden) && heard(row)).map(row =>
         environment.evaluate(String(row.mes ?? '').slice(row.extra?.fileLength || 0).trim())).filter(Boolean).reverse().slice(0, options.queryCount) : [];
     if (query === null && (['query', 'prompt'].includes(input.action) || input.withQuery) && chat) query = queryItems.join('\n');
     if (query !== null && (typeof query !== 'string' || Buffer.byteLength(query) > 1024 * 1024)) throw operationError('The vector search text is too large.', 413);
@@ -188,7 +195,7 @@ export async function captureVectors(base, account, input, captured = {}) {
         // Vertex predict accepts one Gemini text, or up to five texts for its older models.
         // Capture this limit so an already accepted operation keeps its original batch boundaries.
         batchSize: policy.source === 'vertexai' ? (policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5) : 10,
-        ...(input.action === 'prompt' ? { chatRecords: chat?.records.slice(1) ?? [] } : {}),
+        ...(input.action === 'prompt' ? { chatRecords: chat?.records.slice(1).filter(heard) ?? [] } : {}),
         queryItems: input.query === undefined ? queryItems : [input.query], summarizeQuery,
         topK: number(input.topK, 3, 1, 1000), threshold };
 }

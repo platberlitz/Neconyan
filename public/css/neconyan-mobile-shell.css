@@ -2525,12 +2525,12 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     /* Must beat the generic 34px !important band height above: the parked mode toggle
        (top 8px + 44px) otherwise hangs over the top of the editor sub-tab pills. */
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #CharListButtonAndHotSwaps {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) > #CharListButtonAndHotSwaps {
         min-height: 54px !important;
         padding-block: 5px;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #HotSwapWrapper {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #HotSwapWrapper {
         display: none !important;
     }
 
@@ -2542,15 +2542,15 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         box-sizing: border-box;
     }
 
-    #right-nav-panel.openDrawer:not([data-menu-type="character_edit"]):not([data-menu-type="create"]) > #rm_PinAndTabs {
+    #right-nav-panel.openDrawer:not([data-menu-type="character_edit"]):not([data-menu-type="create"]):not([data-menu-type="group_edit"]):not([data-menu-type="group_create"]) > #rm_PinAndTabs {
         display: none !important;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #rm_PinAndTabs {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) > #rm_PinAndTabs {
         padding: 2px 8px 4px;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #right-nav-panel-tabs {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #right-nav-panel-tabs {
         position: relative;
         display: grid;
         grid-template-columns: minmax(0, 1fr) var(--sb-mobile-touch-target, 44px) var(--sb-mobile-touch-target, 44px);
@@ -2565,7 +2565,11 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         background: none;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #rm_button_selected_ch {
+    #right-nav-panel.openDrawer:is([data-menu-type="group_edit"], [data-menu-type="group_create"]) #right-nav-panel-tabs {
+        grid-template-columns: minmax(0, 1fr) auto var(--sb-mobile-touch-target, 44px);
+    }
+
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #rm_button_selected_ch {
         grid-area: title;
         min-height: var(--sb-mobile-touch-target, 44px);
         display: flex;
@@ -2574,7 +2578,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         border-radius: 8px;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #rm_button_selected_ch h2 {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #rm_button_selected_ch h2 {
         font-size: calc(var(--mainFontSize) * 1.02);
         line-height: 1.15;
     }
@@ -2608,7 +2612,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         border-radius: 8px;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) :is(#sb_character_editor_fullscreen_toggle, #sb_character_editor_exit) {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) :is(#sb_character_editor_fullscreen_toggle, #sb_character_editor_exit) {
         width: var(--sb-mobile-touch-target, 44px);
         min-width: var(--sb-mobile-touch-target, 44px);
         max-width: var(--sb-mobile-touch-target, 44px);
@@ -2620,17 +2624,17 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         border-radius: 8px;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb_character_editor_exit {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #sb_character_editor_exit {
         grid-area: close;
         display: inline-flex;
     }
 
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb_character_editor_fullscreen_toggle:not([hidden]) {
+    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #sb_character_editor_fullscreen_toggle:not([hidden]) {
         grid-area: fullscreen;
         display: inline-flex;
     }
 
-    #right-nav-panel.openDrawer:not([data-menu-type="character_edit"]):not([data-menu-type="create"]) #rm_button_selected_ch,
+    #right-nav-panel.openDrawer:not([data-menu-type="character_edit"]):not([data-menu-type="create"]):not([data-menu-type="group_edit"]):not([data-menu-type="group_create"]) #rm_button_selected_ch,
     #right-nav-panel.openDrawer:not([data-menu-type="character_edit"]):not([data-menu-type="create"]) #result_info {
         display: none;
     }
@@ -3760,6 +3764,18 @@ body.neconyan #sheld .sb-conversation-settings-nav {
 }
 body.neconyan #sheld .sb-conversation-settings-nav::-webkit-scrollbar { display: none; }
 body.neconyan #sheld .sb-conversation-settings-nav button { flex: 0 0 auto; white-space: nowrap; }
+
+/* Conversation group editor: a button is never narrower than its label with its padding. Cancel and Save members share a row (equal, or Save wider) while both fit, and otherwise each takes the full row. */
+body.neconyan #sheld .sb-conversation-group-picker-actions-stacked > .sb-conversation-group-picker-buttons > .menu_button { min-inline-size: max-content; }
+
+/* Conversation group editor on short screens: the editor hangs from the Pals header, so it scrolls inside the room the rail has left (the rail is as tall as #sheld) instead of running off the screen. */
+body.neconyan #sheld #sb_conversation_add_dm_picker:has(> .sb-conversation-group-picker-actions-stacked) {
+    box-sizing: border-box;
+    max-block-size: max(120px, calc(var(--sb-ios-shell-height, calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px)) - 100% - 4px - max(12px, env(safe-area-inset-bottom, 0px))));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+}
 
 body.neconyan #mewmory-workspace .mewmory-tabs {
     flex-wrap: nowrap;

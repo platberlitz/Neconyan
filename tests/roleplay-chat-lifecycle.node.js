@@ -8,6 +8,7 @@ import { readRoleplayChat } from '../src/generation/roleplay-source.js';
 import { commitRoleplayLifecycleLocked, reconcilePendingChatWrite } from '../src/roleplay-lifecycle.js';
 import { router as chatRouter, roleplayNativeHost } from '../src/endpoints/chats.js';
 import { readRoleplayAccount, readRoleplayFile, roleplayPathKey, withRoleplayAccountLock } from '../src/roleplay-store.js';
+import { mutateState, statePath } from '../src/mewmory/store.js';
 
 async function chatServer(t, f) {
     const app = express();
@@ -119,6 +120,21 @@ test('a protected rename records the stable chat identity before moving', async 
     const moved = readRoleplayChat(f.scope, { ...f.locator, chat: 'Stamped' });
     assert.equal(moved.records[0].chat_metadata.chat_id_hash, 1234);
     assert.equal(moved.revision, 2);
+});
+
+test('a damaged memory archive does not leave a completed chat rename pending', async t => {
+    const f = fixture(t, false, 'damaged-memory-rename');
+    const post = await chatServer(t, f);
+    readRoleplayChat(f.scope, f.locator);
+    const archive = statePath(f.scope.directories, f.locator);
+    mutateState(f.scope.directories, f.locator, state => { state.enabled = true; });
+    fs.writeFileSync(archive, '{damaged');
+    const response = await post('/rename', { original_file: 'Source.jsonl', renamed_file: 'Moved.jsonl', avatar_url: 'Nova.png',
+        roleplay: { operationKey: 'move-damaged-memory' } });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
+    assert.ok(readRoleplayChat(f.scope, { ...f.locator, chat: 'Moved' }).instanceId);
+    assert.equal(fs.readFileSync(archive, 'utf8'), '{damaged', 'leave damaged bytes available for recovery');
 });
 
 test('an interrupted lifecycle finishes on reconciliation without repeating file work', t => {

@@ -2,7 +2,7 @@
 
 For installation and usage questions, read the [Android guide in the official handbook](https://platberlitz.github.io/neconyan-docs/start/android/).
 
-This app runs Neconyan's server on the phone. It includes Node.js and the web
+This app runs Neconyan's server on your phone or tablet. It includes Node.js and the web
 interface; Termux and a separate server are not required. Model access is still
 your own: connect to a supported API or model service in Model → Connections.
 No model weights, API keys or credits are included.
@@ -12,7 +12,8 @@ No model weights, API keys or credits are included.
 Install the signed APK ending in `-android-arm64.apk` from the latest release on
 an Android 11 or newer phone with a 64-bit ARM processor. Android asks you to allow
 installation from the app opening the APK. The x86_64 download is for compatible
-devices and emulators. Allow about 2 GiB of free storage for installation and data.
+devices and emulators. There's no APK for 32-bit Android. Allow about 2 GiB of free
+storage for installation and data.
 
 Android System WebView, the system component that displays the interface, must be
 version 124 or newer. I check this before starting the server: an older WebView
@@ -24,25 +25,68 @@ reuse the installed files. Chats, characters and settings stay in private app
 storage. Use Neconyan's export and backup controls to save copies outside the app.
 Uninstalling Android apps deletes their private data; export a backup first.
 
-The ongoing notification opens Neconyan or stops its local server. Leave it
-running while replies or imports are in progress. Android can still terminate an
-app under memory pressure or battery restrictions; reopening uses Neconyan's
-saved workflow recovery. Unknown provider results are not automatically charged
-again. Keeping the server running uses battery.
+The ongoing notification opens Neconyan or stops its local server. On Android
+13 or newer, allow notifications if you want that Stop button. If you don't,
+press Back from the workspace to choose whether to keep running or stop. Reply
+notifications are a separate opt-in in Settings. Leave the server running while
+replies or imports are in progress. Android can still close the page or server
+under memory pressure or battery restrictions. Reopening uses Neconyan's saved
+workflow recovery; it doesn't automatically retry requests with unknown results.
 
-Install future APKs over the existing app to retain data. An update replaces the
+Use 'Update APK' on the Server page or install a future official APK over the
+existing app to retain data. Android may ask you to let Neconyan install updates.
+An update replaces the
 application files, while the separate data folder, server preferences and custom
 extensions remain. If a newly bundled extension has the same name as a custom
 global extension, its old copy is preserved under `Android extension backups` in
 the account's Files folder and is included in account backups.
-Use APK updates for the application itself. System shell commands, desktop server
-plugins and BotSearcher's desktop Chromium launcher are not included. Providers
-which call a separate local program need a reachable service instead. The native
-export bridge accepts files up to 1 GiB and requires enough temporary storage.
+Use APK updates for the application itself. System shell commands and
+BotSearcher's desktop Chromium launcher are not included. Providers
+which call a separate local program need a reachable service instead. For large
+backups, use 'Save a backup of my data' in Account or Server. It writes straight to
+the destination you choose. Only exports generated in the page itself have a 1 GiB
+limit. Paste an API key for OpenRouter rather than signing in from inside the app.
+
+An early server crash gets one retry in safe mode, with background tasks paused.
+If startup still fails, you can try again, save a backup or open the saved crash
+reports. A requested server restart doesn't count as a crash. If the app says its
+local port is already in use, 'Use a new port' keeps saved data, but can't move
+unsaved drafts and preferences that live only on the old page.
+
+## Server configuration
+
+The server starts phone-only. To deliberately allow other devices, change
+`listenAddress.ipv4` to `0.0.0.0` in the existing private server config editor,
+then Save & Restart. In the other device's browser use the phone's actual
+reachable network IP and the port displayed in the app, for example
+`http://PHONE_IP:PORT`. `0.0.0.0` is a listen address, not a browser destination.
+The existing whitelist still applies: retain or adjust it for the clients you
+intend to admit. Routing and network firewalls also govern reachability.
+The remote browser signs in as `neconyan` with the generated password already
+visible in that private config editor. Keep that password private.
+
+Supported saved preferences survive reopening, safe starts and APK updates,
+including access logging, IPv6, frontend-build preferences, the `auto` or
+`builtin` Git backend, and server plugin enablement. Missing settings use the
+Android defaults; damaged or incompatible listener settings are kept in a
+separate file and replaced with phone-only defaults so the app can reopen.
+
+The launcher manages the private data folder, port and global credentials.
+Native sign-in requires listening with global basic authentication, IPv4 on
+`127.0.0.1` or `0.0.0.0`, and HTTP rather than HTTPS. IPv4 `auto` is supported
+when IPv4 is detected and binds successfully. Browser launching stays disabled
+because the app uses its WebView. Additional user accounts stay disabled because
+the native recovery backup currently covers only the default account.
+The editor explains incompatible changes before saving them.
+
+Compatible JavaScript server plugins can run if already present, but the APK
+does not supply Git, npm or external programs. System Git and automatic extension
+or server plugin updates are unavailable. APK payload replacement can replace
+application files, so keep your own copies of added plugin files.
 
 ## Build
 
-Requirements: Node.js 20+, npm, JDK 21 and an Android SDK containing platform 36,
+Requirements: Node.js 24, npm, JDK 21 and an Android SDK containing platform 36,
 build tools 36.0.0, NDK 28.2.13676358 and CMake 3.22.1. Set `JAVA_HOME` and
 `ANDROID_HOME` for those installations.
 
@@ -83,15 +127,15 @@ I build the release from a clean commit. From the repository root, run
 That rebuilds the frontend and records the commit, package version and frontend
 manifest checksum inside the server payload. It refuses uncommitted changes.
 
-The manual 'Android Release Validation' workflow does this on staging or main.
-It builds both signed APKs, checks their signatures and 16 KiB native alignment,
-and packages the same commit as a source ZIP. Its downloaded artefacts include
-the provenance report and `SHA256SUMS`. The Android 11 and 15 emulator jobs install
-the signed x86_64 APK and check private authentication, background operation,
-process-death recovery and data retention after reinstalling it.
-The Android 11 check also verifies the update screen with its original WebView 83,
-then installs the newer WebView supplied by the Android 15 SDK image and checks
-the loaded interface. The APK uses the phone's WebView; it doesn't bundle one.
+The manual 'Android Release Validation' workflow uses the official key on staging,
+main and hotfix branches. On other branches it uses a throwaway key for emulator
+checks. Those APKs can't update an official installation. It checks both APKs'
+signatures, manifest, bundled server and 16 KiB native alignment, and packages the
+same commit as a source ZIP. Android 11, 13, 15 and 16 emulators check installation,
+startup, background operation, deliberate stops and restarts, crash recovery and
+data retention. The Android 16 run checks an actual 16 KiB page size. Android 11
+and 13 also check the old-WebView screen before installing a newer WebView from
+the Android 15 SDK image. Neconyan uses your device's WebView; it doesn't bundle one.
 
 The first official release uses a fresh signing key. Earlier desktop-signed test
 APKs need an exported backup and a reinstall; Android won't accept an update signed

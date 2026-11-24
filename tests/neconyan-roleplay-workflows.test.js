@@ -1474,7 +1474,7 @@ test('stopping the host generation cancels the accepted workflow instead of leav
     const pending = workflows.runNativeRoleplayGeneration('regenerate', { committed: true, signal: controller.signal });
     await settle();
     controller.abort();
-    expect(cancelJob).toHaveBeenCalledWith('job-1', { reason: 'user_cancelled' });
+    expect(cancelJob).toHaveBeenCalledWith('job-1', { account: 'alice', reason: 'user_cancelled' });
     await observers.get('job-1').onStop('cancelled');
     await pending;
 });
@@ -1712,7 +1712,7 @@ test('explicit Stop still cancels the running workflow once after a return event
     controller.abort();
     controller.abort();
     expect(cancelJob).toHaveBeenCalledTimes(1);
-    expect(cancelJob).toHaveBeenCalledWith('job-1', { reason: 'user_cancelled' });
+    expect(cancelJob).toHaveBeenCalledWith('job-1', { account: 'alice', reason: 'user_cancelled' });
     await observers.get('job-1').onStop('cancelled');
     await pending;
 });
@@ -1897,6 +1897,30 @@ test('a missing account stamp fails closed when Notebook context requires the se
     expect(submitRoleplayGroupTurn).not.toHaveBeenCalled();
     expect(workflows.groupPagePromptsBlocked).not.toHaveBeenCalled();
     expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+});
+
+test('a group scene turn the server refuses is written in the browser instead', async () => {
+    const refusal = Object.assign(new Error('This group scene turn has to be written in the browser.'), { body: { code: 'roleplay_group_scene' } });
+    const reportGroupReplyFailure = jest.fn();
+    const { runtime, sendMessageAsUser, submitRoleplayGroupTurn } = groupWrapperHarness({
+        workflowModule: { submitRoleplayGroupTurn: jest.fn(async () => { throw refusal; }) },
+        overrides: { reportGroupReplyFailure },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', { skipNativeRoleplay: false })).rejects.toThrow('browser path reached');
+    expect(submitRoleplayGroupTurn).toHaveBeenCalledTimes(1);
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+    expect(reportGroupReplyFailure).not.toHaveBeenCalled();
+});
+
+test('other group refusals still fail the turn and say so', async () => {
+    const refusal = Object.assign(new Error('The saved chat changed.'), { body: { code: 'roleplay_workflow_changed' } });
+    const reportGroupReplyFailure = jest.fn();
+    const { runtime } = groupWrapperHarness({
+        workflowModule: { submitRoleplayGroupTurn: jest.fn(async () => { throw refusal; }) },
+        overrides: { reportGroupReplyFailure },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', { skipNativeRoleplay: false })).rejects.toThrow('The saved chat changed.');
+    expect(reportGroupReplyFailure).toHaveBeenCalledWith(refusal);
 });
 
 test('a required Notebook context fails closed when group page instructions cannot travel', async () => {

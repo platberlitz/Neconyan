@@ -1,4 +1,4 @@
-import { getChatReasoningCapabilities, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from './chat-reasoning-capabilities.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute, resolveKnownInvalidNoneEffort, stripModelBracketTags } from './chat-reasoning-capabilities.js';
 export { getNanoGptReasoningCapabilities, checkNanoGptReasoningEffort } from './chat-reasoning-capabilities.js';
 
 export const REVERSE_PROXY_SUPPORTED_SOURCES = ['claude', 'openai', 'openai_responses', 'mistralai', 'makersuite', 'vertexai', 'deepseek', 'xai', 'zai', 'moonshot'];
@@ -10,7 +10,8 @@ export function resolveChatReasoningEffort(settings, model, modelList, metadata 
     if (capability.state === 'no-selector') return undefined;
     if (source !== 'nanogpt' && (capability.state === 'effort-list' || capability.forbiddenEfforts.length || capability.nativeFallback)) return effort;
     if (!['openai', 'openai_responses', 'azure_openai', 'custom', 'xai', 'aimlapi', 'openrouter', 'pollinations', 'perplexity', 'cometapi', 'electronhub', 'chutes'].includes(source)) return effort;
-    if (effort === 'none' && !(['openai', 'openai_responses', 'azure_openai', 'custom'].includes(source) && /^gpt-5\.([1-9]|\d{2,})/.test(model))) effort = undefined;
+    if (effort === 'none' && !(['openai', 'openai_responses', 'azure_openai', 'custom'].includes(source)
+        && /(?:^|[/:])gpt-5\.([1-9]|\d{2,})(?:[-./:]|$)/i.test(stripModelBracketTags(model)))) effort = undefined;
     if (effort === 'min') effort = 'minimal';
     if (source === 'electronhub' && Array.isArray(modelList) && effort) {
         const supported = modelList.find(item => item.id === model)?.metadata?.supported_reasoning_efforts;

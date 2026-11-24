@@ -1,3 +1,5 @@
+import { chatPatchBaseFor, composeFullBody, composePatchBody, markChatPatchUnsupported, planChatPatch, refuseChatPatchBase, rememberChatPatchBase, savedMessageFingerprints, savedMessagesOf } from './chat-patch-save.js';
+
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const records = new WeakMap();
@@ -168,6 +170,32 @@ function refuse(record, status, data) {
     return record.result;
 }
 
+/**
+ * Chooses how this save travels. A chat serialised message by message (`snapshotChatMessages`) that still
+ * matches what the server confirmed for this exact file version travels as a patch; everything else is a whole save.
+ * Returns the whole-save body too, so a refused patch can be sent as it always was.
+ */
+function composeAttempt(record, payload) {
+    const roleplay = { ...record.source, operationKey: record.key };
+    const saved = payload.chat ? savedMessagesOf(payload.chat) : null;
+    if (!saved) {
+        return { body: JSON.stringify({ ...payload, ...(record.forced ? { force: true } : {}), roleplay }), kind: 'save', saved: null };
+    }
+    const { chat, ...rest } = payload;
+    const whole = () => composeFullBody({ ...rest, ...(record.forced ? { force: true } : {}), roleplay }, chat[0], saved);
+    // The server rewrites the messages of a save that hides some, so what it holds is no longer what was sent.
+    const holds = payload.mewmoryHidePolicy ? null : saved;
+    // Hiding messages, and overwriting after a conflict, are whole saves.
+    const base = !record.forced && !payload.force && !payload.mewmoryHidePolicy && record.source.source && !record.create ? chatPatchBaseFor(record.source.source) : null;
+    const plan = base ? planChatPatch(saved, base) : null;
+    if (!plan) return { body: whole(), kind: 'save', saved: holds };
+    return { body: composePatchBody({ ...rest, roleplay }, chat[0], saved, plan, base.count), kind: 'patch', saved: holds, whole };
+}
+
+function patchRefused(response, data) {
+    return response.status === 404 || response.status === 405 || (response.status === 409 && data?.error === 'patch_base_mismatch');
+}
+
 /** Each attempt serialises once. Retry transport may refresh CSRF/compression, never the JSON or key. */
 export async function sendRoleplaySave(token, payload, send, loadVacancy) {
     const record = records.get(token);
@@ -189,8 +217,11 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
                 : record.locator.group ? String(payload.id) === record.locator.chat
                     : payload.file_name === record.locator.chat && payload.avatar_url === record.locator.avatar;
             if (!matchingTarget) throw missingRead();
-            record.attempt = JSON.stringify({ ...payload, ...(record.forced ? { force: true } : {}),
-                roleplay: { ...record.source, operationKey: record.key } });
+            const composed = composeAttempt(record, payload);
+            record.attempt = composed.body;
+            record.attemptKind = composed.kind;
+            record.attemptSaved = composed.saved;
+            record.attemptWhole = composed.whole ?? null;
         } catch (error) {
             record.status = error.code === 'ROLEPLAY_SAVE_UNCERTAIN' ? 'unknown' : 'refused';
             throw error;
@@ -199,15 +230,38 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
     for (let attempt = 0; attempt < 3; attempt++) {
         assertCurrent(record);
         try {
-            const response = await send(record.attempt, record.binding.stamp);
+            const response = await send(record.attempt, record.binding.stamp, record.attemptKind);
+            if (record.attemptKind === 'patch' && (response.status === 404 || response.status === 405)) {
+                // An older server has no patch route. Nothing was written: send the whole chat, as before.
+                markChatPatchUnsupported();
+                record.attempt = record.attemptWhole();
+                record.attemptKind = 'save';
+                record.attemptWhole = null;
+                attempt = -1;
+                continue;
+            }
             const data = await response.json();
             assertCurrent(record);
             if (data?.error === 'account_changed' || data?.code === 'ROLEPLAY_ACCOUNT_CHANGED') {
                 binding.available = false;
                 throw changedAccount();
             }
+            if (record.attemptKind === 'patch' && patchRefused(response, data)) {
+                // The server compared its own file with this patch's base and nothing was written.
+                refuseChatPatchBase(record.source.source);
+                record.attempt = record.attemptWhole();
+                record.attemptKind = 'save';
+                record.attemptWhole = null;
+                attempt = -1;
+                continue;
+            }
             if (response.ok) {
                 acceptResult(record, data);
+                // The file now holds exactly these messages unless the server judged the save a no-op and kept its own bytes.
+                if (record.attemptSaved && record.source.source && data.roleplay?.changed === true) {
+                    rememberChatPatchBase(record.source.source, savedMessageFingerprints(record.attemptSaved));
+                }
+                record.attemptSaved = record.attemptWhole = null;
                 record.result = { ok: true, status: response.status, data };
                 return record.result;
             }
@@ -232,7 +286,7 @@ export function confirmRoleplayOverwrite(token, operationKey) {
     record.key = operationKey;
     record.source = record.conflict;
     record.forced = true;
-    record.attempt = record.result = record.conflict = null;
+    record.attempt = record.attemptKind = record.attemptSaved = record.attemptWhole = record.result = record.conflict = null;
     record.status = 'ready';
 }
 
@@ -249,7 +303,7 @@ export async function finishRoleplaySave(token) {
     if (record.status === 'unknown') record.entry.blocked = true;
     else if (!record.background && !record.create && record.lineage === record.entry.lineage && record.source) record.entry.head = record.source;
     record.predecessor = record.editorPredecessor = record.authorityPredecessor = record.initial = record.explicit = record.conflict = null;
-    if (record.status !== 'unknown') record.attempt = null;
+    if (record.status !== 'unknown') record.attempt = record.attemptSaved = record.attemptWhole = null;
     record.resolve(record);
 }
 

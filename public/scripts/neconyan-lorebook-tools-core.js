@@ -24,7 +24,7 @@ function originalEntry(data, uid) {
     const entries = data.originalData?.entries;
     if (!Array.isArray(entries)) return {};
     if (data.originalDataUidMap) return entries[data.originalDataUidMap[uid]] ?? {};
-    return entries.find(entry => String(entry.id ?? entry.uid) === String(uid)) ?? {};
+    return entries.find(entry => String(entry?.id ?? entry?.uid) === String(uid)) ?? {};
 }
 
 export function lorebookToCharacterBook(data) {
@@ -126,7 +126,7 @@ export function lorebookMergeCandidates(current, incoming) {
 function syncOriginalEntry(book, uid, source = originalEntry(book, uid)) {
     if (!Array.isArray(book.originalData?.entries)) return;
     book.originalDataUidMap ??= Object.fromEntries(Object.keys(book.entries).map(key => [key,
-        book.originalData.entries.findIndex(entry => String(entry.id ?? entry.uid) === key),
+        book.originalData.entries.findIndex(entry => String(entry?.id ?? entry?.uid) === key),
     ]).filter(([, index]) => index >= 0));
     let index = book.originalDataUidMap[uid];
     if (!Number.isInteger(index) || !book.originalData.entries[index]) {
@@ -146,7 +146,7 @@ export function syncLorebookOriginalEntry(book, uid, source) {
 export function deleteLorebookOriginalEntry(book, uid) {
     if (!Array.isArray(book.originalData?.entries)) return;
     const entries = book.originalData.entries;
-    const index = book.originalDataUidMap?.[uid] ?? entries.findIndex(entry => String(entry.id ?? entry.uid) === String(uid));
+    const index = book.originalDataUidMap ? book.originalDataUidMap[uid] : entries.findIndex(entry => String(entry?.id ?? entry?.uid) === String(uid));
     if (!Number.isSafeInteger(index) || index < 0 || index >= entries.length) return;
     entries.splice(index, 1);
     if (!book.originalDataUidMap) return;

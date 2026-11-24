@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
@@ -6,9 +7,14 @@ import { afterEach, beforeEach, describe, expect, test } from '@jest/globals';
 import {
     FRONTEND_ASSET_PREFIX,
     HASHED_FRONTEND_ASSET_RE,
+    buildPublicModuleImportMap,
+    buildPublicStyleMap,
     clearFrontendManifestCache,
+    clearPublicModuleImportMapCache,
     getFrontendManifestPath,
+    readRewrittenFrontendHtml,
     rewriteFrontendHtml,
+    validateBundledFrontend,
 } from '../src/frontend-assets.js';
 import { redirectLegacyFrontendAsset } from '../src/middleware/frontend-assets.js';
 
@@ -85,6 +91,76 @@ describe('frontend asset manifest rewriting', () => {
         expect(rewritten).not.toContain('/frontend-assets/scripts/neconyan-tabs-deadbeef.js');
     });
 
+    test('reuses the rewritten home page until the file changes', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-index-'));
+        const indexPath = path.join(work, 'index.html');
+        try {
+            fs.writeFileSync(indexPath, '<link href="style.css?v=1">', 'utf8');
+            const first = readRewrittenFrontendHtml(indexPath, { enabled: true });
+            expect(first).toContain('href="/frontend-assets/style-abc123.css"');
+            expect(readRewrittenFrontendHtml(indexPath, { enabled: true })).toBe(first);
+            fs.writeFileSync(indexPath, '<link href="style.css?v=2"><p>second</p>', 'utf8');
+            const changed = readRewrittenFrontendHtml(indexPath, { enabled: true });
+            expect(changed).toContain('<p>second</p>');
+            expect(changed).not.toBe(first);
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+        }
+    });
+
+    test('stamps every module through one import map so its identity stays single', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-modules-'));
+        try {
+            fs.mkdirSync(path.join(work, 'scripts'));
+            fs.writeFileSync(path.join(work, 'lib.js'), 'export const lib = 1;');
+            fs.writeFileSync(path.join(work, 'script.js'), 'export const app = 1;');
+            fs.writeFileSync(path.join(work, 'scripts', 'tabs.js'), 'import \'../script.js\';');
+            const map = buildPublicModuleImportMap(work);
+            const html = [
+                '<script type="importmap">{ "imports": { "#macro-vendor": "./lib.js" } }</script>',
+                '<link rel="modulepreload" href="script.js">',
+                '<script type="module" src="script.js"></script>',
+                '<script type="module" src="scripts/tabs.js"></script>',
+            ].join('');
+            const rewritten = rewriteFrontendHtml(html, { enabled: true, importMap: map });
+            const served = JSON.parse(rewritten.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]);
+            expect(map['/script.js']).toMatch(/^\/script\.js\?v=/);
+            expect(rewritten).toContain(`href="${map['/script.js']}"`);
+            expect(rewritten).toContain(`src="${map['/script.js']}"`);
+            expect(rewritten).toContain(`src="${map['/scripts/tabs.js']}"`);
+            expect(served.imports['/script.js']).toBe(map['/script.js']);
+            expect(served.imports['#macro-vendor']).toBe(map['/lib.js']);
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+            clearPublicModuleImportMapCache();
+        }
+    });
+
+    test('stamps stylesheets and deferred style preloads with their own labels', () => {
+        const work = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-styles-'));
+        try {
+            fs.mkdirSync(path.join(work, 'css'));
+            fs.writeFileSync(path.join(work, 'css', 'site.css'), 'body { color: red; }');
+            fs.writeFileSync(path.join(work, 'css', 'late.css'), '.late { color: blue; }');
+            const styles = buildPublicStyleMap(work);
+            const html = [
+                '<link rel="stylesheet" href="css/site.css?v=old">',
+                '<link rel="preload" as="style" href="css/late.css?v=old">',
+                '<link rel="preload" as="script" href="css/late.css">',
+                '<link rel="stylesheet" href="https://example.com/remote.css">',
+            ].join('');
+            const rewritten = rewriteFrontendHtml(html, { enabled: true, styleMap: styles });
+            expect(styles['/css/site.css']).toMatch(/^\/css\/site\.css\?v=/);
+            expect(rewritten).toContain(`href="${styles['/css/site.css']}"`);
+            expect(rewritten).toContain(`href="${styles['/css/late.css']}"`);
+            expect(rewritten).toContain('as="script" href="css/late.css"');
+            expect(rewritten).toContain('href="https://example.com/remote.css"');
+        } finally {
+            fs.rmSync(work, { force: true, recursive: true });
+            clearPublicModuleImportMapCache();
+        }
+    });
+
     test('keeps the immutable asset prefix stable for production serving', () => {
         expect(FRONTEND_ASSET_PREFIX).toBe('/frontend-assets/');
     });
@@ -112,4 +188,27 @@ describe('frontend asset manifest rewriting', () => {
         expect(HASHED_FRONTEND_ASSET_RE.test('script.js')).toBe(false);
         expect(HASHED_FRONTEND_ASSET_RE.test('scripts/extensions.js')).toBe(false);
     });
+});
+
+test('native startup requires both compiled bundles at their regular and immutable URLs', () => {
+    const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-bundles-'));
+    const assets = {
+        'lib.js': { output: 'lib-0123456789ab.js', bytes: 10 },
+        'notes-editor.js': { output: 'notes-editor-abcdef123456.js', bytes: 10 },
+    };
+    try {
+        for (const [alias, entry] of Object.entries(assets)) {
+            fs.writeFileSync(path.join(dist, alias), '0123456789');
+            fs.writeFileSync(path.join(dist, entry.output), '0123456789');
+        }
+        expect(() => validateBundledFrontend(dist, { assets })).not.toThrow();
+        expect(() => validateBundledFrontend(dist, {})).toThrow(/damaged frontend bundle \(lib.js\)/);
+        fs.unlinkSync(path.join(dist, 'notes-editor.js'));
+        expect(() => validateBundledFrontend(dist, { assets })).toThrow(/damaged frontend bundle \(notes-editor.js\)/);
+        fs.writeFileSync(path.join(dist, 'notes-editor.js'), '0123456789');
+        fs.truncateSync(path.join(dist, assets['lib.js'].output), 4);
+        expect(() => validateBundledFrontend(dist, { assets })).toThrow(/damaged frontend bundle \(lib.js\)/);
+    } finally {
+        fs.rmSync(dist, { recursive: true, force: true });
+    }
 });

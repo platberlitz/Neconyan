@@ -8,7 +8,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { default as git, CheckRepoActions } from 'simple-git';
+import { simpleGit as git, CheckRepoActions } from 'simple-git';
 import { createGitClient } from './src/git/client.js';
 import { color } from './src/util.js';
 

@@ -34,8 +34,8 @@ public class BridgeGateTest {
 
 test('every native action validates the token before effects; setup is main-page-only and origin-bound', () => {
     const activity = read('MainActivity.java'), updater = read('ApkUpdater.java');
-    for (const [source, name] of [[activity, 'showCrashReports'], [activity, 'beginExport'], [activity, 'appendExport'], [activity, 'finishExport'], [activity, 'cancelExport'], [updater, 'installUpdate']]) {
-        const method = source.match(new RegExp(`@JavascriptInterface public (?:synchronized )?boolean ${name}\\(String token[^)]*\\) \\{\\s*if \\(!bridgeGate.accepts\\(token\\)\\) return false;`));
+    for (const [source, name] of [[activity, 'showCrashReports'], [activity, 'beginExport'], [activity, 'appendExport'], [activity, 'finishExport'], [activity, 'cancelExport'], [activity, 'saveDataBackup'], [activity, 'setNotificationsEnabled'], [updater, 'installUpdate']]) {
+        const method = source.match(new RegExp(`@JavascriptInterface public (?:synchronized )?boolean ${name}\\(String token[^)]*\\) \\{\\s*if \\(!bridgeGate\\.accepts\\(token\\)(?: \\|\\| !exportFromPage)?\\) return false;`));
         assert.ok(method, `${name} must reject before work`);
     }
     assert.match(read('BridgeCallerGate.java'), /new SecureRandom/); assert.match(read('BridgeCallerGate.java'), /MessageDigest\.isEqual/);
@@ -49,5 +49,6 @@ test('every native action validates the token before effects; setup is main-page
     assert.ok(finished.indexOf('web.setVisibility(View.VISIBLE)') < finished.indexOf('bridgeGate.issue()'));
     assert.match(finished, /String current = view\.getUrl\(\);\s*if \(current == null \|\| !local\(Uri\.parse\(current\)\)\) return;\s*if \(bridgeToken == null\) bridgeToken = bridgeGate\.issue\(\);/);
     assert.match(updater, /runOnUiThread\(\(\) -> \{\s*if \(!bridgeGate\.accepts\(token\)\) return/);
-    assert.equal((activity.match(/token != null && !bridgeGate.accepts\(token\)/g) || []).length, 2);
+    assert.match(activity, /if \(token != null && !bridgeGate\.accepts\(token\)\) return;/);
+    assert.match(activity, /if \(resumed && bridgeGate\.accepts\(token\)\) offerBackup\(\)/);
 });

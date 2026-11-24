@@ -57,6 +57,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({
     readChimingPartnersFromList: () => '',
     readWeeklyScheduleFromEditor: () => '[]',
+    renderConversationGroupMemberSummary: () => false,
     updateUserFooter: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/schedule.js', () => ({

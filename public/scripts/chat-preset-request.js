@@ -13,7 +13,7 @@ export function coerceRequestBoolean(value) {
 
 export function normalizeChatCompletionBooleanFields(payload) {
     if (!payload || typeof payload !== 'object') return;
-    for (const field of ['include_reasoning', 'enable_web_search', 'request_images']) {
+    for (const field of ['include_reasoning', 'enable_web_search', 'request_images', 'custom_reasoning_documented_levels']) {
         if (payload[field] !== undefined) payload[field] = coerceRequestBoolean(payload[field]);
     }
 }
@@ -38,6 +38,7 @@ export function mergeChatPresetSettings(activeSettings, preset) {
         const mapping = settingsToUpdate[key];
         if (mapping) settings[mapping[1]] = value;
     }
+    normalizeChatCompletionBooleanFields(settings);
     return settings;
 }
 
@@ -89,7 +90,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
         settings.show_thoughts = overridePayload.include_reasoning;
         if (!settings.show_thoughts) settings.auto_append_reasoning_tags = false;
     }
-    for (const field of ['enable_web_search', 'request_images']) {
+    for (const field of ['enable_web_search', 'request_images', 'custom_reasoning_documented_levels']) {
         if (overridePayload[field] !== undefined) settings[field] = overridePayload[field];
     }
     const { generate_data: payload } = await generate(settings, overridePayload.model, 'quiet', overridePayload.messages);

@@ -29,6 +29,7 @@ function createEventSource() {
 
 describe('companion card ui', () => {
     let chat;
+    let chatMetadata;
     let characters;
     let this_chid;
     let eventSource;
@@ -41,9 +42,15 @@ describe('companion card ui', () => {
     let powerUser;
     let batchReaderChange;
     let settleScroll;
+    let isCompanionRunStoppableMock;
+    let stopCompanionRunMock;
+    let stopServerReplyCompanionMock;
 
     async function importCompanionUi() {
         jest.resetModules();
+        isCompanionRunStoppableMock = jest.fn(() => true);
+        stopCompanionRunMock = jest.fn(async () => true);
+        stopServerReplyCompanionMock = jest.fn(async () => true);
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/plot-compass-context.js', () => ({
             getPlotCompassIdentity: () => ({ avatar: 'character.png', chatId: 'chat-1' }),
@@ -75,6 +82,7 @@ describe('companion card ui', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            chat_metadata: chatMetadata,
             characters,
             this_chid,
             changeMessageBelowReader: jest.fn((_element, mutate) => mutate()),
@@ -140,9 +148,15 @@ describe('companion card ui', () => {
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
             MAX_COMPANION_RESULT_CHARS: 65536,
             captureCompanionResultTarget: jest.fn(() => () => true),
+            collectRecentCompanionResults: jest.fn(() => []),
             emitCompanionResultsUpdated: jest.fn(async () => {}),
             deleteCompanionResult: jest.fn(),
             getCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
+            getDisplayedCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
+            isCompanionRunStoppable: isCompanionRunStoppableMock,
+            isServerReplyCompanionStopping: jest.fn(() => false),
+            stopCompanionRun: stopCompanionRunMock,
+            stopServerReplyCompanion: stopServerReplyCompanionMock,
             getLatestAssistantCompanionMessageIndex: jest.fn(() => chat.findLastIndex(message => message && !message.is_user && !message.is_system)),
             getLatestValidCompanionMessageIndex: jest.fn(() => Math.max(0, chat.length - 1)),
             runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
@@ -155,6 +169,7 @@ describe('companion card ui', () => {
 
     beforeEach(() => {
         chat = [];
+        chatMetadata = {};
         characters = [];
         this_chid = undefined;
         powerUser = { timestamp_model_name_short: false };
@@ -320,6 +335,36 @@ describe('companion card ui', () => {
         agents.length = 0;
         ui.renderCompanionResultsForMessage(0);
         expect(jqueryObject.html.mock.calls.at(-1)[0]).not.toContain('data-action="fix"');
+    });
+
+    test('shows Stop on a writing note and keeps the other note actions greyed out in place', async () => {
+        const result = { status: 'pending', content: '', agentName: 'Status Companion', displayMode: 'card' };
+        chat.push({ is_user: false, is_system: false, name: 'Aria', extra: { inChatAgentCompanionResults: { 'companion-tracker': result } } });
+        const ui = await importCompanionUi();
+        jqueryObject.length = 1;
+        const tag = (html, action) => html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))?.[0] ?? '';
+
+        ui.renderCompanionResultsForMessage(0);
+        let html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).toMatch(/data-action="stop"[^>]*><i class="fa-solid fa-stop"><\/i>/);
+        expect(tag(html, 'stop')).not.toContain(' disabled');
+        expect(html.indexOf('data-action="stop"')).toBeLessThan(html.indexOf('data-action="regenerate"'));
+        for (const action of ['regenerate', 'fix', 'edit', 'copy', 'delete']) {
+            expect(tag(html, action)).toContain(' disabled');
+        }
+
+        isCompanionRunStoppableMock.mockReturnValue(false);
+        ui.renderCompanionResultsForMessage(0);
+        expect(tag(jqueryObject.html.mock.calls.at(-1)[0], 'stop')).toContain(' disabled');
+
+        result.status = 'done';
+        result.content = 'Saved tracker';
+        ui.renderCompanionResultsForMessage(0);
+        html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).not.toContain('data-action="stop"');
+        for (const action of ['regenerate', 'fix', 'edit', 'copy', 'delete']) {
+            expect(tag(html, action)).not.toContain(' disabled');
+        }
     });
 
     test.each([false, true])('repairs only the clicked note and releases its button after failure=%s', async fail => {
@@ -543,6 +588,48 @@ describe('companion card ui', () => {
         expect(html).toContain('CatEarEnthusiast');
         expect(html).toContain('Kris is a real one');
         expect(html).not.toContain('mixed|mixed @Rover_Stan/user/18/');
+    });
+
+    test('renders Plot Compass regex cards with scoped styles and leaves plain fallbacks intact', async () => {
+        const plotCompassTemplate = readTemplate('plot-compass-companion.json');
+        agents.push({
+            id: 'plot-compass',
+            name: 'Plot Compass',
+            sourceTemplateId: 'tpl-plot-compass-companion',
+            execution: 'companion',
+            companion: { ...plotCompassTemplate.companion },
+            regexScripts: plotCompassTemplate.regexScripts,
+        });
+        const { formatCompanionContent } = await importCompanionUi();
+
+        const note = [
+            '**Direction:** Keep {{user}} on the move.',
+            '**Where we are:** {{char}} waits beneath the gantry.',
+            '**Possible developments:**',
+            '1. {{user}} opens the locker.',
+            '2. {{char}} calls out from the catwalk.',
+            '**Next move:** 2. Have {{char}} speak first.',
+        ].join('\n');
+
+        const html = formatCompanionContent('plot-compass', {
+            content: note,
+            format: 'markdown',
+        }, { name: 'Mira' }, '.ica--tpanel-agent-body ');
+
+        expect(html).toContain('<style data-prefix=".ica--tpanel-agent-body ">');
+        expect(html).toContain('data-pc-card="1"');
+        expect(html).toContain('class="pura-choice pc-opt"');
+        expect(html).toContain('Traveler opens the locker.');
+        expect(html).toContain('Mira calls out from the catwalk.');
+        expect(html).not.toContain('{{user}}');
+        expect(html).not.toContain('{{char}}');
+
+        const plain = formatCompanionContent('plot-compass', {
+            content: 'Bring a sealed letter into the scene.',
+            format: 'markdown',
+        }, { name: 'Mira' });
+        expect(plain).toContain('Bring a sealed letter into the scene.');
+        expect(plain).not.toContain('data-pc-card="1"');
     });
 
     test('cleans shifted Chatroom labels out of visible posts', async () => {

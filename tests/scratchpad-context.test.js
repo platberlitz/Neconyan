@@ -52,8 +52,12 @@ jest.unstable_mockModule('../public/scripts/personas.js', () => ({ get user_avat
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), '') }));
 jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
+jest.unstable_mockModule('../public/scripts/macros/engine/MacroRegistry.js', () => ({ MacroRegistry: { getAllMacros: () => { throw new Error('The registry is unavailable in this test.'); } } }));
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [{ name: 'Nova', extraBooks: ['Extra lore'] }] },
+    world_names: [], world_info_depth: 2, world_info_budget: 25, world_info_budget_cap: 0,
+    world_info_recursive: false, world_info_max_recursion_steps: 0,
+    world_info_case_sensitive: false, world_info_match_whole_words: false,
 }));
 const presetSnapshot = {
     kind: 'chat', api: 'Chat Completion', name: 'Lantern',
@@ -65,9 +69,11 @@ const presetSnapshot = {
         { id: 'reminder', name: 'Reminder', enabled: true, marker: false, role: 'user', depth: 2, content: 'Stay in tense.' },
         { id: 'chatHistory', name: 'Chat History', enabled: true, marker: true, role: '', depth: null, content: '' },
     ],
+    values: { contextSize: 4096, replyLength: 256, continuePrefill: false, samplers: [{ key: 'temperature', label: 'Temperature', value: 1 }] },
+    connection: { source: 'openai', sourceLabel: 'OpenAI', model: 'test-model', modelContext: 8192 },
 };
 const readCurrentPreset = jest.fn(() => presetSnapshot);
-jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentPresetName: () => presetSnapshot.name }));
+jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentLimits: () => ({ contextSize: 4096, replyLength: 256 }), currentPresetName: () => presetSnapshot.name }));
 
 const { buildContext, clearHomePersonaChoice, collectLore, currentSource, formatPreset, isCurrentSource, noteHomePersonaChoice, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
@@ -238,9 +244,14 @@ describe('Scratchpad source context', () => {
     });
 
     test('Conversation reads its own characters, persona, override and attached books', async () => {
+        power_user.persona_descriptions = { 'persona.png': { lorebook: 'Conversation persona lore' } };
+        books.set('Conversation persona lore', { entries: { 0: { uid: 0, constant: true, content: 'Conversation persona lore.' } } });
         const context = await buildContext({ source: currentSource(), settings });
-        expect(context.lore.books).toEqual(expect.arrayContaining(['Nova lore', 'Conversation lore', 'Extra lore', 'Global lore', 'Persona lore']));
-        expect(context.text).not.toMatch(/Roleplay lore|Chat lore|Roleplay persona|Roleplay user/);
+        expect(context.lore.books).toEqual(expect.arrayContaining(['Nova lore', 'Conversation lore', 'Extra lore', 'Conversation persona lore']));
+        expect(context.lore.books).not.toContain('Persona lore');
+        expect(context.lore.books).not.toContain('Global lore');
+        expect(context.text).not.toMatch(/Roleplay lore|Chat lore|Global lore|Roleplay persona|Roleplay user/);
+        expect(context.text).toContain('Conversation persona lore.');
         expect(context.text).toContain('Conversation user is a Conversation persona with Nova.');
         expect(context.text).toContain('Nova lore: Nova and Conversation user.');
         expect(context.text).toContain('### Description [description]\n{{char}} talks to {{user}}.');
@@ -335,9 +346,12 @@ describe('General Scratchpad context', () => {
         power_user.persona_descriptions = { 'User.png': { description: '{{user}} keeps notes.', title: 'Traveller',
             appendices: [{ id: 'harbour', name: 'Harbour', description: 'Wait for {{char}}.' }] } };
         const shared = await buildContext({ source: currentSource(), settings });
-        expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+        const { avatar, name, noteRefs } = shared.capabilities.persona;
+        expect({ avatar, name }).toEqual({ avatar: 'User.png', name: 'Kris' });
+        expect(Object.values(noteRefs)).toEqual(['harbour']);
         expect(shared.text).toContain('"description":"{{user}} keeps notes."');
-        expect(shared.text).toContain('"id":"harbour"');
+        expect(shared.text).toContain(`"ref":"${Object.keys(noteRefs)[0]}"`);
+        expect(shared.text).not.toContain('"id":"harbour"');
         expect(shared.text).toContain('Wait for {{char}}.');
         const hidden = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, persona: false } } });
         expect(hidden.capabilities.persona).toBeFalsy();
@@ -406,8 +420,8 @@ describe('General Scratchpad context', () => {
             expect(shared.text).toContain('"name":"Kris"');
             expect(shared.text).toContain('Roleplay user keeps notes.');
             expect(shared.text).toContain('## Editable persona fields');
-            expect(shared.text).toContain('"id":"harbour"');
-            expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+            expect(shared.text).toContain('"ref":"sn-');
+            expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris', noteRefs: { [Object.keys(shared.capabilities.persona.noteRefs)[0]]: 'harbour' } });
             expect(shared.text).not.toContain('HIDDEN-APPENDIX');
         });
 
@@ -420,7 +434,7 @@ describe('General Scratchpad context', () => {
             const shared = await buildContext({ source, settings });
             expect(shared.text).toContain('ACCOUNT-DEFAULT-PERSONA');
             expect(shared.text).not.toContain('Kris keeps notes');
-            expect(shared.capabilities.persona).toEqual({ avatar: 'Default.png', name: 'Account default' });
+            expect(shared.capabilities.persona).toEqual({ avatar: 'Default.png', name: 'Account default', noteRefs: {} });
         });
 
         test('a chat change ends the choice, so the hidden persona is withheld again', async () => {
@@ -791,5 +805,73 @@ describe('Scratchpad shared context budget', () => {
         expect(notebook.text).toMatch(/^Notebook discussion\n/);
         expect(notebook.leftOut).toBe(0);
         expect(notebook.messageCount).toBe(0);
+    });
+});
+
+describe('Scratchpad problem checks', () => {
+    test('hidden entries never reach any check, in Roleplay or General', async () => {
+        const entries = {
+            0: { uid: 0, comment: 'Visible Quay', key: ['sharedkey'], constant: true, content: 'The quay is open.' },
+            1: { uid: 1, comment: 'HIDDEN TITLE', key: ['hiddenonly', 'sharedkey', '/unclosed['], probability: 0, agentBlacklisted: true,
+                content: 'hiddencontent hiddenonly sharedkey /unclosed[' },
+        };
+        books.set('Leaky', { entries });
+        books.set('Global lore', { entries });
+        const roleplay = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, problems: true } } });
+        home.visible = true;
+        conversationState.conversationWorkspaceOpen = false;
+        const general = await buildContext({ source: currentSource(), settings: { ...settings, lorebook: 'Leaky', include: { card: false, problems: true } } });
+        for (const context of [roleplay, general]) {
+            const text = context.text.toLowerCase();
+            expect(context.text).toContain('## Checks');
+            expect(text).not.toContain('hidden title');
+            expect(text).not.toContain('hiddenonly');
+            expect(text).not.toContain('hiddencontent');
+            expect(text).not.toContain('unclosed[');
+            expect(text).not.toContain('/hidden');
+        }
+        expect(general.text.toLowerCase()).toContain('1 entry is hidden from agents');
+    });
+
+    test('lorebook detail never shares hidden entries or disabled content', async () => {
+        home.visible = true;
+        conversationState.conversationWorkspaceOpen = false;
+        books.set('Secrets', { entries: {
+            0: { uid: 0, comment: 'Secret', key: ['secret'], constant: true, agentBlacklisted: true, content: 'HIDDEN-ENTRY' },
+            1: { uid: 1, comment: 'Off', key: ['off'], disable: true, content: 'OFF-CONTENT' },
+            2: { uid: 2, comment: 'Lamp', key: ['lighthouse'], content: 'The lamp is lit.' },
+        } });
+        const context = await buildContext({ source: currentSource(), settings: { ...settings, lorebook: 'Secrets', include: { card: false, problems: true } } });
+        expect(context.text).toContain('## Lorebook details');
+        expect(context.text).toContain('1 entry is hidden from Agents and was not shared.');
+        expect(context.text).toContain('not shared: Off | uid: 1 | keys: off | reason: disabled');
+        expect(context.text).not.toContain('HIDDEN-ENTRY');
+        expect(context.text).not.toContain('OFF-CONTENT');
+        expect(context.text).not.toContain('secret');
+    });
+
+    test('still reports structural macro problems when the macro registry cannot load', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        characters[0].data.first_mes = 'Hello {{char}';
+        const context = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, problems: true } } });
+        expect(context.text).toContain('A macro is missing its closing braces');
+        expect(context.text).toContain('Unknown macro names were not checked because the macro list could not be loaded.');
+    });
+
+    test('the switch on shares findings, fuller lorebook detail and read-only preset values', async () => {
+        const context = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true, problems: true } } });
+        expect(context.capabilities.problems).toBe(true);
+        expect(context.text).toContain('## Checks');
+        expect(context.text).toContain('- error | Character: Nova | first_mes | There is no first message');
+        expect(context.text).toContain('- ok | Lorebook: Nova lore | No problems found by the fixed checks.');
+        expect(context.text).toContain('## Lorebook details\n### Nova lore\nBook settings: scan depth: 2');
+        expect(context.text).toContain('[shared] Nova lore | uid: 0 | keys: lighthouse');
+        conversationState.conversationWorkspaceOpen = false;
+        const roleplay = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true, problems: true } } });
+        expect(roleplay.text).toContain('## Preset values (read only)\nConnection: OpenAI | Model: test-model');
+        expect(roleplay.text).toContain('Temperature: 1');
+        expect(roleplay.text).not.toContain('proxy_password');
+        expect(roleplay.text).toContain('## Checks');
+        expect(roleplay.text).toContain('- ok | Preset: Lantern | No problems found by the fixed checks.');
     });
 });

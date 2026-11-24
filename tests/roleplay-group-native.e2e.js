@@ -47,8 +47,18 @@ async function prepare(app, phone, companionCount = 0, companionTrigger = 'manua
     return { account, group, file };
 }
 
+// The server rewrites a chat in place and, to survive a crash, first flips the file's first byte and flushes; it puts the byte back
+// when the rest is written and flushed. A reader that does not take the chat lock can land in that window, so it reads again
+// until the file is whole (a file that stays unreadable for a full second is a real failure and is reported).
 async function readRows(file) {
-    return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+        } catch (error) {
+            if (!(error instanceof SyntaxError) || attempt >= 40) throw error;
+            await delay(25);
+        }
+    }
 }
 
 async function openGroup({ account, group }) {
@@ -418,21 +428,37 @@ test('a native group reply runs its automatic Companion once, not again in the b
 
 test('a native group reply sent while a new account is still setting up keeps its Companion', async ({ app }) => {
     const fixture = await prepare(app, false, 1, 'auto');
-    // Send before the Agents and Dialogue Colors finish their first start, which saves settings.
-    // A slow template catalogue holds the Agents' start back, as a slow phone or server does.
-    await fixture.account.context.route('**/in-chat-agents/templates/index.json*', async route => {
-        await delay(4000);
+    const catalogue = Promise.withResolvers();
+    const releaseCatalogue = Promise.withResolvers();
+    await fixture.account.context.route(url => url.pathname.endsWith('/in-chat-agents/templates/index.json'), async route => {
+        catalogue.resolve();
+        await releaseCatalogue.promise;
         await route.continue();
     });
-    const page = await fixture.account.open({ workspace: false, readyTimeout: 60000, waitForFirstStart: false });
-    await page.evaluate(async id => {
-        const groups = await import('/scripts/group-chats.js');
-        await groups.openGroupById(id);
-    }, fixture.group.id);
-    await expect(page.locator('#send_textarea')).toBeVisible();
-    const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
-    await page.locator('#send_textarea').fill('Write one reply and one Companion note.');
-    await startNativeReply(page);
+    // Start from the group composer without detouring through the unrelated Home tour.
+    let page;
+    let submitted;
+    try {
+        page = await fixture.account.open({ workspace: false, readyTimeout: 60000, skipTour: false, waitForFirstStart: false });
+        await page.evaluate(async id => {
+            const groups = await import('/scripts/group-chats.js');
+            await groups.openGroupById(id);
+        }, fixture.group.id);
+        await expect(page.locator('#send_textarea')).toBeVisible();
+        await catalogue.promise;
+        await page.locator('#send_textarea').fill('Write one reply and one Companion note.');
+        submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        const pendingAtSend = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            const setup = await import('/scripts/settings-setup.js');
+            const pending = setup.getPendingSettingsSetupTaskNames();
+            void core.Generate('normal', { skipNativeRoleplay: false });
+            return pending;
+        });
+        expect(pendingAtSend).toContain('in-chat-agents first start');
+    } finally {
+        releaseCatalogue.resolve();
+    }
     const response = await submitted;
     expect(response.status(), await response.text()).toBe(202);
     const accepted = await response.json();

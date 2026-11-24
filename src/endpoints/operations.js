@@ -35,11 +35,13 @@ router.post('/submit', route(async (request, response) => {
         if (accepted.job) response.set('X-Neconyan-Job', accepted.job.id);
         response.status(accepted.created ? 202 : 200).json({ ...accepted, record: publicRecord(accepted.record) });
     } catch (error) {
-        let notAccepted = false;
-        try {
-            const { base, account } = operationAccount(request);
-            if (typeof request.body?.key === 'string' && request.body.key.length <= 200) notAccepted = refuseOperation(base, account, request.body, error.message);
-        } catch { /* Without durable refusal proof, the caller must retain its request. */ }
+        let notAccepted = error.notAccepted === true;
+        if (!notAccepted) {
+            try {
+                const { base, account } = operationAccount(request);
+                if (typeof request.body?.key === 'string' && request.body.key.length <= 200) notAccepted = refuseOperation(base, account, request.body, error.message);
+            } catch { /* Without durable refusal proof, the caller must retain its request. */ }
+        }
         response.status(error.status ?? 500).json({ error: error.message, code: error.code ?? null, notAccepted });
     }
 }));

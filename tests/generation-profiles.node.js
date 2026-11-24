@@ -45,6 +45,17 @@ function nanoReasoningFixture(t, { metadata = false, preset = false, tier = 'def
         options: { context: { owner: 'tester', directories: fixture.directories }, messages: [{ role: 'user', content: 'Owned reasoning probe.' }], maxTokens: 128 } };
 }
 
+test('Meower inherits Custom documented levels only when the profile is silent', async () => {
+    const { meowerReasoningOverrides } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
+    const preset = { reasoning_effort: 'high', custom_reasoning_documented_levels: 'true', stop: ['ROLEPLAY STOP'] };
+    assert.deepEqual(meowerReasoningOverrides({ profile: {}, preset }), {
+        reasoning_effort: 'high', custom_reasoning_documented_levels: 'true',
+    });
+    assert.deepEqual(meowerReasoningOverrides({ effort: 'low', profile: { 'custom-reasoning-documented-levels': 'false' }, preset }), {
+        reasoning_effort: 'low',
+    });
+});
+
 test('existing Meower inheritance reaches final NanoGPT wire bodies for active, profile, preset and omitted effort', async t => {
     const { reasoningOverridesFrom } = await import('../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js');
     const fixture = nanoReasoningFixture(t, { preset: true });
@@ -621,11 +632,12 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
         }
         polls++;
         assert.ok(String(url).endsWith('/known-task'));
-        if (polls === 1) throw new Error('Polling connection dropped');
+        if (polls <= 3) throw new Error('Polling connection dropped');
         return new Response(JSON.stringify({ done: true, generations: [{ text: 'Ada: Done' }] }));
     } };
     await assert.rejects(runChatProfile(options), { message: 'The model provider could not complete the reply (HTTP 500).', status: 502 });
     assert.equal(submits, 1);
+    assert.equal(polls, 3);
     assert.equal(getJob(fixture.directories, job.id).recoverability, 'resumable');
     markProviderUncertain(fixture.directories, job.id, { step: getJob(fixture.directories, job.id).resume });
     assert.equal(getJob(fixture.directories, job.id).recoverability, 'unknown-outcome');
@@ -633,7 +645,7 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
     fixture.settings.horde_settings.models = ['another-worker']; fixture.save();
     assert.equal((await runChatProfile(options)).text, 'Done');
     assert.equal(submits, 1);
-    assert.equal(polls, 2);
+    assert.equal(polls, 4);
     assert.equal((await runChatProfile(options)).text, 'Done');
     assert.equal(submits, 1);
     const artifacts = path.join(fixture.root, 'jobs', 'artifacts');
@@ -808,6 +820,9 @@ for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} c
         assert.equal(payload.max_tokens, 73);
         assert.equal(payload.custom_url, 'http://127.0.0.1:6000');
         assert.equal(payload.reverse_proxy, '');
+        const effortPayload = await buildChatProfileRequest(fixture.directories, binding, [{ role: 'user', content: 'Hello' }], 73,
+            async controls => ({ generate_data: { reasoning_effort: controls.reasoning_effort } }), { rawOptions: { reasoningEffort: 'none' } });
+        assert.equal(effortPayload.reasoning_effort, 'none');
     }
     settings.extension_settings.connectionManager.selectedProfile = 'another-wrong-profile';
     fixture.save();

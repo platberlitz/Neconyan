@@ -8,10 +8,13 @@ import {
     composeAuthorsNote,
     ensurePersonaNoteLibrary,
     findCharacterNoteEntry,
+    findGroupCharacterNoteEntry,
     getActiveNoteProfileId,
     getActiveNoteProfileIds,
     getNoteProfiles,
     getPersonaNoteEntry,
+    isAuthorsNoteActive,
+    resolveActiveAuthorsNote,
     resolveActiveNoteProfiles,
     resolveNoteProfile,
 } from '../public/scripts/authors-note-profiles.js';
@@ -236,6 +239,110 @@ describe('combining Author\'s Notes', () => {
         expect(composeAuthorsNote('Chat', [note('Char', 0), note('Persona', 2)])).toBe('Char\nPersona');
         expect(composeAuthorsNote('Chat', [note('Char', 0), note('Persona', 0)])).toBe('Char\nPersona');
         expect(composeAuthorsNote('', [note('', 1), note('Persona', 2)])).toBe('Persona');
+    });
+});
+
+describe('resolving active Author\'s Notes across chat, character and persona scopes', () => {
+    test('checks insertion frequency like the floating prompt', () => {
+        expect(isAuthorsNoteActive(0, 1)).toBe(false);
+        expect(isAuthorsNoteActive(-1, 2)).toBe(false);
+        expect(isAuthorsNoteActive(null, 1)).toBe(false);
+        expect(isAuthorsNoteActive('', 1)).toBe(false);
+        expect(isAuthorsNoteActive(1, 0)).toBe(true);
+        expect(isAuthorsNoteActive('1', 0)).toBe(true);
+        expect(isAuthorsNoteActive(2, 0)).toBe(false);
+        expect(isAuthorsNoteActive(2, 1)).toBe(false);
+        expect(isAuthorsNoteActive(2, 2)).toBe(true);
+        expect(isAuthorsNoteActive(2, 3)).toBe(false);
+        expect(isAuthorsNoteActive(2, 4)).toBe(true);
+    });
+
+    test('resolves chat, per-persona character libraries and persona notes together', () => {
+        const noteSettings = {
+            default: 'Default note',
+            defaultInterval: 1,
+            chara: [{
+                name: 'individual:Nova',
+                useChara: true,
+                perPersona: true,
+                profiles: [{ id: 'shared', name: 'Shared', prompt: 'Shared char note', position: 1 }],
+                activeProfiles: ['shared'],
+                personaNoteLibraries: {
+                    'sam.png': {
+                        profiles: [
+                            { id: 'tone', name: 'Tone', prompt: 'Sam character tone', position: 1 },
+                            { id: 'rule', name: 'Rule', prompt: 'Sam character rule', position: 2 },
+                        ],
+                        activeProfile: 'tone',
+                        activeProfiles: ['tone', 'rule'],
+                    },
+                },
+            }],
+            persona: {
+                'sam.png': { useNote: true, prompt: 'Sam persona note', position: 1 },
+            },
+        };
+
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: 'Chat note' },
+            noteSettings,
+            characterAvatar: 'Nova.png',
+            personaAvatar: 'sam.png',
+            userMessages: 1,
+        })).toBe('Sam character tone\nSam persona note\nChat note\nSam character rule');
+
+        // Explicitly cleared chat note does not fall back to default.
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: '' },
+            noteSettings,
+            characterAvatar: 'Nova.png',
+            personaAvatar: 'alex.png',
+            userMessages: 1,
+        })).toBe('');
+
+        // Insertion frequency 0 disables all Author's Notes.
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: 'Chat note', note_interval: 0 },
+            noteSettings,
+            characterAvatar: 'Nova.png',
+            personaAvatar: 'sam.png',
+            userMessages: 1,
+        })).toBe('');
+
+        // Insertion frequency > 1 activates only on matching user message counts.
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: 'Chat note', note_interval: 2 },
+            noteSettings,
+            characterAvatar: 'Nova.png',
+            personaAvatar: 'sam.png',
+            userMessages: 1,
+        })).toBe('');
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: 'Chat note', note_interval: 2 },
+            noteSettings,
+            characterAvatar: 'Nova.png',
+            personaAvatar: 'sam.png',
+            userMessages: 2,
+        })).toBe('Sam character tone\nSam persona note\nChat note\nSam character rule');
+    });
+
+    test('resolves group character notes from chat metadata or legacy group entries', () => {
+        const legacyChara = [
+            { name: 'group:grp-1:Kit', useChara: false, prompt: '' },
+            { name: 'group:grp-1:Nova', useChara: true, prompt: 'Legacy group note', position: 0 },
+        ];
+        expect(findGroupCharacterNoteEntry(legacyChara, 'grp-1', ['Kit.png', 'Nova.png'])?.prompt).toBe('Legacy group note');
+
+        const metadataNote = { name: 'group:grp-1', useChara: true, prompt: 'Saved group note', position: 2 };
+        expect(findGroupCharacterNoteEntry(legacyChara, 'grp-1', ['Nova.png'], metadataNote)).toBe(metadataNote);
+
+        expect(resolveActiveAuthorsNote({
+            chatMetadata: { note_prompt: 'Chat note' },
+            noteSettings: { chara: legacyChara },
+            groupId: 'grp-1',
+            groupAvatars: ['Kit.png', 'Nova.png'],
+            userMessages: 1,
+        })).toBe('Legacy group note');
     });
 });
 

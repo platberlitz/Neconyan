@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isUtf8 } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
@@ -14,6 +15,7 @@ export const CHAT_RECOVERY_QUARANTINE_LIMIT = 3;
 const GROUP_CHAT_OWNER = 'shared';
 const RECOVERY_STATE_FILE_REGEXP = /^([a-f0-9]{64})\.(?:latest\.jsonl|deleted|corrupt-\d+\.jsonl)$/;
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+const utf8LineDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const rekeyTransactions = new WeakMap();
 
 function acquireRecoveryStateLock(target) {
@@ -129,42 +131,105 @@ function toBuffer(data) {
     throw new TypeError('Chat JSONL data must be a string, Buffer, or Uint8Array.');
 }
 
-export function parseChatJsonl(data) {
-    let serialized;
+/**
+ * The lines `decode(whole buffer).split('\n')` would give, decoded one at a time so the whole
+ * chat never exists as one text. A newline byte never occurs inside a multi-byte sequence, so a
+ * line decodes exactly as it would inside the whole text; only the first line may lose a BOM.
+ */
+function* decodeChatJsonlLines(buffer, isTrusted) {
+    let start = 0;
+    for (let first = true, line = 0; ; first = false, line++) {
+        const end = buffer.indexOf(0x0a, start);
+        // A line the caller already holds as valid is counted, not decoded again.
+        yield isTrusted?.(line) ? null : (first ? utf8Decoder : utf8LineDecoder).decode(buffer.subarray(start, end === -1 ? buffer.length : end));
+        if (end === -1) {
+            return;
+        }
+        start = end + 1;
+    }
+}
+
+/**
+ * Reads chat JSONL one record at a time and hands each to `onRecord(record, index)`; returning
+ * `false` stops the scan early. Gives the verdict `parseChatJsonl` gives (same reasons, in the
+ * same order) without keeping the records.
+ * @returns {{status: 'ok', count: number}|{status: 'stopped'}|ReturnType<typeof corruptResult>}
+ */
+function scanChatJsonl(data, onRecord, isTrusted) {
+    let buffer;
     try {
-        serialized = utf8Decoder.decode(toBuffer(data));
+        buffer = toBuffer(data);
     } catch {
         return corruptResult('invalid-utf8', data);
     }
 
-    const records = [];
-    const lines = serialized.split('\n');
-    for (let index = 0; index < lines.length; index++) {
-        const line = lines[index];
-        if (line.trim() === '') {
+    const lines = decodeChatJsonlLines(buffer, isTrusted);
+    let failure = null;
+    let count = 0;
+    let recognizedHeader = false;
+    for (let lineNumber = 1; ; lineNumber++) {
+        let step;
+        try {
+            step = lines.next();
+        } catch {
+            return corruptResult('invalid-utf8', data);
+        }
+        if (step.done) {
+            break;
+        }
+        if (step.value === null) {
+            count++;
+            continue;
+        }
+        if (step.value.trim() === '') {
             continue;
         }
 
         let record;
         try {
-            record = JSON.parse(line);
+            record = JSON.parse(step.value);
         } catch {
-            return corruptResult('invalid-json', data, { line: index + 1 });
+            failure = ['invalid-json', lineNumber];
+            break;
         }
         if (!isPlainObject(record)) {
-            return corruptResult('non-object', data, { line: index + 1 });
+            failure = ['non-object', lineNumber];
+            break;
         }
-        records.push(record);
+        if (count === 0) {
+            recognizedHeader = isRecognizedChatHeader(record);
+            if (!isPlainObject(record.chat_metadata)) {
+                record = { ...record, chat_metadata: {} };
+            }
+        }
+        if (onRecord(record, count++) === false) {
+            return { status: 'stopped' };
+        }
     }
 
-    if (records.length === 0) {
+    if (failure) {
+        // A text that is not valid UTF-8 is reported as that, whichever row failed first.
+        try {
+            utf8Decoder.decode(buffer);
+        } catch {
+            return corruptResult('invalid-utf8', data);
+        }
+        return corruptResult(failure[0], data, { line: failure[1] });
+    }
+    if (count === 0) {
         return corruptResult('empty', data);
     }
-    if (!isRecognizedChatHeader(records[0])) {
+    if (!recognizedHeader) {
         return corruptResult('missing-chat-metadata', data);
     }
-    if (!isPlainObject(records[0].chat_metadata)) {
-        records[0] = { ...records[0], chat_metadata: {} };
+    return { status: 'ok', count };
+}
+
+export function parseChatJsonl(data) {
+    const records = [];
+    const scan = scanChatJsonl(data, record => { records.push(record); });
+    if (scan.status !== 'ok') {
+        return scan;
     }
 
     return {
@@ -172,6 +237,24 @@ export function parseChatJsonl(data) {
         data,
         records,
     };
+}
+
+/**
+ * The same records with their own copy of the header, which callers adjust. The messages are
+ * shared with `records` and must not be changed, so a large chat is not copied for that.
+ */
+export function detachChatHeader(records) {
+    return [structuredClone(records[0]), ...records.slice(1)];
+}
+
+/** True when `parseChatJsonl(data)` succeeds and its records are deep-strict-equal to `records`, without building them. */
+export function chatJsonlEqualsRecords(data, records) {
+    if (!Array.isArray(records) || Object.getPrototypeOf(records) !== Array.prototype || Object.keys(records).length !== records.length
+        || Object.getOwnPropertySymbols(records).some(symbol => Object.prototype.propertyIsEnumerable.call(records, symbol))) {
+        return false;
+    }
+    const scan = scanChatJsonl(data, (record, index) => index < records.length && isDeepStrictEqual(record, records[index]) ? undefined : false);
+    return scan.status === 'ok' && scan.count === records.length;
 }
 
 export function readChatJsonlStrict(filePath, { recover = true } = {}) {
@@ -424,9 +507,62 @@ function isTombstoned(target) {
     return true;
 }
 
+function regularFileEqualsBuffer(filePath, expected) {
+    let initialStats;
+    try {
+        initialStats = fs.lstatSync(filePath, { bigint: true });
+    } catch (error) {
+        if (error?.code === 'ENOENT') {
+            return false;
+        }
+        throw error;
+    }
+    if (initialStats.isSymbolicLink() || !initialStats.isFile()) {
+        return false;
+    }
+    if (initialStats.size !== BigInt(expected.byteLength)) {
+        return false;
+    }
+
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    let fileDescriptor;
+    try {
+        fileDescriptor = fs.openSync(filePath, openFlags);
+    } catch (error) {
+        if (['ENOENT', 'ELOOP'].includes(error?.code)) {
+            return false;
+        }
+        throw error;
+    }
+    try {
+        const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
+        if (!descriptorStats.isFile()
+            || descriptorStats.dev !== initialStats.dev
+            || descriptorStats.ino !== initialStats.ino
+            || descriptorStats.size !== BigInt(expected.byteLength)) {
+            return false;
+        }
+        const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.byteLength)));
+        let offset = 0;
+        while (offset < expected.byteLength) {
+            const toRead = Math.min(chunk.byteLength, expected.byteLength - offset);
+            const bytesRead = fs.readSync(fileDescriptor, chunk, 0, toRead, offset);
+            if (bytesRead === 0) {
+                return false;
+            }
+            if (chunk.compare(expected, offset, offset + bytesRead, 0, bytesRead) !== 0) {
+                return false;
+            }
+            offset += bytesRead;
+        }
+        return fs.readSync(fileDescriptor, chunk, 0, 1, offset) === 0;
+    } finally {
+        fs.closeSync(fileDescriptor);
+    }
+}
+
 function isStoredSnapshotCurrent(latestPath, data) {
-    const existing = readRegularFile(latestPath);
-    return existing.status === 'ok' && toBuffer(existing.data).equals(toBuffer(data));
+    return regularFileEqualsBuffer(latestPath, toBuffer(data));
 }
 
 function storeValidSnapshot(target, parsed) {
@@ -446,13 +582,25 @@ function storeValidSnapshot(target, parsed) {
     }
 }
 
-export function writeLatestChatSnapshot(target, data) {
+/**
+ * @param {object} target
+ * @param {string|Buffer|Uint8Array} data
+ * @param {{trustedLines?: Array<[number, number]>}} [options] Line ranges (zero based, end exclusive, header is line 0)
+ *   that are the bytes of a chat this server already read and checked, and are not checked again. Only honoured
+ *   for text that is valid UTF-8, and never for the header line.
+ */
+export function writeLatestChatSnapshot(target, data, { trustedLines = [] } = {}) {
     const normalizedTarget = normalizeChatRecoveryTarget(target);
-    const parsed = parseChatJsonl(toBuffer(data));
-    if (parsed.status !== 'ok') {
-        throw new TypeError(`Invalid chat JSONL snapshot: ${parsed.reason}.`);
+    const bytes = toBuffer(data);
+    const ranges = trustedLines.filter(([from, to]) => from >= 1 && to > from);
+    const isTrusted = ranges.length > 0 && isUtf8(bytes) ? line => ranges.some(([from, to]) => line >= from && line < to) : undefined;
+    // The snapshot is only checked here, so its records are never kept.
+    const scan = scanChatJsonl(bytes, () => undefined, isTrusted);
+    if (scan.status !== 'ok') {
+        throw new TypeError(`Invalid chat JSONL snapshot: ${scan.reason}.`);
     }
 
+    const parsed = { status: 'ok', data: bytes };
     storeValidSnapshot(normalizedTarget, parsed);
     const { latestPath } = getChatRecoveryPaths(normalizedTarget);
     return { ...parsed, stored: isStoredSnapshotCurrent(latestPath, parsed.data) };

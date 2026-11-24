@@ -562,6 +562,20 @@ function requestExpressionUpdate(options) {
     return expressionWorker.update(options);
 }
 
+/**
+ * Whether a cheap scan can still find a reply waiting for an expression.
+ * @returns {boolean}
+ */
+function hasPendingExpressionWork() {
+    if (document.visibilityState === 'hidden') return false;
+    const context = getContext();
+    if (!context.groupId && context.characterId === undefined) return false;
+    if (context.streamingProcessor && !context.streamingProcessor.isFinished) return false;
+    return context.chat.some(needsExpression);
+}
+
+const refreshExpressionsDebounced = debounce(() => void requestExpressionUpdate(), debounce_timeout.quick);
+
 async function moduleWorker({ newChat = false } = {}) {
     const context = getContext();
     if (extension_settings.disabledExtensions?.includes(MODULE_NAME)) return;
@@ -3305,11 +3319,19 @@ export async function init() {
     await refreshExpressionOwners();
     seedExpressionHistory();
     eventSource.on('in_chat_agent_companion_results_updated', event => onAgentExpressionUpdated(event, requestExpressionUpdate));
+    // The timer is a fallback for a missed event or a classifier that is still
+    // pending, not a reason to rescan an idle chat every two seconds.
     setInterval(() => {
-        // A hidden page has nothing to show; the next visible poll catches up.
-        if (document.visibilityState === 'hidden') return;
+        if (!hasPendingExpressionWork()) return;
         void requestExpressionUpdate();
     }, UPDATE_INTERVAL);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void requestExpressionUpdate();
+    });
+    for (const eventType of [event_types.MESSAGE_RECEIVED, event_types.CHARACTER_MESSAGE_RENDERED, event_types.MESSAGE_UPDATED]) {
+        eventSource.on(eventType, refreshExpressionsDebounced);
+    }
+    eventSource.on(event_types.GENERATION_ENDED, refreshExpressionsDebounced);
     void requestExpressionUpdate();
     dragElement($('#expression-holder'));
     eventSource.on(event_types.CHAT_CHANGED, () => {
@@ -3358,6 +3380,9 @@ export async function init() {
         if (extension_settings.expressions.api === EXPRESSION_API.agent) {
             updateExpressionsAgentStatus();
         }
+        // A settings save can switch the visual-novel view, the classifier or
+        // the default sprites, all of which the old poll used to pick up.
+        refreshExpressionsDebounced();
     });
 
     const localEnumProviders = {

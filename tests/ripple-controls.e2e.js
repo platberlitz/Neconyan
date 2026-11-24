@@ -45,6 +45,7 @@ test('Ripple equal detached controls preserve native reading columns and saved a
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : { hasTouch: true } });
         if (phone) await installIPhoneSafari(account.context);
         const page = await account.open({ workspace: false });
+        await expect(page.locator('#neconyan-theme-stylesheet + #neconyan-native-chat-styles')).toHaveCount(1);
         for (const width of phone ? [393, 768] : [769, 900, 1000, 1001, 1280]) {
             await page.setViewportSize({ width, height: phone ? 852 : 900 });
             for (const placement of width > 1000 ? ['inside', 'below'] : ['native']) {

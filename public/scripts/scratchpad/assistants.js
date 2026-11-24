@@ -1,4 +1,4 @@
-import { characters, getThumbnailUrl } from '../../script.js';
+import { characters, getThumbnailUrlForViewport } from '../../script.js';
 import { t } from '../i18n.js';
 import { h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_TYPE } from '../popup.js';
@@ -32,8 +32,16 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
     let busy = false;
     const content = h('div', { class: 'scratchpad-review scratchpad-library' });
     const errorText = h('p', { role: 'alert', hidden: true });
+    let focusAfterRun;
+    let searchText = '';
+    const focus = control => {
+        if (busy) focusAfterRun = control;
+        else control?.focus({ preventScroll: true });
+    };
     const run = async operation => {
         if (busy) return;
+        const previous = document.activeElement;
+        focusAfterRun = null;
         busy = true;
         errorText.hidden = true;
         content.setAttribute('aria-busy', 'true');
@@ -49,6 +57,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
             busy = false;
             content.inert = false;
             content.removeAttribute('aria-busy');
+            if (content.isConnected) focus((focusAfterRun?.isConnected && focusAfterRun) || (previous?.isConnected && previous) || content.querySelector('button, input:not([hidden])'));
         }
     };
     const save = async (profile, card) => {
@@ -62,7 +71,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
     const show = (...children) => { errorText.hidden = true; content.replaceChildren(...children, errorText); };
     // Both sub-views put the way back in the same place: the heading line.
     const subheading = text => h('div', { class: 'scratchpad-library-head' }, heading(text),
-        h('button', { type: 'button', class: 'menu_button scratchpad-library-button scratchpad-library-back', 'aria-label': t`Back to assistants`, onclick: () => { if (!busy) list(); } },
+        h('button', { type: 'button', class: 'menu_button scratchpad-library-button scratchpad-library-back', 'aria-label': t`Back to assistants`, onclick: () => { if (!busy) list('search'); } },
             h('i', { class: 'fa-solid fa-arrow-left', 'aria-hidden': 'true' }), h('span', { text: t`Back` })));
     const owns = id => library.assistants.some(item => item.id === id);
 
@@ -96,7 +105,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
                     if (!name.value.trim() || !personality.value.trim()) throw new Error(t`Add a name and personality first.`);
                     const saved = await save({ ...profile, id: owned ? profile.id : undefined, name: name.value, personality: personality.value, examples: examples.value, avatar });
                     if (!selected().includes(saved.id) && canChoose(saved.id)) await choose(saved.id);
-                    list();
+                    list('edit', saved.id);
                 }), { class: 'menu_button menu_button_primary scratchpad-library-button' }),
                 owned ? button(t`Delete`, () => void run(async () => {
                     const confirmed = await callGenericPopup(t`Delete '${profile.name}' from your assistants? Sessions that already use them keep their own copy.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
@@ -105,9 +114,9 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
                     checkAccount();
                     library = result.library;
                     onSave(library);
-                    list();
+                    list('search');
                 }), { class: 'menu_button scratchpad-library-button scratchpad-library-delete', 'aria-label': t`Delete ${profile.name}` }) : null));
-        name.focus();
+        focus(name);
     }
 
     function cards() {
@@ -118,12 +127,12 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         const rows = characters.filter(card => card.avatar && card.name).map(card => ({
             name: card.name.toLocaleLowerCase(),
             row: h('div', { class: 'scratchpad-library-row' },
-                h('img', { src: getThumbnailUrl('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
+                h('img', { src: getThumbnailUrlForViewport('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
                 h('strong', { text: card.name, 'data-i18n-ignore': '' }),
                 button(t`Add`, () => void run(async () => {
                     const saved = await save(undefined, card.avatar);
                     if (canChoose(saved.id)) await choose(saved.id);
-                    list();
+                    list('edit', saved.id);
                 }), { 'aria-label': t`Add ${card.name} as an assistant` })),
         }));
         const empty = h('p', { text: t`No character cards match. Import a card in Characters, or add a new assistant.` });
@@ -142,31 +151,34 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         show(subheading(t`Use a character card`), h('p', { class: 'scratchpad-review-hint', text: t`Copy a card's picture, description, personality and example dialogue. You can edit the assistant afterwards. The original card stays as it is.` }),
             search, results);
         render();
-        search.focus();
+        focus(search);
     }
 
-    function list() {
+    function list(action = '', id = '') {
         const results = h('div', { class: 'scratchpad-library-list' });
-        const search = h('input', { class: 'text_pole', type: 'search', placeholder: t`Search assistants`, 'aria-label': t`Search assistants` });
+        const search = h('input', { class: 'text_pole', type: 'search', value: searchText, placeholder: t`Search assistants`, 'aria-label': t`Search assistants` });
+        const focusRow = (kind, key) => focus(results.querySelector(`[data-assistant="${CSS.escape(key)}"] .scratchpad-library-${kind}:not(:disabled)`) || search);
         const render = () => {
             const matches = assistants().filter(item => item.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()));
-            results.replaceChildren(...matches.map(item => h('div', { class: 'scratchpad-library-row' },
+            results.replaceChildren(...matches.map(item => h('div', { class: 'scratchpad-library-row', 'data-assistant': item.id },
                 h('img', { src: portrait(item.id), alt: '', width: 48, height: 48 }),
                 h('div', { class: 'scratchpad-library-description', title: item.name }, h('strong', { text: item.name, 'data-i18n-ignore': '' }),
                     h('small', { text: !item.personality ? t`Included assistant` : !owns(item.id) ? t`Only in this session` : item.sourceCard ? t`From a character card` : t`Your assistant` })),
                 h('div', { class: 'scratchpad-library-actions' },
                     item.personality ? h('button', { type: 'button', class: 'menu_button scratchpad-library-button scratchpad-library-edit', 'aria-label': t`Edit ${item.name}`, onclick: () => editor(item) },
                         h('i', { class: 'fa-solid fa-pen', 'aria-hidden': 'true' }), h('span', { text: t`Edit` })) : null,
-                    button(selected().includes(item.id) ? t`Selected` : t`Use`, () => void run(async () => { await choose(item.id); render(); }),
+                    button(selected().includes(item.id) ? t`Selected` : t`Use`, () => void run(async () => { await choose(item.id); render(); focusRow('use', item.id); }),
                         { class: 'menu_button scratchpad-library-button scratchpad-library-use', 'aria-label': t`Use ${item.name}`, 'aria-pressed': String(selected().includes(item.id)), disabled: !canChoose(item.id) })))));
             if (!matches.length) results.append(h('p', { text: t`No assistants match that search.` }));
         };
-        search.addEventListener('input', render);
+        search.addEventListener('input', () => { searchText = search.value; render(); });
         show(heading(t`Your assistants`), h('p', { class: 'scratchpad-review-hint', text: description }),
             h('div', { class: 'scratchpad-library-actions' },
                 button(t`Add a new assistant`, () => editor(), { class: 'menu_button menu_button_primary scratchpad-library-button' }),
                 button(t`Use a character card`, cards)), search, results);
         render();
+        if (action === 'edit') focusRow(action, id);
+        else if (action) focus(search);
     }
 
     list();

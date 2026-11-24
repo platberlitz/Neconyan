@@ -1,4 +1,8 @@
 import { getLinkApiRequestFormat } from './linkapi-utils.js';
+import { stripModelBracketTags } from './chat-reasoning-capabilities.js';
+
+const CLAUDE_RESTRICTED_SAMPLING = /(?:^|[/:])claude-(?:fable|opus-5|sonnet-5)(?:[-./:@]|$)/;
+const GROK_RESTRICTED_SAMPLING = /(?:^|[/:])grok-(?:3-mini|4|code)(?:[-./:@]|$)/;
 
 /**
  * The sampler names understood by the Chat Completions bridge. Keep this list
@@ -187,36 +191,36 @@ function isCanonicalNanoOpenWeightModel(model) {
 }
 
 function modelRestrictedKeys(source, model, format) {
-    const normalized = normalizedModel(model).toLowerCase();
+    const normalized = stripModelBracketTags(model).toLowerCase();
     const restrictions = new Set();
 
-    if (/(?:^|[/:])claude-(?:fable|opus-5|sonnet-5)(?:[-./:]|$)/.test(normalized)) {
+    if (CLAUDE_RESTRICTED_SAMPLING.test(normalized)) {
         CHAT_COMPLETION_SAMPLER_KEYS.forEach(key => restrictions.add(key));
     }
 
-    if (/(?:^|[/:])kimi-k3(?:[-./:]|$)/.test(normalized)
+    if (isKimiK3Model(normalized)
         || (source === 'moonshot' && /(?:^|[/:])kimi-k2\.5(?:[-./:]|$)/.test(normalized))) {
         for (const key of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']) {
             restrictions.add(key);
         }
     }
 
-    if (/grok-(?:3-mini|4|code)(?:[-./:]|$)/.test(normalized)) {
+    if (GROK_RESTRICTED_SAMPLING.test(normalized)) {
         restrictions.add('frequency_penalty');
         restrictions.add('presence_penalty');
     }
 
-    if (/^(?:openai\/)?(?:o1|o3|o4)(?:[-./:]|$)/.test(normalized) || /^(?:openai\/)?gpt-6-astra$/.test(normalized)) {
+    if (/(?:^|[/:])(?:o1|o3|o4)(?:[-./:]|$)/.test(normalized) || /(?:^|[/:])gpt-6-astra$/.test(normalized)) {
         for (const key of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'top_k', 'min_p', 'top_a', 'typical_p', 'repetition_penalty']) {
             restrictions.add(key);
         }
     }
 
-    if (/^(?:openai\/)?gpt-5\.\d/.test(normalized) && !normalized.includes('chat-latest')) {
+    if (/(?:^|[/:])gpt-5\.\d/.test(normalized) && !normalized.includes('chat-latest')) {
         for (const key of ['frequency_penalty', 'presence_penalty', 'top_k', 'min_p', 'top_a', 'typical_p', 'repetition_penalty']) {
             restrictions.add(key);
         }
-    } else if (/^(?:openai\/)?gpt-5(?:[-./:]|$)/.test(normalized) && !normalized.includes('chat-latest')) {
+    } else if (/(?:^|[/:])gpt-5(?:[-./:]|$)/.test(normalized) && !normalized.includes('chat-latest')) {
         for (const key of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'top_k', 'min_p', 'top_a', 'typical_p', 'repetition_penalty']) {
             restrictions.add(key);
         }
@@ -373,10 +377,9 @@ export function filterChatCompletionSamplingParameters(requestBody, { source, mo
  * @returns {Record<string, any>} The request data
  */
 export function applyClaudeModelParameterConstraints(generateData, { preserveReasoning = false } = {}) {
-    const model = String(generateData?.model ?? '').trim().toLowerCase();
-    const hasRestrictedSampling = /(?:^|[/:])claude-(?:fable|opus-5|sonnet-5)(?:[-./:]|$)/.test(model);
+    const model = stripModelBracketTags(generateData?.model).toLowerCase();
 
-    if (!hasRestrictedSampling) {
+    if (!CLAUDE_RESTRICTED_SAMPLING.test(model)) {
         return generateData;
     }
 
@@ -398,9 +401,9 @@ export function applyClaudeModelParameterConstraints(generateData, { preserveRea
  * @returns {Record<string, any>} The request data
  */
 export function applyGrokModelParameterConstraints(generateData) {
-    const model = String(generateData?.model ?? '').toLowerCase();
+    const model = stripModelBracketTags(generateData?.model).toLowerCase();
 
-    if (!/grok-(?:3-mini|4|code)(?:[-./:]|$)/.test(model)) {
+    if (!GROK_RESTRICTED_SAMPLING.test(model)) {
         return generateData;
     }
 
@@ -417,7 +420,7 @@ export function applyGrokModelParameterConstraints(generateData) {
  * @returns {boolean} Whether the model accepts a reasoning effort
  */
 export function zaiSupportsReasoningEffort(model) {
-    const normalizedModel = String(model ?? '').trim().toLowerCase();
+    const normalizedModel = stripModelBracketTags(model).toLowerCase();
     const version = normalizedModel.match(/(?:^|[/:])glm-(\d+)(?:\.(\d+))?/);
 
     if (!version) {
@@ -438,8 +441,8 @@ export function zaiSupportsReasoningEffort(model) {
  */
 export function isKimiK3Model(model) {
     // Ignore bracketed routing labels for detection only; requests retain the original ID.
-    const normalizedModel = String(model ?? '').trim().toLowerCase().replace(/(^|[/:])(?:\[[^\]]*\]\s*)+/g, '$1');
-    return /(?:^|[/:])kimi-k3(?:\.1(?:-pro)?)?(?:[-/:]|$)/.test(normalizedModel);
+    const normalizedModel = stripModelBracketTags(model).toLowerCase();
+    return /(?:^|[/:])kimi-k3(?:\.1(?:-pro)?)?(?:[-/:@]|$)/.test(normalizedModel);
 }
 
 /**

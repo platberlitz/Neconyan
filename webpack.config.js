@@ -2,12 +2,16 @@ import process from 'node:process';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 import isDocker from 'is-docker';
-import webpack from 'webpack';
 import { isBunRuntime } from './src/runtime.js';
 import { serverDirectory } from './src/server-directory.js';
 import { getVersion, color } from './src/util.js';
 import { ValidatedMinificationPlugin } from './src/frontend-lib-optimizer.js';
+
+const require = createRequire(import.meta.url);
+// Reading package.json avoids loading webpack into memory when precompiled bundles are reused.
+const WEBPACK_VERSION = JSON.parse(fs.readFileSync(require.resolve('webpack/package.json'), 'utf8')).version;
 
 const BUN_LIB_BUNDLE_SIGNATURE = 'bun-validated-minify-v2';
 const PUBLIC_LIB_CONFIG_SIGNATURE = 'chevrotain-validated-minify-v2';
@@ -47,7 +51,7 @@ function getWebpackCacheVersion(bundle = 'lib') {
     return crypto.createHash('shake256', { outputLength: 8 })
         .update(JSON.stringify([
             appVersion.pkgVersion,
-            webpack.version,
+            WEBPACK_VERSION,
             PUBLIC_LIB_CONFIG_SIGNATURE,
             isBunRuntime() ? BUN_LIB_BUNDLE_SIGNATURE : 'default',
             bundle,

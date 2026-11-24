@@ -15,11 +15,6 @@ const publicDir = path.join(repoRoot, 'public');
 // `#top-settings-holder:has(...) ~ #sheld` or `.mes:has(...)`) or toggle a class from script.
 const ALLOWED = [
     {
-        // Upstream drawer layout rule; it is only evaluated while a settings drawer is open.
-        file: 'style.css',
-        matches: selector => /^body:has\(\.drawer-content\.(maximized|open)\) #top-settings-holder:has\(/.test(selector),
-    },
-    {
         // Phones narrower than 361px only, in Conversation mode; no current iPhone is that narrow.
         file: 'css/neconyan.css',
         matches: selector => selector === 'body.neconyan.neconyan-conversation-active:not(.neconyan-home-visible):not(:has(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer)) .sb-topbar-brand',

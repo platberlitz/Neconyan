@@ -1,9 +1,9 @@
 // Provider declarations describe exact source/model pairs, not model families.
 export const REASONING_CONTROL_VALUES = Object.freeze(['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']);
 
-// Exact native IDs only. Contracts reviewed 1 November 2026:
+// Exact native IDs only. Contracts reviewed 23 November 2026:
 // https://developers.openai.com/api/docs/guides/reasoning
-// https://ai.google.dev/gemini-api/docs/generate-content/thinking
+// https://aistudio.google.com/docs/thinking?generate-content=true
 // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking
 // https://api-docs.deepseek.com/api/create-chat-completion/
 // https://platform.kimi.ai/docs/guide/kimi-k3-quickstart
@@ -14,35 +14,153 @@ export const REASONING_CONTROL_VALUES = Object.freeze(['none', 'min', 'low', 'me
 // https://docs.aimlapi.com/api-references/text-models-llm/openai/gpt-oss-20b
 // https://docs.aimlapi.com/api-references/text-models-llm/openai/gpt-oss-120b
 // https://docs.fireworks.ai/api-reference/post-chatcompletions#body-reasoning-effort
+// Custom-table sources (CUSTOM_COMPATIBLE_EFFORTS), reviewed 23 November 2026:
+// https://aistudio.google.com/docs/openai
+// https://docs.x.ai/developers/model-capabilities/text/reasoning
+// https://docs.bigmodel.cn/cn/guide/capabilities/thinking
+// https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions
+// https://platform.stepfun.ai/docs/en/api-reference/chat/chat-completion-create
+// https://platform.claude.com/docs/en/build-with-claude/effort
+// https://api-docs.deepseek.com/guides/thinking_mode (aliases)
 const OPENAI_EFFORTS = Object.freeze({
     'gpt-5': ['min', 'low', 'medium', 'high'], 'gpt-5-2025-08-07': ['min', 'low', 'medium', 'high'],
     'gpt-5.1': ['none', 'low', 'medium', 'high'], 'gpt-5.1-2025-11-13': ['none', 'low', 'medium', 'high'],
     'gpt-5.2': ['none', 'low', 'medium', 'high', 'xhigh'], 'gpt-5.2-2025-12-11': ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-5.4': ['none', 'low', 'medium', 'high', 'xhigh'], 'gpt-5.4-2026-03-05': ['none', 'low', 'medium', 'high', 'xhigh'],
     'gpt-5.5': ['none', 'low', 'medium', 'high', 'xhigh'], 'gpt-5.5-2026-04-23': ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-5.6': ['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'gpt-5.6-sol': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-5.6-terra': ['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
     'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-6-sol': ['none', 'low', 'medium', 'high', 'xhigh', 'max'], 'gpt-6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-6.1-terra': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-6.1-sol': ['low', 'medium', 'high', 'xhigh', 'max'],
+    'gpt-6.2-astra': ['min', 'low', 'medium', 'high', 'xhigh', 'max'], 'gpt-6.2-sol': ['min', 'low', 'medium', 'high', 'xhigh', 'max'],
 });
+const MAKERSUITE_EFFORTS = Object.freeze({
+    'gemini-3.8-flash': ['low', 'medium', 'high'], 'gemini-3.1-pro-preview': ['low', 'medium', 'high'],
+    'gemini-3.6-flash': ['min', 'low', 'medium', 'high'], 'gemini-3.5-flash-lite': ['min', 'low', 'medium', 'high'],
+    'gemini-3.1-flash-lite': ['min', 'low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'],
+    'gemini-4-neon': ['low', 'medium', 'high', 'xhigh'], 'gemini-4-hydrogen': ['low', 'medium', 'high', 'xhigh'],
+    'gemini-4-carbon': ['low', 'medium', 'high'], 'gemini-4-argon': ['low', 'medium', 'high'],
+});
+// The Chat Completions reference lists none, low, high and max for every model; DeepSeek names Flash 'deepseek-flash'.
+// The list-models endpoint omits None as a level, and the request reference accepts it.
+const DEEPSEEK_EFFORTS = Object.freeze({ 'deepseek-v4-pro': ['none', 'low', 'high', 'max'], 'deepseek-v4-flash': ['none', 'low', 'high', 'max'], 'deepseek-flash': ['none', 'low', 'high', 'max'] });
+const MOONSHOT_EFFORTS = Object.freeze({ 'kimi-k3': ['low', 'high', 'max'],
+    'kimi-k3.1-pro': ['low', 'high', 'max'], 'kimi-k3.1-pro-highspeed': ['low', 'high', 'max'] });
+const ZAI_EFFORTS = Object.freeze({ 'glm-5.3': ['low', 'high', 'max'], 'glm-5.3-flash': ['low', 'high', 'max'], 'glm-5.3-flashx': ['low', 'high', 'max'] });
+const MINIMAX_EFFORTS = Object.freeze({ 'MiniMax-M3.1-Flash': ['low', 'medium', 'high', 'xhigh', 'max'] });
+const MISTRAL_EFFORTS = Object.freeze({ 'mistral-small-2603': ['none', 'high'], 'mistral-medium-3-5': ['none', 'high'],
+    'mistral-large-4-0': ['low', 'medium', 'high'], 'mistral-large-4': ['low', 'medium', 'high'],
+    'zai-glm-5-3': ['low', 'high', 'max'], 'zai-glm-5-3-flash': ['low', 'high', 'max'] });
 const NATIVE_EFFORTS = Object.freeze({
     openai: OPENAI_EFFORTS,
     openai_responses: OPENAI_EFFORTS,
-    makersuite: {
-        'gemini-3.8-flash': ['low', 'medium', 'high'], 'gemini-3.1-pro-preview': ['low', 'medium', 'high'],
-        'gemini-3.6-flash': ['min', 'low', 'medium', 'high'], 'gemini-3.5-flash-lite': ['min', 'low', 'medium', 'high'],
-        'gemini-3.1-flash-lite': ['min', 'low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'],
+    makersuite: MAKERSUITE_EFFORTS,
+    vertexai: {
+        'gemini-3.1-pro-preview': ['low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'],
+        'gemini-4-hydrogen': ['low', 'medium', 'high', 'xhigh'],
+        'gemini-4-carbon': ['low', 'medium', 'high'], 'gemini-4-argon': ['low', 'medium', 'high'],
+        'gemini-3.8-flash': ['low', 'medium', 'high'], 'gemini-3.7-flash': ['low', 'medium', 'high'],
+        'gemini-3.5-flash': ['min', 'low', 'medium', 'high'], 'gemini-3.5-flash-lite': ['min', 'low', 'medium', 'high'],
+        'gemini-3.1-flash-lite': ['min', 'low', 'medium', 'high'],
     },
-    vertexai: { 'gemini-3.1-pro-preview': ['low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'] },
-    // The Chat Completions reference lists none, low, high and max for every model; DeepSeek names Flash 'deepseek-flash'.
-    deepseek: { 'deepseek-v4-pro': ['none', 'low', 'high', 'max'], 'deepseek-v4-flash': ['none', 'low', 'high', 'max'], 'deepseek-flash': ['none', 'low', 'high', 'max'] },
-    moonshot: { 'kimi-k3': ['low', 'high', 'max'] },
-    zai: { 'glm-5.3': ['low', 'high', 'max'], 'glm-5.3-flash': ['low', 'high', 'max'] },
-    minimax: { 'MiniMax-M3.1-Flash': ['low', 'medium', 'high', 'xhigh', 'max'] },
-    mistralai: { 'mistral-small-2603': ['none', 'high'], 'mistral-medium-3-5': ['none', 'high'],
-        'mistral-large-4-0': ['low', 'medium', 'high'], 'zai-glm-5-3': ['low', 'high', 'max'] },
+    deepseek: DEEPSEEK_EFFORTS,
+    moonshot: MOONSHOT_EFFORTS,
+    zai: ZAI_EFFORTS,
+    minimax: MINIMAX_EFFORTS,
+    mistralai: MISTRAL_EFFORTS,
     groq: { 'openai/gpt-oss-20b': ['low', 'medium', 'high'], 'openai/gpt-oss-120b': ['low', 'medium', 'high'],
         'qwen/qwen3.8-27b': ['none', 'low', 'medium', 'high', 'default'], 'meta-models/muse-spark-open': ['low', 'medium', 'high', 'xhigh'] },
     aimlapi: { 'openai/gpt-oss-20b': ['low', 'medium', 'high'], 'openai/gpt-oss-120b': ['low', 'medium', 'high'] },
     fireworks: { 'accounts/fireworks/models/gpt-oss-20b': ['low', 'medium', 'high'],
         'accounts/fireworks/models/gpt-oss-120b': ['low', 'medium', 'high'] },
 });
+
+const CLAUDE_FULL = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_NO_XHIGH = ['low', 'medium', 'high', 'max'];
+const QWEN_HYBRID = ['none', 'low', 'medium', 'xhigh'];
+/** Levels each maker documents, for Custom endpoints (opt-in). Grouped by maker; routing wrappers are stripped by the lookup. */
+export const CUSTOM_COMPATIBLE_EFFORTS = Object.freeze({
+    openai: OPENAI_EFFORTS,
+    google: MAKERSUITE_EFFORTS,
+    deepseek: Object.freeze({ ...DEEPSEEK_EFFORTS, 'deepseek-v4.1-flash': ['none', 'low', 'high', 'max'] }),
+    moonshot: MOONSHOT_EFFORTS,
+    minimax: MINIMAX_EFFORTS,
+    mistral: MISTRAL_EFFORTS,
+    zai: Object.freeze({ ...ZAI_EFFORTS, 'glm-5.2': ['none', 'high', 'max'] }),
+    xai: Object.freeze({
+        'grok-4.3': ['none', 'low', 'medium', 'high', 'xhigh'], 'grok-4.3-latest': ['none', 'low', 'medium', 'high', 'xhigh'],
+        'grok-4.5': ['low', 'medium', 'high'], 'grok-4.5-latest': ['low', 'medium', 'high'], 'grok-build-latest': ['low', 'medium', 'high'],
+        'grok-4.6': ['low', 'medium', 'high', 'xhigh'], 'grok-4.7': ['low', 'medium', 'high', 'xhigh'], 'grok-build-0.1': ['low', 'medium', 'high', 'xhigh'],
+    }),
+    alibaba: Object.freeze({
+        'qwen3.8-max': QWEN_HYBRID, 'qwen3.8-max-0902': QWEN_HYBRID, 'qwen3.8-flash': QWEN_HYBRID, 'qwen3.8-27b': QWEN_HYBRID,
+        'qwen3.8-2.4t-a95b': ['low', 'medium', 'xhigh'],
+    }),
+    stepfun: Object.freeze({ 'step-3.7-flash': ['low', 'medium', 'high'], 'step-5-preview': ['low', 'medium', 'high'] }),
+    anthropic: Object.freeze({
+        'claude-fable-5': CLAUDE_FULL, 'claude-fable-5-1': CLAUDE_FULL, 'claude-fable-5-2': CLAUDE_FULL,
+        'claude-opus-5': CLAUDE_FULL, 'claude-opus-5-5': CLAUDE_FULL, 'claude-sonnet-5': CLAUDE_FULL, 'claude-sonnet-5-5': CLAUDE_FULL,
+        'claude-haiku-5-5': CLAUDE_FULL, 'claude-opus-4-8': CLAUDE_FULL, 'claude-opus-4-7': CLAUDE_FULL,
+        'claude-opus-4-6': CLAUDE_NO_XHIGH, 'claude-sonnet-4-6': CLAUDE_NO_XHIGH,
+    }),
+});
+
+const DEEPSEEK_ALIASES = Object.freeze({ min: 'low', medium: 'high', xhigh: 'high' });
+const QWEN_ALIASES = Object.freeze({ min: 'low', high: 'xhigh', max: 'xhigh' });
+const GROK_ALIASES = Object.freeze({ xhigh: 'high' });
+const GEMINI_4_ALIASES = Object.freeze({ min: 'low' });
+/** Values the maker accepts and documents as acting like a level that is already shown. Hidden, and refused at send. */
+export const CUSTOM_EFFORT_ALIASES = Object.freeze({
+    'deepseek-v4-pro': DEEPSEEK_ALIASES, 'deepseek-v4-flash': DEEPSEEK_ALIASES, 'deepseek-flash': DEEPSEEK_ALIASES, 'deepseek-v4.1-flash': DEEPSEEK_ALIASES,
+    'glm-5.2': Object.freeze({ min: 'none', low: 'high', medium: 'high', xhigh: 'max' }),
+    'qwen3.8-max': QWEN_ALIASES, 'qwen3.8-max-0902': QWEN_ALIASES, 'qwen3.8-flash': QWEN_ALIASES, 'qwen3.8-27b': QWEN_ALIASES, 'qwen3.8-2.4t-a95b': QWEN_ALIASES,
+    'grok-4.5': GROK_ALIASES, 'grok-4.5-latest': GROK_ALIASES, 'grok-build-latest': GROK_ALIASES,
+    'gemini-4-neon': GEMINI_4_ALIASES, 'gemini-4-hydrogen': GEMINI_4_ALIASES, 'gemini-4-carbon': GEMINI_4_ALIASES, 'gemini-4-argon': GEMINI_4_ALIASES,
+});
+
+const CUSTOM_MODEL_INDEX = (() => {
+    const index = new Map();
+    for (const [maker, rows] of Object.entries(CUSTOM_COMPATIBLE_EFFORTS)) {
+        for (const [id, efforts] of Object.entries(rows)) {
+            const key = id.toLowerCase();
+            index.set(key, { id: key, maker, efforts: [...efforts], aliases: { ...(CUSTOM_EFFORT_ALIASES[key] ?? {}) } });
+        }
+    }
+    return index;
+})();
+
+const DATE_SNAPSHOT = /(?:@\d{8}|-(?:\d{4}-\d{2}-\d{2}|\d{8}|(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])))$/;
+
+/** Remove routing tags for capability checks only; never rewrite the model sent upstream. */
+export function stripModelBracketTags(model) {
+    return String(model ?? '').trim().replace(/(^|[/:])\s*(?:(?:\[[^\]]*\]|【[^】]*】)\s*[-_:]?\s*)*/g, '$1');
+}
+
+function findCustomModel(text) {
+    const key = text.replace(/^(claude-(?:opus|sonnet|haiku|fable)-\d+)\.(?=\d)/, '$1-');
+    return CUSTOM_MODEL_INDEX.get(key) ?? CUSTOM_MODEL_INDEX.get(key.replace(DATE_SNAPSHOT, ''));
+}
+
+/** Find the maker's row for a Custom model ID, ignoring routing wrappers. Returns { id, maker, efforts, aliases } or null. */
+export function resolveCustomReasoningModel(model) {
+    if (typeof model !== 'string') return null;
+    const text = stripModelBracketTags(model).toLowerCase().split('/').pop();
+    const parts = text.replace(/:free$/, '').replace(/-free$/, '').split(':');
+    const id = parts.pop();
+    // A namespace may precede the model, but a qualifier must not replace a recognised model.
+    if (parts.some(part => !/^[a-z0-9][a-z0-9_.-]*$/.test(part) || findCustomModel(part))) return null;
+    const hit = findCustomModel(id);
+    return hit ? { id: hit.id, maker: hit.maker, efforts: [...hit.efforts], aliases: { ...hit.aliases } } : null;
+}
+
+/** The levels switch means something only for the OpenAI effort string with a named parameter. */
+export function customReasoningLevelsApplicable(settings = {}) {
+    return settings.chat_completion_source === 'custom'
+        && String(settings.custom_reasoning_param_format ?? '').trim() === 'openai'
+        && String(settings.custom_reasoning_param_name ?? '').trim() !== '';
+}
 
 // The Google serializer and fallback eligibility share this exact image protocol boundary.
 export const GOOGLE_IMAGE_GENERATION_MODELS = Object.freeze([
@@ -73,6 +191,7 @@ export function getNativeReasoningRoute(settings = {}, { googleApiVersion } = {}
         vertexAuthMode: settings.vertexai_auth_mode || 'express',
         zaiEndpoint: settings.zai_endpoint || 'common',
         minimaxEndpoint: settings.minimax_endpoint || 'global',
+        customReasoningLevels: customReasoningLevelsApplicable(settings) && settings.custom_reasoning_documented_levels === true,
     };
 }
 
@@ -125,6 +244,15 @@ export function getChatReasoningCapabilities({ source, model, metadata, route } 
         return { ...unknown, ...nano,
             forbiddenEfforts: thinking ? ['none'] : [], state: nano.known ? 'effort-list' : 'unknown',
             reason: nano.known ? 'declared-efforts' : 'no-matching-declaration', provenance: nano.known ? 'nanogpt-catalogue' : null };
+    }
+    if (source === 'custom') {
+        const match = route?.customReasoningLevels === true ? resolveCustomReasoningModel(model) : null;
+        if (!match) return unknown;
+        const declaredEfforts = [...match.efforts];
+        return { ...unknown, state: 'effort-list', declaredEfforts,
+            supportedEfforts: REASONING_CONTROL_VALUES.filter(value => declaredEfforts.includes(value)),
+            reason: 'documented-compatible-efforts', provenance: `custom-${match.maker}-documentation`,
+            noneAlwaysOffered: true, effortAliases: { ...match.aliases } };
     }
     if (source !== 'openrouter') {
         const rules = Object.hasOwn(NATIVE_EFFORTS, source) ? NATIVE_EFFORTS[source] : null;

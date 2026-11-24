@@ -7,13 +7,13 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { withChatFileLocks } from './chat-file-lock.js';
-import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, markChatDeleted, parseChatJsonl,
+import { chatJsonlEqualsRecords, clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, detachChatHeader, markChatDeleted, parseChatJsonl,
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayParsedContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
-    assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent } from './generation/roleplay-source.js';
-import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload, withRoleplayFileHandle,
-    roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
+    assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent, assertRoleplayPatchSourceLocked } from './generation/roleplay-source.js';
+import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, readRoleplayPayload, withRoleplayFileHandle,
+    roleplayError, roleplayHash, roleplayLease, sameRoleplayFile, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
     validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan, settleRoleplayAccountReset } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
@@ -82,7 +82,7 @@ function cleanupEffect(lease, effect) {
     const directory = roleplayPayloadDirectory(lease, effect.writeId);
     for (const [name, hash] of Object.entries(effect.cleanup.payloads)) {
         const filename = path.join(directory, name);
-        const file = readRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json', 'import.group.after.json'].includes(name)
+        const file = inspectRoleplayFile(filename, ['chat.after.jsonl', 'group.after.json', 'import.group.after.json'].includes(name)
             || /^import\.chat\.\d+\.jsonl$|^lifecycle\.\d+\.bin$/.test(name) ? CHAT_LIMIT : MAX_ARCHIVE_BYTES, { allowMissingParent: true });
         if (!file) continue;
         if (file.rawHash !== hash) {
@@ -226,24 +226,46 @@ function prunableReceipts(state, scope, keepKeyHash) {
     return pruned;
 }
 
-function preparedFromPayload(pending, bytes) {
-    const parsed = parseChatJsonl(bytes);
-    if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
-    const inputRecords = structuredClone(parsed.records);
+// `staged` holds the records of the call that has just staged this payload. The payload only has to parse to
+// exactly those records (which is what hashes to `pending.after.contentHash`, computed from them when staging)
+// instead of being parsed into a second copy of the chat. The text is read from the payload bytes when a writer
+// asks for it and is not kept here. Anything that does not match, or a replay with no staged write, takes the
+// full parse below.
+function preparedFromStaged(pending, bytes, staged) {
+    // A patch built these bytes from the saved file's own lines and the new ones: its header, new lines and kept lines are checked again.
+    if (staged?.patch) return staged.patch.matches(bytes) ? staged.prepared : null;
+    if (!staged || !chatJsonlEqualsRecords(bytes, staged.records)) return null;
+    const inputRecords = detachChatHeader(staged.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
     else delete inputRecords[0].chat_metadata.integrity;
-    return { changed: pending.changed, inputRecords, records: parsed.records, serialized: bytes.toString('utf8'), integrity: pending.after.integrity };
+    return { changed: pending.changed, inputRecords, records: staged.records, bytes,
+        get serialized() { return bytes.toString('utf8'); },
+        integrity: pending.after.integrity };
 }
 
-function publishPending(lease, host, filename, before, payload, expectedJournal) {
+function preparedFromPayload(pending, bytes, staged = null) {
+    const confirmed = preparedFromStaged(pending, bytes, staged);
+    if (confirmed) return confirmed;
+    const parsed = parseChatJsonl(bytes);
+    if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
+    const inputRecords = detachChatHeader(parsed.records);
+    if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
+    else delete inputRecords[0].chat_metadata.integrity;
+    return { changed: pending.changed, inputRecords, records: parsed.records, bytes,
+        get serialized() { return bytes.toString('utf8'); },
+        integrity: pending.after.integrity };
+}
+
+function publishPending(lease, host, filename, before, payload, expectedJournal, staged = null) {
     const { state: { pending }, scope } = roleplayLease(lease);
-    const prepared = preparedFromPayload(pending, payload.bytes);
+    const prepared = preparedFromPayload(pending, payload.bytes, staged);
     if (payload.filename === null) {
         prepared.changed = false;
-        prepared.inputRecords = structuredClone(prepared.records);
+        prepared.inputRecords = detachChatHeader(prepared.records);
     }
     try {
-        return host.publish({ filePath: filename, before, payloadPath: payload.filename,
+        // `payloadFile` is the payload just read, flushed and hashed, so the writer need not read it again while it is unchanged.
+        return host.publish({ filePath: filename, before, payloadPath: payload.filename, payloadFile: payload,
             payloadHash: pending.after.rawHash, prepared, handle: scope.owner,
             cardName: pending.locator.group ? pending.locator.chat : roleplayAvatarOwner(pending.locator.avatar),
             backupDirectory: scope.directories.backups, recoveryTarget: target(scope, pending.locator),
@@ -252,7 +274,7 @@ function publishPending(lease, host, filename, before, payload, expectedJournal)
     } catch (error) {
         if (error.chatCommitted) {
             try {
-                const committed = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+                const committed = inspectRoleplayFile(filename, CHAT_LIMIT, { flush: true });
                 if (!committed || committed.rawHash !== pending.after.rawHash
                     || (before && !isDeepStrictEqual(committed.physical, before.physical))) throw conflict();
                 pending.phase = 'chat-applied';
@@ -264,12 +286,15 @@ function publishPending(lease, host, filename, before, payload, expectedJournal)
     }
 }
 
-function applyPending(lease, host) {
+function applyPending(lease, host, staged = null) {
     const { state, scope } = roleplayLease(lease);
     const pending = state.pending;
     if (!pending || pending.kind !== 'chat-write') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching chat save to check.');
     const filename = roleplayChatPath(scope, pending.locator);
-    let file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: pending.mode === 'create' });
+    // The source this write was just staged from, under this same account lock, stands while the path still names
+    // that very file unchanged. Otherwise only its hash is needed, unless it turns out to be damage to repair below.
+    let file = staged?.beforeFile && sameRoleplayFile(filename, staged.beforeFile, CHAT_LIMIT) ? staged.beforeFile
+        : inspectRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: pending.mode === 'create' });
     if (pending.phase !== 'prepared' && file?.rawHash !== pending.after.rawHash) throw conflict();
     const beforeMatches = pending.before && file && file.rawHash === pending.before.rawHash
         && isDeepStrictEqual(file.physical, pending.before.physical);
@@ -299,10 +324,13 @@ function applyPending(lease, host) {
             saveRoleplayAccount(lease);
         }
         createRoleplayDirectory(path.dirname(filename), scope.directories.root);
-        file = publishPending(lease, host, filename, pending.before, payload, expectedJournal);
+        file = publishPending(lease, host, filename, pending.before, payload, expectedJournal, staged);
     } else {
-        if (!file || !pending.before || !isDeepStrictEqual(file.physical, pending.before.physical)
-            || parseChatJsonl(file.bytes).status === 'ok') throw conflict();
+        if (!file || !pending.before || !isDeepStrictEqual(file.physical, pending.before.physical)) throw conflict();
+        // Damage is judged, and kept as evidence, from bytes that are still exactly the file classified above.
+        const damaged = readRoleplayFile(filename, CHAT_LIMIT);
+        if (!sameObservation(damaged, file) || parseChatJsonl(damaged.bytes).status === 'ok') throw conflict();
+        file = damaged;
         const payload = readRoleplayPayload(lease, pending.id, pending.after.payload, pending.after.rawHash, CHAT_LIMIT);
         stageRoleplayPayload(lease, pending.id, 'chat.corrupt.jsonl', file.bytes, CHAT_LIMIT);
         pending.repair = { rawHash: file.rawHash, physical: file.physical };
@@ -313,7 +341,12 @@ function applyPending(lease, host) {
         });
         file = publishPending(lease, host, filename, file, { filename: null, bytes: file.bytes }, expectedJournal);
     }
-    if (!file || file.rawHash !== pending.after.rawHash || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) !== pending.after.contentHash) throw conflict();
+    // Matching the staged records exactly is enough; anything else is judged by the recorded content hash as before.
+    if (!file || file.rawHash !== pending.after.rawHash
+        || !((staged?.patch ? staged.patch.matches(file.bytes) : staged && chatJsonlEqualsRecords(file.bytes, staged.records))
+            || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) === pending.after.contentHash)) throw conflict();
+    // These exact bytes are the file now: what is known of their lines serves the next patch.
+    staged?.patch?.commit(pending.after.rawHash);
     pending.phase = 'chat-applied';
     pending.appliedPhysical = file.physical;
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
@@ -890,7 +923,8 @@ function writeIntent(state, input) {
             || Array.isArray(input.mewmoryHidePolicy) || Object.keys(input.mewmoryHidePolicy).some(key => !['type', 'lastDisableId'].includes(key))
             || !['manual', 'automatic'].includes(input.mewmoryHidePolicy.type)
             || typeof input.mewmoryHidePolicy.lastDisableId !== 'string' || input.mewmoryHidePolicy.lastDisableId.length > 256))
-        || (input.force !== undefined && typeof input.force !== 'boolean')) {
+        || (input.force !== undefined && typeof input.force !== 'boolean')
+        || (input.patch !== undefined && (input.records !== undefined || mode !== 'update' || !input.patch || typeof input.patch !== 'object'))) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat write intent.', 400);
     }
     const locator = normaliseRoleplayLocator(mode === 'update' ? input.source?.locator : input.destination);
@@ -899,7 +933,7 @@ function writeIntent(state, input) {
     // Keep existing untagged, unforced intent hashes valid across this additive storage cutover.
     const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, mode, locator,
         source: input.source ?? null, groupId: input.groupId ?? null, expectedVacancy: input.expectedVacancy ?? null,
-        records: input.records, allowShrink: input.allowShrink === true, backup,
+        ...(input.patch ? { patch: input.patch } : { records: input.records }), allowShrink: input.allowShrink === true, backup,
         ...(input.sourceKind === 'storage' ? { sourceKind: 'storage' } : {}), ...(input.force === true ? { force: true } : {}),
         ...(input.mewmoryHidePolicy ? { mewmoryHidePolicy: input.mewmoryHidePolicy } : {}) });
     return { operationKeyHash: key(state, input.operationKey), intentHash, mode, locator, backup };
@@ -910,34 +944,58 @@ export function roleplayChatWriteIdentity(lease, input) {
     return writeIntent(roleplayLease(lease).state, input);
 }
 
-function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes, instanceId, expectedVacancy = null }) {
+// Everything up to the staged transaction lives in its own frame, so the prepared chat's text and the parsed
+// source can be collected before the staged payload is read back and published.
+// `beforeBytes` are always the exact bytes whose hash is `before.rawHash`; `beforeFile` is the protected read they came from, if any.
+function stageChatWrite(lease, input, host, intent, { source, before, beforeBytes, beforeFile = null, instanceId, expectedVacancy = null }) {
     const { state, scope } = roleplayLease(lease);
     const { operationKeyHash, intentHash, mode, locator, backup } = intent;
     let revision = before ? before.revision + 1 : 1;
     if (!Number.isSafeInteger(revision)) throw roleplayError('ROLEPLAY_STORE_FULL', 'The chat cannot be saved safely. Try again, or reload the page.');
     rejectUndoJournal(roleplayChatPath(scope, locator));
     const id = crypto.randomUUID();
-    const prepared = host.prepare(input.records, { beforeBytes, marker: { schema: 1, instanceId, revision, writeId: id },
-        force: input.force === true, allowShrink: input.allowShrink === true });
+    const marker = { schema: 1, instanceId, revision, writeId: id };
+    const prepared = input.patch
+        ? host.preparePatch(input.patch, { beforeBytes, beforeRawHash: before.rawHash, beforeContentHash: before.contentHash, marker,
+            force: input.force === true, allowShrink: input.allowShrink === true })
+        : host.prepare(input.records, { beforeBytes, marker, force: input.force === true, allowShrink: input.allowShrink === true });
     if (!prepared.changed) revision = before.revision;
-    const bytes = Buffer.from(prepared.serialized, 'utf8');
-    const memory = prepareBranchMemoryCapture(scope.directories, locator, {
-        metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1),
-    }, { mode });
+    const bytes = prepared.patch ? prepared.bytes : Buffer.from(prepared.serialized, 'utf8');
+    // Output that is byte for byte the saved file has that file's hash, which was taken as it was read.
+    const rawHash = before && Buffer.isBuffer(beforeBytes) && bytes.equals(beforeBytes) ? before.rawHash
+        : crypto.createHash('sha256').update(bytes).digest('hex');
+    // A patched chat has its messages built only if a new branch has to inherit memory from its parent.
+    const memory = prepareBranchMemoryCapture(scope.directories, locator, prepared.patch
+        ? { metadata: prepared.header.chat_metadata, get messages() { return prepared.patch.materializeMessages(); } }
+        : { metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1) }, { mode });
     const pending = { schema: 1, kind: 'chat-write', id, operationKeyHash, intentHash, accountId: state.accountId,
         dataEpoch: state.dataEpoch, mode, locator, instanceId, source, expectedVacancy, before,
-        after: { revision, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash: roleplayParsedContentHash(prepared.records),
+        after: { revision, rawHash,
+            contentHash: prepared.patch ? prepared.contentHash : roleplayParsedContentHash(prepared.records),
             integrity: prepared.integrity, writeId: prepared.changed ? id : before.writeId, byteLength: bytes.length, payload: 'chat.after.jsonl' },
         changed: prepared.changed, phase: 'prepared', appliedPhysical: null, memory: memory.plan, repair: null, journal: null,
         backup, allowShrink: input.allowShrink === true, reservedBytes: 16 * 1024, ...(input.force === true ? { force: true } : {}) };
     assertRoleplayTransactionCapacity(lease, pending, finishedState(state, { ...pending, journal: largestRoleplayJournal(pending) }, ROLEPLAY_LARGEST_PHYSICAL));
-    stageRoleplayPayload(lease, id, pending.after.payload, bytes, CHAT_LIMIT);
+    // applyPending reads this payload back, flushed and hashed, before it is published, so it is not read back here too.
+    stageRoleplayPayload(lease, id, pending.after.payload, bytes, CHAT_LIMIT, { rawHash, readBack: false });
     for (const payload of memory.payloads) stageRoleplayPayload(lease, id, payload.name, payload.bytes, MAX_ARCHIVE_BYTES);
     state.pending = pending;
+    return prepared.patch ? { records: null, patch: prepared.patch, prepared, beforeFile } : { records: prepared.records, beforeFile };
+}
+
+function prepareAndApplyChatWrite(lease, input, host, intent, context) {
+    const staged = stageChatWrite(lease, input, host, intent, context);
     try {
         saveRoleplayAccount(lease);
-        return applyPending(lease, host);
+        return applyPending(lease, host, staged);
     } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
+}
+
+// Keeps only what the write needs, so the parsed source chat can be collected before the new one is prepared.
+// The file is the read the source was judged from, which the write is then prepared on.
+function assertUpdateSource(lease, source) {
+    const saved = assertRoleplaySourceLocked(lease, source, { keepFile: true });
+    return { instanceId: saved.instanceId, integrity: saved.records[0].chat_metadata.integrity ?? '', file: saved.file };
 }
 
 /** Reuse an already held account lock; the lease is still checked and confirmed before admission. */
@@ -960,14 +1018,16 @@ export function commitSingleChatWriteLocked(lease, input, host) {
         if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A chat save waiting to finish is different from this one.');
         return applyPending(lease, host);
     }
-    let source, before = null, instanceId, expectedVacancy = null;
+    let source, before = null, instanceId, expectedVacancy = null, sourceRead = null;
     const filename = roleplayChatPath(scope, locator);
+    if (input.patch && typeof host.preparePatch !== 'function') throw new TypeError('The native chat writer host cannot build a patch.');
     if (mode === 'update') {
-        const saved = assertRoleplaySourceLocked(lease, input.source);
+        // A patch is judged from one read of the saved bytes; no part of the saved chat is parsed but its header.
+        sourceRead = input.patch ? assertRoleplayPatchSourceLocked(lease, input.source) : assertUpdateSource(lease, input.source);
         source = structuredClone(input.source);
-        instanceId = saved.instanceId;
+        instanceId = sourceRead.instanceId;
         const resource = state.resources[instanceId];
-        before = { ...resource.head, revision: resource.revision, integrity: saved.records[0].chat_metadata.integrity ?? '' };
+        before = { ...resource.head, revision: resource.revision, integrity: sourceRead.integrity };
     } else {
         const vacancy = state.paths[roleplayPathKey(state, 'chat', locator)];
         const occupied = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
@@ -984,9 +1044,9 @@ export function commitSingleChatWriteLocked(lease, input, host) {
         }
         instanceId = crypto.randomUUID();
     }
-    const beforeFile = before ? readRoleplayFile(filename, CHAT_LIMIT) : null;
+    const beforeFile = sourceRead?.file ?? null;
     if (before && !sameObservation(beforeFile, before)) throw conflict();
-    return prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes: beforeFile?.bytes ?? null, instanceId, expectedVacancy });
+    return prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes: beforeFile?.bytes ?? null, beforeFile, instanceId, expectedVacancy });
 }
 
 /** Repair only the exact recorded head at its existing physical identity, never a changed or deleted chat. */
@@ -1270,8 +1330,15 @@ function moveChatFolder(scope, task) {
 
 function applyLifecycleTask(scope, task, host) {
     const dateRoot = scope.directories.root || path.dirname(scope.directories.groups);
-    if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
-    else if (task.task === 'loose-card-remove') {
+    if (['chat-memory-remove', 'source-memory-remove', 'chat-memory-rename', 'character-memory-rename'].includes(task.task)) {
+        // Chat and card files have already been committed. An unreadable auxiliary store must not freeze future saves.
+        try {
+            if (task.task === 'chat-memory-remove') removeChatMemory(scope.directories, task.locator);
+            else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
+            else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
+            else renameCharacterMemory(scope.directories, task.from, task.to, { resume: true });
+        } catch (error) { console.warn('Could not finish Mewmory maintenance after a saved chat or card change.', error); }
+    } else if (task.task === 'loose-card-remove') {
         const filename = roleplayEntityPath(scope, 'character', { avatar: task.avatar });
         withChatFileLocks([filename], () => {
             const stats = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
@@ -1281,15 +1348,12 @@ function applyLifecycleTask(scope, task, host) {
             fs.unlinkSync(filename);
             fsyncDirectorySync(path.dirname(filename));
         });
-    } else if (task.task === 'source-memory-remove') removeSourceMemory(scope.directories, task);
-    else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
+    } else if (task.task === 'date-added-create' || task.task === 'date-added-remove') {
         try {
             if (task.task === 'date-added-create') createEntityDateAdded(dateRoot, task.entity, task.id, task.time);
             else removeEntityDateAdded(dateRoot, task.entity, task.id);
         } catch (error) { console.warn('Could not update date-added metadata.', error); }
-    } else if (task.task === 'chat-memory-rename') renameChatMemory(scope.directories, task.from, task.to, { resume: true });
-    else if (task.task === 'character-memory-rename') renameCharacterMemory(scope.directories, task.from, task.to, { resume: true });
-    else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
+    } else if (task.task === 'chat-folder-move' || task.task === 'chat-folder-remove') moveChatFolder(scope, task);
     else runChatRecoveryBestEffort(() => clearChatRecoveryState(lifecycleRecoveryTarget(scope, task.locator, host)),
         'Failed to clear chat recovery state after deletion.');
 }

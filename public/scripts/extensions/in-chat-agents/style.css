@@ -398,6 +398,21 @@ button.ica--card-pill--version-update {
         }
     }
 
+    /* While a note is writing, Stop takes its own line above the usual five buttons,
+       so that row keeps its normal size and place. */
+    .ica--companion-card--pending .ica--companion-summary .ica--companion-actions,
+    #chat .ica--companion-card--pending .ica--companion-summary .ica--companion-actions {
+        position: relative;
+        padding-top: 44px;
+    }
+
+    .ica--companion-summary .ica--companion-actions .ica--companion-action.ica--companion-stop,
+    #chat .ica--companion-summary .ica--companion-actions .ica--companion-action.ica--companion-stop {
+        position: absolute;
+        top: 0;
+        left: calc(50% - 18px);
+    }
+
     .ica--companion-summary .ica--companion-actions .ica--companion-action,
     #chat .ica--companion-summary .ica--companion-actions .ica--companion-action {
         position: relative;
@@ -1002,6 +1017,19 @@ button.ica--card-pill--version-update {
     color: var(--fullred, #a33);
 }
 
+.ica--companion-action:disabled,
+#chat .ica--companion-actions .ica--companion-action:disabled {
+    opacity: 0.3;
+    cursor: default;
+    background: transparent;
+}
+
+.ica--companion-action.ica--companion-stop:not(:disabled),
+#chat .ica--companion-actions .ica--companion-action.ica--companion-stop:not(:disabled),
+.ica--cdash-action.ica--tpanel-stop:not(:disabled) {
+    opacity: 1;
+}
+
 .ica--companion-body {
     padding: 0 12px 12px;
     line-height: 1.45;
@@ -1038,6 +1066,47 @@ button.ica--card-pill--version-update {
 .ica--choice-line:focus-visible {
     outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
     outline-offset: 2px;
+}
+
+/* Plot Compass directions: a pick steers the next reply instead of filling the message box. */
+.ica--choice-line.ica--plot-choice {
+    min-height: 32px;
+    padding: 4px 8px;
+    margin: 2px 0;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, #8b8)) 28%, transparent);
+    transition: background 0.12s, box-shadow 0.12s;
+}
+
+.ica--choice-line.ica--plot-choice[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, #8b8)) 18%, transparent);
+    box-shadow: inset 0 0 0 2px var(--neco-ginger, var(--SmartThemeQuoteColor, #8b8));
+}
+
+.ica--plot-choice-tag {
+    display: inline-block;
+    padding: 0 6px;
+    margin-left: 2px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+    font-size: 0.78em;
+    line-height: 1.6;
+    white-space: nowrap;
+    vertical-align: 0.08em;
+    opacity: 0.85;
+}
+
+.ica--plot-choice-tag.ica--plot-choice-tag-picked {
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor, #8b8));
+    box-shadow: none;
+    color: var(--neco-on-accent);
+    opacity: 1;
+}
+
+.ica--plot-choice-hint {
+    margin: 4px 0 8px;
+    color: var(--neco-muted, inherit);
+    font-size: 0.85em;
+    opacity: 0.9;
 }
 
 .ica--companion-body > :first-child {
@@ -1714,6 +1783,22 @@ button.ica--card-pill--version-update {
 
 .ica--tpanel-agent-body > :last-child {
     margin-bottom: 0;
+}
+
+/* Companion notes break long unspaced lines (Memory Shard's pipe-joined records, links)
+   instead of widening the panel, window or card into a sideways scroll. */
+.ica--companion-body,
+.ica--tpanel-agent-body,
+.ica--cwin-body {
+    overflow-wrap: break-word;
+}
+
+:is(.ica--companion-body, .ica--tpanel-agent-body, .ica--cwin-body) pre {
+    white-space: pre-wrap;
+}
+
+:is(.ica--companion-body, .ica--tpanel-agent-body, .ica--cwin-body) :is(table, img, video) {
+    max-width: 100%;
 }
 
 .ica--chatonly-composer {
@@ -3184,6 +3269,7 @@ body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:focus-visible:not(:d
     .ica--card-btn,
     .prompt-manager-send-to-agents-action,
     .ica--choice-line,
+    .ica--choice-line.ica--plot-choice,
     .ica--tpanel,
     .ica--tpanel:not(.is-open),
     .ica--template-pill,
@@ -6411,5 +6497,415 @@ body.neconyan .ica--standalone-title { display: none; }
     .neco-dice[data-outcome="critical-failure"] .neco-dice-tray,
     .neco-dice-result > * {
         animation: none;
+    }
+}
+
+/* ── Memory Shard Section-Aware Editor ───────────────────────── */
+
+.ica--companion-edit-popup-shard {
+    text-align: left;
+}
+
+.ica--ms-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    text-align: left;
+}
+
+.ica--ms-editor *,
+.ica--ms-editor *::before,
+.ica--ms-editor *::after {
+    box-sizing: border-box;
+}
+
+.ica--ms-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ica--ms-editor-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--neconyan-control-radius, 12px);
+    background: color-mix(in srgb, var(--neco-raised, var(--SmartThemeBlurTintColor, #1e1e1e)) 88%, transparent);
+    border: 1px solid color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, #eee)) 14%, transparent);
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 5px 12px;
+    margin: 0;
+    border: 1px solid transparent;
+    border-radius: calc(var(--neconyan-control-radius, 12px) - 3px);
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeBodyColor, #ccc));
+    font-family: inherit;
+    font-size: calc(var(--mainFontSize, 14px) * 0.86);
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn:hover {
+    color: var(--neco-ink, var(--SmartThemeBodyColor, #fff));
+    background: color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, #fff)) 7%, transparent);
+}
+
+body .popup .ica--companion-edit-popup-shard .ica--ms-editor button.ica--ms-editor-mode-btn.is-active {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+body .popup .ica--companion-edit-popup-shard .ica--ms-editor button.ica--ms-editor-mode-btn.is-active:hover {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger-hover);
+    box-shadow: inset 0 0 0 1px var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
+.ica--ms-editor-toolbar-meta {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-toggle-all {
+    margin: 0;
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: calc(var(--mainFontSize, 14px) * 0.82);
+}
+
+.ica--ms-editor-char-count {
+    font-size: calc(var(--mainFontSize, 14px) * 0.78);
+    font-variant-numeric: tabular-nums;
+    color: var(--neco-muted, color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 74%, transparent));
+}
+
+.ica--ms-editor-char-count[data-tone="warning"] {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor, #d99));
+    font-weight: 700;
+}
+
+.ica--ms-editor-char-count[data-tone="error"] {
+    color: var(--fullred, #d65555);
+    font-weight: 700;
+}
+
+.ica--ms-editor-sections-view,
+.ica--ms-editor-raw-view {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.ica--ms-editor-sections-view[hidden],
+.ica--ms-editor-raw-view[hidden],
+.ica--ms-editor-preamble[hidden],
+.ica--ms-editor-card-body[hidden] {
+    display: none;
+}
+
+.ica--ms-editor-title-row,
+.ica--ms-editor-preamble {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.ica--ms-editor-label {
+    font-size: calc(var(--mainFontSize, 14px) * 0.8);
+    font-weight: 700;
+    color: var(--neco-muted, color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 78%, transparent));
+    letter-spacing: 0.02em;
+}
+
+.ica--ms-editor-title-input {
+    width: 100%;
+    margin: 0;
+    font-weight: 700;
+}
+
+.ica--ms-editor-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ica--ms-editor-card {
+    border-radius: var(--neconyan-control-radius, 12px);
+    border: 1px solid color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, #eee)) 13%, transparent);
+    background: color-mix(in srgb, var(--neco-raised, var(--SmartThemeBlurTintColor, #1e1e1e)) 78%, transparent);
+    overflow: hidden;
+    min-width: 0;
+}
+
+.ica--ms-editor-card.is-open {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, #e18a52)) 42%, transparent);
+}
+
+.ica--ms-editor-card-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 11px;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: var(--neco-ink, var(--SmartThemeBodyColor, #eee));
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ica--ms-editor-card-header:hover {
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 8%, transparent);
+}
+
+.ica--ms-editor-card-header:focus-visible,
+.ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -2px;
+}
+
+.ica--ms-editor-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, #e18a52)) 16%, transparent);
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor, #e18a52));
+    font-size: 0.85em;
+    flex-shrink: 0;
+}
+
+.ica--ms-editor-card-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ica--ms-editor-card-heading {
+    font-size: calc(var(--mainFontSize, 14px) * 0.92);
+    font-weight: 700;
+    color: var(--neco-ink, var(--SmartThemeBodyColor, #eee));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ica--ms-editor-card-preview {
+    font-size: calc(var(--mainFontSize, 14px) * 0.78);
+    color: var(--neco-muted, color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 68%, transparent));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ica--ms-editor-card.is-open .ica--ms-editor-card-preview {
+    display: none;
+}
+
+.ica--ms-editor-card-count {
+    font-size: calc(var(--mainFontSize, 14px) * 0.74);
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, #eee)) 8%, transparent);
+    color: var(--neco-muted, color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 76%, transparent));
+    white-space: nowrap;
+}
+
+.ica--ms-editor-card-chevron {
+    font-size: 0.8em;
+    color: var(--neco-muted, color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 70%, transparent));
+    transition: transform 150ms ease;
+}
+
+.ica--ms-editor-card.is-open .ica--ms-editor-card-chevron {
+    transform: rotate(180deg);
+}
+
+.ica--ms-editor-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 11px 11px;
+    border-top: 1px solid color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, #eee)) 9%, transparent);
+    padding-top: 9px;
+    min-width: 0;
+}
+
+.ica--ms-editor-card-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.ica--ms-editor-section-heading {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    font-weight: 700;
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
+    margin: 0;
+}
+
+.ica--ms-editor-textarea,
+.ica--ms-editor-raw-textarea {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding-right: 44px;
+    line-height: 1.5;
+    resize: vertical;
+    font-family: var(--mainFontFamily, inherit);
+}
+
+.ica--ms-editor-raw-textarea {
+    min-height: 300px;
+}
+
+.ica--ms-editor-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+.ica--ms-editor-add-select {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor button.menu_button.ica--ms-editor-add-btn:not(.disabled):not([disabled]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 6px 14px;
+    margin: 0;
+    white-space: nowrap;
+    background: var(--neco-ginger);
+    border: 1px solid var(--neco-ginger);
+    color: var(--neco-on-accent);
+    font-weight: 700;
+}
+
+.ica--companion-edit-popup-shard .ica--ms-editor button.menu_button.ica--ms-editor-add-btn:not(.disabled):not([disabled]):hover {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger-hover);
+    box-shadow: inset 0 0 0 1px var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
+@media (max-width: 768px) {
+    .ica--ms-editor-toolbar {
+        align-items: stretch;
+    }
+
+    .ica--ms-editor-mode-toggle {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn {
+        min-height: 44px;
+        padding: 8px 10px;
+    }
+
+    .ica--ms-editor-toolbar-meta {
+        width: 100%;
+        justify-content: space-between;
+        margin-left: 0;
+    }
+
+    .ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-toggle-all {
+        min-height: 44px;
+        padding: 8px 12px;
+    }
+
+    .ica--ms-editor-card-header {
+        min-height: 50px;
+        padding: 9px 10px;
+    }
+
+    .ica--ms-editor-card-controls {
+        grid-template-columns: minmax(0, 1fr) repeat(3, 44px);
+        justify-content: stretch;
+    }
+
+    .ica--ms-editor-section-heading {
+        grid-column: 1 / -1;
+    }
+
+    .ica--ms-editor-card-controls .ica--ms-editor-icon-btn:first-of-type {
+        grid-column: 2;
+    }
+
+    .ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-icon-btn {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+    }
+
+    .ica--ms-editor-add-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ica--companion-edit-popup-shard .ica--ms-editor button.menu_button.ica--ms-editor-add-btn:not(.disabled):not([disabled]) {
+        width: 100%;
+        min-height: 44px;
+    }
+}
+
+body.reduced-motion .ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn,
+body.reduced-motion .ica--ms-editor-card-chevron {
+    transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ica--companion-edit-popup-shard .ica--ms-editor .ica--ms-editor-mode-btn,
+    .ica--ms-editor-card-chevron {
+        transition: none;
     }
 }

@@ -62,7 +62,7 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/scratchpad-branch/${size}-sessions.png` });
 
         // Back in the original, which still has both turns: one of the user's own messages.
-        await rows.nth(1).getByRole('button', { name: 'Open', exact: true }).click();
+        await rows.nth(1).getByRole('button', { name: 'Open First question?', exact: true }).click();
         await expect(replies).toHaveCount(2);
         await mine.nth(1).locator('summary[aria-label="Message actions"]').click();
         const reword = mine.nth(1).getByRole('button', { name: 'Reword in a new session', exact: true });

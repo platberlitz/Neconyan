@@ -72,6 +72,24 @@ test('memory-only diagnostics retain requests without user filenames, ids, queri
     assert.equal(diagnosticRequestPath('/api/private-chat-title/save'), '/api/[path omitted]');
 });
 
+test('only API requests reach the trace', async t => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'request-trace-'));
+    t.after(() => fs.rmSync(work, { recursive: true, force: true }));
+    const file = path.join(work, 'requests.txt');
+    const app = express();
+    app.use(createRequestTrace(file));
+    app.get('/styles.css', (request, response) => response.end('body{}'));
+    app.get('/api/characters/all', (request, response) => response.status(200).end('[]'));
+    const server = await listen(app);
+    t.after(() => server.close());
+    const { port } = server.address();
+
+    assert.equal(await send(port, 'GET', '/styles.css?v=1'), 200);
+    assert.equal(fs.existsSync(file), false, 'a static asset leaves no trace file');
+    assert.equal(await send(port, 'GET', '/api/characters/all'), 200);
+    assert.match(fs.readFileSync(file, 'utf8'), /GET \/api\/characters\/all 0B -> 200 \d+ms/);
+});
+
 test('a trace file that cannot be written does not break the request', async t => {
     const app = express();
     app.use(createRequestTrace(path.join(os.tmpdir(), 'missing-dir-' + process.pid, 'nested', 'requests.txt')));

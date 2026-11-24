@@ -1,10 +1,12 @@
 /* global window, document, getComputedStyle */
 import { test, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
+import { waitForAgentsFirstStart } from './neconyan-conversation-durable-fixture.js';
 
 const avatar = fileURLToPath(new URL('../public/img/neconyan-character.png', import.meta.url));
 const theme = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico Dark.json', import.meta.url), 'utf8'));
@@ -12,16 +14,20 @@ const requestJson = request => JSON.parse((request.headers()['content-encoding']
     ? gunzipSync(request.postDataBuffer()) : request.postDataBuffer()).toString());
 
 async function fixture(page, palette = theme) {
-    let envelope, settings;
-    const storage = createMockRoleplayStore(() => envelope.roleplayAccount);
+    let settings;
+    const envelope = Promise.withResolvers();
+    const storage = createMockRoleplayStore(async () => (await envelope.promise).roleplayAccount);
     const character = { name: 'Mira and Sol', avatar: 'mira-and-sol.png', chat: 'expressions-workspace', first_mes: 'Mira: Hello!',
         mes_example: '', shallow: false, tags: [], data: { name: 'Mira and Sol', first_mes: 'Mira: Hello!',
             description: 'Mira has silver hair. Sol has red hair.', extensions: {} } };
     const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [], uploadFolders: [], uploadSizes: [], exports: [], savedSettings: null };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/settings/get', async route => {
-        envelope ??= await (await route.fetch()).json();
-        settings ??= JSON.parse(envelope.settings);
+        // The Agents library and other named sections have their own response shape.
+        if (route.request().postDataBuffer()?.length && requestJson(route.request()).sections) return route.continue();
+        const data = await (await route.fetch()).json();
+        envelope.resolve(data);
+        settings ??= JSON.parse(data.settings);
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
         // Other suites persist Shell Styles with translucent/gradient buttons.
@@ -31,7 +37,7 @@ async function fixture(page, palette = theme) {
         settings.power_user.persona_descriptions = { 'robin.png': { description: 'Blue eyes and a green coat.' }, 'robin-alt.png': { description: 'Red hair and a blue jacket.' } };
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
         settings.extension_settings.disabledExtensions = (settings.extension_settings.disabledExtensions ?? []).filter(id => id !== 'expressions');
-        await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
+        await route.fulfill({ json: { ...data, settings: JSON.stringify(settings) } });
     });
     await page.route('**/api/settings/save', async route => {
         settings = requestJson(route.request());
@@ -107,6 +113,8 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
         test.setTimeout(120000);
         test('Expressions Agent chooses each persona from its own set without delaying Send', async ({ page }) => {
             const state = await fixture(page);
+            await waitForAgentsFirstStart(page);
+            const agentId = `persona-expression-${randomUUID()}`;
             const folders = await page.evaluate(async () => {
                 const { personaExpressionFolder } = await import('/scripts/extensions/expressions/persona-expressions.js');
                 return Promise.all(['robin.png', 'robin-alt.png', 'no-set.png'].map(personaExpressionFolder));
@@ -116,12 +124,12 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                 const labels = folder === folders[0] ? ['joy', 'neutral'] : folder === folders[1] ? ['love'] : folder === folders[2] ? [] : ['anger'];
                 return route.fulfill({ json: labels.map(label => ({ label, path: `/characters/${folder}/${label}.png` })) });
             });
-            await page.evaluate(async () => {
+            await page.evaluate(async id => {
                 const context = window.SillyTavern.getContext();
                 const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/expressions-agent-companion.json')).json();
-                store.setGlobalSettings({ enabled: true });
-                await store.saveAgent({ ...template, id: 'persona-expression-test', sourceTemplateId: template.id, enabled: true, connectionProfile: 'expression-fixture', modelOverride: 'expression-model' });
+                store.setGlobalSettings({ enabled: true, separateRecentChats: false });
+                await store.saveAgent({ ...template, id, sourceTemplateId: template.id, enabled: true, connectionProfile: 'expression-fixture', modelOverride: 'expression-model' });
                 context.extensionSettings.expressions.api = 4;
                 context.extensionSettings.expressions.agentUseQigLlmProfile = false;
                 window.personaExpressionCalls = [];
@@ -130,7 +138,7 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                     window.personaExpressionCalls.push({ profile, messages, maxTokens, model: options.modelOverride });
                     return new Promise(resolve => window.personaExpressionResolvers.push(resolve));
                 };
-            });
+            }, agentId);
             await page.getByRole('button', { name: 'Close Settings', exact: true }).click({ timeout: 10000 });
             await page.evaluate(async () => {
                 const core = await import('/script.js');
@@ -169,6 +177,7 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
             expect(geometry.display).not.toBe('none');
             await page.screenshot({ path: `../screenshots/expressions-agent-persona-${name}-after.png`, animations: 'disabled' });
+            await page.evaluate(async id => (await import('/scripts/extensions/in-chat-agents/agent-store.js')).deleteAgent(id), agentId);
             await page.reload();
             await page.waitForFunction(() => window.SillyTavern?.getContext().characters.length);
             await page.evaluate(() => window.SillyTavern.getContext().selectCharacterById(0, { switchMenu: false }));

@@ -14,7 +14,7 @@ import { clearHomePersonaChoice } from './scratchpad/home-persona.js';
 
 import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
-import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
+import { clamp, escapeHtml, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
 import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
 import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_RAIL_LABELS } from './neconyan-simple-mode.js';
@@ -2342,11 +2342,14 @@ async function openNeconyanRecentChat(recentChat) {
     return result;
 }
 
+let railRouteRequest = 0;
+
 function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
     if (route === 'gallery') {
         return shell?.openGallery?.();
     }
+    const request = ++railRouteRequest;
     globalThis.NeconyanNotes?.onRoute?.(route);
     globalThis.NeconyanScratchpad?.onRoute?.(route);
     globalThis.NeconyanGames?.onRoute?.(route);
@@ -2365,7 +2368,7 @@ function activateNeconyanRailRoute(route) {
             break;
         case 'scratchpad':
             void import('./scratchpad/index.js')
-                .then(module => module.openScratchpad())
+                .then(module => request === railRouteRequest && module.openScratchpad())
                 .catch(error => {
                     console.error('[Neconyan] Scratchpad could not open', error);
                     globalThis.toastr?.error?.(t`Scratchpad could not open. Try reloading the page.`);
@@ -2631,7 +2634,13 @@ function ensureNeconyanRail() {
     });
     delete simpleUpdates.dataset.neconyanRoute;
     simpleUpdates.dataset.neconyanSimpleUpdates = 'true';
-    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleExit);
+    const reloadWorkspace = () => void import('../script.js').then(({ reloadNeconyanWorkspace }) => reloadNeconyanWorkspace());
+    const createReloadButton = (route = '') => createNeconyanRailButton({
+        label: t`Reload Neconyan`, icon: 'fa-rotate', route, onClick: reloadWorkspace,
+    });
+    const simpleReload = createReloadButton();
+    delete simpleReload.dataset.neconyanRoute;
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleMemory, simpleUpdates, simpleReload, simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -2685,7 +2694,7 @@ function ensureNeconyanRail() {
         onClick: () => window.open(NECONYAN_ISSUES_URL, '_blank', 'noopener,noreferrer'),
     });
     reportIssueButton.title = 'Opens the Neconyan GitHub issues page in a new tab';
-    finerNav.appendChild(reportIssueButton);
+    finerNav.append(createReloadButton('reload-workspace'), reportIssueButton);
 
     rail.querySelector('[data-neconyan-route="new-chat"]').addEventListener('click', () => activateNeconyanRailRoute('new-chat'));
     rail.querySelectorAll('[data-neconyan-route="search"], [data-neconyan-route="settings"]').forEach(button => {
@@ -2811,16 +2820,22 @@ async function openRecentCharacterChat(avatarId, fileName) {
  * @param {string} branchId Conversation branch ID
  */
 async function openRecentConversationChat(avatarId, groupId = '', branchId = '') {
-    const characterId = characters.findIndex(x => x.avatar === avatarId);
-    if (characterId === -1) {
-        console.error(`Character not found for avatar ID: ${avatarId}`);
-        return false;
-    }
-
     try {
+        // A row keeps the pal it was drawn with; after a member edit the group's chat may sit with another pal.
+        const target = groupId ? (await import('./neconyan-conversation/dm-edits.js')).resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not open Conversation Mode for this chat.`);
+            await refreshWelcomeScreen();
+            return false;
+        }
+        const characterId = characters.findIndex(x => x.avatar === target);
+        if (characterId === -1) {
+            console.error(`Character not found for avatar ID: ${target}`);
+            return false;
+        }
         setConversationWelcomeOpeningSuppressed(true);
         const conversationModule = await import('./neconyan-conversation.js');
-        const opened = conversationModule.openConversationWorkspaceForAvatar?.(avatarId, {
+        const opened = conversationModule.openConversationWorkspaceForAvatar?.(target, {
             branchId,
             groupId: groupId || null,
             showToast: false,
@@ -2851,6 +2866,12 @@ async function openRecentConversationChat(avatarId, groupId = '', branchId = '')
  */
 async function renameRecentConversationChat(avatarId, groupId, branchId, branchName, recentChat) {
     try {
+        const target = groupId ? (await import('./neconyan-conversation/dm-edits.js')).resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not rename Conversation chat.`);
+            await refreshWelcomeScreen();
+            return;
+        }
         const popupText = await renderTemplateAsync('chatRename');
         const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, branchName);
         if (!newName || typeof newName !== 'string' || newName === branchName) {
@@ -2858,7 +2879,7 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
         }
 
         const conversationModule = await import('./neconyan-conversation.js');
-        const renamed = conversationModule.renameConversationBranch?.(avatarId, branchId, newName, { groupId });
+        const renamed = conversationModule.renameConversationBranch?.(target, branchId, newName, { groupId });
         if (!renamed) {
             toastr.warning(t`Could not rename Conversation chat.`);
             return;
@@ -2884,16 +2905,51 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
  */
 async function deleteRecentConversationChat(avatarId, groupId, branchId, recentChat) {
     try {
+        const edits = await import('./neconyan-conversation/dm-edits.js');
+        const target = groupId ? edits.resolveConversationHomeRowAvatar(avatarId, groupId) : avatarId;
+        if (target === '') {
+            toastr.warning(t`Could not delete Conversation chat.`);
+            await refreshWelcomeScreen();
+            return;
+        }
+        const chat = edits.describeConversationHomeChat(target, branchId, { groupId });
+        if (chat.only) {
+            // The DM's only chat: deleting it deletes the DM, exactly as the Pals bin button does (same words, same server request).
+            const copy = edits.getConversationDmDeleteCopy({ avatar: target, groupId });
+            // A string given to the popup is set as HTML and the copy holds a name someone else wrote, so it is escaped here, as the finished text.
+            const confirmed = await callGenericPopup(escapeHtml(copy.confirm), POPUP_TYPE.CONFIRM);
+            if (!confirmed) {
+                return;
+            }
+            try {
+                await edits.deleteConversationDm({ avatar: target, groupId });
+            } catch (error) {
+                console.error('Error deleting recent Conversation DM:', error);
+                toastr.error(copy.failed);
+                await refreshWelcomeScreen();
+                return;
+            }
+            if (recentChat) {
+                PinnedChatsManager.remove(recentChat);
+            }
+            await refreshWelcomeScreen();
+            toastr.success(copy.success, '', { escapeHtml: true });
+            return;
+        }
+
         const confirm = await callGenericPopup(t`Delete the Chat File?`, POPUP_TYPE.CONFIRM);
         if (!confirm) {
             return;
         }
 
-        const conversationModule = await import('./neconyan-conversation.js');
-        const result = conversationModule.deleteConversationWelcomeBranch?.(avatarId, branchId, { groupId });
-        const deleted = Boolean(result?.deleted);
-        if (!deleted) {
+        const result = await edits.deleteConversationHomeChat(target, branchId, { groupId });
+        if (!result.deleted) {
             toastr.warning(t`Could not delete Conversation chat.`);
+            return;
+        }
+        if (!result.saved) {
+            // The save notice has already said what happened.
+            await refreshWelcomeScreen();
             return;
         }
 
@@ -2901,9 +2957,7 @@ async function deleteRecentConversationChat(avatarId, groupId, branchId, recentC
             PinnedChatsManager.remove(recentChat);
         }
         await refreshWelcomeScreen();
-        if (!result.reset) {
-            toastr.success(t`Chat deleted.`);
-        }
+        toastr.success(t`Chat deleted.`);
     } catch (error) {
         console.error('Error deleting recent Conversation chat:', error);
         toastr.error(t`Could not delete that Conversation chat. Try again.`);
@@ -3555,7 +3609,9 @@ export function initWelcomeScreen() {
             requestForegroundRefresh();
         }
     });
-    eventSource.on(event_types.APP_READY, async () => {
+    // Open Home before the other start-up listeners run. They can take seconds
+    // (extensions, quick replies, imports), and none of that has to paint first.
+    eventSource.makeFirst(event_types.APP_READY, async () => {
         resumeTutorial();
         const opensHome = getCurrentChatId() === undefined && chat.length === 0;
         const homePromise = opensHome ? openWelcomeScreen() : null;

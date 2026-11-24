@@ -2,15 +2,15 @@ import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
 import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
-    continueState, eligibleRecords, fail, forgetReaders, hash, list, object, putRecord, recordEligible, recordRevision,
+    continueState, eligibilityLookups, eligibleRecords, fail, forgetReaders, hash, list, object, putRecord, recordEligible, recordEligibleIn, recordRevision,
     refKey, retireCoverage, sourceAt, sourceEligible, sourceRead, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint, playerReferences } from '../mewmory/context.js';
 import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
-import { addUsage, pendingSources } from '../mewmory/processing.js';
+import { addUsage, pendingCounts, pendingSources } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
-import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/search.js';
+import { hybridCandidates, searchDocuments, searchableVectorDimension, updateIndex } from '../mewmory/search.js';
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
 import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, readStateShared, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
@@ -22,8 +22,28 @@ import { bringShared, listShared, removeShared, shareRecords } from '../mewmory/
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
 import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
+import { readGroupSceneStart } from '../../public/scripts/group-chat-visibility.js';
 
 export const router = express.Router();
+
+// Printing a body again turns each raw byte into at most 6 (a control character becomes \u00XX, and 1e20 grows by only
+// 21/4), and adds at most 16 bytes of braces, quotes and colons around them: 6n + 7 is the worst case, from n control bytes in a form body.
+const REPRINT_GROWTH_LIMIT = 6;
+const REPRINT_GROWTH_EXTRA = 16;
+
+/**
+ * Whether the request body measures more than `limit` once printed again, which is how the limit has always been
+ * measured. Content-Length says so without serialising a body that can be a whole prompt history or archive again, but
+ * only as a fast accept: when the declared bytes times the largest growth the printing can cause are still within
+ * the limit. Any other body (no usable length, compressed, or larger than that) is measured as before.
+ */
+export function requestBodyExceeds(request, limit) {
+    const declared = request.get('Content-Length');
+    const encoding = request.get('Content-Encoding');
+    if (typeof declared === 'string' && /^\d{1,15}$/.test(declared) && (!encoding || encoding.toLowerCase() === 'identity')
+        && Number(declared) * REPRINT_GROWTH_LIMIT + REPRINT_GROWTH_EXTRA <= limit) return false;
+    return Buffer.byteLength(JSON.stringify(request.body || {})) > limit;
+}
 
 function route(url, handler, { accountScoped = false } = {}) {
     router.post(url, async (request, response) => {
@@ -39,7 +59,7 @@ function route(url, handler, { accountScoped = false } = {}) {
                     code: 'MEWMORY_ACCOUNT_CHANGED',
                 });
             }
-            if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('This request to Mewmory is too large to accept.', 413);
+            if (requestBodyExceeds(request, MAX_ARCHIVE_BYTES + 1024 * 1024)) fail('This request to Mewmory is too large to accept.', 413);
             const result = await handler(request.user.directories, request.body || {}, controller.signal, owner);
             if (!response.destroyed) response.json(result);
         } catch (error) {
@@ -152,9 +172,11 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
     const search = String(query).toLocaleLowerCase();
     const from = messageBound(fromMessage);
     const to = messageBound(toMessage);
+    // One set of lookups serves every record checked below.
+    const lookups = eligibilityLookups(state);
     const flags = {
         pinned: record => Boolean(record.pinned), excluded: record => Boolean(record.excluded),
-        edited: record => Boolean(record.authorOverride), unused: record => !recordEligible(state, record),
+        edited: record => Boolean(record.authorOverride), unused: record => !recordEligibleIn(state, lookups, record),
         new: record => unreviewed(state, record),
     };
     const flagged = Object.hasOwn(flags, flag) ? flags[flag] : null;
@@ -172,10 +194,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         watermark = sourceAt(state, ref)?.sequence ?? watermark;
     }
     const followCheckpoints = config.excludeHistory === true;
-    const unread = pendingSources(state, config, { unreadOnly: true }).length;
-    const checkpointUnread = pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length;
-    const rereadPending = pendingSources(state, config, { checkpoint: followCheckpoints }).length
-        - (followCheckpoints ? checkpointUnread : unread);
+    const { unread, checkpointUnread, rereadPending } = pendingCounts(state, config, { followCheckpoints });
     return {
         locator: state.locator, revision: state.revision, storyId: state.storyId, branchId: state.branchId,
         parent: state.parent, enabled: state.enabled, activeNpcIds: state.activeNpcIds,
@@ -183,7 +202,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
         activeReferences: activeReferences(state), playerReferences: playerReferences(state), overviews: currentOverviews(state),
         entities: eligibleRecords(state).filter(record => record.kind === 'entity'),
         records: filtered.slice(page, page + 80).map(record => ({
-            ...record, eligible: recordEligible(state, record),
+            ...record, eligible: recordEligibleIn(state, lookups, record),
             unavailableSources: record.refs.filter(ref => !sourceEligible(state, ref)).map(refKey),
         })),
         total: filtered.length, recordCount: state.records.length, offset: page,
@@ -403,14 +422,16 @@ route('/source/exclude', async (directories, body) => {
     const locator = normalizeLocator(body.locator);
     const current = await loadCurrentState(directories, locator);
     expectedRevision(body, current);
-    if (!current.sources[body.id]) fail('That message or lore entry no longer exists. Reload Mewmory.', 404);
+    if (typeof body.id !== 'string' || !Object.hasOwn(current.sources, body.id)) fail('That message or lore entry no longer exists. Reload Mewmory.', 404);
     const state = mutateState(directories, locator, state => {
+        if (state.excludedSources.includes(body.id) === (body.exclude === true)) return;
         state.excludedSources = state.excludedSources.filter(id => id !== body.id);
         if (body.exclude === true) state.excludedSources.push(body.id);
         forgetReaders(state.records.filter(record => [...record.refs, ...(record.inputRefs || []), ...(record.evidenceRefs || [])]
             .some(ref => ref.id === body.id)), state);
         retireCoverage(state);
         state.preview = null;
+        state.recalls = [];
         state.index.pending = true;
     }, current.revision);
     return inspectState(state, readConfig(directories), body.filters);
@@ -473,13 +494,14 @@ route('/search', async (directories, body, signal) => {
     const documents = searchDocuments(state, asOf, config).filter(document => (!body.dataType || document.dataType === body.dataType)
         && (!body.ownerId || document.ownerId === body.ownerId) && (!body.subjectId || document.subjectIds.includes(body.subjectId)));
     let vector = null; let error = ''; const usage = [];
-    if (mode !== 'keyword' && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    const dimension = mode !== 'keyword' && searchableVectorDimension(documents, state.index, config);
+    if (dimension) {
         try {
-            const result = await embed(directories, config, [query], { query: true, dataTypes: ['chat'], signal });
+            // This is only the author's typed query, not a copy of any saved source.
+            const result = await embed(directories, config, [query], { query: true, dataTypes: [], signal });
             usage.push(result.usage);
+            if (result.vectors[0]?.length !== dimension) fail('Embedding dimensions changed. Rebuild the search index.', 502);
             vector = result.vectors[0];
-            const dimension = Object.values(state.index.vectors)[0]?.vector.length;
-            if (dimension && vector.length !== dimension) { vector = null; fail('Embedding dimensions changed. Rebuild the search index.', 502); }
         } catch (failure) { error = failure.message; }
     }
     const current = await loadCurrentState(directories, locator);
@@ -514,9 +536,20 @@ route('/index', async (directories, body, signal, owner) => {
     const locator = normalizeLocator(body.locator);
     const state = await loadCurrentState(directories, locator);
     if (!state.enabled) fail('Turn on Mewmory for this chat first.', 409);
+    const config = readConfig(directories);
     if (body.reset === true) state.index = { version: '', vectors: {}, pending: true };
-    const result = await updateIndex(state, directories, readConfig(directories), { signal });
-    mutateState(directories, locator, () => { addUsage(state, result.usage); return state; }, state.revision);
+    const result = await updateIndex(state, directories, config, { signal });
+    await loadCurrentState(directories, locator);
+    signal.throwIfAborted();
+    mutateState(directories, locator, current => {
+        const latest = readConfig(directories);
+        if (current.branchId !== state.branchId || !current.enabled || latest.revision !== config.revision
+            || roleVersion(latest, 'embedding') !== result.version) {
+            fail('The chat or Mewmory settings changed during indexing. Rebuild the index again.', 409);
+        }
+        current.index = state.index;
+        addUsage(current, result.usage);
+    }, state.revision, { existingOnly: true });
     return { remaining: result.remaining };
 });
 
@@ -672,7 +705,7 @@ route('/restore', async (directories, body) => {
         const { state, token } = recoveryState(directories, locator, body.backup?.state);
         const source = readChat(directories, locator);
         const context = await readContextSources(directories, locator, state);
-        syncSources(state, source.messages, context);
+        syncSources(state, source.messages, context, { groupStart: readGroupSceneStart(source.metadata) });
         purgeMissingContextSources(directories, state);
         const recoveryToken = hash([token, source.metadata, source.messages, context]);
         const result = restoreRecords(state, body.backup);

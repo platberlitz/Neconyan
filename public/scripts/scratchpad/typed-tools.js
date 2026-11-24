@@ -129,6 +129,20 @@ function pick(input, line, randomInt, labels) {
 }
 
 /**
+ * Splits a message into lines and names the command each one starts with. Lines inside a code block have no command.
+ * @param {string} text
+ * @returns {{ line: string, name: string | undefined, input: string }[]}
+ */
+export function commandLines(text) {
+    let fenced = false;
+    return String(text ?? '').split('\n').map(line => {
+        if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced;
+        const match = fenced ? null : COMMAND.exec(line.trimEnd());
+        return { line, name: match?.[1].toLowerCase(), input: match?.[2] ?? '' };
+    });
+}
+
+/**
  * Replaces every command line of a message with its result.
  * @param {string} text The typed message.
  * @param {{ randomInt?: (max: number) => number, now?: Date, locale?: string, labels?: { picked: string, from: string, now: string } }} [options]
@@ -138,13 +152,8 @@ export function expandTypedTools(text, { randomInt = secureInt, now = new Date()
     const source = String(text ?? '');
     if (/^\/(?:tools|help)\s*$/i.test(source.trim())) return { text: source, used: [], help: true };
     const used = [];
-    let fenced = false;
-    const lines = source.split('\n').map(line => {
-        if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced;
-        const match = fenced ? null : COMMAND.exec(line.trimEnd());
-        const name = match?.[1].toLowerCase();
+    const lines = commandLines(source).map(({ line, name, input }) => {
         if (!TYPED_TOOL_NAMES.includes(name)) return line;
-        const input = match[2] ?? '';
         used.push(name);
         if (name === 'roll') return roll(input, line, randomInt);
         if (name === 'calc') return calculate(input, line);

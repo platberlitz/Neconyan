@@ -69,12 +69,16 @@ import {
     extractGeneratedText,
     getSafeConversationGenerationStatus,
 } from './conversation-generation.js';
+import { captureConversationLorebook } from '../generation/conversation-lorebook.js';
+import { deleteConversationThreads } from './conversation-delete.js';
+import { updateConversationGroupMembers } from './conversation-group-members.js';
 import { acceptConversationAside, acceptConversationSubmission, preflightConversationBindings } from '../generation/conversation-jobs.js';
 import { acceptConversationAsideEvent } from '../generation/conversation-aside-events.js';
 import { acceptConversationSchedule, acceptConversationSummary } from '../generation/conversation-maintenance.js';
 import { claimConversationPresentations } from '../generation/conversation-effects.js';
 import { acceptConversationRewrite } from '../generation/conversation-rewrite.js';
 import { acceptConversationSelfie } from '../generation/conversation-selfie.js';
+import { conversationPromptKey, recordLastPrompt } from '../scratchpad/last-prompts.js';
 
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const MESSAGE_SEND_RATE_LIMIT = getConfigValue('rateLimiting.conversationMessageSendPoints', 20, 'number');
@@ -146,6 +150,9 @@ const CONVERSATION_API_INFO = {
             { method: 'POST', path: '/presentation/claim', purpose: 'Claim incoming alerts or narration and acknowledge an observed read boundary.' },
             { method: 'POST', path: '/group/list', purpose: 'List Conversation-owned group DMs for a persona.' },
             { method: 'POST', path: '/group/create', purpose: 'Create a Conversation-owned group DM.' },
+            { method: 'POST', path: '/thread/delete', purpose: 'Delete a solo DM thread from the current server copy; a Character Schedule is kept.' },
+            { method: 'POST', path: '/group/delete', purpose: 'Delete a Conversation group DM and every member thread for it.' },
+            { method: 'POST', path: '/group/members', purpose: 'Add or remove members of a Conversation group DM in place, keeping its history.' },
             { method: 'POST', path: '/thread/get', purpose: 'Read a solo or group DM thread.' },
             { method: 'POST', path: '/thread/save', purpose: 'Replace a solo or group DM thread.' },
             { method: 'POST', path: '/message/append', purpose: 'Append one message without generating a reply.' },
@@ -540,6 +547,48 @@ router.post('/group/create', asyncRoute(async (request, response) => {
     return respondSaveResult(response, saveResult, { group, groups: getConversationGroups(context.store, personaId, normalizeConversationSettings) });
 }));
 
+router.post('/thread/delete', asyncRoute(async (request, response) => {
+    const target = getConversationTarget(request, response);
+    if (!target) {
+        return;
+    }
+    if (target.groupId) {
+        return response.status(400).send({ error: 'group_delete_required' });
+    }
+    const result = await deleteConversationThreads(request, { avatar: target.avatar, personaId: target.personaId });
+    return result.ok === false ? response.status(result.status).send(result.body) : response.send(result);
+}));
+
+router.post('/group/delete', asyncRoute(async (request, response) => {
+    const scopeValidation = validateConversationScope(getRequestGroupId(request), getRequestPersonaId(request));
+    if (!scopeValidation.valid) {
+        return response.status(400).send({ error: scopeValidation.error });
+    }
+    if (!scopeValidation.groupId) {
+        return response.status(400).send({ error: 'group_required' });
+    }
+    const result = await deleteConversationThreads(request, { groupId: scopeValidation.groupId, personaId: scopeValidation.personaId });
+    return result.ok === false ? response.status(result.status).send(result.body) : response.send(result);
+}));
+
+router.post('/group/members', asyncRoute(async (request, response) => {
+    const scopeValidation = validateConversationScope(getRequestGroupId(request), getRequestPersonaId(request));
+    if (!scopeValidation.valid) {
+        return response.status(400).send({ error: scopeValidation.error });
+    }
+    if (!scopeValidation.groupId) {
+        return response.status(400).send({ error: 'group_required' });
+    }
+    const result = await updateConversationGroupMembers(request, {
+        groupId: scopeValidation.groupId,
+        personaId: scopeValidation.personaId,
+        add: request.body?.add,
+        remove: request.body?.remove,
+        rename: request.body?.rename,
+    });
+    return result.ok === false ? response.status(result.status).send(result.body) : response.send(result);
+}));
+
 router.post('/thread/get', asyncRoute(async (request, response) => {
     const target = getConversationTarget(request, response);
     if (!target) {
@@ -758,6 +807,36 @@ router.post('/rewrite/submit', asyncRoute(async (request, response) => {
     }
 }));
 
+/**
+ * Scan lorebooks for a prompt the page builds itself (Regenerate): the Lorebook Override book, or with no override the
+ * speaking card's linked lorebooks. The server owns the scanner and the book files.
+ */
+router.post('/lorebook/scan', asyncRoute(async (request, response) => {
+    const body = request.body || {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const avatar = typeof body.avatar === 'string' ? body.avatar : '';
+    if (!name && !avatar) return response.send({ lorebook: null });
+    const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-64)
+        .map(message => ({ name: String(message?.name ?? '').slice(0, 200), mes: String(message?.mes ?? '') }));
+    let character = {};
+    try {
+        character = await getCharacterData(request, avatar, { allowOverride: false });
+    } catch {
+        character = {};
+    }
+    const maxContext = Number(body.maxContext);
+    const lorebook = await captureConversationLorebook({
+        directories: request.user.directories,
+        name,
+        messages,
+        userName: String(body.userName || 'User').slice(0, 200),
+        character,
+        avatar,
+        maxContext: Number.isFinite(maxContext) ? Math.floor(maxContext) : undefined,
+    });
+    return response.send({ lorebook });
+}));
+
 router.post('/selfie/submit', asyncRoute(async (request, response) => {
     if (!await consumeMessageSendLimit(response, messageSendIpLimiter, getIpAddress(request, PREFER_REAL_IP_HEADER))) return;
     if (!await consumeMessageSendLimit(response, messageSendUserLimiter, request.user.profile.handle)) return;
@@ -907,6 +986,18 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             signal: cancellationController.signal,
             userDirectories: request.user.directories,
         });
+        const generationSettings = request.body.generation?.payload || request.body.generation?.body || request.body.generation;
+        const inputLimit = Number(generationSettings?.max_context ?? generationSettings?.openai_max_context ?? generationSettings?.context_length)
+            - Number(generationSettings?.max_completion_tokens ?? generationSettings?.max_tokens ?? settings.reply_max_tokens);
+        const lorebook = await captureConversationLorebook({
+            directories: request.user.directories,
+            name: settings.lorebook_override,
+            messages: branch.messages,
+            userName,
+            character,
+            avatar: target.avatar,
+            maxContext: Math.floor(inputLimit),
+        });
         let systemPrompt = buildConversationSystemPrompt({
             settings,
             character,
@@ -914,10 +1005,8 @@ router.post('/message/send', asyncRoute(async (request, response) => {
             groupId: target.groupId,
             branch,
             participantNames,
+            context: { lorebook },
         });
-        const generationSettings = request.body.generation?.payload || request.body.generation?.body || request.body.generation;
-        const inputLimit = Number(generationSettings?.max_context ?? generationSettings?.openai_max_context ?? generationSettings?.context_length)
-            - Number(generationSettings?.max_completion_tokens ?? generationSettings?.max_tokens ?? settings.reply_max_tokens);
         const knowledge = await buildAssistantKnowledge({ character, messages: branch.messages,
             maxTokens: getAssistantKnowledgeBudget(inputLimit) });
         if (knowledge.text) systemPrompt += '\n\n' + knowledge.text;
@@ -937,6 +1026,15 @@ router.post('/message/send', asyncRoute(async (request, response) => {
         if (!pendingSave.ok) return response.status(pendingSave.status).send(pendingSave.body);
         const retryState = { version: pendingSave.version, userMessage, reuseLastUser: true };
 
+        recordLastPrompt(request.user?.directories, [conversationPromptKey({ ...storageTarget, branchId: branch.id })], {
+            prompt: Array.isArray(payload.messages) ? payload.messages : payload.prompt,
+            mode: 'conversation',
+            api: backend === 'text' ? 'textgenerationwebui' : 'openai',
+            backend: payload.chat_completion_source || payload.api_type || '',
+            model: payload.model,
+            speaker: character?.name,
+            contextLimit: Number(generationSettings?.max_context ?? generationSettings?.openai_max_context ?? generationSettings?.context_length) || 0,
+        });
         let generationResponse;
         try {
             generationResponse = await runBackendGeneration(request, backend, payload, { signal: cancellationController.signal });

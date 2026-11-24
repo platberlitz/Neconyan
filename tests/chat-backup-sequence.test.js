@@ -71,6 +71,7 @@ function createClient(group) {
         } }) };
     }
     const runtime = vm.createContext({
+        activeGenerationRun: null,
         console, structuredClone, getChatBackupSaveOptions, uuidv4: randomUUID, getQueuedChatSaveAbortReason,
         getPendingChatNameCommit,
         beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,

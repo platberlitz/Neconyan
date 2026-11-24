@@ -222,6 +222,7 @@ test('a named continuation proves its cut and a named alternative adds one unsel
     assert.deepEqual(swiped.records()[2].swipes, ['Answer', 'Other', 'They say the tower fell.']);
     assert.deepEqual(deep.result.named, { index: 2, count: 3 });
     assert.ok(deep.calls.prompts[0].at(-1).content.includes('Say it as a rumour.'));
+    assert.ok(deep.calls.prompts[0].some(message => message.role === 'user' && message.content === 'Original'));
     // The anchored message is excluded from its own Deep Swipe window.
     assert.ok(!deep.calls.prompts[0].some(message => message.role === 'assistant' && message.content === 'Answer'));
 });

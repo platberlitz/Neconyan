@@ -131,7 +131,11 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
 
     function update() {
         frame = 0;
-        for (const root of pendingRoots) {
+        // Start-up keeps the top bar and composer hidden while most of the page arrives, so
+        // measuring rails then forces a style pass each frame for nothing. Removing the class
+        // is a body mutation with roots still pending, which schedules the first real update.
+        if (document.body.classList.contains('neconyan-home-booting')) return;
+        for (const root of pendingRoots.has(document.body) ? [document.body] : pendingRoots) {
             if (!root.isConnected) continue;
             if (root.matches?.(MOBILE_SWIPE_RAIL_SELECTOR)) register(root);
             root.querySelectorAll?.(MOBILE_SWIPE_RAIL_SELECTOR).forEach(register);

@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261120-simple-guided';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261130-authors-note-fullscreen';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';
@@ -50,15 +50,18 @@ function isSameOrigin(url) {
     return url.origin === self.location.origin;
 }
 
-// A stylesheet without a ?v= label keeps the same URL across updates, so a cached
-// copy would paint the previous release's rules on the first open after an update.
-function isUnversionedStylesheet(url) {
-    return url.pathname.endsWith('.css') && !url.searchParams.has('v');
+function shouldStaleWhileRevalidate(url) {
+    // Unlabelled files keep the same URL across updates. Let the HTTP cache
+    // revalidate them before use instead of serving a previous APK's copy once.
+    return url.searchParams.has('v') && NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix));
 }
 
-function shouldStaleWhileRevalidate(url) {
-    return NN_STALE_WHILE_REVALIDATE_PREFIXES.some(prefix => url.pathname.startsWith(prefix))
-        && !isUnversionedStylesheet(url);
+function shouldCacheFirstVersioned(url) {
+    // Stylesheets and libraries carry a fresh ?v= label whenever their contents
+    // change, so their cached copy needs no revalidation on every page load.
+    // Images and fonts keep the safer stale-while-revalidate path.
+    return url.searchParams.has('v')
+        && (url.pathname.startsWith('/lib/') || url.pathname.startsWith('/css/'));
 }
 
 function isFrontendAsset(url) {
@@ -88,9 +91,15 @@ async function staleWhileRevalidate(request) {
     const cachedResponse = await cache.match(request);
     const freshResponse = fetch(request)
         .then((response) => {
-            putCache(cache, request, response).catch((error) => {
-                console.debug('Neconyan service worker skipped static cache update.', error);
-            });
+            // Revalidated files often come back as 304s with the same ETag. Rewriting
+            // the cache entry then costs a write per stylesheet on every reload.
+            const etag = response.headers.get('ETag');
+            const cachedEtag = cachedResponse?.headers?.get?.('ETag');
+            if (!etag || etag !== cachedEtag) {
+                putCache(cache, request, response).catch((error) => {
+                    console.debug('Neconyan service worker skipped static cache update.', error);
+                });
+            }
 
             return response;
         })
@@ -190,7 +199,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    if (shouldCacheFirst(url)) {
+    if (shouldCacheFirst(url) || shouldCacheFirstVersioned(url)) {
         event.respondWith(cacheFirst(request));
         return;
     }

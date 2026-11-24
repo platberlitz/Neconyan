@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import webpack from 'webpack';
 import getPublicLibConfig, {
     getPublicLibCacheInfo,
     prunePublicLibCache,
@@ -80,7 +79,7 @@ export default function getWebpackServeMiddleware({ forceDist = false, bundle = 
      * @param {boolean} [param.pruneCache=false] Whether to prune old cache directories before compiling.
      * @returns {Promise<void>}
      */
-    function compilePublicLib({ forceDist: overrideForceDist = forceDist, pruneCache = false } = {}) {
+    async function compilePublicLib({ forceDist: overrideForceDist = forceDist, pruneCache = false } = {}) {
         const cacheInfo = getPublicLibCacheInfo({ forceDist: overrideForceDist, bundle });
         const publicLibConfig = resolvePublicLibConfig({ forceDist: overrideForceDist });
         const compiledOutputPath = getCompiledOutputPath(publicLibConfig);
@@ -92,7 +91,7 @@ export default function getWebpackServeMiddleware({ forceDist = false, bundle = 
             if (pruneCache) {
                 prunePublicLibCache({ forceDist: overrideForceDist, bundle, currentCacheVersion: cacheInfo.cacheVersion });
             }
-            return Promise.resolve();
+            return;
         }
 
         const temporaryOutputPath = path.join(cacheInfo.webpackRoot, cacheInfo.cacheVersion, 'output.tmp');
@@ -106,6 +105,7 @@ export default function getWebpackServeMiddleware({ forceDist = false, bundle = 
         console.log();
         console.log('Compiling frontend libraries...');
 
+        const { default: webpack } = await import('webpack');
         const compiler = webpack(temporaryPublicLibConfig);
 
         return new Promise((resolve, reject) => {

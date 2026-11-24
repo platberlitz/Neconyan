@@ -204,6 +204,19 @@ for (const [label, change] of EMPTY_CASES) {
     test(`${label} captures explicit empty text and the placeholder never reaches the reply prompt`, async ({ app }) => {
         const { account, page } = await prepare(app);
         expect(await setDialogueColorsState(page, change)).toBe('');
+        if (change.promptMode === 'profile') {
+            // A slow first paint can render the already-open message after the mode
+            // change. That old message must not start a colorize request of its own.
+            const loadedIndex = await page.evaluate(() => window.SillyTavern.getContext().chat
+                .findIndex(message => message?.mes === 'Retained answer.'));
+            expect(loadedIndex).toBeGreaterThanOrEqual(0);
+            await page.evaluate(async index => {
+                const main = await import('/scripts/extensions/third-party/sillytavern-character-colors/src/main.js');
+                main.handleCharacterMessageRendered(index);
+            }, loadedIndex);
+            await page.waitForTimeout(2000);
+            expect(app.provider.calls).toHaveLength(0);
+        }
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Colour nothing.');
         await startNativeReply(page);

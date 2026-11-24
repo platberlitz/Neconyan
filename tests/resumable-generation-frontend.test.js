@@ -345,9 +345,10 @@ describe('fetchResumable', () => {
 
 test('routes all scoped-profile generation requests through fetchResumable', () => {
     expect(customRequestSource).toContain('import { fetchResumable } from \'./resumable-generation.js\';');
-    expect(customRequestSource.match(/const response = await fetchResumable\(/g)).toHaveLength(3);
-    expect(customRequestSource).toContain('await fetchResumable(getGenerateUrl(this.TYPE), {');
-    expect(customRequestSource).toContain('await fetchResumable(\'/api/backends/text-completions/generate\', {');
+    // The text completion requests open through the failure watcher, which only observes them.
+    expect(customRequestSource.match(/const response = await (?:watch\.run\(\(\) => )?fetchResumable\(/g)).toHaveLength(3);
+    expect(customRequestSource).toContain('await watch.run(() => fetchResumable(getGenerateUrl(this.TYPE), {');
+    expect(customRequestSource).toContain('await watch.run(() => fetchResumable(\'/api/backends/text-completions/generate\', {');
     expect(customRequestSource).toContain('await fetchResumable(\'/api/backends/chat-completions/generate\', {');
 });
 

@@ -12,6 +12,7 @@ const fields = {
     'custom-reasoning-param-name': ['custom_reasoning_param_name', value => String(value ?? '')],
     'custom-reasoning-enabled-value': ['custom_reasoning_enabled_value', value => String(value ?? '')],
     'custom-reasoning-disabled-value': ['custom_reasoning_disabled_value', value => String(value ?? '')],
+    'custom-reasoning-documented-levels': ['custom_reasoning_documented_levels', value => isTrueBoolean(String(value))],
     'custom-include-body': ['custom_include_body', value => String(value ?? '')],
     'custom-exclude-body': ['custom_exclude_body', value => String(value ?? '')],
     'custom-include-headers': ['custom_include_headers', value => String(value ?? '')],

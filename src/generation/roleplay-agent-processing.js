@@ -21,7 +21,7 @@ import { runAgentModelStep } from './agent-model-step.js';
 import { stripSavedAuxiliaryTrackerEchoes } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { validateRoleplayToolHistory } from './roleplay-contributions.js';
 import { requireJobApproval } from './job-approvals.js';
-import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
+import { captureRoleplayWorldInfoForAgentScan, prepareRoleplayWorldInfo } from './world-info.js';
 import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
@@ -127,11 +127,7 @@ async function scannedAgentLoreText(context, options, agents, identity) {
     const name = options.namespace ? `roleplay-agent-lore:${options.namespace}` : 'roleplay-agent-lore';
     const previous = readPhase(context, snapshot.account, name, identity);
     if (previous) return previous.text;
-    const captured = captureRoleplayWorldInfo(options.base, snapshot.account, snapshot.source, {
-        avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
-        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
-        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
-    });
+    const captured = captureRoleplayWorldInfoForAgentScan(options.base, snapshot);
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     const selection = await prepareRoleplayWorldInfo(options.base, captured, { capturedNow: true, macros: options.macros,
         promptChat: (options.records ?? []).filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),
@@ -169,7 +165,7 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
     const feedback = prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, history.policies, generationType);
     extensions.push(...feedback.extensions);
     return savePhase(context, snapshot.account, 'roleplay-agents-pre', { identity, intentHash: roleplayHash(context.job.intent),
-        policyHash: roleplayHash(snapshot.agents), generationType, activeIds, extensions, history, trackerTags: feedback.trackerTags, macroState: environment.captureState() });
+        policyHash: roleplayHash(snapshot.agents), generationType, activeIds, extensions, history, trackerTags: feedback.trackerTags, trackerLineKeys: feedback.trackerLineKeys, macroState: environment.captureState() });
 }
 
 function activeAgents(context, base, snapshot, agentCache) {
@@ -345,7 +341,7 @@ function prepend(agent, text) {
 
 /** Save the complete post-pass result; a failed parallel peer never discards acknowledged siblings. */
 export function roleplayAgentOutputBaseline(value, pre) {
-    return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], []);
+    return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], [], pre?.trackerLineKeys ?? []);
 }
 
 // Old paid steps include preceding append blocks in later inputs. Keep their
@@ -478,7 +474,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
-        agents: selected, text: baseline, parallel, isPrepend: prepend, shouldStop: () => roleplayAgentsStopped(context),
+        // The model step checks for saved results before honouring Stop. Walk
+        // the stages even on a save-only pass so completed work is retained.
+        agents: selected, text: baseline, parallel, isPrepend: prepend,
         onProgress: draft => {
             try {
                 options.onTextProgress?.({ text: composePromptTransformDraft(draft, join),

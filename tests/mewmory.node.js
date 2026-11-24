@@ -1,5 +1,5 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
-/* global globalThis */
+/* global globalThis, Atomics, SharedArrayBuffer, WeakRef */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,25 +8,29 @@ import { beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import querystring from 'node:querystring';
 import { setConfigFilePath } from '../src/util.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
-    continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    POLICY_VERSION, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
+    continueState, currentRecords, eligibleRecords, forkState, hash, newState, putRecord, recordEligible, recordEligibleIn, recordRevision, recordRevisionIn,
+    eligibilityLookups, eligibilityStats, POLICY_VERSION, purgeSources, READ_EARLIER, refKey, ROLE_NAMES, sourceAt, sourceEligible, sourceFingerprint, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
-const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch, processingVersion } = await import('../src/mewmory/processing.js');
+const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingCounts, pendingSources, processBatch, processingVersion, testHooks: processingHooks } = await import('../src/mewmory/processing.js');
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
-const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
-const { loadCurrentState } = await import('../src/mewmory/sources.js');
-const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { expandNeighbours, hybridCandidates, lexicalSearch, recallPool, searchDocuments, searchStats, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
+const { loadCurrentState, loadCurrentStateSync } = await import('../src/mewmory/sources.js');
+const { createMemoryPressureCheck } = await import('../src/memory-pressure.js');
+const { prepareMewmoryPrompt } = await import('../src/mewmory/prepare.js');
+const { batchState, everyoneState, groupLineHeld, memberHeard, sameAudience, sourceAudience, viewerState } = await import('../src/mewmory/viewers.js');
+const { branchParentLocator, buildBranchMemoryState, cacheUsage, chatPath, cloneState, listStories, mutateState, normalizeLocator, readChatShared, readJsonShared, readState, readStateShared, sharedJsonHooks, recoveryPath, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, synchronize, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
-const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
+const { inspectState, requestBodyExceeds, restoreRecords } = await import('../src/endpoints/mewmory.js');
 const { createMewmoryProvider } = await import('./mewmory-provider.js');
-const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
+const { readConfig, publicConfig, resolvedRoleIdentity, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
 const { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } = await import('../src/mewmory/contracts.js');
@@ -40,6 +44,18 @@ const { markServiceBusy, markServiceWorking, parseRetryAfter, resetServiceCooldo
 
 // Fixture providers share URLs, so one test's rate limit must not pause the next test's requests.
 beforeEach(() => resetServiceCooldowns());
+
+function expectedCompactIndex(index) {
+    const expected = structuredClone(index);
+    for (const map of [expected.vectors, expected.build?.vectors]) for (const entry of Object.values(map ?? {})) {
+        const bytes = new ArrayBuffer(entry.vector.length * 4);
+        const view = new DataView(bytes);
+        entry.vector.forEach((value, offset) => view.setFloat32(offset * 4, Math.fround(value), true));
+        delete entry.vector;
+        entry.vectorF32LE = Buffer.from(bytes).toString('base64');
+    }
+    return expected;
+}
 
 test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
     const { directories } = disk(t);
@@ -296,6 +312,365 @@ test('ranked recall works without a selector and local replies never dispatch mo
     assert.equal(local.inspection.status, 'local');
 });
 
+test('a group speaker recalls only memories from lines they heard, and changing who heard re-reads nothing', async t => {
+    const heardBy = present => fixture.messages.map((message, index) => index === 2
+        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [] } } }
+        : structuredClone(message));
+    const { directories, write } = disk(t, heardBy(['Mara.png']));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    const dependencies = { call: async () => assert.fail('No selector is enabled'), embedFn: async () => assert.fail('No embeddings are enabled'), scheduleBackground: false };
+    const ask = async viewers => {
+        const state = await loadCurrentState(directories, locator);
+        return recall(directories, locator, { local: true, query: 'gift', state, viewer: viewerState(state, viewers) }, dependencies);
+    };
+    assert.match((await ask(['Mara.png'])).memoryText, /Mara accepted the gift/);
+    assert.equal(viewerState(await loadCurrentState(directories, locator), ['Mara.png']), null);
+    const missed = await ask(['Kit.png']);
+    assert.doesNotMatch(missed.memoryText, /Mara accepted the gift/);
+    assert.ok(missed.inspection.viewerKey);
+    assert.doesNotMatch((await ask(['Mara.png', 'Kit.png'])).memoryText, /Mara accepted the gift/, 'a memory must be heard by every speaker it is written for');
+
+    const before = await loadCurrentState(directories, locator);
+    write(heardBy(['Mara.png', 'Kit.png']));
+    const after = await loadCurrentState(directories, locator);
+    const ref = after.timeline[2];
+    assert.equal(ref.revision, before.timeline[2].revision, 'who heard a line is not part of its text, so it is not re-read');
+    assert.deepEqual(after.coverage, before.coverage);
+    assert.deepEqual(after.sources[ref.id].audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.notEqual(generationFingerprint(after, readConfig(directories)), generationFingerprint(before, readConfig(directories)));
+    assert.match((await ask(['Kit.png'])).memoryText, /Mara accepted the gift/);
+});
+
+test('preparing a group reply checks its speakers and keeps lines whose memories they cannot use', async t => {
+    const messages = fixture.messages.map((message, index) => index === 2
+        ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png'], whisper_to: [] } } }
+        : structuredClone(message));
+    const { directories } = disk(t, messages);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    saveConfig(directories, config);
+    const history = messages.map((message, index) => ({ index, text: message.name + ': ' + message.mes }));
+    const options = { scheduleBackground: false };
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, history, viewers: [] }, null, options), /valid group speakers/);
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, history, viewers: 'Kit.png' }, null, options), /valid group speakers/);
+    const everyone = await prepareMewmoryPrompt(directories, { locator, history }, null, options);
+    assert.match(everyone.memoryText, /Mara accepted the gift/);
+    const kit = await prepareMewmoryPrompt(directories, { locator, history: history.filter(item => item.index !== 2), viewers: ['Kit.png'] }, null, options);
+    assert.equal(kit.enabled, true);
+    assert.doesNotMatch(kit.memoryText, /Mara accepted the gift/);
+    assert.ok(kit.excludedIndices.every(index => index < 2), 'lines after the one Kit missed stay in his prompt');
+});
+
+const groupContext = () => [...fixture.lore,
+    { id: 'character:mara', type: 'character', entityId: 'npc:mara', name: 'Mara', text: 'Mara', meta: { avatar: 'Mara.png' } },
+    { id: 'character:kit', type: 'character', entityId: 'npc:kit', name: 'Kit', text: 'Kit', meta: { avatar: 'Kit.png' } }];
+
+const groupMessages = (missed, present = ['Mara.png'], everyone = false) => fixture.messages.map((message, index) => missed.includes(index)
+    ? { ...structuredClone(message), extra: { ...message.extra, group_scene: { present, whisper_to: [], ...(everyone ? { everyone } : {}) } } }
+    : { ...structuredClone(message), extra: { ...message.extra, group_scene: { present: ['Mara.png', 'Kit.png'], whisper_to: [] } } });
+
+/** A group story where Mara heard everything and Kit missed the line where she accepts the gift. */
+function groupStory({ present = ['Mara.png'], missed = [2], everyone = false } = {}) {
+    const state = newState({ avatar: '', chat: 'Gift', group: true });
+    syncSources(state, groupMessages(missed, present, everyone), groupContext());
+    state.enabled = true;
+    return state;
+}
+
+/** Kit catches up on every line but those still missed, as Catch up and Who heard this save it. */
+function catchUp(state, missed = []) {
+    syncSources(state, groupMessages(missed), groupContext());
+}
+
+function groupEvent(state, { id = 'event:gift', refs = [state.timeline[2]], text = 'Mara accepted the gift.', asOf = 2 } = {}, present = null) {
+    const record = validateRecord(state, { id, kind: 'event', text, refs, subjectIds: ['gift'], evidenceStatus: 'established' }, { asOf, origin: 'objective_extractor' });
+    if (present) record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+    putRecord(state, record, { automatic: true });
+}
+
+test('group memories say who heard them, so later lines stay readable to a member who missed an earlier one', () => {
+    const state = groupStory();
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, {}, ['Mara.png']);
+    groupEvent(state, { id: 'event:receipt', refs: [state.timeline[4]], text: 'The player showed a receipt.', asOf: 4 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, { id: 'event:legacy', refs: [state.timeline[5]], text: 'Mara reread the receipt.', asOf: 5 });
+    for (const record of state.records) if (record.id !== 'event:legacy') assert.ok(record.provenance.audience);
+    assert.equal(viewerState(state, ['Mara.png']), null);
+    const kit = viewerState(state, ['Kit.png']);
+    const ids = kit.state.records.map(record => record.id);
+    assert.ok(ids.includes('event:arrival'));
+    assert.ok(ids.includes('event:receipt'), 'a memory from lines Kit heard stays his, even after a line he missed');
+    assert.ok(!ids.includes('event:gift'));
+    assert.ok(!ids.includes('event:legacy'), 'an older memory without listeners is held back after the first missed line');
+    assert.deepEqual([...kit.heldRefs].sort(), [state.timeline[2].id, state.timeline[5].id].sort());
+});
+
+test('a line every member hears gives memories everyone may read, members who missed its listed hearers included', () => {
+    const state = groupStory({ everyone: true });
+    assert.equal(viewerState(state, ['Kit.png']), null, 'Kit hears the line even though only Mara was listed');
+    const input = { ...extractionInput(state, [state.timeline[2]], 2), provenance: { policy: 'test', jobId: 'job' } };
+    applyExtraction(state, { records: [
+        { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ] }, input, []);
+    assert.equal(state.records.find(record => record.id === 'event:accepts').provenance.audience, null);
+    assert.equal(viewerState(state, ['Kit.png']), null);
+});
+
+test('extraction batches keep one audience, build only on what every listener may read, and skip knowledge a character never heard', () => {
+    const state = groupStory();
+    assert.deepEqual(sameAudience(state, state.timeline.slice(0, 5)), state.timeline.slice(0, 2));
+    assert.deepEqual(sameAudience(state, state.timeline.slice(2, 5)), state.timeline.slice(2, 3));
+    assert.deepEqual(sameAudience(state, state.timeline.slice(3, 6)), state.timeline.slice(3, 6));
+    groupEvent(state, {}, ['Mara.png']);
+    const existing = story => extractionInput(story, [story.timeline[4]], 4).existing.map(record => record.id);
+    assert.ok(!existing(state).includes('event:gift'), 'Kit heard this batch, so the line he missed is not shown to the model');
+    const shared = groupStory({ present: ['Mara.png', 'Kit.png'] });
+    groupEvent(shared, {}, ['Mara.png', 'Kit.png']);
+    assert.ok(existing(shared).includes('event:gift'));
+    assert.equal(batchState(groupStory({ present: ['Mara.png', 'Kit.png'] }), null), null);
+    assert.ok(memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:mara'));
+    assert.ok(!memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:kit'));
+    assert.ok(memberHeard(state, { present: ['Mara.png'], whisper_to: [] }, 'npc:stranger'));
+
+    const input = { ...extractionInput(state, [state.timeline[2]], 2), provenance: { policy: 'test', jobId: 'job' } };
+    const skipped = [];
+    applyExtraction(state, { records: [
+        { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+        { id: 'knowledge:kit-gift', kind: 'knowledge', ownerId: 'npc:kit', subjectIds: ['gift'], text: 'Kit knows Mara accepted the gift.', method: 'witnessed', evidenceText: 'Mara accepts the gift.', refs: [state.timeline[2]] },
+    ] }, input, skipped);
+    const saved = state.records.find(record => record.id === 'event:accepts');
+    assert.deepEqual(saved.provenance.audience, { present: ['Mara.png'], whisper_to: [] });
+    assert.ok(!state.records.some(record => record.id === 'knowledge:kit-gift'));
+    assert.ok(skipped.some(message => /did not hear/.test(message)));
+});
+
+test('group lorebooks and shared memories hold back what some members missed, and hiding keeps lines a listener still needs', async () => {
+    const { loreEntries } = await import('../src/mewmory/markdown.js');
+    const { shareRecords } = await import('../src/mewmory/shared.js');
+    const state = groupStory();
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    groupEvent(state, {}, ['Mara.png']);
+    groupEvent(state, { id: 'event:secret', refs: [state.timeline[4]], text: 'Mara hid the receipt.', asOf: 4 }, ['Mara.png']);
+    groupEvent(state, { id: 'event:legacy', refs: [state.timeline[3]], text: 'The player smiled.', asOf: 3 });
+
+    const everyone = everyoneState(state);
+    assert.deepEqual(everyone.records.map(record => record.id), ['event:arrival']);
+    const lore = loreEntries(state).map(entry => entry.id);
+    assert.ok(lore.includes('event:arrival'));
+    assert.ok(!lore.some(id => ['event:gift', 'event:secret', 'event:legacy'].includes(id)));
+    assert.throws(() => shareRecords({}, state, ['event:gift', 'event:secret']), /did not hear/);
+
+    const held = groupLineHeld(state);
+    assert.equal(held(state.timeline[1]), false, 'everyone can read the memory of the arrival');
+    assert.equal(held(state.timeline[2]), false, 'only Mara heard the gift line, and she can read its memory');
+    assert.equal(held(state.timeline[3]), true, 'Kit heard this line but its older memory is closed to him');
+    assert.equal(held(state.timeline[4]), true, 'Kit heard the receipt line but its memory is only for Mara');
+    const plain = base(fixture.messages);
+    assert.equal(groupLineHeld(plain)(plain.timeline[4]), false, 'one-to-one chats are unchanged');
+    assert.equal(everyoneState(plain), plain);
+});
+
+/** A memory Mara owns in the group story, marked with who heard it unless present is null. */
+function groupKnowledge(state, { id, sequence, text, quote }, present = ['Mara.png', 'Kit.png']) {
+    const record = validateRecord(state, {
+        id, kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text,
+        method: 'witnessed', evidenceText: quote, refs: [state.timeline[sequence]],
+    }, { asOf: sequence, origin: 'objective_extractor' });
+    if (present) record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+    putRecord(state, record, { automatic: true });
+}
+
+function groupInterviewStory() {
+    const state = groupStory();
+    const mara = validateRecord(state, {
+        id: 'entity:mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara', isCharacter: true,
+        refs: [state.timeline[0]], subjectIds: ['npc:mara'],
+    }, { asOf: 0, origin: 'objective_extractor' });
+    mara.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Mara.png', 'Kit.png'], whisper_to: [] }, horizon: 0 };
+    putRecord(state, mara, { automatic: true });
+    return state;
+}
+
+const readableTo = (state, avatar) => {
+    const view = viewerState(state, [avatar]);
+    return new Set((view?.state ?? state).records.map(record => record.id));
+};
+
+test('group interviews and overviews go to whoever may read the memories they were written from', () => {
+    const state = groupInterviewStory();
+    groupKnowledge(state, { id: 'knowledge:arrival', sequence: 1, text: 'The player brought a gift.', quote: 'I brought you a gift.' });
+    const shared = interview(state, 4, 'knowledge:arrival', 'A kind thought.', 'Mara is touched by the gift.', 'shared');
+    const sharedOverview = state.records.findLast(record => record.kind === 'overview');
+    assert.deepEqual(shared.provenance.audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.deepEqual(sharedOverview.provenance.audience, shared.provenance.audience);
+    assert.ok(readableTo(state, 'Kit.png').has(shared.id), 'Kit heard everything this interview was written from, even after missing a line');
+    assert.ok(readableTo(state, 'Kit.png').has(sharedOverview.id));
+
+    groupKnowledge(state, { id: 'knowledge:gift', sequence: 2, text: 'Mara accepted the gift.', quote: 'Mara accepts the gift.' }, ['Mara.png']);
+    const secret = interview(state, 4, 'knowledge:gift', 'I kept it.', 'Mara treasures the gift.', 'secret');
+    const secretOverview = state.records.findLast(record => record.kind === 'overview');
+    assert.ok(Array.isArray(secret.provenance.audience), 'a memory only Mara heard and the shared interview before it both apply');
+    assert.ok(!readableTo(state, 'Kit.png').has(secret.id), 'Kit missed the line the interview was written from');
+    assert.ok(!readableTo(state, 'Kit.png').has(secretOverview.id));
+    assert.ok(readableTo(state, 'Mara.png').has(secret.id));
+    assert.ok(readableTo(state, 'Mara.png').has(secretOverview.id));
+});
+
+test('a group interview built on an older unmarked memory counts every line up to that memory', () => {
+    const early = groupInterviewStory();
+    groupKnowledge(early, { id: 'knowledge:arrival', sequence: 1, text: 'The player brought a gift.', quote: 'I brought you a gift.' }, null);
+    const before = interview(early, 4, 'knowledge:arrival', 'A kind thought.', 'Mara is touched by the gift.', 'early');
+    assert.deepEqual(before.provenance.audience, { present: ['Mara.png', 'Kit.png'], whisper_to: [] });
+    assert.ok(readableTo(early, 'Kit.png').has(before.id));
+
+    const late = groupInterviewStory();
+    groupKnowledge(late, { id: 'knowledge:receipt', sequence: 4, text: 'The player showed a receipt.', quote: 'shows Mara the dated receipt' }, null);
+    const after = interview(late, 4, 'knowledge:receipt', 'It was planned.', 'Mara rethinks the gift.', 'late');
+    assert.ok(!readableTo(late, 'Kit.png').has(after.id), 'the older memory came after the line Kit missed, as the old rule reads it');
+    assert.ok(readableTo(late, 'Mara.png').has(after.id));
+    const { state: plain } = giftHistory();
+    assert.ok(plain.records.filter(record => ['interview', 'overview'].includes(record.kind))
+        .every(record => !Object.hasOwn(record.provenance ?? {}, 'audience')), 'one-to-one chats mark nothing');
+});
+
+/** Reads one batch of the group story with the model's answer, as a processing job does. */
+function extractGroup(state, sequence, records) {
+    const input = { ...extractionInput(state, [state.timeline[sequence]], sequence), provenance: { policy: 'test', jobId: 'job' } };
+    applyExtraction(state, { records }, input, []);
+    return input;
+}
+
+const accepts = state => [
+    { id: 'event:accepts', kind: 'event', text: 'Mara accepted the gift and placed it carefully.', refs: [state.timeline[2]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    { id: 'knowledge:accepts', kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['gift'], text: 'Mara accepted the gift.', method: 'witnessed', evidenceText: 'Mara accepts the gift.', refs: [state.timeline[2]] },
+];
+
+test('a group memory reopens to a member caught up on every line behind it', () => {
+    const state = groupInterviewStory();
+    catchUp(state, [2, 5]);
+    extractGroup(state, 2, accepts(state));
+    const event = state.records.find(record => record.id === 'event:accepts');
+    assert.deepEqual(event.provenance.audience, { present: ['Mara.png'], whisper_to: [] });
+    assert.equal(event.provenance.horizon, 2);
+    const asked = interview(state, 2, 'knowledge:accepts', 'I kept it.', 'Mara treasures the gift.', 'kept');
+    const overview = state.records.findLast(record => record.kind === 'overview');
+    assert.equal(asked.provenance.horizon, 2);
+    assert.equal(overview.provenance.horizon, 2);
+    const ids = ['event:accepts', 'knowledge:accepts', asked.id, overview.id];
+    assert.ok(ids.every(id => !readableTo(state, 'Kit.png').has(id)), 'Kit missed the line all of these came from');
+
+    catchUp(state, [5]);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(ids.every(id => kit.has(id)), 'Kit has now heard every line behind them, though he still missed a later one');
+});
+
+test('a memory stays closed while anything its model saw comes from a line the member still missed', () => {
+    const state = groupStory({ missed: [2, 5] });
+    extractGroup(state, 2, accepts(state));
+    const input = extractGroup(state, 5, [
+        { id: 'event:reread', kind: 'event', text: 'Mara reread the receipt for the gift she accepted.', refs: [state.timeline[5]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(input.existing.some(record => record.id === 'event:accepts'), 'the model reading line 5 was shown the memory of line 2');
+    const reread = state.records.find(record => record.id === 'event:reread');
+    assert.equal(reread.provenance.horizon, 5);
+
+    catchUp(state, [2]);
+    assert.ok(!readableTo(state, 'Kit.png').has('event:reread'), 'Kit now heard line 5, but its memory may repeat line 2, which he still missed');
+    catchUp(state);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(kit.has('event:reread') && kit.has('event:accepts'));
+});
+
+test('marked group memories saved before horizons stay with their listeners', () => {
+    const state = groupStory({ missed: [2, 4] });
+    groupEvent(state, {}, ['Mara.png']);
+    const input = extractGroup(state, 4, [
+        { id: 'event:receipt', kind: 'event', text: 'The player showed Mara the receipt for the gift.', refs: [state.timeline[4]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(input.existing.some(record => record.id === 'event:gift'));
+    assert.ok(!Object.hasOwn(state.records.find(record => record.id === 'event:receipt').provenance, 'horizon'),
+        'a memory built beside one that cannot say what it came from cannot say either');
+    catchUp(state);
+    const kit = readableTo(state, 'Kit.png');
+    assert.ok(!kit.has('event:gift') && !kit.has('event:receipt'));
+});
+
+test('group members remember a chat only from its memory starting point', async () => {
+    const { sourceFingerprint } = await import('../src/mewmory/core.js');
+    const state = groupStory({ missed: [] });
+    extractGroup(state, 2, accepts(state));
+    const accepted = state.records.find(record => record.id === 'event:accepts');
+    assert.equal(accepted.provenance.floor, 2);
+    assert.equal(viewerState(state, ['Kit.png']), null);
+    const before = sourceFingerprint(state);
+
+    syncSources(state, groupMessages([]), groupContext(), { groupStart: 4 });
+    assert.equal(state.groupStart, 4);
+    assert.notEqual(sourceFingerprint(state), before, 'recall picks again when the starting point moves');
+    syncSources(state, groupMessages([]), groupContext());
+    assert.equal(state.groupStart, 4, 'a sync that does not read the scene keeps the saved starting point');
+    for (const avatar of ['Kit.png', 'Mara.png']) {
+        const view = viewerState(state, [avatar]);
+        assert.ok(state.timeline.slice(0, 4).every(ref => view.state.excludedSources.includes(ref.id)),
+            'every line before the start is out of memory, even for members who heard it');
+        assert.ok(!view.state.excludedSources.includes(state.timeline[4].id));
+        assert.ok(!readableTo(state, avatar).has('event:accepts'), 'and so is what was remembered from those lines');
+    }
+    assert.equal(groupLineHeld(state)(state.timeline[2]), false, 'hiding does not wait for memories nobody may read');
+    assert.equal(batchState(state, sourceAudience(state, state.timeline[2]), 2), null, 'a batch from before the start reads the chat as it was');
+
+    const input = extractGroup(state, 5, [
+        { id: 'event:reread', kind: 'event', text: 'Mara reread the receipt for the gift.', refs: [state.timeline[5]], subjectIds: ['gift'], evidenceStatus: 'established' },
+    ]);
+    assert.ok(!input.existing.some(record => record.id === 'event:accepts'), 'the model is not shown memories from before the start');
+    assert.equal(state.records.find(record => record.id === 'event:reread').provenance.floor, 5);
+    assert.ok(readableTo(state, 'Kit.png').has('event:reread'));
+
+    syncSources(state, groupMessages([]), groupContext(), { groupStart: 0 });
+    assert.equal(Object.hasOwn(state, 'groupStart'), false);
+    assert.equal(sourceFingerprint(state), before);
+    assert.equal(viewerState(state, ['Kit.png']), null, 'clearing the start gives the whole chat back');
+});
+
+test('a member who remembers only with the group recalls a memory only while someone else who heard it is in the scene', async () => {
+    const { readGroupSceneRules } = await import('../public/scripts/group-chat-visibility.js');
+    const state = groupStory({ missed: [] });
+    groupEvent(state, { id: 'event:arrival', refs: [state.timeline[1]], text: 'The player brought a gift.', asOf: 1 }, ['Mara.png', 'Kit.png']);
+    const rules = away => readGroupSceneRules({ group_scene: { away, with_group: ['Kit.png'] } });
+    assert.equal(viewerState(state, ['Kit.png'], rules([])), null, 'with Mara in the scene Kit remembers everything they heard together');
+    const alone = viewerState(state, ['Kit.png'], rules(['Mara.png']));
+    assert.ok(alone.state.excludedSources.includes(state.timeline[1].id));
+    assert.equal(alone.state.records.some(record => record.id === 'event:arrival'), false);
+    // Mara remembers on her own as usual, whoever is away.
+    assert.equal(viewerState(state, ['Mara.png'], rules(['Kit.png'])), null);
+});
+
+test('meaning recall falls back without paying for a query when no matching documents can be embedded', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.retrieval.mode = 'semantic';
+    // The query is derived from chat, but the only recall candidate is a saved record.
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'embedding', allowedData: ['chat'] });
+    saveConfig(directories, config);
+    const calls = [];
+    const result = await recall(directories, locator, { query: 'gift' }, { embedFn: async (_dirs, _config, inputs) => {
+        calls.push(inputs);
+        return { vectors: inputs.map(() => [1, 0]), usage: {} };
+    } });
+    assert.deepEqual(calls, []);
+    assert.equal(result.inspection.retrieval.keywordFallback, true);
+    assert.ok(result.selected.includes('event:gift'));
+});
+
 test('recall offers short saved memory entries, not raw chat passages, unless passages are switched on', async t => {
     const { directories, write } = disk(t);
     write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'long-reply', mes: 'The gift glints. '.repeat(600) }]);
@@ -383,17 +758,32 @@ test('a reply that reuses a current AI pick starts no second background search',
     const embedFn = async () => assert.fail('No embeddings are enabled');
     const scheduled = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.scheduled++; await held; return pick(role, input); } };
     const fresh = { embedFn, call: async (_directories, _config, role, _contract, input) => { counts.fresh++; return pick(role, input); } };
-    await recall(directories, locator, {}, fresh);
+    const kept = () => {
+        const state = readState(directories, locator);
+        return state.timeline.map(ref => ({ ref, text: sourceAt(state, ref).text }));
+    };
+    const retained = kept();
+    await recall(directories, locator, { query: 'gift', retained }, fresh);
+    const afterSearch = await recall(directories, locator, { local: true, retained }, { ...scheduled, scheduleBackground: false });
+    assert.deepEqual(afterSearch.inspection.selections, [], 'an author search must not supply the writer with an AI pick');
+    await recall(directories, locator, { retained }, fresh);
+    await recall(directories, locator, { query: 'unrelated gift', retained }, { ...fresh, call: async () => ({
+        value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role: 'selector' },
+    }) });
     counts.fresh = 0;
-    const cached = await recall(directories, locator, { local: true }, scheduled);
-    assert.equal(cached.inspection.selections[0].recordId, 'event:gift');
-    await recallInBackground(directories, locator, {}, fresh);
+    for (let attempt = 0; attempt < 12; attempt++) {
+        const cached = await recall(directories, locator, { local: true, retained }, scheduled);
+        assert.equal(cached.inspection.selections[0]?.recordId, 'event:gift', `regeneration ${attempt + 1} reuses the pick`);
+    }
+    assert.equal(readState(directories, locator).recalls.length, 10, 'inspection history stays bounded');
+    await recallInBackground(directories, locator, { retained }, fresh);
     assert.deepEqual(counts, { scheduled: 0, fresh: 1 }, 'the cached pick still fits, so the reply scheduled nothing');
     write([...fixture.messages, { name: 'Mara', is_user: false, send_date: 'new-reply', mes: 'I kept it.' }]);
     await loadCurrentState(directories, locator);
     counts.fresh = 0;
-    await recall(directories, locator, { local: true }, scheduled);
-    const job = recallInBackground(directories, locator, {}, fresh);
+    const next = await recall(directories, locator, { local: true, retained: kept() }, scheduled);
+    assert.equal(next.inspection.selections[0]?.recordId, 'event:gift', 'the unchanged earlier prefix can supply picks for the next turn');
+    const job = recallInBackground(directories, locator, { retained: kept() }, fresh);
     release();
     await job;
     assert.deepEqual(counts, { scheduled: 1, fresh: 0 }, 'a new message schedules a fresh background search');
@@ -464,8 +854,12 @@ test('manual index rebuild owns every batch, persists its result and does not re
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; });
     let calls = 0;
+    const progressDuringRebuild = new Map();
     registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
         calls++;
+        assert.equal(readState(directories, locator).index.version, '', 'the rebuilding vector space is not published partway through');
+        const { completed, total } = getSavedJob(directories, first.job.id).progress;
+        if (total !== null) progressDuringRebuild.set(completed, total);
         if (calls === 2) write([...messages, { name: 'Mara', mes: 'Arrived while rebuilding', is_user: false }]);
         return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
     } });
@@ -477,6 +871,8 @@ test('manual index rebuild owns every batch, persists its result and does not re
     assert.equal((await startOperation(directories, 'test', 'index', request)).job.id, first.job.id);
     await jobRunner.runJob(first.job);
     assert.equal(getSavedJob(directories, first.job.id).state, 'completed');
+    assert.deepEqual(getSavedJob(directories, first.job.id).progress, { completed: 81, total: 81 });
+    assert.deepEqual([...progressDuringRebuild], [[32, 81], [64, 81]], 'progress counts indexed passages, including new ones in the total');
     assert.deepEqual(readArtifact(directories, first.job.id, 'result'), { remaining: 0 });
     assert.ok(calls >= 5, 'all batches run without any browser continuation');
     assert.equal(readState(directories, locator).index.pending, false);
@@ -491,6 +887,62 @@ test('manual index rebuild owns every batch, persists its result and does not re
     await jobRunner.runJob(changed.job);
     assert.equal(getSavedJob(directories, changed.job.id).state, 'failed');
     assert.equal(calls, before, 'changed source scope is rejected before any provider call');
+});
+
+test('retrying a stale rebuild applies its reset only if it did not already happen', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let paid = 0;
+    registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
+        paid += inputs.length;
+        return { vectors: inputs.map(() => [1, 0]), usage: {} };
+    } });
+    t.after(() => registerMewmoryOperations());
+    setDirectoriesResolver(() => directories);
+    const start = (key, options) => startOperation(directories, 'test', 'index', { locator, reset: true, submissionKey: key }, options);
+    const initial = (await start('initial-index')).job;
+    await jobRunner.runJob(initial);
+    const firstCount = paid;
+    assert.ok(firstCount > 0);
+    const beforeReset = (await start('before-reset')).job;
+    const next = (await start('retry-before', { retryOf: beforeReset.id })).job;
+    await jobRunner.runJob(next);
+    assert.equal(paid, firstCount * 2, 'a previously queued rebuild did not reset the index');
+    const resume = (await start('retry-after', { retryOf: next.id })).job;
+    assert.equal(resume.intent.reset, true);
+    assert.equal((await start('retry-after', { retryOf: next.id })).job.id, resume.id);
+    await jobRunner.runJob(resume);
+    assert.equal(getSavedJob(directories, resume.id).state, 'completed');
+    assert.equal(paid, firstCount * 2, 'an applied reset does not discard valid paid vectors on retry');
+});
+
+test('a rebuild cannot publish vectors after its saved connection profile is edited', async t => {
+    const { directories } = disk(t);
+    const profile = { id: 'embedding', name: 'Embeddings', api: 'custom', 'api-url': 'http://127.0.0.1:1/v1', model: 'first' };
+    const writeProfile = model => writeJson(path.join(directories.root, 'settings.json'), {
+        extension_settings: { connectionManager: { profiles: [{ ...profile, model }] } },
+    });
+    writeProfile('first');
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, profileId: profile.id });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    registerMewmoryOperations({ embedFn: async (_dirs, _config, inputs) => {
+        writeProfile('second');
+        return { vectors: inputs.map(() => [1, 0]), usage: { role: 'embedding' } };
+    } });
+    t.after(() => registerMewmoryOperations());
+    setDirectoriesResolver(() => directories);
+    const { job } = await startOperation(directories, 'test', 'index', { locator, reset: true, submissionKey: 'index-profile-changed' });
+    await jobRunner.runJob(job);
+    assert.equal(getSavedJob(directories, job.id).state, 'failed');
+    assert.deepEqual(readState(directories, locator).index.vectors, {});
+    assert.equal(readArtifact(directories, job.id, 'result'), undefined);
 });
 
 test('server processing owns the whole backfill, deduplicates starts and resumes persisted work', async t => {
@@ -672,6 +1124,166 @@ test('safe start pauses interrupted processing instead of resuming it', async t 
     assert.equal(await pauseInterruptedProcessing(async () => [directories]), 0);
 });
 
+test('worker failure/retry repairs nested jobs and finish preserves concurrent index builds', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.jobs.push({ id: 'interrupted', status: 'processing' });
+    });
+    await startProcessing(directories, locator, {}, async () => {
+        assert.equal(readState(directories, locator).jobs.find(job => job.id === 'interrupted').status, 'failed');
+        throw Object.assign(new Error('Busy fixture'), { status: 503, retryAt: Date.now() + 60000 });
+    });
+    const failed = await waitForProcessing(directories, locator);
+    assert.equal(failed.processing.status, 'failed');
+    assert.equal(failed.processing.failures, 1);
+    assert.equal(failed.processing.busy, true);
+    assert.ok(failed.processing.retryAt > Date.now());
+    assert.deepEqual(failed.coverage, {});
+    assert.deepEqual(failed.checkpoints, {});
+    assert.equal(failed.jobs.at(-1).status, 'failed');
+    let entered, release;
+    const ready = new Promise(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    await startProcessing(directories, locator, { checkpoint: true }, async (_directories, _config, role) => {
+        entered();
+        await held;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role, input: 50, output: 25 } };
+    });
+    await ready;
+    const newerIndex = { version: 'published', pending: false, vectors: { concurrent: { textHash: 'kept', vector: [0.25, 0.5] } },
+        build: { version: 'staged', owner: 'other-job', cursor: 7, vectors: { next: { vector: [0.75] } } } };
+    mutateState(directories, locator, state => { state.index = structuredClone(newerIndex); });
+    release();
+    const complete = await waitForProcessing(directories, locator);
+    assert.equal(complete.processing.status, 'complete');
+    for (const key of ['failures', 'retryAt', 'busy']) assert.equal(Object.hasOwn(complete.processing, key), false);
+    assert.deepEqual(complete.index, expectedCompactIndex(newerIndex));
+    assert.equal(complete.jobs.at(-1).status, 'complete');
+    assert.equal(complete.usage.extractor.requests, 1);
+    assert.equal(complete.usage.extractor.input, 50);
+    assert.equal(Object.keys(complete.checkpoints).length, 3);
+});
+
+for (const action of ['scan', 'pause']) for (const replacement of ['job', 'branch', 'removed']) {
+    test(`${action} rechecks identity under the archive lock after ${replacement} replacement`, async t => {
+        const { directories } = disk(t);
+        const config = defaultConfig();
+        config.autoUpdate = false;
+        saveConfig(directories, config);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => {
+            state.enabled = false;
+            state.processing = { status: 'running', automatic: true };
+        });
+        const archive = statePath(directories, locator);
+        const recovery = path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
+        const mkdir = fs.mkdirSync;
+        let replaced = false;
+        let newer;
+        const mock = t.mock.method(fs, 'mkdirSync', (directory, ...args) => {
+            const result = mkdir(directory, ...args);
+            if (!replaced && String(directory) === path.dirname(archive)) {
+                replaced = true;
+                if (replacement === 'removed') {
+                    fs.rmSync(archive);
+                    fs.rmSync(recovery);
+                } else {
+                    newer = JSON.parse(fs.readFileSync(archive));
+                    newer.revision++;
+                    if (replacement === 'branch') newer.branchId = 'replacement-branch';
+                    else newer.processing.id = 'replacement-job';
+                    writeJson(archive, newer);
+                }
+            }
+            return result;
+        });
+        if (action === 'pause') assert.equal(await pauseInterruptedProcessing(async () => [directories]), 0);
+        else await scanProcessing(directories);
+        mock.mock.restore();
+        assert.equal(replaced, true);
+        if (replacement === 'removed') assert.equal(fs.existsSync(archive), false);
+        else assert.deepEqual(readState(directories, locator), newer);
+    });
+}
+
+test('cancellation rejects a revision changed before the locked write and supports absent job ids', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    const cancelled = await cancelProcessing(directories, locator);
+    assert.equal(cancelled.processing.status, 'cancelled');
+    assert.equal(cancelled.processing.id, undefined);
+    assert.equal(typeof cancelled.processing.fingerprint, 'string');
+    const config = readConfig(directories);
+    const identities = Object.fromEntries(['extractor', 'pawspective'].map(role => [role, resolvedRoleIdentity(config, role)]));
+    assert.equal(cancelled.processing.fingerprint, hash([sourceFingerprint(cancelled), processingVersion(config, identities),
+        config.revision, cancelled.overrides, cancelled.excludedSources]));
+    assert.equal(inspectState(cancelled, config).health.processing.status, 'cancelled');
+    const archive = statePath(directories, locator);
+    const mkdir = fs.mkdirSync;
+    let changed = false;
+    let archiveLocks = 0;
+    const mock = t.mock.method(fs, 'mkdirSync', (directory, ...args) => {
+        const result = mkdir(directory, ...args);
+        if (String(directory) === path.dirname(archive)) archiveLocks++;
+        // loadCurrentState reconciles first; race the second (cancellation) lock.
+        if (!changed && archiveLocks === 2 && String(directory) === path.dirname(archive)) {
+            changed = true;
+            const newer = JSON.parse(fs.readFileSync(archive));
+            newer.revision++;
+            newer.processing = { id: 'new-job', status: 'running' };
+            writeJson(archive, newer);
+        }
+        return result;
+    });
+    await assert.rejects(cancelProcessing(directories, locator), { status: 409 });
+    mock.mock.restore();
+    assert.equal(changed, true);
+    assert.equal(readState(directories, locator).processing.id, 'new-job');
+    assert.equal(readState(directories, locator).processing.status, 'running');
+});
+
+test('a cancelled held worker keeps concurrent vectors and publishes no partial records or progress', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let entered, release;
+    const ready = new Promise(resolve => { entered = resolve; });
+    const held = new Promise(resolve => { release = resolve; });
+    await startProcessing(directories, locator, { checkpoint: true }, async (_directories, _config, role, _contract, input) => {
+        entered();
+        await held;
+        const source = input.sources.find(source => source.type === 'chat');
+        return { value: { records: [{ id: 'event:cancelled', kind: 'event', text: 'Never publish this.',
+            refs: [{ id: source.id, revision: source.revision }], evidenceStatus: 'established' }], interviews: [], activeNpcIds: [] },
+        usage: { role, input: 11, output: 7 } };
+    });
+    await ready;
+    mutateState(directories, locator, state => {
+        state.index.vectors.concurrent = { textHash: 'new', vector: [0.125] };
+        state.index.build = { owner: 'parallel', version: 'future', vectors: { next: { vector: [0.5] } } };
+    });
+    const cancelled = await cancelProcessing(directories, locator);
+    const expected = readState(directories, locator);
+    release();
+    const final = await waitForProcessing(directories, locator);
+    assert.equal(final.processing.status, 'cancelled');
+    assert.equal(final.processing.fingerprint, cancelled.processing.fingerprint);
+    assert.deepEqual(final.index, expected.index);
+    for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'rolePolicies', 'roleIdentities', 'sceneNpcIds', 'castHistory']) {
+        assert.deepEqual(final[key], expected[key], key + ' must have no partial publication');
+    }
+    assert.equal(final.jobs.at(-1).status, 'failed');
+    assert.equal(final.jobs.at(-1).usage.length, 1);
+    assert.equal(final.usage.extractor.requests, 1);
+    assert.equal(final.usage.extractor.input, 11);
+    for (const key of ['failures', 'retryAt', 'busy']) assert.equal(Object.hasOwn(final.processing, key), false);
+});
+
 test('changing a timeout preserves extraction coverage but changing the provider invalidates it', () => {
     const config = defaultConfig();
     const original = roleVersion(config, 'extractor');
@@ -759,10 +1371,13 @@ test('automatic updates read only the most recently written chat', async t => {
 });
 
 test('a delayed worker leaves startup alone, then catches up', async t => {
+    const broken = disk(t);
     const { directories } = disk(t);
     const config = defaultConfig();
     Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
     config.autoUpdate = true;
+    saveConfig(broken.directories, config);
+    fs.writeFileSync(path.join(broken.directories.root, 'mewmory', 'config.json'), '{');
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; });
@@ -771,7 +1386,7 @@ test('a delayed worker leaves startup alone, then catches up', async t => {
         calls++;
         return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
     };
-    const stop = startMewmoryWorker(async () => [directories], call, { firstScanDelayMs: 300 });
+    const stop = startMewmoryWorker(async () => [broken.directories, directories], call, { firstScanDelayMs: 300 });
     try {
         await new Promise(resolve => setTimeout(resolve, 150));
         assert.equal(calls, 0, 'no memory work during the startup grace period');
@@ -779,7 +1394,7 @@ test('a delayed worker leaves startup alone, then catches up', async t => {
         for (let attempt = 0; attempt < 200 && readState(directories, locator).processing?.status !== 'complete'; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 10));
         }
-        assert.equal(readState(directories, locator).processing?.status, 'complete');
+        assert.equal(readState(directories, locator).processing?.status, 'complete', 'a damaged account must not prevent the next from catching up');
         assert.ok(calls > 0);
     } finally {
         stop();
@@ -1522,6 +2137,17 @@ function giftHistory() {
     return { state, original, current };
 }
 
+test('malformed memory dependencies and interview turns are validation errors', () => {
+    const state = base();
+    const refs = [state.timeline[0]];
+    assert.throws(() => validateRecord(state, { id: 'event:invalid', kind: 'event', refs,
+        text: 'Mara accepted the gift.', dependencies: [null] }),
+    { status: 400, message: 'Dependency is in the wrong format.' });
+    assert.throws(() => validateRecord(state, { id: 'interview:invalid', kind: 'interview', ownerId: 'npc:mara',
+        subjectIds: ['gift'], refs, interview: [null] }),
+    { status: 400, message: 'Interview turn is in the wrong format.' });
+});
+
 /** Marks the given chat records as fully read by Mewmory, as a finished extraction would. */
 function rememberMessages(directories, locator, records) {
     mutateState(directories, locator, state => {
@@ -1657,6 +2283,33 @@ function disk(t, messages = fixture.messages) {
     writeJson(path.join(root, 'settings.json'), {});
     return { directories, filename, write };
 }
+
+test('preparing a reply with Mewmory off does not write an archive or require Mewmory settings', async t => {
+    const { directories } = disk(t);
+    const configPath = path.join(directories.root, 'mewmory', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, '{');
+    const filename = statePath(directories, locator);
+    assert.equal((await prepareMewmoryPrompt(directories, { locator })).enabled, false);
+    assert.equal(fs.existsSync(filename), false);
+    await assert.rejects(prepareMewmoryPrompt(directories, { locator, mewmoryWaitSnapshot: 'previous' }), /turned off/);
+    mutateState(directories, locator, state => { state.enabled = false; });
+    fs.writeFileSync(filename, '{');
+    assert.equal((await prepareMewmoryPrompt(directories, { locator })).enabled, false, 'the recovery check confirms this chat is off');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{', 'preparing a reply must not overwrite the damaged archive');
+});
+
+test('a reply without history is answered or asked to resend it', async t => {
+    const { directories } = disk(t);
+    saveConfig(directories, { ...defaultConfig(), writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    assert.deepEqual(await prepareMewmoryPrompt(directories, { locator, historyOmitted: true }), {
+        enabled: true, needsHistory: true,
+    }, 'an enabled chat asks for the history rather than failing on it');
+    mutateState(directories, locator, state => { state.enabled = false; });
+    assert.equal((await prepareMewmoryPrompt(directories, { locator, historyOmitted: true })).enabled, false,
+        'a disabled chat still answers without the history');
+});
 
 test('server automatic hiding skips disabled settings and keeps the latest reply visible', async t => {
     const { directories } = disk(t);
@@ -2049,17 +2702,43 @@ test('hiding a message only to fit the context size keeps its memories, while a 
     assert.equal(recordEligible(state, memory), false);
 });
 
-test('deleted chat purges source copies, dependent memories, search and undo history', () => {
+test('a deleted message purges its source copies, dependent memories, vectors and undo history', async () => {
     const state = base();
     const memory = event(state);
     putRecord(state, { ...memory, text: 'This correction mentions the gift.', authorOverride: true });
-    state.index.vectors.private = { textHash: 'old', vector: [1] };
+    const config = defaultConfig();
+    config.roles.embedding.enabled = true;
+    const embedFn = async (_directories, _config, texts) => ({ vectors: texts.map(() => [1]), usage: {} });
+    await updateIndex(state, {}, config, { embedFn, limit: 100 });
+    const kept = state.index.vectors['entity:mara'];
+    const version = state.index.version;
+    const removedPassages = searchDocuments(state).filter(item => item.kind === 'source' && item.refs[0].id === memory.refs[0].id);
+    assert.ok(removedPassages.length);
+    state.index.build = { version: 'another-model', vectors: { ...state.index.vectors } };
     syncSources(state, fixture.messages.filter((_, index) => index !== 2), fixture.lore);
     assert.deepEqual(state.sources[memory.refs[0].id].revisions, []);
     assert.equal(state.sources[memory.refs[0].id].active, false);
     assert.equal(state.records.some(record => record.id === memory.id), false);
     assert.equal(state.audit.some(entry => entry.recordId === memory.id), false);
-    assert.deepEqual(state.index.vectors, {});
+    assert.equal(state.index.version, version);
+    assert.deepEqual(state.index.vectors['entity:mara'], kept);
+    assert.deepEqual(state.index.build.vectors['entity:mara'], kept);
+    for (const id of [memory.id, ...removedPassages.map(item => item.id)]) {
+        assert.equal(state.index.vectors[id], undefined);
+        assert.equal(state.index.build.vectors[id], undefined);
+    }
+});
+
+test('recall-only indexing does not mark the searchable archive ready without source vectors', async () => {
+    const state = base();
+    const config = defaultConfig();
+    config.roles.embedding.enabled = true;
+    const embedFn = async (_directories, _config, texts) => ({ vectors: texts.map(() => [1]), usage: {} });
+    await updateIndex(state, {}, config, { embedFn, recallOnly: true, limit: 100 });
+    assert.ok(state.index.vectors['entity:mara']);
+    assert.equal(inspectState(state, config).health.indexStatus, 'building');
+    await updateIndex(state, {}, config, { embedFn, limit: 100 });
+    assert.equal(inspectState(state, config).health.indexStatus, 'ready');
 });
 
 test('the extractor gets slim existing records, brief entries for absent characters and a shortened card it already read', () => {
@@ -2951,7 +3630,7 @@ test('a background batch saves alongside recall, indexing and appended chat with
     assert.ok(eligibleRecords(state).some(record => record.id === 'event:background'));
     assert.equal(state.recalls.at(-1).id, result.inspection.id);
     assert.equal(state.preview.fingerprint, result.fingerprint);
-    assert.deepEqual(state.index.vectors.concurrent.vector, [1]);
+    assert.deepEqual(state.index.vectors.concurrent, { textHash: 'kept', vectorF32LE: 'AACAPw==' });
     assert.equal(state.usage.selector.requests, 1);
     assert.equal(state.usage.extractor.requests, 1);
     assert.equal(Object.keys(state.checkpoints).length, 3);
@@ -3493,6 +4172,35 @@ test('character rename keeps story identity and supports rollback; deleting its 
     assert.equal(fs.existsSync(statePath(directories, locator)), false);
 });
 
+test('library changes skip unrelated damaged archives and can delete a damaged archive owned by the deleted card', async t => {
+    const { directories } = disk(t);
+    const unrelated = { ...locator, avatar: 'Other.png' };
+    const damaged = { ...locator, chat: 'Damaged' };
+    for (const target of [locator, unrelated, damaged]) mutateState(directories, target, state => { state.enabled = true; });
+    for (const target of [unrelated, damaged]) fs.writeFileSync(statePath(directories, target), '{damaged');
+    const next = { ...locator, avatar: 'Renamed.png' };
+    const before = readState(directories, locator).storyId;
+    const undo = renameCharacterMemory(directories, locator.avatar, next.avatar);
+    assert.equal(readState(directories, next).storyId, before);
+    undo();
+    removeSourceMemory(directories, { avatar: locator.avatar, deleteChats: true });
+    assert.equal(fs.existsSync(statePath(directories, locator)), false);
+    assert.equal(fs.existsSync(statePath(directories, damaged)), false);
+    assert.equal(fs.readFileSync(statePath(directories, unrelated), 'utf8'), '{damaged');
+});
+
+test('an unreadable shared catalogue does not prevent deletion of the selected private archive', t => {
+    const { directories } = disk(t);
+    const other = { ...locator, chat: 'Other story' };
+    for (const target of [locator, other]) mutateState(directories, target, state => { state.enabled = true; });
+    const shared = path.join(directories.root, 'mewmory', 'shared.json');
+    fs.writeFileSync(shared, '{damaged');
+    removeChatMemory(directories, locator);
+    assert.equal(fs.existsSync(statePath(directories, locator)), false);
+    assert.equal(fs.existsSync(statePath(directories, other)), true);
+    assert.equal(fs.readFileSync(shared, 'utf8'), '{damaged');
+});
+
 test('revoked model permissions are checked again before any outbound request', async t => {
     const { directories } = disk(t);
     const config = defaultConfig();
@@ -3937,6 +4645,12 @@ test('memories shared from one chat can be brought into another chat with the sa
     assert.equal(removeShared(directories, list.available[0].id).removed, 1);
     assert.throws(() => removeShared(directories, list.available[0].id), /no longer there/);
     assert.equal(listShared(directories, readState(directories, other)).available.length, 0);
+    shareRecords(directories, first, ['event:gift']);
+    fs.writeFileSync(statePath(directories, locator), '{damaged');
+    removeChatMemory(directories, locator);
+    assert.equal(listShared(directories, readState(directories, other)).available.length, 0);
+    assert.ok(recordEligible(readState(directories, other), record), 'a copy explicitly brought into another chat stays there');
+    assert.throws(() => shareRecords(directories, first, ['event:gift']), /changed|no longer/);
 });
 
 test('ask, contradiction and sharing routes report plain errors and keep the archive unchanged', async t => {
@@ -3966,4 +4680,1145 @@ test('ask, contradiction and sharing routes report plain errors and keep the arc
     assert.equal((await post('/share', { ids: [] })).status, 400);
     assert.equal((await post('/shared/remove', { id: 'missing' })).status, 404);
     assert.equal(readState(directories, locator).revision, before);
+});
+
+function workingExtraction(input, count = 2) {
+    const source = input.sources.filter(row => row.type === 'chat').at(-1);
+    const refs = [{ id: source.id, revision: source.revision }];
+    const knowledge = Array.from({ length: count }, (_, index) => 'working-' + index);
+    return {
+        records: [
+            { id: 'entity:working-mara', kind: 'entity', entityId: 'npc:mara', name: 'Mara', text: 'Mara', isCharacter: true, subjectIds: ['npc:mara'], refs },
+            { id: 'event:working', kind: 'event', text: 'Mara remembers the harbour.', subjectIds: ['pier'], refs, evidenceStatus: 'established' },
+            ...knowledge.map(name => ({ id: 'knowledge:' + name, kind: 'knowledge', ownerId: 'npc:mara', subjectIds: ['pier'],
+                text: 'Known harbour detail ' + name, method: 'witnessed', evidenceText: source.text.slice(0, 55), refs })),
+        ],
+        interviews: knowledge.map(name => ({ ownerId: 'npc:mara', subjectIds: ['pier'], knowledgeIds: ['knowledge:' + name], refs })),
+        activeNpcIds: ['npc:mara'],
+    };
+}
+
+const workingInterview = (number, valid = true) => ({ changed: true,
+    interview: [{ question: 'What was there?', answer: 'Mara remembers the pier ' + number }],
+    searchDescription: 'Mara remembers the pier ' + number, changeExplanation: '',
+    overviews: valid ? [{ subjectId: 'pier', text: 'The pier mattered to Mara ' + number, status: 'active' }] : [] });
+
+for (const change of ['source edit', 'author correction', 'cancellation']) {
+    test(`held Pawspective rejects ${change} without partial records or progress and keeps concurrent indexes`, { timeout: 10000 }, async t => {
+        const messages = structuredClone(fixture.messages.slice(0, 3));
+        const { directories, write } = disk(t, messages);
+        const config = defaultConfig();
+        Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+        saveConfig(directories, config);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => { state.enabled = true; event(state); });
+        const controller = new AbortController();
+        let entered, release;
+        const ready = new Promise(resolve => { entered = resolve; });
+        const held = new Promise(resolve => { release = resolve; });
+        const processing = processBatch(directories, locator, { checkpoint: true, signal: controller.signal }, async (_directories, _config, role, _contract, input) => {
+            if (role === 'extractor') return { value: workingExtraction(input, 1), usage: { role, input: 11, output: 5 } };
+            entered();
+            await held;
+            return { value: workingInterview(1), usage: { role, input: 13, output: 7 } };
+        });
+        await ready;
+        let before;
+        try {
+            if (change === 'source edit') {
+                messages[2].mes = 'The source actually read by extraction was edited.';
+                write(messages);
+                await loadCurrentState(directories, locator);
+            } else if (change === 'author correction') {
+                mutateState(directories, locator, state => {
+                    const record = state.records.find(row => row.id === 'event:gift');
+                    putRecord(state, { ...record, text: 'This correction must survive.', authorOverride: true, origin: 'author' });
+                });
+            } else controller.abort();
+            mutateState(directories, locator, state => {
+                state.index.vectors.concurrent = { textHash: 'newer', vector: [0.125, 0.625] };
+                state.index.build = { owner: 'parallel-owner', version: 'parallel-space', cursor: 19,
+                    vectors: { staged: { textHash: 'staged', vector: [0.375, 0.875] } } };
+            });
+            before = readState(directories, locator);
+        } finally { release(); }
+        await assert.rejects(processing, change === 'cancellation' ? /cancelled/ : /discarded/);
+        const result = readState(directories, locator);
+        for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'rolePolicies', 'roleIdentities', 'sceneNpcIds', 'castHistory', 'index']) {
+            assert.deepEqual(result[key], before[key], key + ' must not publish rejected draft changes');
+        }
+        assert.equal(result.records.some(row => ['entity:working-mara', 'event:working', 'knowledge:working-0'].includes(row.id)
+            || ['interview', 'overview'].includes(row.kind)), false);
+        assert.equal(result.jobs.at(-1).status, change === 'source edit' ? 'superseded' : 'failed');
+        assert.deepEqual(result.jobs.at(-1).usage, [{ role: 'extractor', input: 11, output: 5 }, { role: 'pawspective', input: 13, output: 7 }]);
+        assert.equal(result.usage.extractor.requests, 1);
+        assert.equal(result.usage.pawspective.requests, 1);
+        assert.equal(result.usage.extractor.input, 11);
+        assert.equal(result.usage.pawspective.input, 13);
+    });
+}
+
+test('admitted extraction and interviews keep original inputs, roll back a partial interview, and retain unread appends and newer index metadata', async t => {
+    t.mock.method(Date, 'now', () => 1780009999000);
+    const messages = structuredClone(fixture.messages.slice(0, 3));
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const initial = mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'original', pending: false, vectors: { original: { textHash: 'before', vector: [0.1, 0.2] } },
+            build: { version: 'old-build', owner: 'old-owner', vectors: { original: { vector: [0.3, 0.4] } } } };
+    });
+    const originalIndex = structuredClone(initial.index);
+    let expected, requests, interviews = 0, heldShared, admittedIndex;
+    const inputs = [];
+    const newerIndex = { version: 'published-later', pending: false, futureMetadata: { preserved: true },
+        vectors: { original: { textHash: 'before', vector: [0.1, 0.2] }, concurrent: { textHash: 'new', vector: [0.5] } },
+        build: { version: 'staged-later', owner: 'new-owner', cursor: 9, futureMetadata: { preserved: 'build' }, vectors: { next: { textHash: 'next', vector: [0.6] } } } };
+    const result = await processBatch(directories, locator, { checkpoint: true }, async (_directories, saved, role, _contract, input) => {
+        inputs.push([role, structuredClone(input)]);
+        if (role === 'extractor') {
+            expected = readState(directories, locator);
+            heldShared = readStateShared(directories, locator);
+            admittedIndex = structuredClone(heldShared.index);
+            assert.deepEqual(admittedIndex, { ...originalIndex, pending: true }, 'Admission retains both full vector maps');
+            const refs = expected.timeline;
+            const originalInput = extractionInput(expected, refs, refs.length - 1, true);
+            originalInput.provenance = { policy: POLICY_VERSION, jobId: expected.jobs.at(-1).id, role,
+                model: saved.roles.extractor.model, modelRevision: saved.roles.extractor.modelRevision };
+            assert.deepEqual(input, originalInput);
+            const value = workingExtraction(input);
+            requests = applyExtraction(expected, value, originalInput);
+            await new Promise(resolve => setImmediate(resolve));
+            write([...messages, { name: 'Mara', is_user: false, send_date: 'unread-working', mes: 'An unread turn arrived during the held request.' }]);
+            mutateState(directories, locator, state => {
+                state.index = structuredClone(newerIndex);
+                state.usage = { selector: { requests: 7, input: 17, output: 3, milliseconds: 5 } };
+            });
+            return { value, usage: { role, input: 11, output: 5 } };
+        }
+        const request = requests[interviews];
+        const originalInput = interviewInput(expected, request, messages.length - 1);
+        originalInput.provenance = { policy: POLICY_VERSION, jobId: expected.jobs.at(-1).id, role,
+            model: saved.roles.pawspective.model, modelRevision: saved.roles.pawspective.modelRevision };
+        assert.deepEqual(input, originalInput, 'Interview inputs use the admitted evidence and previous successful interview');
+        const value = workingInterview(++interviews, interviews === 1);
+        if (interviews === 1) applyInterview(expected, request, value, originalInput, expected.jobs.at(-1).id);
+        else {
+            const records = expected.records;
+            const auditLength = expected.audit.length;
+            assert.throws(() => applyInterview(expected, request, value, originalInput, expected.jobs.at(-1).id), /one short summary/);
+            assert.ok(expected.records.length > records.length, 'The invalid reply attempted a partial interview write');
+            expected.records = records;
+            expected.audit.length = auditLength;
+        }
+        return { value, usage: { role, input: 13, output: 7 } };
+    });
+    assert.equal(interviews, 2);
+    assert.equal(inputs.length, 3);
+    assert.equal(JSON.stringify(inputs).includes('An unread turn arrived'), false);
+    for (const key of ['records', 'audit', 'sceneNpcIds', 'castHistory']) assert.deepEqual(result[key], expected[key], key);
+    assert.equal(result.records.filter(row => row.kind === 'interview').length, 1);
+    assert.equal(result.records.filter(row => row.kind === 'overview').length, 1);
+    assert.equal(JSON.stringify(result.records).includes('Mara remembers the pier 2'), false);
+    assert.deepEqual(result.index, { ...expectedCompactIndex(newerIndex), pending: true });
+    assert.deepEqual(heldShared.index, admittedIndex);
+    assert.deepEqual(initial.index, originalIndex);
+    assert.equal(result.timeline.length, 4);
+    assert.equal(sourceAt(result, result.timeline.at(-1)).text, 'An unread turn arrived during the held request.');
+    const policy = processingVersion(readConfig(directories));
+    const marks = Object.fromEntries(result.timeline.slice(0, 3).map(ref => [refKey(ref), policy]));
+    assert.deepEqual(result.coverage, marks);
+    assert.deepEqual(result.checkpoints, marks);
+    assert.equal(result.jobs.length, 1);
+    assert.equal(result.jobs[0].status, 'complete');
+    assert.equal(result.jobs[0].skipped, 1);
+    assert.equal(result.jobs[0].skippedReasons.length, 1);
+    assert.match(result.jobs[0].skippedReasons[0], /one short summary/);
+    assert.deepEqual(result.jobs[0].usage, [{ role: 'extractor', input: 11, output: 5 },
+        { role: 'pawspective', input: 13, output: 7 }, { role: 'pawspective', input: 13, output: 7 }]);
+    assert.equal(result.usage.extractor.requests, 1);
+    assert.equal(result.usage.pawspective.requests, 2);
+    assert.equal(result.usage.selector.requests, 7);
+    assert.equal(result.usage.selector.input, 17);
+    assert.deepEqual(readStateShared(directories, locator), JSON.parse(fs.readFileSync(statePath(directories, locator))));
+});
+
+test('failed completion restores warm disk/cache/guard state and a real worker retry publishes progress and usage once', async t => {
+    const { directories } = disk(t, fixture.messages.slice(0, 3));
+    const config = defaultConfig();
+    config.autoUpdate = false;
+    Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'working-fixture' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'published', pending: false, vectors: { keep: { textHash: 'kept', vector: [0.1, 0.2] } },
+            build: { version: 'next-space', owner: 'parallel', cursor: 4, vectors: { staged: { vector: [0.3, 0.4] } } } };
+    });
+    const archive = statePath(directories, locator);
+    const recovery = path.join(directories.root, 'mewmory', 'recovery', hash(normalizeLocator(locator)) + '.json');
+    let beforeArchive, beforeRecovery, beforeState, shared;
+    const calls = { extractor: 0, pawspective: 0 };
+    const call = async (_directories, _config, role, _contract, input) => {
+        calls[role]++;
+        if (role === 'extractor') {
+            // Admission has persisted. Warm all three store caches before completion.
+            mutateState(directories, locator, () => {});
+            shared = readStateShared(directories, locator);
+            beforeState = structuredClone(shared);
+            listStories(directories);
+            beforeArchive = fs.readFileSync(archive);
+            beforeRecovery = fs.readFileSync(recovery);
+            return { value: workingExtraction(input, 1), usage: { role, input: 11, output: 5 } };
+        }
+        return { value: workingInterview(1), usage: { role, input: 13, output: 7 } };
+    };
+    let injected = false, rollbackSeen = false;
+    const rename = fs.renameSync;
+    const mock = t.mock.method(fs, 'renameSync', (from, to) => {
+        if (!injected && String(to) === archive) {
+            const candidate = JSON.parse(fs.readFileSync(from));
+            if (candidate.jobs.at(-1)?.status === 'complete' && candidate.records.some(row => row.id === 'event:working')) {
+                injected = true;
+                throw new Error('Injected completion archive write failure');
+            }
+        }
+        const result = rename(from, to);
+        if (injected && !rollbackSeen && String(to) === recovery) {
+            rollbackSeen = true;
+            assert.deepEqual(fs.readFileSync(archive), beforeArchive);
+            assert.deepEqual(fs.readFileSync(recovery), beforeRecovery);
+            assert.equal(readStateShared(directories, locator), shared);
+            assert.deepEqual(shared, beforeState);
+            assert.equal(listStories(directories)[0].processing.status, 'running');
+        }
+        return result;
+    });
+    await startProcessing(directories, locator, { checkpoint: true }, call);
+    const failed = await waitForProcessing(directories, locator);
+    mock.mock.restore();
+    assert.equal(injected && rollbackSeen, true);
+    assert.deepEqual(shared, beforeState, 'A held cache reader was never changed by the failed completion or status save');
+    assert.equal(failed.processing.status, 'failed');
+    assert.equal(failed.jobs.at(-1).status, 'failed');
+    assert.equal(failed.jobs.at(-1).usage.length, 2);
+    for (const key of ['records', 'audit', 'coverage', 'checkpoints', 'index', 'sceneNpcIds', 'castHistory']) assert.deepEqual(failed[key], beforeState[key], key);
+    assert.equal(failed.usage.extractor.requests, 1);
+    assert.equal(failed.usage.pawspective.requests, 1);
+    const retainedFailure = structuredClone(failed);
+    await startProcessing(directories, locator, { checkpoint: true }, call);
+    const complete = await waitForProcessing(directories, locator);
+    assert.deepEqual(failed, retainedFailure, 'The retry cannot mutate an earlier isolated read');
+    assert.equal(complete.processing.status, 'complete');
+    assert.equal(complete.processing.failures, undefined);
+    assert.equal(complete.jobs.length, 1);
+    assert.equal(complete.jobs[0].status, 'complete');
+    assert.equal(complete.jobs[0].usage.length, 2);
+    assert.deepEqual(calls, { extractor: 2, pawspective: 2 });
+    assert.equal(complete.usage.extractor.requests, 2);
+    assert.equal(complete.usage.extractor.input, 22);
+    assert.equal(complete.usage.pawspective.requests, 2);
+    assert.equal(complete.usage.pawspective.input, 26);
+    for (const kind of ['event', 'knowledge', 'interview', 'overview']) assert.equal(complete.records.filter(row => row.kind === kind).length, 1, kind);
+    assert.equal(Object.keys(complete.coverage).length, 3);
+    assert.equal(Object.keys(complete.checkpoints).length, 3);
+    assert.deepEqual(complete.index.vectors, beforeState.index.vectors);
+    assert.deepEqual(complete.index.build, beforeState.index.build);
+    const reopened = JSON.parse(fs.readFileSync(archive));
+    assert.deepEqual(readStateShared(directories, locator), reopened);
+    assert.deepEqual(readState(directories, locator), reopened);
+    assert.equal(listStories(directories)[0].processing.status, 'complete');
+    assert.equal(JSON.parse(fs.readFileSync(recovery)).revision, reopened.revision);
+});
+
+// Work counters: these tests check how much serialising, cloning and parsing a call does, never how long it takes.
+function countWork(work) {
+    const original = { stringify: JSON.stringify, parse: JSON.parse, clone: globalThis.structuredClone };
+    const counts = { stringifyCalls: 0, stringifiedChars: 0, largestStringify: 0, parseCalls: 0, largestParse: 0, clones: 0 };
+    JSON.stringify = function stringify(...args) {
+        const text = original.stringify.apply(this, args);
+        counts.stringifyCalls++;
+        if (typeof text === 'string') {
+            counts.stringifiedChars += text.length;
+            counts.largestStringify = Math.max(counts.largestStringify, text.length);
+        }
+        return text;
+    };
+    JSON.parse = function parse(text, ...rest) {
+        counts.parseCalls++;
+        counts.largestParse = Math.max(counts.largestParse, String(text).length);
+        return original.parse.call(this, text, ...rest);
+    };
+    globalThis.structuredClone = (...args) => { counts.clones++; return original.clone(...args); };
+    const restore = () => {
+        Object.assign(JSON, { stringify: original.stringify, parse: original.parse });
+        globalThis.structuredClone = original.clone;
+    };
+    let value;
+    try {
+        value = work();
+    } catch (error) {
+        restore();
+        throw error;
+    }
+    if (!(value instanceof Promise)) {
+        restore();
+        return { counts, value };
+    }
+    return value.then(result => { restore(); return { counts, value: result }; }, error => { restore(); throw error; });
+}
+
+const plain = value => JSON.parse(JSON.stringify(value));
+const identityOf = file => { const stat = fs.statSync(file); return [stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':'); };
+// Runs every registered reclaimer, as the server does when memory runs short.
+const reclaimMemory = () => assert.equal(createMemoryPressureCheck({ sample: () => ({ available: 0, total: 1e9, heapUsed: 0, heapLimit: 0 }) })(), true);
+const bulkMessages = (count = 160) => Array.from({ length: count }, (_, index) => ({
+    name: index % 2 ? 'Mara' : 'You', is_user: index % 2 === 0, send_date: new Date(Date.UTC(2026, 0, 1) + index * 60000).toISOString(),
+    mes: `Message ${index}: ` + 'The lantern sat beside the ledger, and Mara said nothing. '.repeat(12),
+}));
+const MESSAGE_COUNT = 160;
+// A file read and stamped in one pass is trusted only once it was quiet before that pass began.
+const letFilesSettle = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
+
+test('loading an unchanged story again does no whole-archive work, writes nothing and equals the full path', t => {
+    const { directories } = disk(t, bulkMessages());
+    const archive = statePath(directories, locator);
+    const first = loadCurrentStateSync(directories, locator);
+    assert.ok(fs.statSync(archive).size > 100_000, 'a realistic archive, not a toy');
+    const files = [archive, recoveryPath(directories, locator)];
+    const written = files.map(identityOf);
+    // The first read after a write parses what was written; the one measured below is the second.
+    loadCurrentStateSync(directories, locator);
+    const { counts, value: second } = countWork(() => loadCurrentStateSync(directories, locator));
+    assert.deepEqual(files.map(identityOf), written, 'neither the archive nor its recovery guard was written');
+    assert.equal(counts.clones, 0, 'no clone');
+    assert.ok(counts.largestStringify < 2000, 'no archive or message was serialised');
+    assert.ok(counts.stringifyCalls < MESSAGE_COUNT / 4, 'messages were not hashed one by one: ' + counts.stringifyCalls);
+    assert.ok(counts.largestParse < 50_000, 'the archive was not parsed again');
+    assert.deepEqual(plain(second), plain(first));
+    const full = countWork(() => loadCurrentStateSync(directories, locator, { fresh: true }));
+    assert.ok(full.counts.stringifyCalls >= MESSAGE_COUNT && full.counts.clones > 0, 'the full path hashes every message and clones the archive');
+    assert.deepEqual(plain(full.value), plain(second));
+    assert.deepEqual(files.map(identityOf), written, 'the full path found nothing to change either');
+});
+
+test('every input of a synchronise invalidates the unchanged-story shortcut', async t => {
+    const messages = bulkMessages();
+    const { directories, write } = disk(t, messages);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    const card = description => fs.writeFileSync(path.join(directories.characters, 'Mara.png'), writeCard(png, JSON.stringify({ name: 'Mara', description })));
+    directories.files = path.join(directories.root, 'user/files');
+    fs.mkdirSync(directories.files, { recursive: true });
+    const settingsFile = path.join(directories.root, 'settings.json');
+    const bookFile = path.join(directories.worlds, 'Book.json');
+    const book = text => writeJson(bookFile, { entries: { 1: { uid: 1, comment: 'Harbour', content: text, key: ['harbour'] } } });
+    const noteFile = path.join(directories.files, 'note.txt');
+    card('Original card text');
+    book('Lighthouse first');
+    fs.writeFileSync(noteFile, 'Note first');
+    letFilesSettle();
+    const settings = extra => writeJson(settingsFile, { world_info: { globalSelect: ['Book'] }, extension_settings: { attachments: [{ url: '/user/files/note.txt' }, { url: '/user/files/later.txt' }] }, ...extra });
+    settings();
+    const archive = statePath(directories, locator);
+    let state = loadCurrentStateSync(directories, locator);
+    const reload = () => {
+        const { counts, value } = countWork(() => loadCurrentStateSync(directories, locator));
+        assert.ok(counts.stringifyCalls >= MESSAGE_COUNT, 'the change was reconciled, not skipped');
+        return value;
+    };
+    const text = value => JSON.stringify(value.sources);
+    assert.match(text(state), /Original card text/);
+    assert.match(text(state), /Lighthouse first/);
+    assert.match(text(state), /Note first/);
+    const hit = () => assert.ok(countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls < MESSAGE_COUNT / 4, 'unchanged input is skipped');
+    hit();
+
+    // The same size every time, so only the file's identity can tell.
+    card('Changed card text!!');
+    state = reload();
+    assert.match(text(state), /Changed card text/);
+    hit();
+    book('Lighthouse other');
+    state = reload();
+    assert.match(text(state), /Lighthouse other/);
+    hit();
+    fs.writeFileSync(noteFile, 'Note other');
+    letFilesSettle();
+    state = reload();
+    assert.match(text(state), /Note other/);
+    hit();
+    // A file that did not exist when the story was last reconciled.
+    fs.writeFileSync(path.join(directories.files, 'later.txt'), 'Arrived later');
+    letFilesSettle();
+    state = reload();
+    assert.match(text(state), /Arrived later/);
+    hit();
+    write([...messages, { name: 'Mara', is_user: false, send_date: '2027-01-01T00:00:00.000Z', mes: 'A brand new line.' }]);
+    state = reload();
+    assert.equal(state.timeline.length, MESSAGE_COUNT + 1);
+    hit();
+    // Another writer replaces the archive with an older picture of the story.
+    const stale = readState(directories, locator);
+    stale.timeline = stale.timeline.slice(0, 10);
+    writeJson(archive, stale);
+    state = reload();
+    assert.equal(state.timeline.length, MESSAGE_COUNT + 1);
+    hit();
+    mutateState(directories, locator, current => { current.reviewedAt = 7; });
+    state = reload();
+    assert.equal(state.reviewedAt, 7);
+    hit();
+    fs.rmSync(recoveryPath(directories, locator));
+    reload();
+    assert.ok(fs.existsSync(recoveryPath(directories, locator)), 'a missing recovery guard is written again');
+    hit();
+    const config = readConfig(directories);
+    config.roles.extractor = { ...config.roles.extractor, enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'one' };
+    saveConfig(directories, config);
+    state = reload();
+    assert.ok(Object.keys(state.rolePolicies).includes(processingVersion(readConfig(directories))));
+    hit();
+    // Settings that change nothing Mewmory folds in leave the story alone.
+    saveConfig(directories, { ...readConfig(directories), memoryTokens: 4000 });
+    hit();
+    const fileIds = value => value.contextSources.filter(ref => ref.id.startsWith('file:'));
+    assert.equal(fileIds(state).length, 2);
+    settings({ extension_settings: {} });
+    state = reload();
+    assert.equal(fileIds(state).length, 0, 'attachments removed from settings.json');
+    assert.ok(state.contextSources.some(ref => ref.id.startsWith('lore:')));
+    hit();
+    settings();
+    state = reload();
+    assert.equal(fileIds(state).length, 2);
+    hit();
+    saveConfig(directories, { ...readConfig(directories), retrieval: { ...readConfig(directories).retrieval, includeFiles: false } });
+    state = reload();
+    assert.equal(fileIds(state).length, 0, 'attached files switched off in Mewmory settings');
+    hit();
+    // Memory pressure empties the caches but keeps the stamps, so the first load afterwards is not a full reconcile.
+    reclaimMemory();
+    hit();
+    assert.ok(countWork(() => loadCurrentStateSync(directories, locator, { fresh: true })).counts.stringifyCalls >= MESSAGE_COUNT, 'a fresh load always reconciles');
+    hit();
+    // A synchronise that is handed its own extra change always runs it.
+    let ran = 0;
+    synchronize(directories, locator, [], readChatShared(directories, locator), current => { ran++; current.reviewedAt = 9; });
+    assert.equal(ran, 1);
+    assert.equal(readStateShared(directories, locator).reviewedAt, 9);
+    assert.equal(reload().reviewedAt, 9);
+});
+
+test('a persona avatar that disappears is noticed even when everything else is unchanged', t => {
+    const { directories } = disk(t, bulkMessages(100));
+    const avatars = path.join(directories.root, 'User Avatars');
+    fs.mkdirSync(avatars, { recursive: true });
+    fs.writeFileSync(path.join(avatars, 'me.png'), 'avatar bytes');
+    letFilesSettle();
+    writeJson(path.join(directories.root, 'settings.json'), { power_user: { default_persona: 'me.png', personas: { 'me.png': 'Persona' },
+        persona_descriptions: { 'me.png': { description: 'A traveller' } } } });
+    const loaded = loadCurrentStateSync(directories, locator);
+    assert.equal(sourceAt(loaded, loaded.contextSources[0]).meta.persona, 'me.png');
+    assert.ok(countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls < 50, 'the second load is the shortcut');
+    fs.rmSync(path.join(avatars, 'me.png'));
+    assert.throws(() => loadCurrentStateSync(directories, locator), /persona avatar is missing/);
+});
+
+test('callers that reassign fields of a loaded state never change the shared archive', async t => {
+    const { directories } = disk(t, bulkMessages(24));
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding' });
+    saveConfig(directories, config);
+    loadCurrentStateSync(directories, locator);
+    const shared = readStateShared(directories, locator);
+    const snapshot = JSON.stringify(shared);
+    for (const attempt of ['shortcut', 'full']) {
+        if (attempt === 'full') reclaimMemory();
+        const view = loadCurrentStateSync(directories, locator);
+        assert.notEqual(view, readStateShared(directories, locator), attempt);
+        await updateIndex(view, directories, readConfig(directories));
+        assert.ok(Object.keys(view.index.vectors).length > 0, 'the loaded copy took the new index');
+        view.index = { version: 'replaced', vectors: {}, pending: false };
+        view.records = [];
+        view.enabled = true;
+        view.index.pending = true;
+        assert.equal(JSON.stringify(readStateShared(directories, locator)), snapshot, attempt);
+        assert.equal(loadCurrentStateSync(directories, locator).index.version, '', attempt);
+    }
+    // The shortcut state is read-only all the way down, as the shared state always has been.
+    const frozen = structuredClone(readStateShared(directories, locator));
+    const freeze = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); Object.values(value).forEach(freeze); } };
+    freeze(frozen);
+    const config2 = readConfig(directories);
+    assert.doesNotThrow(() => { inspectState(frozen, config2); pendingSources(frozen, config2); assembleContext(frozen, [], { counter }); });
+});
+
+test('a changed archive is serialised once, written byte for byte as before, and unchanged ones are not written', t => {
+    const { directories } = disk(t, bulkMessages());
+    const archive = statePath(directories, locator);
+    loadCurrentStateSync(directories, locator);
+    const vector = index => Buffer.from(new Float32Array([index, 1, 2, 3]).buffer).toString('base64');
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.index = { version: 'space', pending: false, vectors: Object.fromEntries(Array.from({ length: 150 }, (_, index) =>
+            ['doc:' + index, { textHash: 'hash' + index, vectorF32LE: vector(index) }])) };
+    });
+    const mutator = state => { state.reviewedAt = 5; state.records.push({ id: 'x', note: 'ünïcode - “quoted”' }); delete state.preview; };
+    const clock = 1_900_000_000_000;
+    t.mock.method(Date, 'now', () => clock);
+    // What the earlier implementation wrote: clone, mutate, bump revision and time, normalise the locator, serialise.
+    const previous = readStateShared(directories, locator);
+    const expected = structuredClone(previous);
+    mutator(expected);
+    Object.assign(expected, { revision: previous.revision + 1, updatedAt: clock, locator: normalizeLocator(expected.locator) });
+    const reference = JSON.stringify(expected);
+    const size = fs.readFileSync(archive, 'utf8').length;
+    const changed = countWork(() => mutateState(directories, locator, mutator));
+    assert.equal(fs.readFileSync(archive, 'utf8'), reference);
+    assert.ok(changed.counts.stringifiedChars < size * 1.5, `serialised ${changed.counts.stringifiedChars} characters for a ${size} character archive`);
+    assert.equal(JSON.parse(fs.readFileSync(recoveryPath(directories, locator), 'utf8')).revision, previous.revision + 1);
+    // An archive written by an older version: no updatedAt, and a locator whose keys are in another order.
+    const old = readState(directories, locator);
+    delete old.updatedAt;
+    old.locator = { group: false, chat: locator.chat, avatar: locator.avatar };
+    fs.writeFileSync(archive, JSON.stringify(old));
+    const reread = readStateShared(directories, locator);
+    const expectedOld = structuredClone(reread);
+    mutator(expectedOld);
+    Object.assign(expectedOld, { revision: reread.revision + 1, updatedAt: clock, locator: normalizeLocator(expectedOld.locator) });
+    mutateState(directories, locator, mutator);
+    assert.equal(fs.readFileSync(archive, 'utf8'), JSON.stringify(expectedOld));
+
+    const before = identityOf(archive);
+    const after = fs.readFileSync(archive, 'utf8').length;
+    const unchanged = countWork(() => mutateState(directories, locator, () => {}));
+    assert.equal(identityOf(archive), before, 'an unchanged mutation writes nothing');
+    assert.ok(unchanged.counts.stringifiedChars < after * 1.2, 'and compares with the text it kept, serialising the result once');
+    assert.equal(unchanged.value.revision, readStateShared(directories, locator).revision);
+});
+
+test('the clone shares embedding vectors and nothing a mutator does reaches a state read earlier', t => {
+    const { directories } = disk(t, bulkMessages(40));
+    loadCurrentStateSync(directories, locator);
+    const vectors = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`doc:${index}`, { textHash: 'h' + index,
+        vectorF32LE: Buffer.from(new Float32Array([index, 2]).buffer).toString('base64') }]));
+    mutateState(directories, locator, state => {
+        state.index = { version: 'space', pending: false, vectors, build: { version: 'next', vectors: { ...vectors }, cursor: 3 } };
+    });
+    const shared = readStateShared(directories, locator);
+    const snapshot = JSON.stringify(shared);
+    const copy = cloneState(shared);
+    assert.deepEqual(copy, shared);
+    for (const [owner, other] of [[copy.index.vectors, shared.index.vectors], [copy.index.build.vectors, shared.index.build.vectors]]) {
+        assert.notEqual(owner, other, 'the map is the clone\'s own');
+        assert.equal(Object.keys(owner).length, 30);
+        for (const [id, entry] of Object.entries(owner)) assert.equal(entry, other[id], 'the entries are shared, not copied');
+    }
+    assert.notEqual(copy.index, shared.index);
+    assert.notEqual(copy.index.build, shared.index.build);
+    assert.notEqual(copy.sources, shared.sources);
+    assert.deepEqual(Object.keys(copy), Object.keys(shared), 'key order decides the bytes written');
+    const mutators = [
+        state => { state.index.vectors.added = { textHash: 'added', vectorF32LE: 'AAAA' }; delete state.index.vectors['doc:1']; delete state.index.build.vectors['doc:2']; },
+        state => { state.index.pending = true; state.index.version = 'other'; },
+        state => { state.index.build.cursor = 9; state.index.build.version = 'newer'; },
+        state => { state.index = { ...state.index, vectors: {}, build: undefined }; },
+        state => { purgeSources(state, state.timeline.slice(0, 5).map(ref => ref.id)); },
+        state => { state.index.vectors = Object.fromEntries(Object.entries(state.index.vectors).slice(0, 3)); },
+    ];
+    for (const mutator of mutators) {
+        mutateState(directories, locator, mutator);
+        assert.equal(JSON.stringify(shared), snapshot, 'the earlier state is untouched');
+    }
+});
+
+test('pending counts agree with the three pending queries they replace', () => {
+    const state = base();
+    const config = defaultConfig();
+    const policy = processingVersion(config);
+    state.coverage = { [refKey(state.timeline[0])]: policy, [refKey(state.timeline[1])]: READ_EARLIER, [refKey(state.timeline[2])]: 'old policy' };
+    state.checkpoints = { [refKey(state.timeline[1])]: policy, [refKey(state.timeline[3])]: READ_EARLIER };
+    state.excludedSources = [state.timeline[4].id];
+    for (const followCheckpoints of [false, true]) {
+        const unread = pendingSources(state, config, { unreadOnly: true }).length;
+        const checkpointUnread = pendingSources(state, config, { checkpoint: true, unreadOnly: true }).length;
+        const rereadPending = pendingSources(state, config, { checkpoint: followCheckpoints }).length - (followCheckpoints ? checkpointUnread : unread);
+        assert.deepEqual(pendingCounts(state, config, { followCheckpoints }), { unread, checkpointUnread, rereadPending }, String(followCheckpoints));
+        assert.ok(unread > 0 && rereadPending !== 0 || followCheckpoints, 'the fixture exercises each count');
+    }
+});
+
+test('inspecting an unchanged archive twice leaves the archive file and its revision alone', async t => {
+    const { directories } = disk(t, bulkMessages());
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const inspect = async () => (await fetch('http://127.0.0.1:' + server.address().port + '/inspect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator }) })).json();
+    const first = await inspect();
+    const archive = statePath(directories, locator);
+    const before = identityOf(archive);
+    await inspect();
+    const warm = await countWork(inspect);
+    const second = warm.value;
+    const third = await inspect();
+    assert.equal(warm.counts.clones, 0, 'no copy of the archive');
+    assert.ok(warm.counts.stringifyCalls < MESSAGE_COUNT / 2, 'no message was hashed: ' + warm.counts.stringifyCalls);
+    assert.equal(identityOf(archive), before, 'inspection is read-only once the story is reconciled');
+    assert.equal(second.revision, first.revision);
+    assert.deepEqual(third, second);
+    assert.equal(second.health.pending, MESSAGE_COUNT);
+});
+
+test('a request body is accepted from Content-Length only when printing it again cannot exceed the limit', () => {
+    const request = (headers, body = { text: 'x'.repeat(50) }) => ({ body, get: name => headers[name] });
+    const printed = body => Buffer.byteLength(JSON.stringify(body));
+    // Within a sixth of the limit, whatever it prints as: no serialising.
+    const fast = countWork(() => requestBodyExceeds(request({ 'Content-Length': '100' }), 1000));
+    assert.equal(fast.value, false);
+    assert.equal(fast.counts.stringifyCalls, 0);
+    // 1e20 is four characters long and prints as twenty-one, so a declared 250 bytes can print as 1,100 and must be measured.
+    const grown = { values: Array.from({ length: 50 }, () => 1e20) };
+    assert.ok(printed(grown) > 1000 && 250 < 1000);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, grown), 1000), true, 'the old limit cannot be slipped past');
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '250' }, { values: [1, 2, 3] }), 1000), false);
+    // A form body of control characters prints as six bytes each plus seven around them, so 1,000 bytes can print as 6,007.
+    const form = querystring.parse('\u0001'.repeat(1000));
+    assert.equal(printed(form), 6007);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000', 'Content-Type': 'application/x-www-form-urlencoded' }, form), 6000), true, 'seven bytes over the limit are not accepted');
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000' }, form), 6007), false);
+    assert.equal(requestBodyExceeds(request({ 'Content-Length': '1000' }, form), 6023), false);
+    // No usable length: measured, as before.
+    for (const headers of [{}, { 'Content-Length': 'many' }, { 'Content-Length': '-5' }, { 'Content-Length': '12', 'Content-Encoding': 'gzip' }]) {
+        assert.equal(requestBodyExceeds(request(headers, grown), 1000), true, JSON.stringify(headers));
+        assert.equal(requestBodyExceeds(request(headers), 1000), false, JSON.stringify(headers));
+    }
+    assert.equal(requestBodyExceeds(request({}, null), 1), true);
+    assert.equal(requestBodyExceeds(request({}, null), 2), false);
+});
+
+test('preparing a reply reads the chat through the shared reader instead of parsing it again', async t => {
+    const { directories } = disk(t, bulkMessages(40));
+    saveConfig(directories, { ...defaultConfig(), writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    await loadCurrentState(directories, locator);
+    let chatLinesParsed = 0;
+    const parse = JSON.parse;
+    JSON.parse = function counted(text, ...rest) { if (typeof text === 'string' && text.includes('"send_date"') && text.includes('"mes"')) chatLinesParsed++; return parse.call(this, text, ...rest); };
+    try {
+        const result = await prepareMewmoryPrompt(directories, { locator, history: [{ index: 0, text: 'hello' }], tokenizer: {} }, undefined, { scheduleBackground: false });
+        assert.equal(result.enabled, true);
+    } finally {
+        JSON.parse = parse;
+    }
+    assert.equal(chatLinesParsed, 0, 'the chat was not parsed a second time');
+});
+
+test('recall documents are built only for the pool recall can rank, and the passages the selector may ask for come on demand', () => {
+    const state = base();
+    syncSources(state, fixture.messages, [...fixture.lore, { id: 'file:note', type: 'file', name: 'note.txt', text: 'A saved file about the moon.', meta: { url: '/user/files/note.txt' } }]);
+    event(state);
+    for (const includePassages of [false, true]) for (const includeFiles of [false, true]) {
+        const config = { ...defaultConfig(), retrieval: { ...defaultConfig().retrieval, includePassages, includeFiles } };
+        const pool = recallPool(searchDocuments(state, Infinity, config, { poolOnly: true }), config);
+        assert.deepEqual(pool, recallPool(searchDocuments(state, Infinity, config), config), JSON.stringify({ includePassages, includeFiles }));
+        assert.ok(pool.length > 0);
+        if (!includePassages) assert.ok(searchDocuments(state, Infinity, config, { poolOnly: true }).length < searchDocuments(state, Infinity, config).length,
+            'chat, card and lore passages are not built');
+    }
+});
+
+test('cache budgets count estimated heap, never evict the entry just inserted, and empty under memory pressure', t => {
+    const { directories } = disk(t, bulkMessages());
+    reclaimMemory();
+    assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+    loadCurrentStateSync(directories, locator);
+    loadCurrentStateSync(directories, locator);
+    const usage = cacheUsage();
+    const archive = statePath(directories, locator);
+    assert.equal(usage.chatRead.bytes, 5 * fs.statSync(chatPath(directories, locator)).size, 'parsed chat is estimated at five times its file');
+    assert.ok(usage.sharedJson.bytes >= 5 * fs.statSync(archive).size && usage.sharedJson.bytes % 5 === 0);
+    assert.equal(usage.writtenStates.bytes, 2 * fs.readFileSync(archive, 'utf8').length, 'saved text is counted at two bytes a character');
+    assert.ok(usage.writtenStates.max <= 48 * 1024 * 1024 && usage.sharedJson.max === usage.chatRead.max);
+    const big = path.join(directories.root, 'big.json');
+    fs.writeFileSync(big, JSON.stringify({ blob: 'x'.repeat(Math.ceil(usage.sharedJson.max / 5) + 1024) }));
+    const parsed = readJsonShared(big, null);
+    assert.ok(cacheUsage().sharedJson.bytes > usage.sharedJson.max, 'one entry may exceed the budget');
+    assert.equal(readJsonShared(big, null), parsed, 'and it is still cached for the next reader');
+    reclaimMemory();
+    assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+});
+
+test('constrained mobile runtimes lower Mewmory cache caps while keeping the active entry cached', t => {
+    const previousTermux = process.env.TERMUX_VERSION;
+    const desktopMax = cacheUsage();
+    try {
+        process.env.TERMUX_VERSION = '0.118.1';
+        const mobileMax = cacheUsage();
+        assert.ok(mobileMax.writtenStates.max < desktopMax.writtenStates.max);
+        assert.ok(mobileMax.sharedJson.max < desktopMax.sharedJson.max);
+        assert.equal(mobileMax.sharedJson.max, mobileMax.chatRead.max);
+        const { directories } = disk(t, bulkMessages());
+        reclaimMemory();
+        loadCurrentStateSync(directories, locator);
+        assert.ok(cacheUsage().chatRead.entries >= 1);
+        reclaimMemory();
+        assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
+    } finally {
+        if (previousTermux === undefined) delete process.env.TERMUX_VERSION;
+        else process.env.TERMUX_VERSION = previousTermux;
+    }
+});
+
+// The earlier eligibility rules, which scan every record and audit entry for each question, kept as the reference.
+function scanningEligibility() {
+    const content = record => {
+        const copy = { ...record };
+        for (const key of ['version', 'createdAt', 'provenance', 'inputRefs', 'origin', 'authorOverride', 'pinned', 'excluded',
+            'status', 'significance', 'evidenceRefs', 'restoredOrigin']) delete copy[key];
+        return hash(copy);
+    };
+    const revision = (state, id, version) => {
+        const current = state.records.find(record => record.id === id);
+        if (!current || current.version === version) return current;
+        if (current.excluded || ['invalidated', 'deleted'].includes(current.status)) return null;
+        const changes = state.audit.filter(entry => entry.recordId === id && entry.afterVersion > version);
+        const previous = changes.find(entry => entry.before?.version === version)?.before;
+        if (!previous) return null;
+        return content(previous) === content(current) || changes.every(entry => entry.historical) ? previous : null;
+    };
+    const eligible = (state, record, { asOf = Infinity, includeExcluded = false } = {}, seen = new Set()) => {
+        if (!record || record.storyId !== state.storyId || record.branchId !== state.branchId
+            || record.asOf > asOf || ['invalidated', 'deleted'].includes(record.status)
+            || (!includeExcluded && record.excluded) || seen.has(record.id + '@' + record.version)) return false;
+        if (!record.refs.length || ![...record.refs, ...(record.evidenceRefs || [])].every(ref => sourceEligible(state, ref, asOf))) return false;
+        if (!(record.inputRefs || []).every(ref => sourceEligible(state, ref))) return false;
+        const next = new Set(seen).add(record.id + '@' + record.version);
+        if (['knowledge', 'interview', 'overview'].includes(record.kind)) {
+            const owners = state.records.filter(owner => owner.kind === 'entity' && owner.entityId === record.ownerId)
+                .flatMap(owner => owner.asOf <= asOf ? [owner] : state.audit
+                    .filter(entry => entry.recordId === owner.id && entry.before?.asOf <= asOf)
+                    .map(entry => revision(state, owner.id, entry.before.version)));
+            const owner = currentRecords(owners.filter(item => eligible(state, item, { asOf }, next)), item => item.entityId)[0];
+            if (record.ownerId === 'player' || !owner?.isCharacter) return false;
+        }
+        return (record.dependencies || []).every(dependency => eligible(state, revision(state, dependency.id, dependency.version), { asOf, includeExcluded }, next));
+    };
+    const all = (state, options) => state.records.flatMap(record => {
+        if (eligible(state, record, options)) return [record];
+        if (!Number.isFinite(options?.asOf) || record.asOf <= options.asOf) return [];
+        return state.audit.filter(entry => entry.recordId === record.id && entry.before?.asOf <= options.asOf)
+            .map(entry => revision(state, record.id, entry.before.version)).filter(candidate => eligible(state, candidate, options))
+            .sort((a, b) => b.asOf - a.asOf || b.version - a.version).slice(0, 1);
+    });
+    return { revision, eligible, all };
+}
+
+test('eligibility through lookups answers exactly as scanning every record and audit entry does', () => {
+    const { state } = giftHistory();
+    putRecord(state, { ...state.records.find(record => record.id === 'knowledge:gift'), text: 'Mara suspected the gift was pity.',
+        origin: 'author', authorOverride: true, createdAt: Date.now() });
+    putRecord(state, { ...state.records.find(record => record.id === 'event:gift'), excluded: true, origin: 'author', authorOverride: true, createdAt: Date.now() });
+    state.records.find(record => record.kind === 'overview').status = 'invalidated';
+    const reference = scanningEligibility();
+    const everyVersion = [...state.records, ...state.audit.map(entry => entry.before).filter(Boolean)];
+    assert.ok(state.audit.length >= 4 && everyVersion.length > state.records.length, 'a history with older versions');
+    const key = record => record && record.id + '@' + record.version;
+    for (const asOf of [Infinity, -1, 0, 1, 2, 3, 4, 5, 6, 9]) for (const includeExcluded of [false, true]) {
+        const options = { asOf, includeExcluded };
+        assert.deepEqual(eligibleRecords(state, options).map(key), reference.all(state, options).map(key), JSON.stringify(options));
+        for (const record of everyVersion) assert.equal(recordEligible(state, record, options), reference.eligible(state, record, options), key(record) + JSON.stringify(options));
+    }
+    assert.deepEqual(eligibleRecords(state).map(key), reference.all(state).map(key));
+    for (const record of state.records) for (const version of [0, 1, 2, 3, 4, 9]) {
+        assert.equal(key(recordRevision(state, record.id, version)), key(reference.revision(state, record.id, version)), record.id + '@' + version);
+    }
+    assert.equal(recordRevision(state, 'missing', 1), reference.revision(state, 'missing', 1));
+    // Older versions whose changes were all historical, or whose wording did not change, are found; a real correction hides them.
+    const crafted = structuredClone(state);
+    const template = crafted.records.find(record => record.id === 'event:gift');
+    const version = (id, number, extra = {}) => ({ ...structuredClone(template), id, version: number, excluded: false, status: 'active', text: 'wording ' + number, ...extra });
+    const history = (id, texts, historical, extra = []) => {
+        const versions = texts.map((text, index) => version(id, index + 1, { text, ...extra[index] }));
+        crafted.records.push(versions.at(-1));
+        versions.slice(0, -1).forEach((before, index) => crafted.audit.push({ id: id + index, recordId: id, before, afterVersion: index + 2, historical: historical[index], action: 'generated', at: 1 }));
+    };
+    history('craft:historical', ['one', 'two', 'three'], [true, true]);
+    history('craft:mixed', ['one', 'two', 'three'], [true, false]);
+    history('craft:same', ['same', 'same', 'same'], [false, false], [{ status: 'background' }, { status: 'resolved' }]);
+    crafted.records.push({ ...version('craft:dependent', 1), dependencies: [{ id: 'craft:historical', version: 1 }, { id: 'craft:same', version: 1 }, { id: 'craft:mixed', version: 1 }] });
+    crafted.records.push({ ...version('craft:dependent2', 1), dependencies: [{ id: 'craft:historical', version: 2 }, { id: 'craft:same', version: 2 }] });
+    const craftedLookups = eligibilityLookups(crafted);
+    const found = id => [1, 2, 3].map(number => key(recordRevision(crafted, id, number)));
+    assert.deepEqual(found('craft:historical'), ['craft:historical@1', 'craft:historical@2', 'craft:historical@3'], 'changes that are all historical keep the older versions');
+    assert.deepEqual(found('craft:mixed'), [null, null, 'craft:mixed@3'], 'a correction among the changes hides them');
+    assert.deepEqual(found('craft:same'), ['craft:same@1', 'craft:same@2', 'craft:same@3'], 'unchanged wording keeps them whatever else changed');
+    for (const id of ['craft:historical', 'craft:mixed', 'craft:same']) for (const number of [0, 1, 2, 3, 4]) {
+        assert.equal(key(recordRevision(crafted, id, number)), key(reference.revision(crafted, id, number)), id + '@' + number);
+        assert.equal(key(recordRevisionIn(crafted, craftedLookups, id, number)), key(reference.revision(crafted, id, number)), id + '@' + number + ' from the tables');
+    }
+    for (const record of crafted.records.filter(item => item.id.startsWith('craft:'))) for (const options of [{}, { includeExcluded: true }, { asOf: 0 }]) {
+        const expected = reference.eligible(crafted, record, options);
+        assert.equal(recordEligible(crafted, record, options), expected, record.id);
+        assert.equal(recordEligibleIn(crafted, craftedLookups, record, options), expected, record.id + ' from the tables');
+    }
+    assert.deepEqual(eligibleRecords(crafted).map(key), reference.all(crafted).map(key));
+    assert.equal(recordEligible(crafted, crafted.records.find(item => item.id === 'craft:dependent2')), true);
+    assert.equal(recordEligible(crafted, crafted.records.find(item => item.id === 'craft:dependent')), false, 'a dependency on a hidden version fails');
+    // The same answers from the tables that eligibleRecords, inspection and a reply's context share.
+    const lookups = eligibilityLookups(state);
+    for (const options of [{}, { asOf: 2 }, { asOf: 5, includeExcluded: true }]) {
+        for (const record of everyVersion) assert.equal(recordEligibleIn(state, lookups, record, options), reference.eligible(state, record, options), key(record));
+    }
+    for (const record of state.records) for (const version of [0, 1, 2, 3, 4, 9]) {
+        assert.equal(key(recordRevisionIn(state, lookups, record.id, version)), key(reference.revision(state, record.id, version)), record.id + '@' + version);
+    }
+});
+
+test('eligibility lookups are built once for a pass over many records and never for asking about one', () => {
+    const { state } = giftHistory();
+    const documents = searchDocuments(state, Infinity, { ...defaultConfig() }).filter(document => document.recordId);
+    assert.ok(documents.length >= 4);
+    // A caller that asks about one record at a time scans, as it always did: no table is built however often it asks.
+    const builds = () => eligibilityStats.builds;
+    const start = builds();
+    for (let round = 0; round < 20; round++) for (const record of state.records) { recordEligible(state, record); recordRevision(state, record.id, 1); }
+    assert.equal(builds() - start, 0);
+    // One pass over every record builds one table set.
+    const before = builds();
+    eligibleRecords(state);
+    assert.equal(builds() - before, 1);
+    // One reply's context builds a few table sets (character references, overviews, names, the documents) and the
+    // documents themselves share one: it does not grow with the number of memories offered.
+    const crowded = Array.from({ length: 40 }, () => documents).flat();
+    const small = builds();
+    assembleContext(state, documents, { counter, memoryTokens: 100000 });
+    const forSmall = builds() - small;
+    const large = builds();
+    assembleContext(state, crowded, { counter, memoryTokens: 100000 });
+    const perExtraDocument = (builds() - large - forSmall) / (crowded.length - documents.length);
+    assert.ok(forSmall <= 4 + 2 * documents.filter(document => ['interview', 'overview'].includes(document.kind)).length, 'builds for a reply: ' + forSmall);
+    // Only an interview or overview asks for the overviews again (two passes each); plain memories add none.
+    assert.ok(perExtraDocument <= 2, 'builds per extra document: ' + perExtraDocument);
+    const plain = documents.filter(document => !['interview', 'overview'].includes(document.kind));
+    const base = builds();
+    assembleContext(state, Array.from({ length: 80 }, () => plain).flat(), { counter, memoryTokens: 100000 });
+    assert.ok(builds() - base <= 4, 'eighty plain memories build ' + (builds() - base));
+});
+
+function batchConfig(directories, { batchMessages = 4, pawspective = false } = {}) {
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.roles.pawspective.enabled = pawspective;
+    config.batchMessages = batchMessages;
+    config.autoUpdate = false;
+    saveConfig(directories, config);
+    return config;
+}
+
+const emptyExtraction = { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+
+test('while a model request is out, a batch holds the text only of the sources it sent', async t => {
+    const { directories } = disk(t, bulkMessages(30));
+    batchConfig(directories);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let held;
+    let seen;
+    processingHooks.beforeModelRequest = state => { held = state; };
+    t.after(() => { processingHooks.beforeModelRequest = null; });
+    await processBatch(directories, locator, {}, async (_directories, _config, _role, _contract, input) => {
+        const sent = new Set(input.sources.map(source => source.id));
+        const revisions = ([id]) => held.sources[id].revisions;
+        const unsent = Object.entries(held.sources).filter(([id]) => !sent.has(id));
+        seen = {
+            sent: sent.size, unsent: unsent.length,
+            textInUnsent: unsent.flatMap(revisions).filter(revision => ['text', 'storyText', 'trackerOutputs'].some(key => key in revision)).length,
+            revisionsKept: unsent.flatMap(revisions).every(revision => typeof revision.hash === 'string' && Number.isInteger(revision.sequence) && typeof revision.enabled === 'boolean'),
+            textInSent: [...sent].every(id => held.sources[id].revisions.every(revision => typeof revision.text === 'string')),
+            vectors: Object.hasOwn(held.index, 'vectors'),
+            memory: Array.isArray(held.records) && Array.isArray(held.audit) && held.castHistory !== undefined,
+        };
+        return emptyExtraction;
+    });
+    assert.deepEqual(seen, { sent: 5, unsent: 26, textInUnsent: 0, revisionsKept: true, textInSent: true, vectors: false, memory: true });
+    assert.equal(pendingSources(await loadCurrentState(directories, locator), readConfig(directories)).length, 26, 'and the batch still completes');
+});
+
+test('a worker running several batches holds nothing of the previous batch while the next model request is out', async t => {
+    const v8 = await import('node:v8');
+    const vm = await import('node:vm');
+    v8.setFlagsFromString('--expose_gc');
+    const collect = vm.runInNewContext('gc');
+    const { directories } = disk(t, bulkMessages(30));
+    batchConfig(directories);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const results = [];
+    processingHooks.afterBatch = result => { results.push(new WeakRef(result)); };
+    t.after(() => { processingHooks.afterBatch = null; });
+    let requests = 0;
+    let released = null;
+    await startProcessing(directories, locator, { all: true, checkpoint: true }, async () => {
+        requests++;
+        if (requests === 3) {
+            await new Promise(resolve => setImmediate(resolve));
+            collect(); collect();
+            released = results.slice(0, 2).map(reference => reference.deref() === undefined);
+        }
+        return emptyExtraction;
+    });
+    await waitForProcessing(directories, locator);
+    assert.ok(requests >= 3);
+    assert.deepEqual(released, [true, true], 'earlier batches are not kept alive by the worker');
+});
+
+test('recall builds passage documents only for what it can rank, and builds the rest when the selector asks for evidence', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    const complete = { status: 'complete', selections: [], rejections: [], needsEvidence: [] };
+    const built = [];
+    let requests = 0;
+    const call = async (_directories, _config, role, _contract, input) => {
+        built.push(searchStats.passageDocuments);
+        requests++;
+        const value = requests === 1 && input.candidates.length ? { ...complete, status: 'needs_evidence', needsEvidence: [input.candidates[0].recordId] } : complete;
+        return { value, usage: { role } };
+    };
+    const start = searchStats.passageDocuments;
+    await recall(directories, locator, { query: 'gift' }, { call, scheduleBackground: false });
+    assert.equal(requests, 2, 'the selector asked for evidence');
+    assert.equal(built[0] - start, 0, 'no passage document was built to put the first question to the selector');
+    assert.ok(built[1] - start > 0, 'the passages were built when the evidence was wanted');
+    // Switching passages on offers them, so they are built up front.
+    saveConfig(directories, { ...readConfig(directories), retrieval: { ...readConfig(directories).retrieval, includePassages: true } });
+    built.length = 0;
+    requests = 5;
+    const before = searchStats.passageDocuments;
+    await recall(directories, locator, { query: 'gift' }, { call, scheduleBackground: false });
+    assert.ok(built[0] - before > 0);
+});
+
+test('stamps cover a group chat: its folder of groups, each group file and its members\' cards', async t => {
+    const group = normalizeLocator({ group: true, chat: 'Group' });
+    const { directories } = disk(t);
+    const { write: writeCard } = await import('../src/character-card-parser.js');
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    for (const name of ['Mara', 'Kit']) fs.writeFileSync(path.join(directories.characters, name + '.png'), writeCard(png, JSON.stringify({ name, description: name + ' card' })));
+    fs.writeFileSync(chatPath(directories, group), [{ chat_metadata: {} }, ...bulkMessages(80)].map(row => JSON.stringify(row)).join('\n'));
+    const groupFile = path.join(directories.groups, 'group.json');
+    writeJson(groupFile, { id: 'group', chat_id: group.chat, members: ['Mara.png'] });
+    const members = () => loadCurrentStateSync(directories, group).contextSources.filter(ref => ref.id.startsWith('character:') && ref.id !== 'character:player').length;
+    const full = () => countWork(() => loadCurrentStateSync(directories, group)).counts.stringifyCalls >= 80;
+    assert.equal(members(), 1);
+    assert.equal(full(), false, 'unchanged: the shortcut');
+    // Edited in place, so the folder itself does not change: only the file's own stamp can tell.
+    fs.writeFileSync(groupFile, JSON.stringify({ id: 'group', chat_id: group.chat, members: ['Mara.png', 'Kit.png'] }));
+    assert.equal(full(), true, 'a changed group file reconciles');
+    assert.equal(members(), 2);
+    assert.equal(full(), false);
+    writeJson(path.join(directories.groups, 'another.json'), { id: 'another', chat_id: 'Elsewhere', chats: [group.chat], members: ['Kit.png'] });
+    assert.equal(full(), true, 'a new group file in the folder reconciles');
+    assert.equal(full(), false);
+    fs.rmSync(groupFile);
+    assert.equal(full(), true, 'a removed group file reconciles');
+    assert.equal(members(), 1);
+    assert.equal(full(), false);
+});
+
+test('a chat with saved tracker results from before the category snapshot still takes the shortcut, and notices a change to the Agent library', async t => {
+    const { COMPANION_RESULTS_EXTRA_KEY } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+    const messages = bulkMessages(80);
+    messages[3].extra = { [COMPANION_RESULTS_EXTRA_KEY]: { 'tpl-achievements-tracker': { status: 'done', content: 'Achievement unlocked: patience', agentName: 'Achievements' } } };
+    const { directories } = disk(t, messages);
+    const agents = path.join(directories.root, 'InChatAgents');
+    fs.mkdirSync(agents, { recursive: true });
+    const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/achievements-tracker.json', import.meta.url), 'utf8'));
+    const agentFile = path.join(agents, 'tpl-achievements-tracker.json');
+    const trackerText = state => JSON.stringify(state.sources[state.timeline[3].id].revisions.at(-1));
+    const full = () => countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls >= 80;
+    assert.doesNotMatch(trackerText(loadCurrentStateSync(directories, locator)), /Achievement unlocked/, 'without the agent the note is not a tracker note');
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), false, 'unchanged: the shortcut, although the chat has legacy tracker results');
+    fs.writeFileSync(agentFile, JSON.stringify(template));
+    assert.equal(full(), true, 'adding the agent to the library reconciles');
+    assert.match(trackerText(loadCurrentStateSync(directories, locator)), /Achievement unlocked/);
+    assert.equal(full(), false);
+    fs.writeFileSync(agentFile, JSON.stringify({ ...template, category: 'companion' }));
+    assert.equal(full(), true, 'editing it reconciles');
+    assert.equal(full(), false);
+    fs.rmSync(agentFile);
+    assert.equal(full(), true, 'removing it reconciles');
+});
+
+test('a file stamped after it was read is trusted only once it was quiet before the read began, and a mismatch is never trusted', t => {
+    const { directories } = disk(t, bulkMessages(80));
+    directories.files = path.join(directories.root, 'user/files');
+    fs.mkdirSync(directories.files, { recursive: true });
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { attachments: [{ url: '/user/files/note.txt' }] } });
+    const noteFile = path.join(directories.files, 'note.txt');
+    const full = () => countWork(() => loadCurrentStateSync(directories, locator)).counts.stringifyCalls >= 80;
+    fs.writeFileSync(noteFile, 'Fresh note');
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), true, 'a file written just before the read could have been replaced during it: no shortcut yet');
+    letFilesSettle();
+    loadCurrentStateSync(directories, locator);
+    assert.equal(full(), false, 'once the file has been quiet, the shortcut');
+    // A stamp that does not describe the file that was read is dropped.
+    fs.writeFileSync(noteFile, 'Another note');
+    letFilesSettle();
+    const identity = fs.statSync;
+    t.mock.method(fs, 'statSync', (filename, options) => {
+        const stat = identity.call(fs, filename, options);
+        return options?.bigint && String(filename).endsWith('note.txt') ? { ...stat, ino: stat.ino + 1n, isFile: () => true } : stat;
+    });
+    loadCurrentStateSync(directories, locator);
+    t.mock.restoreAll();
+    assert.equal(full(), true, 'the mismatch left nothing to trust');
+});
+
+test('the periodic safety pass of the worker reconciles from scratch instead of taking the shortcut', async t => {
+    const { directories } = disk(t, bulkMessages(80));
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        syncSources(state, bulkMessages(80), []);
+        for (const ref of state.timeline) state.checkpoints[refKey(ref)] = processingVersion(config);
+    });
+    await loadCurrentState(directories, locator);
+    await loadCurrentState(directories, locator);
+    const call = async () => assert.fail('nothing is waiting to be read');
+    const loadsDuring = async () => (await countWork(() => scanProcessing(directories, call))).counts.stringifyCalls;
+    let now = Date.now();
+    t.mock.method(Date, 'now', () => now);
+    await scanProcessing(directories, call);
+    assert.ok(await loadsDuring() < 40, 'a second pass right away skips the story');
+    now += 5 * 60_000;
+    assert.ok(await loadsDuring() < 40, 'five minutes later it still does');
+    now += 11 * 60_000;
+    assert.ok(await loadsDuring() >= 80, 'after ten minutes the safety pass hashes every message even though no input changed');
+});
+
+test('every Mewmory route, a batch, recall and indexing only read the shared state, which stays deeply frozen', async t => {
+    const messages = structuredClone(fixture.messages);
+    let next = 0;
+    ensureMewmoryMessageIds(messages, () => 'frozen-' + next++);
+    const { directories } = disk(t, messages);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    config.batchMessages = 3;
+    for (const [name, role] of Object.entries(config.roles)) Object.assign(role, { enabled: true, endpoint: provider.url, model: name });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const gift = giftHistory().state;
+    mutateState(directories, locator, state => {
+        for (const key of ['records', 'audit', 'overrides', 'castHistory', 'sceneNpcIds']) state[key] = structuredClone(gift[key]);
+        state.enabled = true;
+    });
+    const freeze = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); Object.values(value).forEach(freeze); } };
+    sharedJsonHooks.onParse = freeze;
+    t.after(() => { sharedJsonHooks.onParse = null; });
+    const errors = [];
+    t.mock.method(console, 'error', (...args) => { errors.push(args.map(String).join(' ')); });
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json({ limit: '50mb' }));
+    app.use((request, response, next) => { request.user = { directories, profile: { handle: 'default-user' } }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const post = async (route, body = {}) => {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, ...body }) });
+        return { status: response.status, body: await response.json().catch(() => null) };
+    };
+    const inspect = async () => (await post('/inspect')).body;
+    const statuses = {};
+    const run = async (route, body) => { statuses[route] = (await post(route, typeof body === 'function' ? body(await inspect()) : body)).status; };
+    for (const [route, body] of [
+        ['/config/get'], ['/inspect'], ['/duplicates'], ['/story'], ['/lore'], ['/export'], ['/export/markdown'], ['/estimate'], ['/validate', { fingerprint: 'x' }],
+        ['/character', { entityId: 'npc:mara' }], ['/record/history', { id: 'event:gift' }], ['/message', { index: 2 }], ['/shared'],
+        ['/source/get', current => ({ ref: current.sources[0] })],
+        ['/search', { query: 'gift', mode: 'keyword' }], ['/search', { query: 'gift', mode: 'hybrid' }],
+        ['/recall', { query: 'gift' }], ['/tokens', { texts: ['one two'] }], ['/ask', { question: 'What did Mara do with the gift?' }], ['/conflicts'],
+        ['/prepare', { history: [{ index: 0, text: 'hello' }], tokenizer: {} }],
+        ['/share', { ids: ['event:gift'] }],
+        ['/scene', current => ({ revision: current.revision, activeNpcIds: null })],
+        ['/review/seen', current => ({ revision: current.revision })],
+        ['/record/action', current => ({ revision: current.revision, id: 'event:gift', action: 'pin' })],
+        ['/record/action', current => ({ revision: current.revision, id: 'event:gift', action: 'pin' })],
+        ['/source/exclude', current => ({ revision: current.revision, id: current.sources[0].id, exclude: true })],
+        ['/source/exclude', current => ({ revision: current.revision, id: current.sources[0].id, exclude: false })],
+        ['/record/merge', current => ({ revision: current.revision, keep: 'event:gift', ids: ['event:gift', 'knowledge:gift'] })],
+        ['/index', {}], ['/process', { all: true, background: true }], ['/process/cancel'], ['/restore', current => ({ revision: current.revision, backup: { format: 'mewmory-export-1', state: current }, apply: false })],
+    ]) await run(route, body);
+    await recall(directories, locator, { query: 'gift' }, { call: async (_d, _c, role) => ({ value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } }), scheduleBackground: false });
+    await waitForProcessing(directories, locator);
+    // A batch that runs past its model request to the end, and an index pass over entries that already exist, on frozen parses.
+    // Neither may hide a failure: a batch that fails throws here, and recall reports an index failure as indexError.
+    const pendingBefore = (await inspect()).health.pending;
+    assert.ok(pendingBefore > 0, 'something is left for the batch to read');
+    await processBatch(directories, locator, {}, async () => emptyExtraction);
+    assert.ok((await inspect()).health.pending < pendingBefore, 'the batch committed');
+    await post('/index', {});
+    const entries = Object.keys(readStateShared(directories, locator).index.vectors).length;
+    assert.ok(entries > 0 && Object.isFrozen(readStateShared(directories, locator).index.vectors), 'entries exist and are frozen');
+    assert.equal((await post('/index', {})).status, 200, 'an index pass over existing entries');
+    const indexed = await recall(directories, locator, { query: 'gift' }, { call: async (_d, _c, role) => ({ value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } }), scheduleBackground: false });
+    assert.equal(indexed.inspection.indexError, '', 'recall indexed over existing entries without an error');
+    // Not one request hit a TypeError for editing a frozen object, and the routes that need no model answered.
+    assert.deepEqual(errors.filter(line => /TypeError|read only|not extensible|Cannot (add|assign|delete)/.test(line)), []);
+    for (const route of ['/inspect', '/duplicates', '/story', '/lore', '/export', '/export/markdown', '/estimate', '/character', '/record/history', '/message', '/shared', '/source/get', '/search', '/scene', '/review/seen', '/record/action', '/source/exclude']) {
+        assert.equal(statuses[route], 200, route);
+    }
+    assert.ok(Object.keys(statuses).length >= 30);
+});
+
+test('a background recall keeps the index it found when nothing touched it and respects a reset made while it picked', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding' });
+    Object.assign(config.roles.selector, { enabled: true, endpoint: provider.url, model: 'selector' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const indexed = mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    await updateIndex(indexed, directories, readConfig(directories));
+    mutateState(directories, locator, () => indexed, indexed.revision);
+    const stored = () => Object.keys(readStateShared(directories, locator).index.vectors).length;
+    const before = stored();
+    assert.ok(before > 0);
+    const pick = changeIndex => async (_directories, _config, role) => {
+        changeIndex?.();
+        return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: { role } };
+    };
+    const recallWith = changeIndex => recall(directories, locator, { background: true, query: 'gift' }, { call: pick(changeIndex), scheduleBackground: false });
+    await recallWith();
+    assert.equal(stored(), before, 'an index nobody touched is kept');
+    await recallWith(() => mutateState(directories, locator, state => { state.index = { version: '', vectors: {}, pending: true }; }));
+    assert.equal(stored(), 0, 'a reset made during the pick is not undone by the older snapshot');
 });

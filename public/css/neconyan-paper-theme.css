@@ -18,7 +18,9 @@
 /* Fine, neutral paper fibres: no colour wash or repeating dots over the text.
    Keep the safe-area strips clear so the texture does not cover the fixed
    surfaces iOS samples for its status bar and home indicator. */
-body::after {
+/* Only mounted while the texture is on. It is a fixed blend layer over the whole
+   page, and phones paid for it even at the default (off) setting. */
+:root[data-nn-paper-texture] body::after {
     content: '';
     position: fixed;
     inset: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
@@ -122,7 +124,7 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
 }
 
 /* A weaker layer of the same grain on bubbles, controlled by the same slider. */
-:where(body:not(.nnchat)) .mes::after {
+:root[data-nn-paper-texture] :where(body:not(.nnchat)) .mes::after {
     content: '';
     position: absolute;
     inset: 0;

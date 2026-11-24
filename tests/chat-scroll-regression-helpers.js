@@ -285,6 +285,8 @@ async function quietChatForSmoke(page) {
     });
 }
 
+const pagesSkippingTour = new WeakSet();
+
 export async function openQuietChatForSmoke(page, options = {}) {
     const { chatSaveDelayMs = 0, selectCharacter = true } = options;
     const storage = createMockRoleplayStore(() => null, { realReads: true });
@@ -308,6 +310,18 @@ export async function openQuietChatForSmoke(page, options = {}) {
     await dismissOpenDialogIfPresent(page);
     await quietChatForSmoke(page);
     await waitForChatRenderIdle(page, { idleMs: 500, timeoutMs: 10000, waitForImages: false });
+    // A fresh account opens the first-use tour, which covers menus and panels on phones.
+    // Earlier tests on a shared server usually finish it, so skip it here too.
+    const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    const dismissTour = async () => {
+        await skipTour.click();
+        await skipTour.waitFor({ state: 'hidden' });
+    };
+    if (await skipTour.isVisible()) await dismissTour();
+    if (!pagesSkippingTour.has(page)) {
+        pagesSkippingTour.add(page);
+        await page.addLocatorHandler(skipTour, dismissTour);
+    }
 }
 
 export async function waitForAnimationFrames(page, frameCount = 2) {
@@ -325,9 +339,20 @@ export async function waitForAnimationFrames(page, frameCount = 2) {
  */
 export async function settleCssTransitions(page) {
     await page.evaluate(async () => {
+        // Chromium holds back `finished` for transitions in a subtree hidden
+        // with content-visibility (the chat behind an open drawer), so also
+        // stop waiting once the transition no longer reports itself running.
+        const settled = animation => new Promise(resolve => {
+            animation.finished.then(resolve, resolve);
+            const poll = () => {
+                if (animation.playState === 'running') requestAnimationFrame(poll);
+                else resolve();
+            };
+            requestAnimationFrame(poll);
+        });
         await Promise.all(document.getAnimations()
             .filter(animation => animation instanceof CSSTransition)
-            .map(animation => animation.finished.catch(() => {})));
+            .map(settled));
     });
     await waitForAnimationFrames(page);
 }

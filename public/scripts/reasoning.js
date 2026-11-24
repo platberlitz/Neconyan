@@ -283,6 +283,10 @@ export class ReasoningHandler {
     #activeStreamingTemplate = null;
     /** @type {number} Last time the live reasoning body was rendered */
     #lastReasoningDomRenderAt = 0;
+    /** @type {string?} Reasoning text last rendered into the live body */
+    #renderedReasoningText = null;
+    /** @type {HTMLElement?} Body the text above was rendered into */
+    #renderedReasoningInto = null;
 
     /**
      * True while an inline reasoning prefix has started and its suffix has not arrived.
@@ -588,6 +592,9 @@ export class ReasoningHandler {
             await eventSource.emit(event_types.STREAM_REASONING_DONE, this.reasoning, this.getDuration(), messageId, this.state);
         }
 
+        // Always draw the final body once, even if the text was already on screen.
+        this.#renderedReasoningText = null;
+        this.#renderedReasoningInto = null;
         this.updateDom(messageId);
     }
 
@@ -631,20 +638,29 @@ export class ReasoningHandler {
             // Neconyan: throttle live reasoning DOM work on reduced platforms so large
             // hidden reasoning blocks do not cause aggressive repaint or reload loops.
             const reasoning = trimSpaces(this.reasoningDisplayText ?? this.reasoning);
-            const displayReasoning = messageFormatting(reasoning, '', false, false, messageId, {}, true);
+            // Reasoning is re-rendered on every streaming tick. When the text and the
+            // body it belongs to have not changed, formatting it again only repeats work.
+            const alreadyRendered = reasoning === this.#renderedReasoningText
+                && this.messageReasoningContentDom === this.#renderedReasoningInto;
 
-            if (power_user.stream_fade_in) {
-                applyStreamFadeIn(this.messageReasoningContentDom, displayReasoning, {
-                    bypassFadeIn: shouldReduceStreamingDomWork(navigatorRef, {
-                        iosEnabled: power_user.ios_webkit_disable_stream_fade_in,
-                        androidEnabled: power_user.android_disable_stream_fade_in,
-                    }),
-                });
-            } else {
-                applyStreamDomPatch(this.messageReasoningContentDom, displayReasoning);
+            if (!alreadyRendered) {
+                const displayReasoning = messageFormatting(reasoning, '', false, false, messageId, {}, true);
+
+                if (power_user.stream_fade_in) {
+                    applyStreamFadeIn(this.messageReasoningContentDom, displayReasoning, {
+                        bypassFadeIn: shouldReduceStreamingDomWork(navigatorRef, {
+                            iosEnabled: power_user.ios_webkit_disable_stream_fade_in,
+                            androidEnabled: power_user.android_disable_stream_fade_in,
+                        }),
+                    });
+                } else {
+                    applyStreamDomPatch(this.messageReasoningContentDom, displayReasoning);
+                }
+
+                this.#lastReasoningDomRenderAt = now;
+                this.#renderedReasoningText = reasoning;
+                this.#renderedReasoningInto = this.messageReasoningContentDom;
             }
-
-            this.#lastReasoningDomRenderAt = now;
         }
 
         // Update tooltip for hidden reasoning edit
@@ -1310,6 +1326,7 @@ function setReasoningEventHandlers() {
         const textarea = document.createElement('textarea');
         const reasoningBlock = messageBlock.find('.mes_reasoning');
         textarea.classList.add('reasoning_edit_textarea');
+        messageBlock.closest('.mes').addClass('is_reasoning_editing');
         textarea.value = reasoning;
         $(textarea).insertBefore(reasoningBlock);
 
@@ -1362,6 +1379,7 @@ function setReasoningEventHandlers() {
         let newReasoning = String(textarea.val());
         newReasoning = substituteParams(newReasoning);
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
         if (newReasoning === message.extra.reasoning) {
             return;
         }
@@ -1387,6 +1405,7 @@ function setReasoningEventHandlers() {
         const { messageBlock } = getMessageFromJquery(this);
         const textarea = messageBlock.find('.reasoning_edit_textarea');
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
 
         messageBlock.find('.mes_reasoning_edit_cancel:visible').trigger('click');
 
@@ -1445,6 +1464,7 @@ function setReasoningEventHandlers() {
         updateMessageBlock(messageId, message);
         const textarea = messageBlock.find('.reasoning_edit_textarea');
         textarea.remove();
+        messageBlock.closest('.mes').removeClass('is_reasoning_editing');
         await eventSource.emit(event_types.MESSAGE_REASONING_DELETED, messageId);
     });
 

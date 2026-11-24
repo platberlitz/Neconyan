@@ -18,7 +18,7 @@ import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-bu
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
-import { requestAndroidUpdate } from './android-native-bridge.js';
+import { requestAndroidDataBackup, requestAndroidUpdate } from './android-native-bridge.js';
 import {
     PERSONA_APPENDICES_DEFAULT_SCOPE_KEY,
     PERSONA_APPENDICES_SELECTIONS_KEY,
@@ -49,6 +49,7 @@ import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_PAGE_TABS } from './neconyan-simple-mode.js';
 import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
+import { uiText } from './ui-text.js';
 import {
     BOTTOM_CHAT_BAR_BUTTON_LABELS,
     readBottomChatBarLayout,
@@ -179,7 +180,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261014e-tool-pages', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261130-authors-note-fullscreen', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261117-persona-label-wrap', id: 'deferred-personas-css' },
@@ -261,8 +262,9 @@ let nnComposerControlsSyncQueued = false;
 let nnStorageFlushTimer = 0;
 let nnStorageFlushEventsBound = false;
 let nnMessageActionEventsBound = false;
+let nnMessageActionExtensionSignature = null;
 let nnPendingBottomChatScrollCancel = null;
-let nnSearchShortcutPreFocusAt = 0;
+let nnSearchShortcutPreFocusPending = false;
 const nnStorageCache = new Map();
 const nnStoragePendingWrites = new Map();
 const NN_EXTENSION_ALIASES = {
@@ -318,8 +320,11 @@ function activateShortcutTarget(target) {
         const searchState = getUniversalSearchState();
 
         if (searchState.expanded) {
-            if (performance.now() - nnSearchShortcutPreFocusAt < NN_MOBILE_ACTION_DEBOUNCE_MS * 2) {
-                nnSearchShortcutPreFocusAt = 0;
+            // The press that opened search on pointerdown ends in this click. A slow
+            // finger or busy phone can take well over a debounce window to get here,
+            // so it refocuses the input instead of closing what it just opened.
+            if (nnSearchShortcutPreFocusPending) {
+                nnSearchShortcutPreFocusPending = false;
                 focusUniversalSearchInput(searchState.input);
                 return;
             }
@@ -543,7 +548,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261120-simple-guided';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261130-authors-note-fullscreen';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1612,6 +1617,10 @@ const nnState = {
         searchApplyToken: 0,
         refreshTimer: 0,
         refreshToken: 0,
+        connectionRefreshTimer: 0,
+        connectionRefreshToken: 0,
+        renderedListing: null,
+        renderedFiles: null,
         pendingSearchScroll: false,
         isApplyingSearch: false,
         chatObserver: null,
@@ -1680,6 +1689,9 @@ const nnState = {
         lastModifiedMs: 0,
         thumbnailLastModifiedMs: 0,
         thumbnailSettingsLoaded: false,
+        memoryLastModifiedMs: 0,
+        memorySettingsLoaded: false,
+        memoryState: null,
         lastStatusData: null,
         busy: false,
         restarting: false,
@@ -3772,6 +3784,7 @@ function setUniversalSearchOpenState(isOpen, { focusInput = false } = {}) {
     }
 
     if (!nextOpenState) {
+        nnSearchShortcutPreFocusPending = false;
         cancelSavedSearch();
         searchState.results?.classList.remove('is-visible');
         if (wasOpen) {
@@ -6230,6 +6243,9 @@ function applyPaperTextureOpacity() {
     const enabled = nnState.paperTextureEnabled;
     const opacity = enabled ? normalizePaperTextureOpacity(nnState.paperTextureOpacity) / 100 : 0;
     document.documentElement.style.setProperty('--sb-paper-texture-opacity', opacity.toFixed(2));
+    // The texture layers are position:fixed blend layers. Creating them while the
+    // texture is off (the default) costs paint and compositing on every phone.
+    document.documentElement.toggleAttribute('data-nn-paper-texture', enabled && opacity > 0);
 }
 
 function setPaperTextureEnabled(enabled, { persist = true } = {}) {
@@ -6407,6 +6423,15 @@ function normalizeExtensionName(name) {
     return String(name || '').replace(/^third-party\//i, '').toLowerCase();
 }
 
+function getDisabledExtensionsSignature() {
+    const disabledExtensions = getSillyTavernContext()?.extensionSettings?.disabledExtensions;
+    if (!Array.isArray(disabledExtensions)) {
+        return '';
+    }
+
+    return disabledExtensions.map(normalizeExtensionName).sort().join('\u001f');
+}
+
 function syncMessageActionExtensionVisibility(root = document) {
     if (typeof root === 'number') {
         root = document.querySelector(`.mes[mesid="${root}"]`) || document;
@@ -6414,6 +6439,16 @@ function syncMessageActionExtensionVisibility(root = document) {
 
     if (!root?.querySelectorAll) {
         return;
+    }
+
+    if (root === document) {
+        // A settings save usually leaves extension enablement alone. Walking every
+        // message button for an unchanged list is pure work, so remember the list.
+        const signature = getDisabledExtensionsSignature();
+        if (signature === nnMessageActionExtensionSignature) {
+            return;
+        }
+        nnMessageActionExtensionSignature = signature;
     }
 
     root.querySelectorAll('[data-requires-extension]').forEach(button => {
@@ -6619,7 +6654,10 @@ async function handleClearCookiesAndCacheClick(event) {
         const clearedCookieCount = clearAllBrowserCookies();
         globalThis.toastr?.success?.('Cookies and cache cleared. Reloading Neconyan...', 'Cookies cleared');
         console.info(`[Cache] Expired ${clearedCookieCount} browser cookies and queued ${serverCookieResult?.expirationAttempts ?? 0} server cookie expirations before reload`);
-        window.setTimeout(() => window.location.reload(), 1000);
+        window.setTimeout(() => {
+            globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'cache-cleared' });
+            window.location.reload();
+        }, 1000);
     } catch (error) {
         console.error('Failed to clear cookies and cache', error);
         globalThis.toastr?.error?.(String(error?.message || error), 'Clear failed');
@@ -7389,23 +7427,34 @@ function bindSearchShortcutPreFocus(button, targetGetter) {
         return;
     }
 
-    const openAndFocusSearch = () => {
+    const openAndFocusSearch = (event) => {
         if (!isSearchShortcutTarget(targetGetter())) {
             return;
         }
 
         const searchState = getUniversalSearchState();
         if (searchState.expanded) {
+            // A fresh press on open search closes it on click. touchstart belongs to
+            // the same press as the pointerdown before it, so only pointerdown resets.
+            if (event?.type === 'pointerdown') {
+                nnSearchShortcutPreFocusPending = false;
+            }
             return;
         }
 
         closeAllDropdowns({ except: 'search' });
         setUniversalSearchOpenState(true, { focusInput: true });
-        nnSearchShortcutPreFocusAt = performance.now();
+        nnSearchShortcutPreFocusPending = true;
+    };
+
+    const cancelPreFocus = () => {
+        nnSearchShortcutPreFocusPending = false;
     };
 
     button.addEventListener('pointerdown', openAndFocusSearch, { passive: true });
     button.addEventListener('touchstart', openAndFocusSearch, { passive: true });
+    button.addEventListener('pointercancel', cancelPreFocus, { passive: true });
+    button.addEventListener('touchcancel', cancelPreFocus, { passive: true });
 }
 
 function createTopBarIconButton({ id = '', icon, title, className = '', label = '' }, onClick) {
@@ -7863,10 +7912,12 @@ function failChatFileListing(throwOnError, message) {
 // the chat listing changes, so a caller after a chat rename, create, delete or switch
 // never receives a listing that was captured before the change.
 let characterChatFileListingGeneration = 0;
+let chatbarListingRevision = 0;
 const characterChatFileListingsInFlight = new Map();
 
 function invalidateInFlightCharacterChatFileListings() {
     characterChatFileListingGeneration += 1;
+    chatbarListingRevision += 1;
     characterChatFileListingsInFlight.clear();
 }
 
@@ -8522,6 +8573,12 @@ function populateChatSelector(select, chatFiles, chatContext, placeholder) {
 
         return map;
     }, new Map()).values()).sort((left, right) => left.fileName.localeCompare(right.fileName));
+
+    const signature = JSON.stringify([placeholder, currentValue, uniqueChats.map(chat => [chat.fileName, chat.tokenEstimate])]);
+    if (select.dataset.nnChatSelectorSignature === signature) {
+        return;
+    }
+    select.dataset.nnChatSelectorSignature = signature;
 
     select.replaceChildren();
 
@@ -9643,6 +9700,108 @@ function bindConnectionProfileSourceObserver() {
     bindConnectionProfileSourceElement(document.getElementById('connection_profiles'));
 }
 
+function getChatbarContextKey(chatContext) {
+    return JSON.stringify([
+        chatContext.group?.id ?? null,
+        chatContext.character?.avatar ?? null,
+        chatContext.chatId ?? '',
+        Boolean(chatContext.canBrowseChats),
+        Boolean(chatContext.canStartNewChat),
+        Boolean(chatContext.hasChat),
+    ]);
+}
+
+function areChatFileListsVisible() {
+    return isChatSidebarOpen() || (isMobileViewport() && Boolean(getChatbarState().mobileToolsOpen));
+}
+
+function syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText) {
+    const connectionProfilesSource = document.getElementById('connection_profiles');
+    const hasConnectionProfiles = connectionProfilesSource instanceof HTMLSelectElement;
+    const connectionMirrorState = nnPresetApiSyncLifecycle.connectionProfiles.resolveMirrorState({
+        hasConnectionProfiles,
+        isConnectionStripOpen: isConnectionStripOpen(),
+        hasActiveConnectButton: hasConnectionProfiles && Boolean(resolveActiveApiConnectButton()),
+    });
+
+    if (desktopRefs) {
+        desktopRefs.toggleConnectionButton.hidden = !connectionMirrorState.shouldShowToggle;
+        desktopRefs.connectionStrip.hidden = !connectionMirrorState.shouldShowDesktopStrip;
+    }
+
+    if (connectionMirrorState.shouldCloseDesktopStrip) {
+        setConnectionStripOpenState(false);
+    }
+
+    if (connectionMirrorState.shouldClearMirrors) {
+        if (desktopRefs) {
+            if (desktopRefs.connectionSelect.childElementCount) {
+                desktopRefs.connectionSelect.replaceChildren();
+            }
+            if (desktopRefs.connectionStatus.textContent) {
+                desktopRefs.connectionStatus.textContent = '';
+            }
+            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
+        }
+
+        if (mobileRefs?.connectionSection instanceof HTMLElement) {
+            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
+            if (mobileRefs.connectionSelect.childElementCount) {
+                mobileRefs.connectionSelect.replaceChildren();
+            }
+            if (mobileRefs.connectionStatus.textContent) {
+                mobileRefs.connectionStatus.textContent = '';
+            }
+        }
+    } else {
+        const optionsMarkup = connectionProfilesSource.innerHTML;
+        if (desktopRefs) {
+            if (desktopRefs.connectionSelect.innerHTML !== optionsMarkup) {
+                desktopRefs.connectionSelect.innerHTML = optionsMarkup;
+            }
+            desktopRefs.connectionSelect.value = connectionProfilesSource.value;
+            if (desktopRefs.connectionStatus.textContent !== connectionStatusText) {
+                desktopRefs.connectionStatus.textContent = connectionStatusText;
+            }
+            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
+        }
+
+        if (mobileRefs?.connectionSection instanceof HTMLElement) {
+            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
+            if (mobileRefs.connectionSelect.innerHTML !== optionsMarkup) {
+                mobileRefs.connectionSelect.innerHTML = optionsMarkup;
+            }
+            mobileRefs.connectionSelect.value = connectionProfilesSource.value;
+            if (mobileRefs.connectionStatus.textContent !== connectionStatusText) {
+                mobileRefs.connectionStatus.textContent = connectionStatusText;
+            }
+        }
+    }
+}
+
+async function refreshChatbarConnectionState() {
+    const chatbarState = getChatbarState();
+    const refreshToken = ++chatbarState.connectionRefreshToken;
+    const desktopRefs = getChatDesktopRefs();
+    const mobileRefs = getChatMobileRefs();
+
+    if (!desktopRefs && !mobileRefs) {
+        return;
+    }
+
+    const connectionStatusText = await getConnectionStatusText();
+
+    if (refreshToken !== chatbarState.connectionRefreshToken) {
+        return;
+    }
+
+    syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText);
+
+    if (desktopRefs) {
+        setButtonPressed(desktopRefs.toggleConnectionButton, isConnectionStripOpen());
+    }
+}
+
 async function refreshChatbarState() {
     const chatbarState = getChatbarState();
     const refreshToken = ++chatbarState.refreshToken;
@@ -9654,6 +9813,18 @@ async function refreshChatbarState() {
     }
 
     const chatContext = getChatUiContext();
+    const contextKey = getChatbarContextKey(chatContext);
+    const listsVisible = areChatFileListsVisible();
+
+    // With both chat lists closed, the chat bar only shows the current chat name and
+    // the buttons' enabled state. Neither changes while a reply streams, so a refresh
+    // that would repeat the same list request and the same option rebuild can stop here.
+    if (!listsVisible
+        && chatbarState.renderedListing?.contextKey === contextKey
+        && chatbarState.renderedListing?.revision === chatbarListingRevision) {
+        return;
+    }
+
     const files = await getChatFilesForContext(chatContext);
     const connectionStatusText = await getConnectionStatusText();
 
@@ -9691,59 +9862,36 @@ async function refreshChatbarState() {
         setButtonDisabled(mobileRefs.searchInput, !chatContext.hasChat);
     }
 
-    const connectionProfilesSource = document.getElementById('connection_profiles');
-    const hasConnectionProfiles = connectionProfilesSource instanceof HTMLSelectElement;
-    const connectionMirrorState = nnPresetApiSyncLifecycle.connectionProfiles.resolveMirrorState({
-        hasConnectionProfiles,
-        isConnectionStripOpen: isConnectionStripOpen(),
-        hasActiveConnectButton: hasConnectionProfiles && Boolean(resolveActiveApiConnectButton()),
-    });
+    syncChatbarConnectionMirror(desktopRefs, mobileRefs, connectionStatusText);
 
-    if (desktopRefs) {
-        desktopRefs.toggleConnectionButton.hidden = !connectionMirrorState.shouldShowToggle;
-        desktopRefs.connectionStrip.hidden = !connectionMirrorState.shouldShowDesktopStrip;
+    const filesSignature = JSON.stringify([chatContext.chatId, files.map(chat => [
+        chat.fileName,
+        chat.tokenEstimate,
+        chat.preview,
+        chat.lastMessage,
+        chat.fileSize,
+        chat.chatItems,
+    ])]);
+    const renderedFiles = chatbarState.renderedFiles ?? {};
+
+    if (isChatSidebarOpen() && renderedFiles.sidebarSignature !== filesSignature) {
+        renderChatFiles(getChatSidebarRefs()?.list, files, chatContext.chatId, {
+            onSelect: chatId => openChatById(chatId),
+        });
+        renderedFiles.sidebarSignature = filesSignature;
     }
 
-    if (connectionMirrorState.shouldCloseDesktopStrip) {
-        setConnectionStripOpenState(false);
+    if (isMobileViewport() && chatbarState.mobileToolsOpen && renderedFiles.mobileSignature !== filesSignature) {
+        renderChatFiles(mobileRefs?.recentList, files, chatContext.chatId, {
+            compact: true,
+            onSelect: chatId => openChatById(chatId, { closeMobileTools: true }),
+        });
+        renderedFiles.mobileSignature = filesSignature;
     }
 
-    if (connectionMirrorState.shouldClearMirrors) {
-        if (desktopRefs) {
-            desktopRefs.connectionSelect.replaceChildren();
-            desktopRefs.connectionStatus.textContent = '';
-            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
-        }
+    chatbarState.renderedFiles = renderedFiles;
 
-        if (mobileRefs?.connectionSection instanceof HTMLElement) {
-            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
-            mobileRefs.connectionSelect.replaceChildren();
-            mobileRefs.connectionStatus.textContent = '';
-        }
-    } else {
-        const optionsMarkup = connectionProfilesSource.innerHTML;
-        if (desktopRefs) {
-            desktopRefs.connectionSelect.innerHTML = optionsMarkup;
-            desktopRefs.connectionSelect.value = connectionProfilesSource.value;
-            desktopRefs.connectionStatus.textContent = connectionStatusText;
-            setButtonDisabled(desktopRefs.connectionConnectButton, connectionMirrorState.shouldDisableConnectButton);
-        }
-
-        if (mobileRefs?.connectionSection instanceof HTMLElement) {
-            mobileRefs.connectionSection.hidden = !connectionMirrorState.shouldShowMobileSection;
-            mobileRefs.connectionSelect.innerHTML = optionsMarkup;
-            mobileRefs.connectionSelect.value = connectionProfilesSource.value;
-            mobileRefs.connectionStatus.textContent = connectionStatusText;
-        }
-    }
-
-    renderChatFiles(getChatSidebarRefs()?.list, files, chatContext.chatId, {
-        onSelect: chatId => openChatById(chatId),
-    });
-    renderChatFiles(mobileRefs?.recentList, files, chatContext.chatId, {
-        compact: true,
-        onSelect: chatId => openChatById(chatId, { closeMobileTools: true }),
-    });
+    chatbarState.renderedListing = { contextKey, revision: chatbarListingRevision };
 
     if (desktopRefs) {
         setButtonPressed(desktopRefs.toggleSidebarButton, isChatSidebarOpen());
@@ -9759,6 +9907,19 @@ async function refreshChatbarState() {
     } else if (getSearchTerms().length) {
         scheduleChatSearchHighlight({ scrollToFirst: false });
     }
+}
+
+function scheduleChatbarConnectionRefresh(delay = 0) {
+    const chatbarState = getChatbarState();
+    const safeDelay = Math.max(0, Number(delay) || 0);
+
+    window.clearTimeout(chatbarState.connectionRefreshTimer);
+    chatbarState.connectionRefreshTimer = window.setTimeout(() => {
+        chatbarState.connectionRefreshTimer = 0;
+        void refreshChatbarConnectionState().catch(error => {
+            console.warn('[Neconyan] Failed to refresh chat tools connection state.', error);
+        });
+    }, safeDelay);
 }
 
 function scheduleChatbarRefresh(delay = 0) {
@@ -9837,6 +9998,7 @@ function bindChatbarEvents() {
     }
 
     const refresh = () => scheduleChatbarRefresh(0);
+    const refreshConnection = () => scheduleChatbarConnectionRefresh(0);
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
@@ -9852,6 +10014,10 @@ function bindChatbarEvents() {
         eventTypes.MESSAGE_DELETED,
         eventTypes.MESSAGE_SWIPED,
         eventTypes.MESSAGE_SWIPE_DELETED,
+    ].filter(Boolean);
+    // These change only the connection mirror. They used to reload the chat list too,
+    // which rebuilds every chat row for a profile switch or a settings save.
+    const connectionEvents = [
         eventTypes.CONNECTION_PROFILE_LOADED,
         eventTypes.CONNECTION_PROFILE_CREATED,
         eventTypes.CONNECTION_PROFILE_UPDATED,
@@ -9863,6 +10029,10 @@ function bindChatbarEvents() {
 
     for (const eventName of new Set(events)) {
         eventSource.on(eventName, refresh);
+    }
+
+    for (const eventName of new Set(connectionEvents)) {
+        eventSource.on(eventName, refreshConnection);
     }
 
     bindChatListingInvalidation(eventSource, eventTypes);
@@ -10101,7 +10271,11 @@ function syncMobileModalState() {
     // Neconyan: only the chat is inerted. Mobile panels dock below the top bar instead of
     // covering it, so its proxy buttons stay reachable and re-tapping one closes the panel,
     // same as on desktop.
-    setElementInertForMobileModal(document.getElementById('sheld'), modalState.shouldInertShell);
+    // A phone or full-width Scratchpad also covers the chat. Combine these reasons
+    // here so closing another panel cannot make the covered chat interactive again.
+    const body = document.body?.classList;
+    const scratchpadCoversChat = body?.contains('neconyan-scratchpad-open') && !body.contains('neconyan-scratchpad-beside');
+    setElementInertForMobileModal(document.getElementById('sheld'), modalState.shouldInertShell || scratchpadCoversChat);
 }
 
 function queueMobileModalStateSync() {
@@ -10198,8 +10372,16 @@ function refreshNeconyanTopbarClock() {
         return;
     }
     const now = new Date();
-    clock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    clock.setAttribute('datetime', now.toISOString());
+    const label = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    // The clock ticks every 15 s; writing the same minute again still dirties the
+    // top bar and starts a style pass.
+    if (clock.textContent !== label) {
+        clock.textContent = label;
+    }
+    const stamp = now.toISOString();
+    if (clock.getAttribute('datetime') !== stamp) {
+        clock.setAttribute('datetime', stamp);
+    }
 }
 
 function startNeconyanTopbarClock() {
@@ -10474,6 +10656,13 @@ function ensureCharacterListToolbarLayout() {
     const paginationHost = footer || fixedTop.parentElement;
     if (pagination instanceof HTMLElement && pagination.parentElement !== paginationHost) {
         paginationHost?.append(pagination);
+    }
+
+    // The list buttons are icon-only in the markup; CSS shows these labels beside the icons.
+    for (const [id, label] of [['charListGridToggle', t`Grid`], ['bulkEditButton', t`Bulk edit`],
+        ['bulkSelectAllButton', t`Select all`], ['bulkDeleteButton', t`Delete`]]) {
+        const node = document.getElementById(id);
+        if (node && node.dataset.label !== label) node.dataset.label = label;
     }
 
     // Phones: Create/Import lead the single scrolling tool row under the search field.
@@ -13824,10 +14013,10 @@ async function showUpdateToast(repository) {
         <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>`;
-    toast.querySelector('.nn-update-toast-text > span').textContent = repository.kind === 'apk'
-        ? `APK v${repository.latestVersion} is ready. Open Server to update.`
-        : behind === 1 ? '1 new change. Open Server to update.'
-            : `${behind} new changes. Open Server to update.`;
+    let updateMessage = behind === 1 ? '1 new change. Open Server to update.' : `${behind} new changes. Open Server to update.`;
+    if (repository.kind === 'apk') updateMessage = `APK v${repository.latestVersion} is ready. Open Server to update.`;
+    if (repository.kind === 'ipa') updateMessage = `IPA v${repository.latestVersion} is ready. Open Server to get it.`;
+    toast.querySelector('.nn-update-toast-text > span').textContent = updateMessage;
     toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
         dismissUpdateToast();
         openShell('right', 'server');
@@ -13836,6 +14025,49 @@ async function showUpdateToast(repository) {
     document.body.append(toast);
     rememberNotifiedUpdateCommit(commit);
     scheduleUpdateToastDismissal(toast);
+}
+
+/**
+ * The short notice after Neconyan reloaded the page by itself for an update. It has no action, so its body is
+ * plain text and only Dismiss is a button. An 'Update available' notice that is already up (or arrives later) wins.
+ */
+async function showReloadNotice() {
+    await loadUpdateToastStyles();
+    if (document.getElementById('nn-update-toast')) return;
+    const toast = document.createElement('div');
+    toast.id = 'nn-update-toast';
+    toast.className = 'nn-update-toast';
+    toast.setAttribute('role', 'status');
+    toast.innerHTML = `
+        <div class="nn-update-toast-open">
+            <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+            <span class="nn-update-toast-text">
+                <strong>Neconyan updated</strong>
+                <span>The page reloaded to load the new version.</span>
+            </span>
+        </div>
+        <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>`;
+    toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
+    document.body.append(toast);
+    scheduleUpdateToastDismissal(toast);
+}
+
+/** Once per automatic update reload. A page that is still hidden waits until it is seen. */
+function announceReloadAfterUpdate() {
+    const diagnostics = globalThis.NeconyanCrashDiagnostics;
+    if (typeof diagnostics?.claimReloadNotice !== 'function') return;
+    if (document.hidden) {
+        const announceWhenSeen = () => {
+            if (document.hidden) return;
+            document.removeEventListener('visibilitychange', announceWhenSeen);
+            announceReloadAfterUpdate();
+        };
+        document.addEventListener('visibilitychange', announceWhenSeen);
+        return;
+    }
+    if (diagnostics.claimReloadNotice()) void showReloadNotice();
 }
 
 async function checkForNeconyanUpdate() {
@@ -13859,6 +14091,14 @@ async function checkForNeconyanUpdate() {
             const notificationKey = `apk:${androidRelease.architecture}:${androidRelease.latestVersion}`;
             if (notificationKey === readNotifiedUpdateCommit()) return;
             await showUpdateToast({ ...androidRelease, kind: 'apk', remoteCommit: notificationKey });
+            return;
+        }
+        const iosRelease = status?.iosRelease;
+        if (iosRelease?.supported) {
+            if (!iosRelease.checked || !iosRelease.assetAvailable || !iosRelease.canUpdate || !iosRelease.latestVersion) return;
+            const notificationKey = `ipa:${iosRelease.latestVersion}`;
+            if (notificationKey === readNotifiedUpdateCommit()) return;
+            await showUpdateToast({ ...iosRelease, kind: 'ipa', remoteCommit: notificationKey });
             return;
         }
         const repository = status?.repository;
@@ -14127,6 +14367,7 @@ function updateServerAdminInteractivity() {
 
     const locked = state.busy || state.restarting;
     const thumbnailLocked = locked || !state.thumbnailSettingsLoaded;
+    const memoryLocked = locked || !state.memorySettingsLoaded;
     const canUpdate = refs.updateButton?.dataset.sbCanUpdate === 'true';
     const hasConfigContent = Boolean(refs.configEditor?.value.trim());
 
@@ -14136,10 +14377,15 @@ function updateServerAdminInteractivity() {
     setButtonDisabled(refs.restartButton, locked);
     setButtonDisabled(refs.saveConfigButton, locked || !hasConfigContent);
     setButtonDisabled(refs.saveConfigRestartButton, locked || !hasConfigContent);
+    if (refs.memorySelect instanceof HTMLSelectElement) {
+        refs.memorySelect.disabled = memoryLocked;
+    }
+    setButtonDisabled(refs.memorySaveButton, memoryLocked);
+    setButtonDisabled(refs.memorySaveRestartButton, memoryLocked);
     setThumbnailInputsDisabled(thumbnailLocked);
     if (refs.autoStashCheckbox) {
         const data = state.lastStatusData;
-        refs.autoStashCheckbox.disabled = locked || Boolean(data?.androidRelease?.supported)
+        refs.autoStashCheckbox.disabled = locked || Boolean(data?.androidRelease?.supported || data?.iosRelease?.supported)
             || !data?.repository?.supported || !data?.repository?.isRepo;
     }
 
@@ -14159,9 +14405,21 @@ function renderServerAdminStatus(data) {
     const repository = data?.repository ?? {};
     const release = data?.release ?? null;
     const androidRelease = data?.androidRelease ?? null;
+    const iosRelease = data?.iosRelease ?? null;
     const version = data?.version ?? {};
     const isAndroidInstall = Boolean(androidRelease?.supported);
-    const isGitInstall = !isAndroidInstall && Boolean(repository?.supported && repository?.isRepo);
+    const isIosInstall = !isAndroidInstall && Boolean(iosRelease?.supported);
+    const appRelease = isAndroidInstall ? androidRelease : isIosInstall ? iosRelease : null;
+    const appPackage = isAndroidInstall ? 'APK' : 'IPA';
+    const isGitInstall = !appRelease && Boolean(repository?.supported && repository?.isRepo);
+    const canRestart = data?.canRestart !== false;
+    for (const button of [refs.restartButton, refs.saveConfigRestartButton, document.getElementById('sb-chat-completion-config-save-restart')]) {
+        if (!(button instanceof HTMLElement)) continue;
+        // The iPhone app runs its server inside the app, so it cannot restart it on its own.
+        button.hidden = !canRestart;
+        button.style.display = canRestart ? '' : 'none';
+    }
+    setElementVisible(refs.memorySaveRestartButton, canRestart && state.memoryState?.supervised !== false);
     const statusGrid = refs.statusGrid;
     const sourceDetailsGrid = refs.sourceDetailsGrid ?? statusGrid;
     statusGrid.replaceChildren();
@@ -14184,7 +14442,7 @@ function renderServerAdminStatus(data) {
         attrs: { style: 'width: 100%; max-width: 200px;', 'aria-label': isGitInstall ? 'Git branch' : 'Release source' },
     });
     branchSelect.disabled = !isGitInstall;
-    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : isAndroidInstall ? 'GitHub APK' : 'Release ZIP';
+    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : appRelease ? `GitHub ${appPackage}` : 'Release ZIP';
     const currentOptionAttributes = { value: currentBranch, selected: 'selected' };
     if (!currentBranch || !isGitInstall) {
         currentOptionAttributes.disabled = 'disabled';
@@ -14203,6 +14461,8 @@ function renderServerAdminStatus(data) {
     if (isAndroidInstall) {
         appendServerAdminStat(statusGrid, 'Latest APK', androidRelease?.latestVersion ? `v${androidRelease.latestVersion}` : 'Unknown');
         appendServerAdminStat(sourceDetailsGrid, 'APK architecture', androidRelease?.architecture || 'Unknown');
+    } else if (isIosInstall) {
+        appendServerAdminStat(statusGrid, 'Latest IPA', iosRelease?.latestVersion ? `v${iosRelease.latestVersion}` : 'Unknown');
     } else {
         appendServerAdminStat(statusGrid, 'Commit', repository?.currentCommit || version?.gitRevision || 'Unknown');
         appendServerAdminStat(sourceDetailsGrid, 'Tracking', repository?.trackingBranch || 'Not set');
@@ -14224,15 +14484,17 @@ function renderServerAdminStatus(data) {
         repository,
         release,
         androidRelease,
+        iosRelease,
+        canRestart,
     };
 
     let pillLabel = 'Unavailable';
     let pillTone = 'neutral';
 
-    if (isAndroidInstall) {
-        pillLabel = androidRelease.canUpdate ? 'APK update available' : !androidRelease.checked ? 'Check failed'
-            : !androidRelease.assetAvailable ? 'APK unavailable' : 'Up to date';
-        pillTone = androidRelease.checked && androidRelease.assetAvailable && !androidRelease.canUpdate ? 'good' : 'warn';
+    if (appRelease) {
+        pillLabel = appRelease.canUpdate ? `${appPackage} update available` : !appRelease.checked ? 'Check failed'
+            : !appRelease.assetAvailable ? `${appPackage} unavailable` : 'Up to date';
+        pillTone = appRelease.checked && appRelease.assetAvailable && !appRelease.canUpdate ? 'good' : 'warn';
     } else if (isGitInstall) {
         if (!repository?.trackingBranch) {
             pillLabel = 'Local project';
@@ -14276,22 +14538,27 @@ function renderServerAdminStatus(data) {
     setServerAdminPill(refs.statusPill, pillLabel, pillTone);
     const hasAndroidInstaller = typeof window.NeconyanAndroid?.installUpdate === 'function';
     const updateMode = isAndroidInstall ? (androidRelease.canUpdate && hasAndroidInstaller ? 'apk' : '')
-        : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
+        : isIosInstall ? (iosRelease.canUpdate && iosRelease.releaseUrl ? 'ipa' : '')
+            : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
     refs.updateButton.dataset.sbCanUpdate = String(Boolean(updateMode));
     refs.updateButton.dataset.sbUpdateMode = updateMode;
-    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : 'Update & Restart', state);
+    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : isIosInstall ? 'Get the IPA' : 'Update & Restart', state);
     if (refs.updateDescription) refs.updateDescription.textContent = isAndroidInstall
         ? 'Download the official GitHub APK, then approve installation in Android. Your saved data stays on this device.'
-        : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
+        : isIosInstall
+            ? 'Open the GitHub release page in Safari, then install the new IPA with the sideloading tool you used before.'
+            : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
     if (refs.autoStashLabel) {
-        refs.autoStashLabel.hidden = isAndroidInstall;
-        refs.autoStashLabel.style.display = isAndroidInstall ? 'none' : '';
+        refs.autoStashLabel.hidden = Boolean(appRelease);
+        refs.autoStashLabel.style.display = appRelease ? 'none' : '';
     }
     if (isAndroidInstall) {
         setServerAdminMessage(refs.updateNote, 'Android checks the APK before installing it. You may need to allow app installation in Android settings.');
+    } else if (isIosInstall) {
+        setServerAdminMessage(refs.updateNote, 'Install the IPA over this copy with the same tool and Apple ID, or the iPhone treats it as a different app.');
     }
 
-    const noteParts = [String((isAndroidInstall ? androidRelease.message : isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
+    const noteParts = [String((appRelease ? appRelease.message : isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
     if (isAndroidInstall && androidRelease.canUpdate && !hasAndroidInstaller) {
         noteParts.push('Open the Neconyan Android app to install this APK update.');
     }
@@ -14356,6 +14623,143 @@ function renderServerThumbnailSettings(data) {
     setServerAdminMessage(refs.thumbnailNote, 'Thumbnail settings loaded. Saving applies to new thumbnails immediately.', 'neutral');
 }
 
+function setElementVisible(element, visible) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+
+    element.hidden = !visible;
+    element.style.display = visible ? '' : 'none';
+}
+
+function setMemoryStatValue(element, formattedText) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+
+    const text = String(formattedText ?? 'Unknown');
+    element.textContent = text;
+    if (text !== 'Unknown') {
+        element.setAttribute('translate', 'no');
+    } else {
+        element.removeAttribute('translate');
+    }
+}
+
+function renderServerMemoryNote(lines, tone = 'neutral') {
+    const refs = getServerAdminRefs();
+
+    if (!(refs?.memoryNote instanceof HTMLElement)) {
+        return;
+    }
+
+    const entries = (Array.isArray(lines) ? lines : [lines])
+        .map(line => String(line ?? '').trim())
+        .filter(Boolean);
+
+    refs.memoryNote.replaceChildren();
+    refs.memoryNote.dataset.tone = tone;
+    refs.memoryNote.hidden = entries.length === 0;
+    for (const line of entries) {
+        refs.memoryNote.appendChild(createElement('div', { text: line }));
+    }
+}
+
+function formatMemoryMb(mb, { preferGb = false } = {}) {
+    if (typeof mb !== 'number' || !Number.isFinite(mb) || mb <= 0) {
+        return 'Unknown';
+    }
+
+    if (preferGb && mb >= 1024) {
+        return `${Number((mb / 1024).toFixed(1))} GB`;
+    }
+
+    return `${mb} MB`;
+}
+
+function getServerMemoryWarnings(memoryState = getServerAdminState().memoryState, selectedValue = getServerAdminRefs()?.memorySelect?.value ?? '') {
+    const warnings = [];
+
+    if (memoryState?.externalOverride) {
+        warnings.push('An external NODE_OPTIONS or --max-old-space-size flag is active and overrides this setting.');
+    }
+
+    if (memoryState?.supervised === false) {
+        warnings.push(uiText('This server\'s supervisor can\'t apply this setting yet. Stop Neconyan completely and start it again. If you start it with NECONYAN_SUPERVISED=1, set NODE_OPTIONS instead.'));
+    }
+
+    const selectedMb = selectedValue === '' ? null : Number(selectedValue);
+    const totalMemoryMb = Number(memoryState?.totalMemoryMb ?? 0);
+    const heapLimitMb = Number(memoryState?.heapLimitMb ?? 0);
+
+    if (selectedMb !== null && Number.isFinite(selectedMb) && totalMemoryMb > 0 && selectedMb > totalMemoryMb * 0.5) {
+        warnings.push('This cap is over half of device RAM. The OS or Android may close Neconyan if memory runs low.');
+    }
+
+    if (selectedMb !== null && Number.isFinite(selectedMb) && heapLimitMb > 0 && selectedMb + 256 < heapLimitMb) {
+        warnings.push('This cap is lower than the current heap limit and will reduce available JavaScript memory after restart.');
+    }
+
+    return warnings;
+}
+
+function updateServerMemoryWarningNote() {
+    const warnings = getServerMemoryWarnings();
+    if (warnings.length > 0) {
+        renderServerMemoryNote(warnings, 'warn');
+    } else {
+        renderServerMemoryNote(['Auto uses Node.js defaults on desktop and scales automatically on Android.'], 'neutral');
+    }
+}
+
+function renderServerMemorySettings(data, { preserveSelection = false } = {}) {
+    const state = getServerAdminState();
+    const refs = getServerAdminRefs();
+
+    if (!refs) {
+        return;
+    }
+
+    if (!data || data.supported === false) {
+        setElementVisible(refs.memoryCard, false);
+        state.memorySettingsLoaded = false;
+        state.memoryState = null;
+        return;
+    }
+
+    const previousSelection = preserveSelection && refs.memorySelect ? refs.memorySelect.value : null;
+    setElementVisible(refs.memoryCard, true);
+    state.memoryState = data;
+    state.memoryLastModifiedMs = Number(data.lastModifiedMs ?? 0) || state.memoryLastModifiedMs;
+    state.memorySettingsLoaded = true;
+
+    setMemoryStatValue(refs.memoryHeapLimit, formatMemoryMb(data.heapLimitMb));
+    setMemoryStatValue(refs.memoryDeviceRam, formatMemoryMb(data.totalMemoryMb, { preferGb: true }));
+
+    const presets = Array.isArray(data.presetsMb) ? data.presetsMb : [];
+    const options = [createElement('option', { text: 'Auto', attrs: { value: '' } })];
+    for (const mb of presets) {
+        options.push(createElement('option', { text: `${mb} MB`, attrs: { value: String(mb) } }));
+    }
+
+    if (typeof data.configuredMb === 'number' && !presets.includes(data.configuredMb)) {
+        options.push(createElement('option', { text: t`${data.configuredMb} MB (custom)`, attrs: { value: String(data.configuredMb) } }));
+    }
+
+    refs.memorySelect.replaceChildren(...options);
+
+    const desiredValue = data.configuredMb === null || data.configuredMb === undefined ? '' : String(data.configuredMb);
+    if (preserveSelection && previousSelection !== null && [...refs.memorySelect.options].some(option => option.value === previousSelection)) {
+        refs.memorySelect.value = previousSelection;
+    } else {
+        refs.memorySelect.value = desiredValue;
+    }
+
+    const canSaveAndRestart = data.canRestart !== false && data.supervised !== false && state.lastStatusData?.canRestart !== false;
+    setElementVisible(refs.memorySaveRestartButton, canSaveAndRestart);
+    updateServerMemoryWarningNote();
+}
+
 async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeReload = false, expectedVersion = '', previousServerBootId = '' } = {}) {
     let sawOffline = false;
 
@@ -14363,6 +14767,7 @@ async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeRelo
         if (clearCacheBeforeReload && typeof window.NeconyanClearFrontendCache === 'function') {
             await window.NeconyanClearFrontendCache({ skipConfirmation: true, saveBeforeClear: false });
         }
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'server-restarted' });
         location.reload();
     }
     const timeoutAt = Date.now() + 180000;
@@ -14395,6 +14800,7 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
     const refs = getServerAdminRefs();
     const shouldLoadConfig = includeConfig || forceConfig || !state.configLoaded;
     const shouldLoadThumbnails = forceConfig || !state.thumbnailSettingsLoaded;
+    const shouldLoadMemory = forceConfig || !state.memorySettingsLoaded;
 
     if (!refs || state.busy || state.restarting) {
         return;
@@ -14413,9 +14819,12 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
     const thumbnailPromise = shouldLoadThumbnails
         ? requestServerAdmin('/api/server-admin/config/thumbnail-settings/get')
         : null;
+    const memoryPromise = shouldLoadMemory
+        ? requestServerAdmin('/api/server-admin/config/memory/get')
+        : null;
 
     // Handle parallel failures before awaiting each result for its own panel.
-    await Promise.allSettled([statusPromise, configPromise, thumbnailPromise]);
+    await Promise.allSettled([statusPromise, configPromise, thumbnailPromise, memoryPromise]);
 
     if (configPromise) {
         try {
@@ -14451,6 +14860,19 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
             setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to load thumbnail settings.', tone);
             if (error?.status !== 403) {
                 console.error('Failed to load thumbnail settings.', error);
+            }
+        }
+    }
+
+    if (memoryPromise) {
+        try {
+            renderServerMemorySettings(await memoryPromise);
+        } catch (error) {
+            state.memorySettingsLoaded = false;
+            state.memoryState = null;
+            setElementVisible(refs.memoryCard, false);
+            if (error?.status !== 403) {
+                console.error('Failed to load server memory settings.', error);
             }
         }
     }
@@ -14518,7 +14940,8 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
         setServerAdminMessage(refs.configNote, result?.message || 'Config saved.', restart ? 'warn' : 'good');
         toastr.success(result?.message || 'Config saved.', 'Server config');
 
-        if (restart) {
+        // The iPhone app saves without restarting: its server runs inside the app.
+        if (restart && result?.restarting !== false) {
             state.busy = false;
             state.restarting = true;
             updateServerAdminInteractivity();
@@ -14528,6 +14951,12 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
                 state.restarting = false;
                 setServerAdminMessage(refs.configNote, 'Restart is taking longer than expected. Refresh the page once the server is back.', 'warn');
                 toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
+            }
+        } else {
+            try {
+                renderServerMemorySettings(await requestServerAdmin('/api/server-admin/config/memory/get'));
+            } catch (memoryError) {
+                console.warn('Saved config.yaml, but could not refresh server memory settings.', memoryError);
             }
         }
     } catch (error) {
@@ -14562,15 +14991,19 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
 
     try {
         const { settings, mobileSettings } = getThumbnailSettingsFromRefs(refs);
+        const sentMtime = state.thumbnailLastModifiedMs;
         const result = await requestServerAdmin('/api/server-admin/config/thumbnail-settings/save', {
             settings,
             mobileSettings,
-            expectedLastModifiedMs: state.thumbnailLastModifiedMs || state.lastModifiedMs,
+            expectedLastModifiedMs: sentMtime,
             clearCache,
         });
 
+        const nextMtime = Number(result?.lastModifiedMs ?? 0) || sentMtime;
+        if (sentMtime && state.memoryLastModifiedMs === sentMtime) {
+            state.memoryLastModifiedMs = nextMtime;
+        }
         renderServerThumbnailSettings(result);
-        state.lastModifiedMs = Number(result?.lastModifiedMs ?? 0) || state.lastModifiedMs;
         setServerAdminMessage(refs.thumbnailNote, result?.message || 'Thumbnail settings saved.', 'good');
         toastr.success(result?.message || 'Thumbnail settings saved.', 'Thumbnails');
         renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
@@ -14581,6 +15014,86 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
     } finally {
         state.busy = false;
         updateServerAdminInteractivity();
+    }
+}
+
+async function handleServerMemorySave({ restart = false } = {}) {
+    const state = getServerAdminState();
+    const refs = getServerAdminRefs();
+
+    if (!refs || state.busy || state.restarting) {
+        return;
+    }
+
+    if (updateServerConfigDirtyState()) {
+        renderServerMemoryNote(['Save or reload the config.yaml editor before changing server memory.'], 'warn');
+        toastr.warning('Save or reload the config.yaml editor before changing server memory.', 'Server memory');
+        return;
+    }
+
+    state.busy = true;
+    updateServerAdminInteractivity();
+
+    const sentMtime = state.memoryLastModifiedMs;
+    const selectedValue = refs.memorySelect?.value ?? '';
+    const maxOldSpaceSizeMb = selectedValue === '' ? null : Number(selectedValue);
+
+    try {
+        const result = await requestServerAdmin('/api/server-admin/config/memory/save', {
+            maxOldSpaceSizeMb,
+            expectedLastModifiedMs: sentMtime,
+            restart,
+        });
+
+        const nextMtime = Number(result?.lastModifiedMs ?? 0) || sentMtime;
+        if (sentMtime && state.thumbnailLastModifiedMs === sentMtime) {
+            state.thumbnailLastModifiedMs = nextMtime;
+        }
+
+        renderServerMemorySettings(result);
+        toastr.success(result?.message || 'Server memory limit saved.', 'Server memory');
+
+        if (restart && result?.restarting !== false) {
+            state.busy = false;
+            state.restarting = true;
+            updateServerAdminInteractivity();
+            const restarted = await waitForServerReturn('', { previousServerBootId: result?.serverBootId });
+            if (!restarted) {
+                state.restarting = false;
+                updateServerAdminInteractivity();
+                renderServerMemoryNote(['Restart is taking longer than expected. Refresh the page once the server is back.'], 'warn');
+                toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
+            }
+        } else {
+            try {
+                renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
+            } catch (reloadError) {
+                console.warn('Saved server memory limit, but could not refresh config.yaml editor.', reloadError);
+            }
+        }
+    } catch (error) {
+        if (error?.status === 409) {
+            const conflictNotice = uiText('config.yaml changed on disk. The latest server state was loaded while keeping your selection; save again to apply it.');
+            try {
+                const latest = await requestServerAdmin('/api/server-admin/config/memory/get');
+                renderServerMemorySettings(latest, { preserveSelection: true });
+                const warnings = getServerMemoryWarnings();
+                renderServerMemoryNote([conflictNotice, ...warnings], 'warn');
+                toastr.warning(conflictNotice, 'Server memory');
+            } catch {
+                renderServerMemoryNote([error.message || uiText('config.yaml changed on disk. Reload the Server panel before saving again.')], 'danger');
+                toastr.error(error.message || 'Could not save server memory limit.', 'Server memory');
+            }
+        } else {
+            console.error('Failed to save server memory limit.', error);
+            renderServerMemoryNote([error.message || 'Could not save server memory limit.'], 'danger');
+            toastr.error(error.message || 'Could not save server memory limit.', 'Server memory');
+        }
+    } finally {
+        if (!state.restarting) {
+            state.busy = false;
+            updateServerAdminInteractivity();
+        }
     }
 }
 
@@ -14736,6 +15249,14 @@ async function handleServerAdminUpdate() {
         } catch (error) {
             setServerAdminMessage(refs.updateNote, error.message || 'Could not open the Android APK updater.', 'danger');
         }
+        return;
+    }
+
+    if (refs.updateButton?.dataset.sbUpdateMode === 'ipa') {
+        const releaseUrl = String(state.lastStatusData?.iosRelease?.releaseUrl || '');
+        // The iPhone app opens links to other sites in Safari.
+        if (/^https:\/\/github\.com\//.test(releaseUrl)) window.open(releaseUrl, '_blank', 'noopener');
+        setServerAdminMessage(refs.updateNote, 'Download the IPA from the release page, then install it over this copy with your sideloading tool.');
         return;
     }
 
@@ -15048,6 +15569,17 @@ function buildServerAdminPanel() {
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
     statusCard.append(statusHeader, statusGrid, folderList, statusNote, changedFiles, sourceDetails);
+    if (typeof globalThis.NeconyanExport?.saveDataBackup === 'function') {
+        const backup = createElement('button', { className: 'menu_button sb-server-action', text: 'Save a backup of my data', attrs: { type: 'button' } });
+        backup.addEventListener('click', async () => {
+            backup.disabled = true;
+            try {
+                await flushPendingChatSavesForNavigation();
+                if (!requestAndroidDataBackup()) toastr.warning(t`The app is not ready to save a backup. Try again in a moment.`);
+            } catch (error) { toastr.error(error.message); } finally { backup.disabled = false; }
+        });
+        statusCard.append(backup);
+    }
 
     const updateCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
     const updateHeader = createElement('div', { className: 'sb-admin-card-header' });
@@ -15069,6 +15601,46 @@ function buildServerAdminPanel() {
     updateActions.append(refreshButton, updateButton, restartButton);
     updateHeader.append(updateCopy);
     updateCard.append(updateHeader, updateActions, autoStashLabel, updateNote, updateOutput);
+
+    const memoryCard = createElement('section', { id: 'sb-server-memory-card', className: 'sb-admin-card sb-server-card' });
+    setElementVisible(memoryCard, false);
+    const memoryHeader = createElement('div', { className: 'sb-admin-card-header' });
+    const memoryCopy = createElement('div', { className: 'sb-admin-card-copy' });
+    const memoryTitle = createElement('strong', { text: 'Server Memory (Node.js)' });
+    const memoryDescription = createElement('p', { text: 'Set the JavaScript heap cap for Node.js. Takes effect after a restart.' });
+    const memoryBadge = createElement('span', { className: 'sb-server-inline-state', text: 'Experimental', attrs: { 'data-state': 'neutral' } });
+    memoryCopy.append(memoryTitle, memoryDescription);
+    memoryHeader.append(memoryCopy, memoryBadge);
+
+    const memoryGrid = createElement('div', { className: 'sb-server-grid' });
+    const memoryHeapStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryHeapLabel = createElement('small', { className: 'sb-server-stat-label', text: 'Current heap limit' });
+    const memoryHeapLimit = createElement('strong', { id: 'sb-server-memory-heap-limit', className: 'sb-server-stat-value', text: 'Unknown' });
+    memoryHeapStat.append(memoryHeapLabel, memoryHeapLimit);
+
+    const memoryRamStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryRamLabel = createElement('small', { className: 'sb-server-stat-label', text: 'Device RAM' });
+    const memoryDeviceRam = createElement('strong', { id: 'sb-server-memory-device-ram', className: 'sb-server-stat-value', text: 'Unknown' });
+    memoryRamStat.append(memoryRamLabel, memoryDeviceRam);
+
+    const memoryCapStat = createElement('div', { className: 'sb-server-stat' });
+    const memoryCapLabel = createElement('label', { className: 'sb-server-stat-label', text: 'Heap cap', attrs: { for: 'sb-server-memory-select' } });
+    const memoryCapValue = createElement('div', { className: 'sb-server-stat-value' });
+    const memorySelect = createElement('select', {
+        id: 'sb-server-memory-select',
+        className: 'text_pole',
+        attrs: { style: 'width: 100%;', 'aria-label': 'Node.js heap cap' },
+    });
+    memoryCapValue.append(memorySelect);
+    memoryCapStat.append(memoryCapLabel, memoryCapValue);
+    memoryGrid.append(memoryHeapStat, memoryRamStat, memoryCapStat);
+
+    const memoryActions = createElement('div', { className: 'sb-server-actions' });
+    const memorySaveButton = createElement('button', { id: 'sb-server-memory-save', className: 'menu_button menu_button_icon sb-server-action', text: 'Save memory cap', attrs: { type: 'button' } });
+    const memorySaveRestartButton = createElement('button', { id: 'sb-server-memory-save-restart', className: 'menu_button menu_button_icon sb-server-action menu_button_primary', text: 'Save & Restart', attrs: { type: 'button' } });
+    memoryActions.append(memorySaveButton, memorySaveRestartButton);
+    const memoryNote = createElement('div', { id: 'sb-server-memory-note', className: 'sb-server-note' });
+    memoryCard.append(memoryHeader, memoryGrid, memoryActions, memoryNote);
 
     const thumbnailCard = createElement('section', { className: 'sb-admin-card sb-server-card sb-thumbnail-card sb-advanced-only' });
     const thumbnailHeader = createElement('div', { className: 'sb-admin-card-header' });
@@ -15189,7 +15761,7 @@ function buildServerAdminPanel() {
     configActions.append(reloadConfigButton, saveConfigButton, saveConfigRestartButton);
     configCard.append(configHeader, configMeta, configEditor, configActions, configNote);
 
-    column.append(statusCard, updateCard, thumbnailCard, configCard);
+    column.append(statusCard, updateCard, memoryCard, thumbnailCard, configCard);
     scroller.appendChild(column);
 
     const state = getServerAdminState();
@@ -15208,6 +15780,13 @@ function buildServerAdminPanel() {
         autoStashCheckbox,
         autoStashLabel,
         changedFiles,
+        memoryCard,
+        memoryHeapLimit,
+        memoryDeviceRam,
+        memorySelect,
+        memorySaveButton,
+        memorySaveRestartButton,
+        memoryNote,
         thumbnailEnabled,
         thumbnailFormat,
         thumbnailQuality,
@@ -15248,6 +15827,9 @@ function buildServerAdminPanel() {
     refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }));
     updateButton.addEventListener('click', handleServerAdminUpdate);
     restartButton.addEventListener('click', handleServerAdminRestart);
+    memorySelect.addEventListener('change', updateServerMemoryWarningNote);
+    memorySaveButton.addEventListener('click', () => handleServerMemorySave({ restart: false }));
+    memorySaveRestartButton.addEventListener('click', () => handleServerMemorySave({ restart: true }));
     thumbnailUseRecommendedButton.addEventListener('click', handleUseRecommendedThumbnailSettings);
     thumbnailUseRecommendedMobileButton.addEventListener('click', handleUseRecommendedMobileThumbnailSettings);
     thumbnailSaveButton.addEventListener('click', () => handleServerThumbnailSave({ clearCache: false }));
@@ -15822,6 +16404,7 @@ async function handleSillyTavernFolderImport() {
         setServerAdminMessage(refs.note, result?.message || 'Folder import finished. Reloading…', 'good');
         toastr.success(result?.message || 'Folder import finished. Reloading…', 'Import SillyTavern');
         await wait(700);
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern folder.', error);
@@ -15922,6 +16505,7 @@ async function handleSillyTavernZipImport(file) {
         setServerAdminMessage(refs.note, result?.message || 'Backup ZIP imported. Reloading…', 'good');
         toastr.success(result?.message || 'Backup ZIP imported. Reloading…', 'Import SillyTavern');
         await wait(700);
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern backup ZIP.', error);
@@ -15952,7 +16536,10 @@ function showSkippedImportFiles(refs, heading, skips, result, mountReportDownloa
     reload.type = 'button';
     reload.className = 'menu_button';
     reload.textContent = 'Reload to use the imported data';
-    reload.addEventListener('click', () => location.reload());
+    reload.addEventListener('click', () => {
+        globalThis.NeconyanCrashDiagnostics?.noteReload?.({ reason: 'import-finished' });
+        location.reload();
+    });
     refs.note.append('\n', reload);
     mountReportDownload(refs.note, result);
     if (count) toastr.warning(`${count === 1 ? '1 file could' : `${count} files could`} not be imported. Review the report before reloading.`, 'Import SillyTavern');
@@ -17649,12 +18236,12 @@ function injectThemePicker() {
     const shellStyleSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-shell-style-drawer',
         title: 'Shell Style',
-        content: [description, optionRow, kittylessGroup, createSleeperCoatSettingsGroup()],
+        content: [description, optionRow, kittylessGroup],
     });
     const interfaceSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-interface-drawer',
         title: 'Interface',
-        content: [frontendIconSettingsGroup, bottomBarSliderGroup],
+        content: [frontendIconSettingsGroup, bottomBarSliderGroup, createSleeperCoatSettingsGroup()],
     });
     const panelLookSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-panel-look-drawer',
@@ -21598,9 +22185,17 @@ async function refreshBottomChatSelect() {
     }
     setButtonDisabled(state.chatPickerButton, !chatContext.canBrowseChats);
     const fallback = currentChatName ? [{ fileName: currentChatName }] : [];
+    // The picker reloads its list when it opens. While it is closed, a reply or a
+    // settings save does not change which chats exist, so the rows already held here
+    // stay valid and the same list request does not need repeating.
+    const pickerOpen = state.chatPickerButton?.getAttribute('aria-expanded') === 'true';
+    const hasCachedListing = !pickerOpen
+        && state.chatList?.key === key
+        && state.chatList?.revision === chatbarListingRevision;
     state.chatList = { key, current: currentChatName, label: chatContext.label,
         entries: state.chatList?.key === key ? state.chatList.entries : fallback,
-        loading: chatContext.canBrowseChats, error: false };
+        loading: !hasCachedListing && chatContext.canBrowseChats, error: false,
+        revision: state.chatList?.revision ?? -1 };
     state.chatPicker?.update(state.chatList);
     if (!chatContext.canBrowseChats) state.chatPicker?.close();
 
@@ -21613,7 +22208,7 @@ async function refreshBottomChatSelect() {
     setButtonDisabled(nnState.bottomChatBar?.massDeleteButton, !chatContext.canBrowseChats);
     setButtonDisabled(nnState.bottomChatBar?.autoNameButton, !chatContext.hasChat);
 
-    if (!chatContext.context) {
+    if (!chatContext.context || hasCachedListing) {
         return;
     }
 
@@ -21638,7 +22233,7 @@ async function refreshBottomChatSelect() {
         const entries = chats.map(chat => ({ ...chat, meta: [formatChatTimestamp(chat.lastMessage),
             chat.chatItems > 0 ? `${chat.chatItems} ${t`messages`}` : '', formatChatTokenEstimate(chat.tokenEstimate)].filter(Boolean).join(' · ') }));
         if (currentChatName && !chatNames.includes(currentChatName)) entries.unshift(...fallback);
-        state.chatList = { ...state.chatList, entries, loading: false };
+        state.chatList = { ...state.chatList, entries, loading: false, revision: chatbarListingRevision };
         state.chatPicker?.update(state.chatList);
 
         chatSelect.replaceChildren();
@@ -22207,24 +22802,20 @@ function closeReasoningEffortPicker({ restoreFocus = false } = {}) {
 }
 
 function togglePersonaPicker() {
-    const existing = document.getElementById('sb-persona-picker');
-    if (existing) {
-        existing.remove();
-        document.getElementById('sb-persona-bubble')?.focus({ preventScroll: true });
+    if (document.getElementById('sb-persona-picker')) {
+        closePersonaPicker({ restoreFocus: true });
         return;
     }
 
     openPersonaPicker();
 }
 
-function openPersonaPicker({ focus = true } = {}) {
+function openPersonaPicker() {
+    const bubble = document.getElementById('sb-persona-bubble');
+    if (!bubble || !getSillyTavernContext()) return;
     getBottomChatBarState().chatPicker?.close();
-    const context = getSillyTavernContext();
-    if (!context) return;
     closeReasoningEffortPicker();
 
-    const { personas, currentAvatarId } = getCurrentPersonaSelection(context);
-    const personaDescriptions = context?.powerUserSettings?.persona_descriptions ?? {};
     const picker = createElement('div', {
         id: 'sb-persona-picker',
         attrs: {
@@ -22245,55 +22836,75 @@ function openPersonaPicker({ focus = true } = {}) {
             closePersonaPicker({ restoreFocus: true });
         }
     });
-
-    const keys = Object.keys(personas).filter(avatarId => {
-        const name = personas[avatarId];
-        // Skip auto-created unnamed entries; always show the active persona
-        const isActive = avatarId === currentAvatarId;
-        return isActive || (name && name !== '[Unnamed Persona]');
-    });
-
-    if (!keys.length) {
-        const empty = createElement('div', { className: 'sb-persona-option-empty' });
-        empty.textContent = 'No personas defined';
-        optionsList.appendChild(empty);
-    } else {
-        for (const avatarId of keys) {
-            const name = personas[avatarId] || avatarId;
-            const title = personaDescriptions[avatarId]?.title || '';
-            const isActive = avatarId === currentAvatarId;
-            addPersonaOption(optionsList, avatarId, name, title, isActive, context);
-        }
-    }
-
     picker.appendChild(optionsList);
-    renderPersonaPickerAppendixControls(picker, context, currentAvatarId);
-    renderPersonaPickerAuthorsNoteControls(picker, context, currentAvatarId);
-
-    const bubble = document.getElementById('sb-persona-bubble');
-    if (bubble instanceof HTMLElement) {
-        document.body.appendChild(picker);
-        positionPersonaPicker(picker, bubble, () => {
-            if (focus) {
-                const activeOption = picker.querySelector('.sb-persona-option.is-active');
-                (activeOption ?? picker.querySelector('button, input'))?.focus();
-            }
-        });
+    document.body.appendChild(picker);
+    refreshOpenPersonaPicker();
+    const initialOption = optionsList.querySelector('.sb-persona-option.is-active') ?? optionsList.querySelector('.sb-persona-option');
+    if (initialOption) {
+        focusPersonaOption(optionsList, initialOption);
+    } else {
+        picker.querySelector('button, input')?.focus({ preventScroll: true });
     }
 }
 
 function refreshOpenPersonaPicker() {
-    const existing = document.getElementById('sb-persona-picker');
-    if (!existing) {
-        return;
+    const picker = document.getElementById('sb-persona-picker');
+    if (!picker) return;
+    const bubble = document.getElementById('sb-persona-bubble');
+    const { context, personas, currentAvatarId } = getCurrentPersonaSelection();
+    if (!bubble || !context) return;
+
+    const personaDescriptions = context.powerUserSettings?.persona_descriptions ?? {};
+    // Keep the two scrollers mounted. A note toggle and its settings save both
+    // publish updates, but neither should replay the reveal or move the controls.
+    const optionsList = picker.querySelector('.sb-persona-options');
+    const entries = Object.entries(personas)
+        .filter(([id, name]) => id === currentAvatarId || (name && name !== '[Unnamed Persona]'))
+        .map(([id, name]) => [id, name || id, personaDescriptions[id]?.title || '']);
+    const optionsKey = JSON.stringify(entries);
+    if (optionsList.dataset.entries !== optionsKey) {
+        const scrollTop = optionsList.scrollTop;
+        optionsList.replaceChildren();
+        if (!entries.length) {
+            optionsList.append(createElement('div', { className: 'sb-persona-option-empty', text: 'No personas defined' }));
+        } else {
+            for (const [id, name, title] of entries) addPersonaOption(optionsList, id, name, title);
+        }
+        optionsList.scrollTop = scrollTop;
+        optionsList.dataset.entries = optionsKey;
     }
 
-    existing.remove();
-    openPersonaPicker({ focus: false });
+    for (const option of optionsList.querySelectorAll('.sb-persona-option')) {
+        const avatarId = option.dataset.avatarId;
+        const isActive = avatarId === currentAvatarId;
+        option.classList.toggle('is-active', isActive);
+        if (option.getAttribute('aria-pressed') !== String(isActive)) {
+            option.setAttribute('aria-pressed', String(isActive));
+        }
+        const activeAppendices = getActivePersonaAppendicesFromContext(context, avatarId);
+        const chipsKey = JSON.stringify(activeAppendices.map(appendix => appendix.name));
+        if (option.dataset.chips !== chipsKey) {
+            option.dataset.chips = chipsKey;
+            option.querySelector('.sb-persona-option-appendices')?.remove();
+            if (activeAppendices.length) {
+                const chips = createElement('span', { className: 'sb-persona-option-appendices' });
+                for (const appendix of activeAppendices) {
+                    chips.appendChild(createElement('span', { className: 'sb-persona-appendix-chip', text: `+ ${appendix.name}` }));
+                }
+                option.querySelector('.sb-persona-option-info').append(chips);
+            }
+        }
+    }
+
+    renderPersonaPickerAppendixControls(picker, context, currentAvatarId);
+    renderPersonaPickerAuthorsNoteControls(picker, context, currentAvatarId);
+    positionPersonaPicker(picker, bubble);
 }
 
 function renderPersonaPickerAppendixControls(picker, context, avatarId) {
+    const existing = picker.querySelector('.sb-persona-picker-appendices:not(.sb-persona-picker-authors-note)');
     if (!avatarId) {
+        existing?.remove();
         return;
     }
 
@@ -22301,19 +22912,30 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
     const personas = context?.powerUserSettings?.personas ?? {};
     const personaName = personas[avatarId] || avatarId;
     const activeIds = new Set(getActivePersonaAppendixIdsFromContext(context, avatarId));
+    const notesKey = JSON.stringify([avatarId, personaName, appendices.map(({ id, name }) => [id, name])]);
+    const countText = `${activeIds.size}/${appendices.length} on`;
+    if (existing?.dataset.notes === notesKey) {
+        const count = existing.querySelector('.sb-persona-picker-appendices-count');
+        if (count.dataset.activeCount !== String(activeIds.size)) {
+            count.dataset.activeCount = String(activeIds.size);
+            count.textContent = countText;
+        }
+        for (const checkbox of existing.querySelectorAll('input')) {
+            checkbox.checked = activeIds.has(checkbox.value);
+        }
+        return;
+    }
+
     const section = createElement('section', {
         className: 'sb-persona-picker-appendices',
         attrs: { 'aria-label': `Scenario Notes for ${personaName}` },
     });
+    section.dataset.notes = notesKey;
     const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
     const title = createElement('strong', { text: 'Scenario Notes' });
-    const count = createElement('span', { className: 'sb-persona-picker-appendices-count' });
-    const updateCount = () => {
-        const activeCount = appendices.filter(appendix => activeIds.has(appendix.id)).length;
-        count.textContent = `${activeCount}/${appendices.length} on`;
-        count.hidden = !appendices.length;
-    };
-    updateCount();
+    const count = createElement('span', { className: 'sb-persona-picker-appendices-count', text: countText });
+    count.dataset.activeCount = String(activeIds.size);
+    count.hidden = !appendices.length;
     const manageButton = createElement('button', {
         className: 'sb-persona-picker-manage menu_button menu_button_icon',
         attrs: { type: 'button', title: 'Manage Scenario Notes' },
@@ -22326,10 +22948,14 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
     if (!appendices.length) {
         const empty = createElement('p', { className: 'sb-persona-picker-appendices-empty', text: 'No Scenario Notes on this persona yet.' });
         section.appendChild(empty);
-        picker.appendChild(section);
-        return;
+    } else {
+        section.appendChild(createPersonaPickerAppendixToggles(appendices, avatarId, activeIds));
     }
+    if (existing) existing.replaceWith(section);
+    else picker.querySelector('.sb-persona-options').after(section);
+}
 
+function createPersonaPickerAppendixToggles(appendices, avatarId, activeIds) {
     const controls = createElement('div', {
         className: 'sb-persona-picker-appendix-toggles',
         attrs: { role: 'group', 'aria-label': 'Use with Scenario Notes' },
@@ -22344,18 +22970,14 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         });
         checkbox.checked = activeIds.has(appendix.id);
         checkbox.addEventListener('change', () => {
+            const context = getSillyTavernContext();
             const nextIds = getActivePersonaAppendixIdsFromContext(context, avatarId).filter(id => id !== appendix.id);
             if (checkbox.checked) {
                 nextIds.push(appendix.id);
             }
             setActivePersonaAppendixIdsFromContext(context, avatarId, nextIds);
-            if (checkbox.checked) {
-                activeIds.add(appendix.id);
-            } else {
-                activeIds.delete(appendix.id);
-            }
-            updateCount();
             updatePersonaBubble();
+            refreshOpenPersonaPicker();
         });
 
         const labelText = createElement('span', { text: appendix.name });
@@ -22363,12 +22985,13 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
         controls.appendChild(label);
     }
 
-    section.appendChild(controls);
-    picker.appendChild(section);
+    return controls;
 }
 
 function renderPersonaPickerAuthorsNoteControls(picker, context, avatarId) {
+    const existing = picker.querySelector('.sb-persona-picker-authors-note');
     if (!avatarId) {
+        existing?.remove();
         return;
     }
 
@@ -22378,16 +23001,28 @@ function renderPersonaPickerAuthorsNoteControls(picker, context, avatarId) {
     const entry = personaNotes && typeof personaNotes === 'object' ? personaNotes[avatarId] : null;
     const enabled = Boolean(entry?.useNote);
     const hasPrompt = Boolean(String(entry?.prompt ?? '').trim());
+    const statusText = enabled && hasPrompt ? 'On' : hasPrompt ? 'Off (saved)' : 'Off';
+    const label = `Author's Note for ${personaName}`;
+    if (existing) {
+        if (existing.getAttribute('aria-label') !== label) existing.setAttribute('aria-label', label);
+        const status = existing.querySelector('.sb-persona-picker-appendices-count');
+        if (status.dataset.status !== statusText) {
+            status.dataset.status = statusText;
+            status.textContent = statusText;
+        }
+        return;
+    }
     const section = createElement('section', {
         className: 'sb-persona-picker-appendices sb-persona-picker-authors-note',
-        attrs: { 'aria-label': `Author's Note for ${personaName}` },
+        attrs: { 'aria-label': label },
     });
     const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
     const title = createElement('strong', { text: 'Author\'s Note' });
     const status = createElement('span', {
         className: 'sb-persona-picker-appendices-count',
-        text: enabled && hasPrompt ? 'On' : hasPrompt ? 'Off (saved)' : 'Off',
+        text: statusText,
     });
+    status.dataset.status = statusText;
     const editButton = createElement('button', {
         className: 'sb-persona-picker-manage menu_button menu_button_icon',
         attrs: {
@@ -22424,31 +23059,19 @@ function openPersonaAppendicesManager() {
     }, 160);
 }
 
-function positionPersonaPicker(picker, bubble, onPositioned) {
+function positionPersonaPicker(picker, bubble) {
     const bubbleRect = bubble.getBoundingClientRect();
-    picker.style.visibility = 'hidden';
-    picker.style.left = '0px';
-    picker.style.top = '0px';
-    picker.style.right = 'auto';
-    picker.style.bottom = 'auto';
-
-    requestAnimationFrame(() => {
-        const pickerRect = picker.getBoundingClientRect();
-        const viewportPadding = 8;
-        const left = Math.min(
-            Math.max(viewportPadding, bubbleRect.left),
-            Math.max(viewportPadding, window.innerWidth - pickerRect.width - viewportPadding),
-        );
-        const top = Math.max(
-            viewportPadding,
-            bubbleRect.top - pickerRect.height - viewportPadding,
-        );
-
-        picker.style.left = `${Math.round(left)}px`;
-        picker.style.top = `${Math.round(top)}px`;
-        picker.style.visibility = '';
-        onPositioned?.();
-    });
+    // The Persona bubble scales about its centre on hover. Anchor to its layout
+    // edges so leaving the bubble to click a note doesn't move the picker.
+    const bubbleLeft = bubbleRect.left + (bubbleRect.width - bubble.offsetWidth) / 2;
+    const bubbleTop = bubbleRect.top + (bubbleRect.height - bubble.offsetHeight) / 2;
+    // Measure without hiding or moving the picker. The reveal only translates it.
+    const { width, height } = picker.getBoundingClientRect();
+    const viewportPadding = 8;
+    const left = Math.max(viewportPadding, Math.min(bubbleLeft, window.innerWidth - width - viewportPadding));
+    const top = Math.max(viewportPadding, bubbleTop - height - viewportPadding);
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
 }
 
 function closePersonaPicker({ restoreFocus = false } = {}) {
@@ -22462,13 +23085,15 @@ function closePersonaPicker({ restoreFocus = false } = {}) {
     }
 }
 
-function focusPersonaOption(picker, offset) {
-    const options = Array.from(picker.querySelectorAll('.sb-persona-option'));
-    const currentIndex = options.indexOf(document.activeElement);
-    const nextIndex = currentIndex === -1
-        ? 0
-        : (currentIndex + offset + options.length) % options.length;
-    options[nextIndex]?.focus();
+function focusPersonaOption(list, option) {
+    option.focus({ preventScroll: true });
+    const listRect = list.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+    if (optionRect.top < listRect.top) {
+        list.scrollTop += optionRect.top - listRect.top;
+    } else if (optionRect.bottom > listRect.bottom) {
+        list.scrollTop += optionRect.bottom - listRect.bottom;
+    }
 }
 
 async function selectPersonaOption(avatarId, context) {
@@ -22499,13 +23124,13 @@ async function selectPersonaOption(avatarId, context) {
     document.getElementById('sb-persona-bubble')?.focus({ preventScroll: true });
 }
 
-function addPersonaOption(picker, avatarId, name, title, isActive, context) {
+function addPersonaOption(optionsList, avatarId, name, title) {
     const row = createElement('div', { className: 'sb-persona-picker-row' });
     const option = createElement('button', {
-        className: `sb-persona-option${isActive ? ' is-active' : ''}`,
+        className: 'sb-persona-option',
         attrs: {
             type: 'button',
-            'aria-pressed': String(isActive),
+            'data-avatar-id': avatarId,
         },
     });
 
@@ -22530,31 +23155,19 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
         info.appendChild(desc);
     }
 
-    const activeAppendices = getActivePersonaAppendicesFromContext(context, avatarId);
-    if (activeAppendices.length) {
-        const chips = createElement('span', { className: 'sb-persona-option-appendices' });
-        for (const appendix of activeAppendices) {
-            chips.appendChild(createElement('span', { className: 'sb-persona-appendix-chip', text: `+ ${appendix.name}` }));
-        }
-        info.appendChild(chips);
-    }
-
     option.append(img, info);
 
-    option.addEventListener('click', () => { void selectPersonaOption(avatarId, context); });
+    option.addEventListener('click', () => { void selectPersonaOption(avatarId, getSillyTavernContext()); });
     option.addEventListener('keydown', event => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-            event.preventDefault();
-            focusPersonaOption(picker, 1);
-        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-            event.preventDefault();
-            focusPersonaOption(picker, -1);
-        } else if (event.key === 'Home') {
-            event.preventDefault();
-            picker.querySelector('.sb-persona-option')?.focus();
-        } else if (event.key === 'End') {
-            event.preventDefault();
-            Array.from(picker.querySelectorAll('.sb-persona-option')).at(-1)?.focus();
+        const { key } = event;
+        if (!['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End'].includes(key)) return;
+        event.preventDefault();
+        const options = Array.from(optionsList.querySelectorAll('.sb-persona-option'));
+        const index = options.indexOf(option);
+        const offset = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+        const next = key === 'Home' ? 0 : key === 'End' ? options.length - 1 : (index + offset + options.length) % options.length;
+        if (options[next]) {
+            focusPersonaOption(optionsList, options[next]);
         }
     });
 
@@ -22569,7 +23182,7 @@ function addPersonaOption(picker, avatarId, name, title, isActive, context) {
         openCharacterPanelTab('persona', { editAvatarId: avatarId });
     });
     row.append(option, editButton);
-    picker.appendChild(row);
+    optionsList.appendChild(row);
 }
 
 function initAll() {
@@ -22611,6 +23224,7 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
+    document.addEventListener('neconyan:scratchpad-visibility', syncMobileModalState);
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();
@@ -22966,6 +23580,7 @@ if (ctx?.eventSource && ctx?.event_types) {
 
 // Run links after every APP_READY listener, including async Home and extension setup.
 window.addEventListener('neconyan:ready', () => {
+    announceReloadAfterUpdate();
     startNeconyanUpdateToast();
 });
 

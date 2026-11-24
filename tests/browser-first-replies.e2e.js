@@ -188,9 +188,8 @@ const STALE_CHOICE_TEXT = 'An image changed after its choice was saved. Choose a
 const NOTICE_TITLE = 'Review needed before replying';
 const NOTICE_ACTION = 'Open Review chat images to choose what the model receives.';
 const PROVIDER_FAILURE_TEXT = 'Fixture provider failure.';
-// On unchanged staging this provider-failure control produced one page error ('Got response status 500') and the generic
-// Chat Completion API toast.
-const PROVIDER_FAILURE_PAGE_ERRORS = 1;
+// Handled provider failures show the generic Chat Completion API toast and end Send quietly with no uncaught page error.
+const PROVIDER_FAILURE_PAGE_ERRORS = 0;
 const PROVIDER_FAILURE_GENERIC_TOAST = true;
 // The server group route saves, acknowledges settings and submits before it answers; its refusal event can arrive well after a browser refusal.
 const REFUSAL_EVENT_TIMEOUT_MS = 30000;
@@ -565,16 +564,19 @@ test.describe('browser image refusal notice', () => {
         const { page, pageErrors } = await openSolo(account, false);
         await page.route('**/api/backends/chat-completions/generate', route => route.fulfill({ status: 500, contentType: 'application/json',
             body: JSON.stringify({ error: { message: PROVIDER_FAILURE_TEXT } }) }));
+        const failedResponse = page.waitForResponse(response => response.url().endsWith('/api/backends/chat-completions/generate'));
         await sendWithButton(page, false, 'Provider failure control.');
-        try { await expect.poll(() => pageErrors.length, { timeout: 15000 }).toBe(PROVIDER_FAILURE_PAGE_ERRORS); }
-        catch { /* the count assertion below reports the recorded value */ }
+        expect((await failedResponse).status()).toBe(500);
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 15000 }).toBe(false);
+        const errorToast = page.locator('#toast-container .toast-error').filter({ hasText: PROVIDER_FAILURE_TEXT });
+        await expect(errorToast).toHaveCount(1);
+        const genericToast = await errorToast.count();
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(500);
-        const genericToast = await page.locator('#toast-container .toast-error').filter({ hasText: PROVIDER_FAILURE_TEXT }).count();
         await saveState(info, 'provider-failure-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length,
             extra: { genericErrorToast: genericToast > 0 } }));
         expect(pageErrors).toHaveLength(PROVIDER_FAILURE_PAGE_ERRORS);
+        expect(await page.evaluate(() => window.__failures.length)).toBe(PROVIDER_FAILURE_PAGE_ERRORS);
         expect(genericToast > 0).toBe(PROVIDER_FAILURE_GENERIC_TOAST);
         expect(await page.evaluate(() => window.__refusals.length)).toBe(0);
         await expect(noticeToast(page)).toHaveCount(0);

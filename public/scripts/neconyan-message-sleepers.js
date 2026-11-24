@@ -52,6 +52,15 @@ function queuePlacement(message) {
     });
 }
 
+// The shell writes viewport variables to the root while a phone keyboard animates.
+// Those attributes restyle the page but cannot move a message inside the chat.
+function withoutShellStyle(style) {
+    return String(style || '')
+        .replace(/--sb-(?:shell|ios)-[^:;]+:\s*[^;]*;?/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function watchBubbles() {
     for (const bubble of observedBubbles) {
         if (bubble.isConnected) continue;
@@ -77,13 +86,21 @@ function initBubblePlacement() {
         if (records.some(record => record.target === chat || [...record.addedNodes, ...record.removedNodes]
             .some(node => node instanceof HTMLElement && (node.matches('.mes, .mes_block, .mes_text, .nn-response-controls') || node.querySelector('.mes_block'))))) watchBubbles();
     }).observe(chat, { childList: true, subtree: true });
-    const refresh = new MutationObserver(() => {
+    const refresh = new MutationObserver(records => {
+        const relevant = records.some(record => {
+            const target = record.target;
+            const current = target.getAttribute(record.attributeName);
+            if (record.attributeName === 'style' && withoutShellStyle(record.oldValue) === withoutShellStyle(current)) return false;
+            if (record.attributeName === 'class' && record.oldValue === current) return false;
+            return true;
+        });
+        if (!relevant) return;
         // The body class carries the chat style, so a style switch attaches or releases the Tide watch.
         syncTideHeaderWatch();
         for (const bubble of observedBubbles) queuePlacement(bubble.closest('.mes'));
     });
     for (const element of [document.body, document.documentElement, document.getElementById('sheld')]) {
-        if (element) refresh.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'data-neconyan-chat-mode', 'data-sbtw-mode', 'data-sb-conversation-mode'] });
+        if (element) refresh.observe(element, { attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'data-neconyan-chat-mode', 'data-sbtw-mode', 'data-sb-conversation-mode'] });
     }
     window.addEventListener('resize', () => { for (const bubble of observedBubbles) queuePlacement(bubble.closest('.mes')); });
     // The Tide container is measured from the header's boxes, and a header can change width without

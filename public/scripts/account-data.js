@@ -3,6 +3,7 @@ import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { createAccountResetClient } from './account-reset-client.js';
 import { t } from './i18n.js';
+import { requestAndroidDataBackup } from './android-native-bridge.js';
 
 export async function resetAccountData(credentials, options) {
     const client = await getOperationClient();
@@ -40,6 +41,19 @@ export async function mountAccountDataWork(container, { signal } = {}) {
     const stop = document.createElement('button'); stop.type = 'button'; stop.className = 'menu_button'; stop.textContent = 'Stop backup'; stop.style.display = 'none';
     const status = document.createElement('div'); status.setAttribute('role', 'status');
     wrapper.append(select, stop, download, status); container.append(wrapper);
+    if (typeof globalThis.NeconyanExport?.saveDataBackup === 'function') {
+        const nativeBackup = document.createElement('button');
+        nativeBackup.type = 'button'; nativeBackup.className = 'menu_button'; nativeBackup.textContent = t`Save a backup of my data`;
+        nativeBackup.addEventListener('click', async () => {
+            nativeBackup.disabled = true;
+            try {
+                if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
+                if (!await saveSettings(0, { returnResult: true })) throw new Error(t`Save the current settings before creating a backup.`);
+                if (!requestAndroidDataBackup()) throw new Error(t`The app is not ready to save a backup. Try again in a moment.`);
+            } catch (error) { showError(status)(error); } finally { nativeBackup.disabled = false; }
+        });
+        wrapper.prepend(nativeBackup);
+    }
     mountOperationRecovery(wrapper, { signal, onError: error => { status.textContent = error.message; } });
     let controller; let selected; let refreshing = false;
     const refresh = async () => {

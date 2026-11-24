@@ -18,6 +18,7 @@ import { convertClaudePrompt } from '../prompt-converters.js';
 import { createTextTokenCache } from '../generation/token-count-cache.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
+import { getTiktokenEncoding } from '../tiktoken-cache.js';
 import { getConfigValue, isValidUrl } from '../util.js';
 
 const require = createRequire(import.meta.url);
@@ -690,7 +691,7 @@ export function getTiktokenTokenizer(model) {
         return tokenizersCache.get(encoding);
     }
 
-    const tokenizer = tiktoken.get_encoding(encoding);
+    const tokenizer = getTiktokenEncoding(encoding);
     console.info('Instantiated the tokenizer for', encoding);
     tokenizersCache.set(encoding, tokenizer);
     return tokenizer;

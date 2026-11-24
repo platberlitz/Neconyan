@@ -28,6 +28,14 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-help.css', import.meta.url),
     },
     {
+        name: 'slash commands',
+        url: new URL('../public/css/neconyan-slash-commands.css', import.meta.url),
+    },
+    {
+        name: 'character folder tabs',
+        url: new URL('../public/css/neconyan-character-folders.css', import.meta.url),
+    },
+    {
         name: 'Mewmory',
         url: new URL('../public/css/mewmory.css', import.meta.url),
     },
@@ -66,6 +74,14 @@ const stylesheets = [
     {
         name: 'Sunken Reef shell style',
         url: new URL('../public/css/shell-styles/sunken-reef.css', import.meta.url),
+    },
+    {
+        name: 'Neconyan group chats',
+        url: new URL('../public/css/neconyan-groups.css', import.meta.url),
+    },
+    {
+        name: 'Group chats base styles',
+        url: new URL('../public/css/rm-groups.css', import.meta.url),
     },
 ].map(stylesheet => ({
     ...stylesheet,

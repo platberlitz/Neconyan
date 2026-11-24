@@ -1,5 +1,5 @@
-import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrl, eventSource, event_types } from '../script.js';
-import { groups, selected_group, updateGroupSpeakerControls } from './group-chats.js';
+import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbnailUrlForViewport, eventSource, event_types, is_send_press } from '../script.js';
+import { groups, is_group_generating, selected_group, updateGroupSpeakerControls } from './group-chats.js';
 import { readGroupScene } from './group-chat-visibility.js';
 import { t } from './i18n.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
@@ -15,6 +15,12 @@ export function currentGroupScene() {
 export async function changeGroupScene(patch) {
     const current = currentGroupScene();
     if (!current) return;
+    // A reply in progress already chose who speaks and who hears it.
+    if (is_send_press || is_group_generating) {
+        toastr.info(t`Wait for the current reply to finish.`);
+        renderGroupScene();
+        return;
+    }
     updateChatMetadata({ group_scene: readGroupScene({ group_scene: { ...current.scene, ...patch } }, current.group.members) });
     renderGroupScene();
     updateGroupSpeakerControls();
@@ -25,7 +31,7 @@ export function renderGroupScene() {
     const strip = document.getElementById('group_scene_strip');
     if (!strip) return;
     const current = currentGroupScene();
-    const inUse = Boolean(current && (current.scene.location || current.scene.away.length || current.scene.whisper_to.length));
+    const inUse = Boolean(current && (current.scene.location || current.scene.away.length || current.scene.whisper_to.length || current.scene.heard_from));
     if (!current) sceneExpanded = false;
     // The strip stays out of the way until it is opened or the scene holds something worth showing.
     strip.classList.toggle('displayNone', !current || !(sceneExpanded || inUse));
@@ -38,6 +44,7 @@ export function renderGroupScene() {
     const summary = scene.location || t`Scene`;
     $('#group_scene_summary').text(`${summary} · ${t`${present} of ${group.members.length} present`}`);
     $('#group_scene_location').val(scene.location);
+    $('#group_scene_start').val(scene.heard_from || '');
     const whisper = $('#group_scene_whisper').empty().append($('<option value=""></option>').text(t`To everyone`));
     for (const avatar of group.members) {
         const name = characters.find(item => item.avatar === avatar)?.name || avatar;
@@ -52,10 +59,16 @@ export function renderGroupScene() {
         const present = !scene.away.includes(avatar);
         const button = $('<button type="button" class="menu_button group_scene_member"></button>')
             .attr({ 'data-avatar': avatar, 'aria-pressed': String(present), title: present ? t`Mark away` : t`Bring into the scene` });
-        button.append($('<img alt="">').attr('src', getThumbnailUrl('avatar', avatar)));
+        button.append($('<img alt="">').attr('src', getThumbnailUrlForViewport('avatar', avatar)));
         button.append($('<span class="group_scene_member_name"></span>').text(character.name));
         if (getGroupMemberRole(group, character) === 'narrator') {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Narrator / GM`));
+        }
+        if (scene.sees_all.includes(avatar)) {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`Sees everything`));
+        }
+        if (scene.with_group?.includes(avatar)) {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`With the group`));
         }
         if (!present) {
             button.append($('<small class="group_scene_member_tag"></small>').text(t`Away`));
@@ -75,6 +88,10 @@ export function initGroupSceneControls() {
     $('#group_scene_toggle').on('click', () => toggleGroupScene());
     $('#group_speaker_controls').on('click', '#group_scene_open', () => toggleGroupScene());
     $('#group_scene_location').on('change', function () { void changeGroupScene({ location: this.value }); });
+    $('#group_scene_start').on('change', function () {
+        const start = Math.max(0, Math.floor(Number(this.value) || 0));
+        void changeGroupScene({ heard_from: start });
+    });
     $('#group_scene_whisper').on('change', function () { void changeGroupScene({ whisper_to: this.value ? [this.value] : [] }); });
     $('#group_scene_members').on('click', '[data-avatar]', function () {
         const current = currentGroupScene();

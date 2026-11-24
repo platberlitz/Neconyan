@@ -7,7 +7,7 @@ import { createLimiter } from './file-summary-cache.js';
 // in bounded batches so a recent-list refresh does not open one syscall per file
 // at once, and one vanished file cannot discard the rest of its category.
 export const RECENT_SCAN_CONCURRENCY = 32;
-const FILES_PER_DIRECTORY = 8;
+const STAT_BATCH_SIZE = 256;
 
 /**
  * @template T, R
@@ -47,9 +47,35 @@ async function statChatFile(stat, filePath) {
 }
 
 /**
+ * Stats many files with the synchronous call in short batches. A large library
+ * has tens of thousands of chats, and one promise per file costs more than the
+ * stat itself. Yielding between batches keeps each blocking slice short.
+ * @param {string[]} filePaths
+ * @returns {Promise<Map<string, number | null>>}
+ */
+async function statChatFilesInBatches(filePaths) {
+    const mtimes = new Map();
+    for (let index = 0; index < filePaths.length; index += STAT_BATCH_SIZE) {
+        for (const filePath of filePaths.slice(index, index + STAT_BATCH_SIZE)) {
+            try {
+                mtimes.set(filePath, fs.statSync(filePath).mtimeMs);
+            } catch {
+                // Deleted, renamed or unreadable since readdir: drop only this entry.
+                mtimes.set(filePath, null);
+            }
+        }
+        if (index + STAT_BATCH_SIZE < filePaths.length) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    }
+    return mtimes;
+}
+
+/**
  * Builds the same chat inventory as the former serial walk: character chats for
- * each card, group chats listed by each group file, and root chats. Concurrency
- * bounds directory reads and stats; per-file failures skip only that file.
+ * each card, group chats listed by each group file, and root chats. The default
+ * stat path batches synchronous stats; an injected async stat keeps the old
+ * bounded concurrency. Per-file failures skip only that file.
  * @param {object} directories User directory map
  * @param {{concurrency?: number, stat?: Function, readdir?: Function, readFile?: Function}} [options]
  * @returns {Promise<Array<{pngFile?: string, groupId?: string, filePath: string, mtime: number}>>}
@@ -82,9 +108,7 @@ export async function collectRecentChatFiles(directories, {
                 return [];
             }
             const jsonlFiles = chatFiles.filter(file => path.extname(file) === '.jsonl');
-            const entries = await mapWithConcurrency(jsonlFiles, FILES_PER_DIRECTORY, file =>
-                statChatFile(boundedStat, path.join(pathToChats, file)));
-            return entries.filter(Boolean).map(entry => ({ pngFile, ...entry }));
+            return jsonlFiles.map(file => ({ pngFile, filePath: path.join(pathToChats, file) }));
         });
         return perCharacter.flat();
     };
@@ -105,9 +129,10 @@ export async function collectRecentChatFiles(directories, {
                 if (!Array.isArray(groupData.chats)) {
                     return [];
                 }
-                const entries = await mapWithConcurrency(groupData.chats, FILES_PER_DIRECTORY, chat =>
-                    statChatFile(boundedStat, path.join(directories.groupChats, `${chat}.jsonl`)));
-                return entries.filter(Boolean).map(entry => ({ groupId: groupData.id, ...entry }));
+                return groupData.chats.map(chat => ({
+                    groupId: groupData.id,
+                    filePath: path.join(directories.groupChats, `${chat}.jsonl`),
+                }));
             } catch {
                 // Skip group files that cannot be read or parsed.
                 return [];
@@ -124,20 +149,33 @@ export async function collectRecentChatFiles(directories, {
         } catch {
             return [];
         }
-        const entries = await mapWithConcurrency(chatFiles, concurrency, file =>
-            statChatFile(boundedStat, path.join(directories.chats, file)));
-        return entries.filter(Boolean);
+        return chatFiles.map(file => ({ filePath: path.join(directories.chats, file) }));
     };
 
     const categories = await Promise.allSettled([getCharacterChatFiles(), getGroupChatFiles(), getRootChatFiles()]);
-    /** @type {Array<{pngFile?: string, groupId?: string, filePath: string, mtime: number}>} */
-    const allChatFiles = [];
+    /** @type {Array<{pngFile?: string, groupId?: string, filePath: string}>} */
+    const candidates = [];
     for (const category of categories) {
         if (category.status === 'fulfilled') {
-            allChatFiles.push(...category.value);
+            candidates.push(...category.value);
         }
     }
-    return allChatFiles;
+
+    if (stat === fs.promises.stat) {
+        const mtimes = await statChatFilesInBatches(candidates.map(candidate => candidate.filePath));
+        return candidates
+            .map(candidate => {
+                const mtime = mtimes.get(candidate.filePath);
+                return mtime === null ? null : { ...candidate, mtime };
+            })
+            .filter(Boolean);
+    }
+
+    const entries = await mapWithConcurrency(candidates, concurrency, candidate =>
+        statChatFile(boundedStat, candidate.filePath));
+    return entries
+        .map((entry, index) => entry ? { ...candidates[index], ...entry } : null)
+        .filter(Boolean);
 }
 
 /**

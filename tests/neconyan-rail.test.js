@@ -53,6 +53,7 @@ function createWelcomeRuntime(overrides = {}) {
         getWelcomeFunctionSource('focusSendTextarea'),
         getWelcomeFunctionSource('openNeconyanTemporaryChat'),
         getWelcomeFunctionSource('openNeconyanRecentChat'),
+        'let railRouteRequest = 0;',
         getWelcomeFunctionSource('activateNeconyanRailRoute'),
     ].join('\n'), context);
     return { context, actions, textarea };

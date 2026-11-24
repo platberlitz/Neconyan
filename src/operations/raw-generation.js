@@ -1,8 +1,10 @@
 import { runChatProfile } from '../generation/service.js';
 import { isDefiniteProviderRefusal, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { getJob } from '../jobs/store.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { captureLabConnection, readLabSettings } from '../labs/sources.js';
+import { REASONING_CONTROL_VALUES } from '../../public/scripts/chat-reasoning-capabilities.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
 
@@ -23,15 +25,17 @@ export async function captureRawGeneration(base, account, input = {}) {
     if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 32768) {
         throw operationError('Choose a reply length between 1 and 32768 tokens.', 400);
     }
+    const reasoningEffort = input.reasoningEffort ?? null;
+    if (reasoningEffort !== null && !REASONING_CONTROL_VALUES.includes(reasoningEffort)) throw operationError('Choose a known reasoning effort.', 400);
     const saved = readLabSettings(base);
-    const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
-    const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
-        acknowledgement: input.acknowledgement, maxTokens }, macros);
+    const macros = { macroEnhanced: captureEnhancedMacros(saved), names: { user: String(saved.name1 || 'User'), char: '' }, variables: {}, extra: { chat: [], chatMetadata: {}, characterScope: 'none' } };
     const messages = [
         ...(systemPrompt.trim() ? [{ role: 'system', content: systemPrompt }] : []),
         ...(prompt.trim() ? [{ role: 'user', content: prompt }] : []),
     ];
-    return { account, binding, macros, maxTokens, messages };
+    const { binding } = await captureLabConnection(base, { profileId: typeof input.profileId === 'string' ? input.profileId : '',
+        acknowledgement: input.acknowledgement, maxTokens, messages }, macros);
+    return { account, binding, macros, maxTokens, messages, ...(reasoningEffort ? { reasoningEffort } : {}) };
 }
 
 export async function runRawGeneration(context, plan, { generate = runChatProfile } = {}) {
@@ -43,9 +47,14 @@ export async function runRawGeneration(context, plan, { generate = runChatProfil
         response = await generate({ context: { directories: context.directories, owner: context.owner }, jobContext: context,
             binding: plan.binding, messages: plan.messages, maxTokens: plan.maxTokens,
             macroEnvironment: createMacroEnvironment(plan.macros), userName: plan.macros.names.user, characterName: '',
+            ...(plan.reasoningEffort && plan.binding.kind === 'active' && plan.binding.backend === 'chat' ? { rawOptions: { reasoningEffort: plan.reasoningEffort } } : {}),
             signal: context.signal, stepNamespace: 'raw', beforeDispatch: () => withOperation(context, () => {}) });
     } catch (error) {
-        if (isDefiniteProviderRefusal(error?.status)) error.operationRefused = true;
+        if (error?.code !== 'PROVIDER_OUTCOME_UNKNOWN'
+            && getJob(context.directories, context.job.id)?.recoverability !== 'unknown-outcome'
+            && isDefiniteProviderRefusal(error?.providerStatus ?? error?.status)) {
+            error.operationRefused = true;
+        }
         throw error;
     }
     const text = String(typeof response === 'string' ? response : response?.text ?? '').trim();

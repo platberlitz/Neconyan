@@ -53,14 +53,19 @@ export function captureLabChat(base, account, locator) {
                 macroEnhanced: captureEnhancedMacros(settings, character.extensions, { personaAvatar: persona.evidence?.avatar, group: Boolean(selected.group) }),
                 character: { ...character, persona: persona?.description || '' },
                 variables: { global: settings.extension_settings?.variables?.global || {}, local: parsed.records[0].chat_metadata?.variables || {} },
-                extra: { chat: parsed.records.slice(1), chatMetadata: parsed.records[0].chat_metadata || {} } } };
+                extra: { chat: parsed.records.slice(1), chatMetadata: parsed.records[0].chat_metadata || {},
+                    ...(selected.group ? { characterScope: 'none' } : { character, characterAvatar: selected.avatar }) } } };
     });
 }
 
-export async function captureLabConnection(base, { profileId = '', acknowledgement, maxTokens }, macros) {
+// The Chat Completion formatter rejects an empty message list, so a connection check without real messages sends a stand-in.
+const CONNECTION_PROBE_MESSAGES = Object.freeze([{ role: 'user', content: 'Hello' }]);
+
+export async function captureLabConnection(base, { profileId = '', acknowledgement, maxTokens, messages = CONNECTION_PROBE_MESSAGES }, macros) {
     const binding = captureGenerationBinding(base.directories, profileId ? { kind: 'profile', profileId } : { kind: 'active' }, acknowledgement);
     const material = resolveGenerationProfile(base.directories, binding);
-    await validateActiveGenerationContext(material, createMacroEnvironment(macros), [], {}, { maxTokens });
+    const checked = Array.isArray(messages) && messages.length ? messages : CONNECTION_PROBE_MESSAGES;
+    await validateActiveGenerationContext(material, createMacroEnvironment(macros), structuredClone(checked), {}, { maxTokens });
     return { binding, contextLimit: Number(material.contextLimit || material.preset?.openai_max_context
         || material.active?.openai_max_context || readLabSettings(base).max_context || 4096) };
 }

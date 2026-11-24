@@ -63,7 +63,7 @@ const simpleGitMock = jest.fn(() => {
     return createClient(activeHarness, { ...activeHarness.state });
 });
 
-jest.unstable_mockModule('simple-git', () => ({ default: simpleGitMock, simpleGit: simpleGitMock }));
+jest.unstable_mockModule('simple-git', () => ({ simpleGit: simpleGitMock }));
 
 const { getVersion } = await import('../src/util.js');
 

@@ -51,7 +51,7 @@ async function prepare(page, baseURL, effort = 'max') {
             Object.assign(data.config, { enableNewChats: false, autoUpdate: false, autoHide: false });
             return route.fulfill({ response, json: data });
         }
-        if (['/api/notebooks/reply-requirements', '/api/mewmory/inspect', '/api/resumable-generations/list'].includes(url.pathname)) return route.continue();
+        if (['/api/notebooks/reply-requirements', '/api/mewmory/inspect', '/api/mewmory/prepare', '/api/resumable-generations/list'].includes(url.pathname)) return route.continue();
         if (url.pathname.startsWith('/api/') && !/^\/api\/(settings|secrets|presets|characters|chats|groups|avatars|backgrounds|worldinfo|content|themes|quick-replies|users|stats|tokenizers|chat-navigation)\//.test(url.pathname)
             && !['/api/ping', '/api/extensions/discover'].includes(url.pathname)) return route.abort();
         return route.continue();

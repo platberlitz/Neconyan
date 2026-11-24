@@ -7,6 +7,7 @@ import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -25,6 +26,7 @@ function createSaveRuntime(group = false) {
     const runtime = vm.createContext({
         console: { trace: jest.fn(), warn: jest.fn(), error: jest.fn() },
         structuredClone,
+        activeGenerationRun: null,
         chatSaveQueue: new Promise(resolve => { releaseQueue = resolve; }),
         chat: [{ mes: 'queued message', extra: { value: 'queued' } }],
         chat_metadata: { integrity: 'original' },
@@ -253,7 +255,7 @@ for (const change of ['different chat in one group', 'superseding load of the sa
         const gate = new Promise(resolve => { release = resolve; });
         const runtime = vm.createContext({
             console, groups: [group], selected_group: 'group', chat: [], chat_metadata: {}, owner,
-            roleplayAccountStamp, rememberRoleplayRead,
+            roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages,
             getCurrentUserHandle: () => runtime.owner,
             getChatGeneration: () => generation, incrementChatGeneration: () => { generation++; },
             validateGroup: async () => {}, unshallowGroupMembers: async () => {},
@@ -264,7 +266,7 @@ for (const change of ['different chat in one group', 'superseding load of the sa
                     evidence: { account, source: { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) } } };
             },
             loadItemizedPrompts: async () => { if (loads === 1) { signal(); await gate; } },
-            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray: () => {},
+            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray: () => {}, importPresenceRecords: () => false,
             printMessages: async () => {}, updateChatMetadata: metadata => { runtime.chat_metadata = metadata; },
             eventSource: { emit: async () => {} }, event_types: {}, getCurrentChatId: () => group.chat_id,
             toastr: { error: jest.fn() }, t: strings => strings.join(''),

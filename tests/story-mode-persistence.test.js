@@ -8,6 +8,7 @@ import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
+import { digestMessageFingerprints, fingerprintMessages } from '../public/scripts/chat-patch-save.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/extensions.js', 'scripts/group-chats.js', 'scripts/utils.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -38,7 +39,7 @@ function saveContext(group = false) {
         getCurrentChatId: () => 'story',
         chatGeneration: 1, getChatGeneration: () => 1,
         getChatBackupSaveOptions, getQueuedChatSaveAbortReason, uuidv4: randomUUID,
-        getPendingChatNameCommit,
+        getPendingChatNameCommit, fingerprintMessages, digestMessageFingerprints,
         latestChatSave: null,
     });
     load(context, 'script.js', ['chatSaveFingerprint', 'saveChatConditional', 'saveMetadata']);
@@ -52,6 +53,7 @@ function loadQueuedSaveRuntime(context, group = false) {
     bindRoleplayAccount('story-test', account);
     rememberRoleplayRead(group ? { group: true, chat: 'story' } : { group: false, avatar: 'story.png', chat: 'story' }, { account, source });
     Object.assign(context, {
+        activeGenerationRun: null,
         beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
         getCurrentUserHandle: () => 'story-test', refreshCsrfToken: jest.fn(),
         getRequestHeaders: () => ({}), compressRequest: async request => request,

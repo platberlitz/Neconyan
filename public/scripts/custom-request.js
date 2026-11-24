@@ -14,6 +14,7 @@ import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { buildChatPresetPayload, createChatRequestData } from './chat-preset-request.js';
 import { isGenerationLengthFinish } from './generation-request-controls.js';
+import { recordRequestFailure, requestText, watchTextBackend } from './text-backend-failures.js';
 
 // #region Type Definitions
 /**
@@ -137,18 +138,27 @@ export class TextCompletionService {
      */
     static async sendRequest(data, extractData = true, signal = null) {
         if (data.service_tier === '') delete data.service_tier;
+        const watch = watchTextBackend({ kind: 'text', type: data.api_type, model: data.model, data, signal });
         if (!data.stream) {
-            const response = await fetchResumable(getGenerateUrl(this.TYPE), {
+            const response = await watch.run(() => fetchResumable(getGenerateUrl(this.TYPE), {
                 method: 'POST',
                 headers: getRequestHeaders(),
                 cache: 'no-cache',
                 body: JSON.stringify(data),
                 signal: signal ?? new AbortController().signal,
-            });
+            }));
 
-            const json = await response.json();
+            let json;
+            try {
+                json = await response.json();
+            } catch (error) {
+                watch.fail(error, response.ok ? 0 : response.status);
+                throw error;
+            }
             const blocked = classifyGenerationOutcome(json);
             if (blocked) throw providerBlockedError(blocked);
+            if (!response.ok) watch.rejected(response, json);
+            else watch.answered(json);
             if (!response.ok || json.error) {
                 const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
                 error.status = response.status;
@@ -170,16 +180,17 @@ export class TextCompletionService {
             };
         }
 
-        const response = await fetchResumable('/api/backends/text-completions/generate', {
+        const response = await watch.run(() => fetchResumable('/api/backends/text-completions/generate', {
             method: 'POST',
             headers: getRequestHeaders(),
             cache: 'no-cache',
             body: JSON.stringify(data),
             signal: signal ?? new AbortController().signal,
-        });
+        }));
 
         if (!response.ok) {
             const text = await response.text();
+            watch.rejected(response, text);
             tryParseStreamingError(response, text, { quiet: true });
 
             const error = new Error(`Got response status ${response.status}`);
@@ -187,10 +198,11 @@ export class TextCompletionService {
             throw error;
         }
 
+        await watch.inspect(response);
         const eventStream = new EventSourceStream();
         response.body.pipeThrough(eventStream);
         const reader = eventStream.readable.getReader();
-        return async function* streamData() {
+        async function* streamData() {
             let text = '';
             const swipes = [];
             const state = { reasoning: '' };
@@ -220,7 +232,8 @@ export class TextCompletionService {
 
                 yield { text, swipes, state };
             }
-        };
+        }
+        return watch.observe(streamData);
     }
 
     /**
@@ -400,6 +413,7 @@ export class ChatCompletionService {
             if (!response.ok || json.error) {
                 const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
                 error.status = response.status;
+                recordRequestFailure({ provider: data.chat_completion_source, model: data.model, status: Number(json.provider_status) || response.status, message: error.message, request: requestText(data) });
                 throw error;
             }
 
@@ -425,7 +439,9 @@ export class ChatCompletionService {
 
         if (!response.ok) {
             const text = await response.text();
-            tryParseStreamingError(response, text, { quiet: true });
+            const failure = { provider: data.chat_completion_source, model: data.model, request: requestText(data) };
+            tryParseStreamingError(response, text, { quiet: true, failure });
+            recordRequestFailure({ ...failure, status: response.status, message: response.statusText });
 
             const error = new Error(`Got response status ${response.status}`);
             error.status = response.status;
@@ -435,6 +451,7 @@ export class ChatCompletionService {
         const eventStream = new EventSourceStream();
         response.body.pipeThrough(eventStream);
         const reader = eventStream.readable.getReader();
+        const chatFailure = { provider: data.chat_completion_source, model: data.model, request: requestText(data) };
         return async function* streamData() {
             let text = '';
             const swipes = [];
@@ -448,7 +465,8 @@ export class ChatCompletionService {
                 }
                 const rawData = value.data;
                 if (rawData === '[DONE]') return;
-                tryParseStreamingError(response, rawData, { quiet: true });
+                if (chatFailure.request) chatFailure.request.received = text;
+                tryParseStreamingError(response, rawData, { quiet: true, failure: chatFailure });
                 const parsed = JSON.parse(rawData);
                 completed ||= streamCompletionSignal(parsed);
                 if (isGenerationLengthFinish(parsed)) state.finishReason = 'length';

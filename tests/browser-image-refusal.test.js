@@ -119,7 +119,13 @@ describe('browser image refusal notice', () => {
     const send = host => vm.runInNewContext(`(${sendSource})`, host);
     const reportedSet = () => {
         const set = new WeakSet();
-        return { set, isReportedImageRefusal: error => error !== null && typeof error === 'object' && set.has(error) };
+        const handled = new WeakSet();
+        return {
+            set,
+            handled,
+            isReportedImageRefusal: error => error !== null && typeof error === 'object' && set.has(error),
+            isReportedGenerationFailure: error => error !== null && typeof error === 'object' && handled.has(error),
+        };
     };
     const host = (Generate, reported) => ({
         isExecutingCommandsFromChatInput: false,
@@ -144,6 +150,7 @@ describe('browser image refusal notice', () => {
         Generate,
         showSwipeButtons: jest.fn(),
         isReportedImageRefusal: reported.isReportedImageRefusal,
+        isReportedGenerationFailure: reported.isReportedGenerationFailure,
     });
 
     test('a reported refusal resolves and shows the swipe buttons again, any other error is rethrown untouched', async () => {
@@ -163,6 +170,14 @@ describe('browser image refusal notice', () => {
             await expect(send(hostName)()).rejects.toBe(failure);
             expect(hostName.showSwipeButtons).not.toHaveBeenCalled();
         }
+
+        // (e) A failure that Generate has already shown and cleaned up after is not rethrown into a send that nobody awaits.
+        const handled = reportedSet();
+        const failed = new Error('The backend said no.');
+        handled.handled.add(failed);
+        const quiet = host(jest.fn(async () => { throw failed; }), handled);
+        await expect(send(quiet)()).resolves.toBeUndefined();
+        expect(quiet.showSwipeButtons).toHaveBeenCalledTimes(1);
 
         // (c) A successful generation keeps its result and shows the swipe buttons.
         const success = host(jest.fn(async () => 'done'), reportedSet());

@@ -30,6 +30,7 @@ async function account(t, { share = true } = {}) {
     const base = store.scratchpadAccountBase(request({}));
     const source = { kind: 'roleplay', key: 'character:Nova.png:Source', label: 'Source' };
     const archive = core.newState(f.locator);
+    archive.enabled = true;
     core.syncSources(archive, f.records.slice(1), readContextSourcesSync(directories, f.locator, archive));
     const add = (id, text, options = {}) => core.putRecord(archive, core.validateRecord(archive, {
         id, kind: 'event', text, refs: [archive.timeline[0]], ...options,
@@ -155,6 +156,26 @@ test('turning Mewmory off for the session refuses corrections and removes the in
     assert.doesNotMatch(await send('off'), /"type":"mewmory"/);
     store.mutateBucket(a.base, a.source, bucket => store.updateSession(bucket, a.session.id, { settings: { include: { mewmory: true } } }));
     assert.match(await send('on'), /"type":"mewmory","action":"replace","record":"<exact record id>"/);
+});
+
+test('Scratchpad cannot read or correct records when the story archive is off or restoring', async t => {
+    const a = await account(t);
+    assert.equal((await a.post('mewmory/record', { recordId: 'ferry' })).status, 200);
+    for (const restoring of [false, true]) {
+        memoryStore.mutateState(a.directories, a.f.locator, state => {
+            state.enabled = false;
+            state.visibilityRestore = restoring ? { status: 'pending', operationKey: 'restore', branchId: state.branchId,
+                account: { accountId: 'test-account', dataEpoch: 0 }, instanceId: 'test-instance' } : null;
+        });
+        const before = fs.readFileSync(a.filename);
+        const read = await a.post('mewmory/record', { recordId: 'ferry' });
+        assert.equal(read.status, 403);
+        const correct = await a.post('mewmory/correct', { recordId: 'ferry', correction: {
+            field: 'text', value: 'The ferry leaves at dusk.', expected: 'The ferry leaves at dawn.', version: 1,
+        } });
+        assert.equal(correct.status, 403);
+        assert.deepEqual(fs.readFileSync(a.filename), before);
+    }
 });
 
 test('correction blocks are parsed strictly', () => {

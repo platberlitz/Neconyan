@@ -52,9 +52,8 @@ let busyName = null;
 let currentJobId = null;
 let activeReload = null;
 let activeDiscovery = null;
-let pendingKeptReply = null;
+const pendingKeptReplies = new Map();
 let pendingKeptTimer = null;
-let pendingKeptAttempts = 0;
 let pendingKeptListeners = false;
 const replyCapabilities = new Map();
 const capabilityKey = (key, account) => JSON.stringify([account, key]);
@@ -68,7 +67,7 @@ function knownReplyCapability(key, account) {
 function syncJobControls() {
     const entry = [...observed.entries()].find(([, value]) => value.isCurrent());
     setRoleplayJobControls(entry?.[0] ?? null, entry ? () => {
-        void cancelJob(entry[0], { account: entry[1].account, reason: 'user_cancelled' }).catch(() => {});
+        requestRoleplayStop(entry[0], entry[1].account);
     } : null, { background: entry?.[1].stage === 'companions' });
 }
 
@@ -733,12 +732,21 @@ async function probeServerReplyCapability(key, account) {
     }
 }
 
+function requestRoleplayStop(jobId, account) {
+    void cancelJob(jobId, { account, reason: 'user_cancelled' }).catch(() => {
+        if (account === getCurrentUserHandle()) globalThis.toastr?.warning?.('Stop could not reach the server. Try again.');
+    });
+}
+
 function schedulePendingKeptReply() {
-    if (pendingKeptTimer || !pendingKeptReply || pendingKeptAttempts >= 40) return;
+    if (pendingKeptTimer || document.visibilityState === 'hidden') return;
+    const entries = [...pendingKeptReplies.values()].filter(entry => entry.account === getCurrentUserHandle()
+        && matchesCurrentWorkflowLocator(entry.locator) && !entry.reading);
+    if (!entries.length) return;
     pendingKeptTimer = setTimeout(() => {
         pendingKeptTimer = null;
         void flushPendingKeptReply();
-    }, 500);
+    }, entries.some(entry => entry.attempts < 40) ? 500 : 2000);
 }
 
 function ensurePendingKeptListeners() {
@@ -750,56 +758,53 @@ function ensurePendingKeptListeners() {
     globalThis.addEventListener?.('pageshow', () => { void flushPendingKeptReply(); });
 }
 
-function rememberPendingKeptReply(key, receipt, locator, account, failure = null) {
-    pendingKeptReply = { key, receipt, locator, account, failure };
-    pendingKeptAttempts = 0;
+function rememberPendingKeptReply(key, receipt, locator, account, failure, cleanup, noticeOnly) {
+    forgetPendingKeptReply(key, account);
+    pendingKeptReplies.set(JSON.stringify([account, key]), { key, receipt, locator, account, failure, cleanup, noticeOnly, attempts: 0 });
     ensurePendingKeptListeners();
     schedulePendingKeptReply();
 }
 
 function forgetPendingKeptReply(key, account) {
-    if (!pendingKeptReply || pendingKeptReply.key !== key || pendingKeptReply.account !== account) return;
-    clearTimeout(pendingKeptTimer);
-    pendingKeptTimer = null;
-    pendingKeptReply = null;
-    pendingKeptAttempts = 0;
+    const id = JSON.stringify([account, key]);
+    const entry = pendingKeptReplies.get(id);
+    pendingKeptReplies.delete(id);
+    entry?.cleanup();
 }
 
 async function flushPendingKeptReply() {
-    const entry = pendingKeptReply;
-    if (!entry) return false;
-    if (entry.account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(entry.locator)
-        || document.visibilityState === 'hidden' || busyName || isGenerating() || isChatSaving) {
-        pendingKeptAttempts += 1;
-        schedulePendingKeptReply();
-        return false;
-    }
-    pendingKeptReply = null;
-    const latest = await readTerminalReceipt(entry.key, entry.account);
-    if (latest) entry.receipt = latest;
-    if (latest?.keptReplyPending) {
-        pendingKeptReply = entry;
-        pendingKeptAttempts += 1;
-        schedulePendingKeptReply();
-        return false;
-    }
-    const reloaded = await reloadKeptReplyChat(entry.receipt, entry.locator, entry.account);
-    if (reloaded) {
-        pendingKeptAttempts = 0;
-        const kept = entry.receipt?.keptReply ?? null;
-        if (kept?.state === 'failed') {
-            const notice = roleplayKeptReplyNotice({ state: entry.failure?.state ?? 'failed', error: kept.error });
-            globalThis.toastr?.error?.(notice.message, notice.title);
-        } else if (entry.failure && entry.failure.state !== 'cancelled') {
-            await showStoppedReplyNotice(entry.failure, { kept: kept?.state === 'done', messageIndex: kept?.messageIndex,
-                account: entry.account, locator: entry.locator });
+    let adoptedAny = false;
+    for (const [id, entry] of pendingKeptReplies) {
+        const isCurrent = () => entry.account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(entry.locator);
+        if (!isCurrent()) { entry.cleanup(); continue; }
+        if (entry.reading || document.visibilityState === 'hidden') continue;
+        entry.attempts += 1;
+        if (busyName || isGenerating() || isChatSaving) continue;
+        entry.reading = true;
+        try {
+            if (!entry.noticeOnly) {
+                const latest = await readTerminalReceipt(entry.key, entry.account);
+                if (latest) entry.receipt = latest;
+                if (entry.receipt?.keptReplyPending || !isCurrent() || document.visibilityState === 'hidden'
+                    || !await reloadKeptReplyChat(entry.receipt, entry.locator, entry.account)) continue;
+            }
+            if (pendingKeptReplies.get(id) !== entry || !isCurrent()) continue;
+            forgetPendingKeptReply(entry.key, entry.account);
+            adoptedAny = true;
+            const kept = entry.receipt?.keptReply ?? null;
+            if (kept?.state === 'failed') {
+                const notice = roleplayKeptReplyNotice({ state: entry.failure?.state ?? 'failed', error: kept.error });
+                globalThis.toastr?.error?.(notice.message, notice.title);
+            } else if (entry.failure && entry.failure.state !== 'cancelled') {
+                await showStoppedReplyNotice(entry.failure, { kept: kept?.state === 'done', messageIndex: kept?.messageIndex,
+                    account: entry.account, locator: entry.locator });
+            }
+        } finally {
+            entry.reading = false;
         }
-        return true;
     }
-    pendingKeptReply = entry;
-    pendingKeptAttempts += 1;
     schedulePendingKeptReply();
-    return false;
+    return adoptedAny;
 }
 
 async function reloadKeptReplyChat(receipt, locator, account) {
@@ -890,7 +895,8 @@ async function readbackReceipt(key, name, shared, id) {
                 attempt = -1;
                 continue;
             }
-            if (account !== getCurrentUserHandle() || attempt === 11 || error.status >= 400 && error.status < 500) {
+            const awaitingAdoption = receipt?.state === 'closed' && !options.passive && matchesCurrentWorkflowLocator(locator);
+            if (account !== getCurrentUserHandle() || !awaitingAdoption && (attempt === 11 || error.status >= 400 && error.status < 500)) {
                 shared.settled = true;
                 settleFinished(key, null);
                 throw error;
@@ -898,6 +904,7 @@ async function readbackReceipt(key, name, shared, id) {
             // Keep the current reply visible while a transient read or pending save
             // prevents adoption. Only displaying the saved result completes readback.
             await withAbortSignal(new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (attempt + 1)))), controller.signal).catch(() => {});
+            if (awaitingAdoption) attempt = Math.min(attempt, 10);
         } finally {
             clearTimeout(timeout);
             if (shared.controller === controller) shared.controller = null;
@@ -1041,7 +1048,6 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
     let stopPreview = () => {};
     let ended = false;
     let memoryWaitFailure = null;
-    let memoryWaitObserved = false;
     let terminalFailure = null;
     if (capabilities) rememberReplyCapability(key, account, capabilities);
     let keeperCapable = Boolean(capabilities?.keptReply ?? knownReplyCapability(key, account)?.keptReply);
@@ -1049,7 +1055,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         if (ended) return;
         if (value.state !== 'completed') {
             const message = typeof value.error === 'string' ? value.error : value.error?.message;
-            if (memoryWaitObserved || String(value.error?.code || '').startsWith('MEWMORY_WAIT_')) {
+            if (String(value.error?.code || '').startsWith('MEWMORY_WAIT_')) {
                 memoryWaitFailure = { state: value.state, error: message || 'Stopped waiting for memory.', mewmoryWait: true };
             }
             // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
@@ -1099,13 +1105,14 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                 void showTerminalFailure();
                 stopPreview();
                 restore();
+                announce({ key, name, state: reason, result: null, jobId });
                 settleFinished(key, memoryWaitFailure);
                 observed.delete(jobId);
                 syncJobControls();
                 return;
             }
-            if (reason !== 'done' && reason !== 'stopped') {
-                const receipt = await readTerminalReceipt(key, account);
+            const receipt = reason !== 'done' && reason !== 'stopped' ? await readTerminalReceipt(key, account) : null;
+            if (reason !== 'done' && reason !== 'stopped' && !(reason === 'missing' && receipt?.state === 'closed')) {
                 rememberReplyCapability(key, account, receipt?.capabilities);
                 keeperCapable = keeperCapable || Boolean(receipt?.capabilities?.keptReply
                     ?? knownReplyCapability(key, account)?.keptReply);
@@ -1134,9 +1141,10 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                     const waitingForKeeper = receipt?.keptReplyPending === true;
                     const reloaded = !nothingToShow && visible && !waitingForKeeper
                         ? await reloadKeptReplyChat(receipt, locator, account) : nothingToShow;
-                    if (waitingForKeeper || (!nothingToShow && !reloaded)) {
-                        rememberPendingKeptReply(key, receipt, locator, account, terminalFailure);
-                    }
+                    const cleanup = () => { stopPreview(); restore(); };
+                    const defer = waitingForKeeper || !nothingToShow && !reloaded || !visible && terminalFailure && !cancelled;
+                    if (defer) rememberPendingKeptReply(key, receipt, locator, account, terminalFailure, cleanup, nothingToShow);
+                    else cleanup();
                     // Show the notice only where the user can act on it. A
                     // hidden or departed page defers it to the visible reload.
                     const showNow = visible && !waitingForKeeper && (nothingToShow || reloaded);
@@ -1150,8 +1158,6 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                     } else if (showNow && (!receipt || (!kept && !receipt.keptReplyPending))) {
                         void showTerminalFailure();
                     }
-                    stopPreview();
-                    restore();
                     announce({ key, name, state: reason, result: receipt?.result ?? null, jobId,
                         keptReply: kept });
                     settleFinished(key, memoryWaitFailure);
@@ -1194,10 +1200,13 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         stopPreview = observeRoleplayPreview(jobId, { account, name, messageIndex,
             isCurrent,
             onTerminal,
+            onSpeakerChange: name === 'group.reply' ? signal => {
+                signal.throwIfAborted();
+                if (isCurrent()) return refreshCurrentChatFromSaved({ signal });
+            } : undefined,
             // Companions write notes after the reply is shown; their run swaps Stop for the Agents stop.
             onStage: stage => {
                 entry.stage = stage;
-                memoryWaitObserved = stage === 'waiting-memory';
                 if (observed.get(jobId) === entry) syncJobControls();
             },
         });
@@ -1213,12 +1222,12 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
  * A new account's one-time setup (the Agents' first start, Dialogue Colors' trim rules)
  * changes settings a few seconds after the page opens, so it is waited for first.
  */
-async function acknowledgedSettingsRevision() {
+async function acknowledgedSettingsRevision({ force = false } = {}) {
     await waitForSettingsSetup();
     let failure = null;
     for (let attempt = 1; attempt <= SETTINGS_PROOF_ATTEMPTS; attempt++) {
         try {
-            if (await saveSettings(0, { returnResult: true })) {
+            if (await saveSettings(0, { returnResult: true, force })) {
                 return getActiveGenerationAcknowledgement().settingsRevision;
             }
         } catch (error) {
@@ -1298,7 +1307,7 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
             if (error.body?.code !== 'roleplay_settings_ack_required') pending.delete(account);
         }
         if (error.body?.code === 'roleplay_settings_ack_required') {
-            const retry = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
+            const retry = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) } };
             pending.set(account, { signature, payload: retry });
             accepted = await postSubmission(retry, account);
         } else {
@@ -1369,8 +1378,10 @@ async function adoptSavedAgentResult(locator, account, messageIndex) {
  * without protected storage) or the server declines the action before accepting
  * it, so the caller runs it in the page as before. Otherwise resolves with the
  * finished job's state; `current` is false when another chat was opened meanwhile.
+ * `onAccepted` receives the job id as soon as the server takes the action, so
+ * the page can show it as running and stop single Companions in it.
  */
-export async function runRoleplayAgentAction({ mode, agentIds = [], companionId = '', messageIndex, account = getCurrentUserHandle() }) {
+export async function runRoleplayAgentAction({ mode, agentIds = [], companionId = '', messageIndex, account = getCurrentUserHandle(), onAccepted = null }) {
     if (selected_group || !isNativeRoleplayWorkflowReady() || !chat[messageIndex]) return null;
     const locator = currentLocator();
     let payload;
@@ -1394,7 +1405,7 @@ export async function runRoleplayAgentAction({ mode, agentIds = [], companionId 
             accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
         } catch (error) {
             if (error.body?.code !== 'roleplay_settings_ack_required') throw error;
-            payload = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
+            payload = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) } };
             accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
         }
     } catch (error) {
@@ -1407,6 +1418,9 @@ export async function runRoleplayAgentAction({ mode, agentIds = [], companionId 
         if (error?.message === 'account_changed' || !refused) throw error;
         console.debug('Server Agent action declined; running it in the page.', { mode, reason: error?.body?.code ?? error?.message });
         return null;
+    }
+    if (accepted?.jobId) {
+        try { onAccepted?.(accepted.jobId); } catch (error) { console.warn('Server Agent action listener failed.', error); }
     }
     const job = accepted?.jobId ? await waitForAgentJob(accepted.jobId, account) : null;
     const current = await adoptSavedAgentResult(locator, account, messageIndex);
@@ -1441,26 +1455,27 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         ...(browserMacros.length ? { browserMacros } : {}),
         account: stamp,
     };
-    const finished = awaitFinished(payload.key);
     await saveChatConditional({ throwOnError: true, account, skipUnchanged: true });
     // Chat-save listeners may change settings, so confirm them after that write.
     payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
     let accepted;
     try {
+        signal?.throwIfAborted();
         accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
     } catch (error) {
         // This refusal happens before admission. An uncertain outcome must not be repeated.
         if (error.status !== 409 || error.body?.code !== 'roleplay_settings_ack_required') throw error;
         signal?.throwIfAborted();
-        payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
+        payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision({ force: true }) };
         signal?.throwIfAborted();
         accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
     }
+    const finished = awaitFinished(payload.key);
     rememberReplyCapability(payload.key, account, accepted?.capabilities);
     logRoleplayAccepted('group.reply');
     const onAbort = () => {
         if (account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(locator)) return;
-        if (accepted?.jobId) void cancelJob(accepted.jobId, { reason: 'user_cancelled' }).catch(() => {});
+        if (accepted?.jobId) requestRoleplayStop(accepted.jobId, account);
     };
     let detach = () => {};
     let leftChat = false;
@@ -1472,7 +1487,8 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         detach();
     };
     eventSource.on(event_types.CHAT_CHANGED, onChatChanged);
-    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
     try {
         if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name: 'group.reply', locator, account,
             capabilities: accepted.capabilities ?? null });
@@ -1545,7 +1561,7 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
             detach();
             return;
         }
-        if (jobId) void cancelJob(jobId, { reason: 'user_cancelled' }).catch(() => {});
+        if (jobId) requestRoleplayStop(jobId, originAccount);
     };
     try {
         let override = mewmoryCatchUpOverride;
@@ -1691,7 +1707,7 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
                     messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
             } else if (observed.has(job.id)) {
                 observed.get(job.id)?.onTerminal?.(job);
-            } else if (!finished) {
+            } else if (!finished && job.state === 'completed') {
                 finished = { key, name, locator,
                     agentsFailed: job.result?.result?.agentsFailed === true || job.result?.agentsFailed === true };
             }

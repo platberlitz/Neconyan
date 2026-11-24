@@ -11,7 +11,7 @@ import util from 'node:util';
 import _ from 'lodash';
 import yauzl from 'yauzl';
 import mime from 'mime-types';
-import { default as simpleGit } from 'simple-git';
+import { simpleGit } from 'simple-git';
 import chalk from 'chalk';
 import bytes from 'bytes';
 import { LOG_LEVELS, CHAT_COMPLETION_SOURCES, MEDIA_REQUEST_TYPE } from './constants.js';
@@ -2983,6 +2983,18 @@ export function recoverFileWritesInDirectorySync(directory) {
 }
 
 /**
+ * Whether bigint file stats name the expected file. A recorded creation time must be present and match,
+ * since an inode number alone can be handed to a new file as soon as the old one is deleted.
+ * @param {{dev: bigint, ino: bigint, birthtimeNs?: bigint}} stats
+ * @param {{dev: bigint, ino: bigint, birthtimeNs?: bigint}} expected
+ * @returns {boolean}
+ */
+export function sameFileIdentity(stats, expected) {
+    return stats.dev === expected.dev && stats.ino === expected.ino
+        && (expected.birthtimeNs === undefined || stats.birthtimeNs === expected.birthtimeNs);
+}
+
+/**
  * Writes to a file, creating it's parent directories if needed.
  * @param {string} filePath
  * @param {string|Buffer} data
@@ -3096,9 +3108,7 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
             try {
                 const descriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
                 const pathStats = fs.lstatSync(filePath, { bigint: true });
-                const matchesExpectedIdentity = !expectedFileIdentity
-                    || (descriptorStats.dev === expectedFileIdentity.dev && descriptorStats.ino === expectedFileIdentity.ino
-                        && (expectedFileIdentity.birthtimeNs === undefined || descriptorStats.birthtimeNs === expectedFileIdentity.birthtimeNs));
+                const matchesExpectedIdentity = !expectedFileIdentity || sameFileIdentity(descriptorStats, expectedFileIdentity);
                 if (!descriptorStats.isFile() || !pathStats.isFile()
                     || descriptorStats.dev !== pathStats.dev || descriptorStats.ino !== pathStats.ino
                     || !matchesExpectedIdentity) {
@@ -3109,15 +3119,34 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
                 }
 
                 if (descriptorStats.size > BigInt(maxFileBytes)) throw Object.assign(new Error('Existing file exceeds the permitted write-source size.'), { code: 'EFBIG' });
-                originalData = Buffer.alloc(Number(descriptorStats.size));
-                let offset = 0;
-                while (offset < originalData.byteLength) {
-                    const bytesRead = fs.readSync(fileDescriptor, originalData, offset, originalData.byteLength - offset, offset);
-                    if (bytesRead === 0) break;
-                    offset += bytesRead;
-                }
-                if (expectedFileHash && hashFileWriteData(originalData) !== expectedFileHash) {
-                    throw Object.assign(new Error(`Refused to overwrite a changed file: ${filePath}`), { code: 'ESTALE' });
+                const expectedSize = Number(descriptorStats.size);
+                const needsOriginalData = !(invalidateBeforeWrite && dataLength > 0) || !preserveOnWriteError;
+                if (needsOriginalData) {
+                    originalData = Buffer.alloc(expectedSize);
+                    let offset = 0;
+                    while (offset < originalData.byteLength) {
+                        const bytesRead = fs.readSync(fileDescriptor, originalData, offset, originalData.byteLength - offset, offset);
+                        if (bytesRead === 0) break;
+                        offset += bytesRead;
+                    }
+                    if (expectedFileHash && hashFileWriteData(originalData) !== expectedFileHash) {
+                        throw Object.assign(new Error(`Refused to overwrite a changed file: ${filePath}`), { code: 'ESTALE' });
+                    }
+                } else if (expectedFileHash) {
+                    const hash = crypto.createHash('sha256');
+                    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expectedSize)));
+                    let offset = 0;
+                    while (offset < expectedSize) {
+                        const toRead = Math.min(chunk.byteLength, expectedSize - offset);
+                        const bytesRead = fs.readSync(fileDescriptor, chunk, 0, toRead, offset);
+                        if (bytesRead === 0) break;
+                        hash.update(bytesRead === chunk.byteLength ? chunk : chunk.subarray(0, bytesRead));
+                        offset += bytesRead;
+                    }
+                    const trailingBytes = fs.readSync(fileDescriptor, chunk, 0, 1, offset);
+                    if (offset !== expectedSize || trailingBytes !== 0 || hash.digest('hex') !== expectedFileHash) {
+                        throw Object.assign(new Error(`Refused to overwrite a changed file: ${filePath}`), { code: 'ESTALE' });
+                    }
                 }
 
                 if (invalidateBeforeWrite && dataLength > 0) {
@@ -3229,14 +3258,25 @@ export function tryWriteFileSync(filePath, data, options = typeof data === 'stri
             return;
         }
         const initialStats = fs.lstatSync(filePath, { bigint: true });
-        if (expectedFileIdentity && (initialStats.dev !== expectedFileIdentity.dev || initialStats.ino !== expectedFileIdentity.ino)) {
+        if (expectedFileIdentity && !sameFileIdentity(initialStats, expectedFileIdentity)) {
             throw Object.assign(new Error(`Refused to replace a changed file: ${filePath}`), { code: 'ESTALE' });
         }
         if (expectedFileHash) {
-            const currentData = fs.readFileSync(filePath);
+            const hash = crypto.createHash('sha256');
+            const chunk = Buffer.allocUnsafe(64 * 1024);
+            const fd = fs.openSync(filePath, 'r');
+            try {
+                for (;;) {
+                    const bytesRead = fs.readSync(fd, chunk, 0, chunk.byteLength, null);
+                    if (bytesRead === 0) break;
+                    hash.update(bytesRead === chunk.byteLength ? chunk : chunk.subarray(0, bytesRead));
+                }
+            } finally {
+                fs.closeSync(fd);
+            }
             const finalStats = fs.lstatSync(filePath, { bigint: true });
             if (finalStats.dev !== initialStats.dev || finalStats.ino !== initialStats.ino
-                || hashFileWriteData(currentData) !== expectedFileHash) {
+                || hash.digest('hex') !== expectedFileHash) {
                 throw Object.assign(new Error(`Refused to replace a changed file: ${filePath}`), { code: 'ESTALE' });
             }
         }

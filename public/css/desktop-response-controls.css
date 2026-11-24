@@ -294,7 +294,7 @@ body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstor
     --deep-swipe-arrow-opacity: 1;
     /* Restored extension styles and native idle states need the same available paint.
        Inline important opacity still owns genuinely disabled controls. */
-    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(.is_reasoning_editing) {
         :is(.deep-swipe-left-outer, .deep-swipe-right):not(.disabled, [hidden], [aria-disabled='true'], [style*='pointer-events: none']),
         &.swipes_visible .swipe_left:not(.disabled, [hidden], [aria-disabled='true']),
         &:is(.swipes_visible, .last_swipe) .swipe_right:not(.disabled, [hidden], [aria-disabled='true']) { opacity: 1 !important; }
@@ -314,7 +314,7 @@ body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbst
     --deep-swipe-arrow-opacity: 1;
     /* Restored extension styles and native idle states need the same available paint.
        Inline important opacity still owns genuinely disabled controls. */
-    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(.is_reasoning_editing) {
         :is(.deep-swipe-left-outer, .deep-swipe-right):not(.disabled, [hidden], [aria-disabled='true'], [style*='pointer-events: none']),
         &.swipes_visible .swipe_left:not(.disabled, [hidden], [aria-disabled='true']),
         &:is(.swipes_visible, .last_swipe) .swipe_right:not(.disabled, [hidden], [aria-disabled='true']) { opacity: 1 !important; }

@@ -1,0 +1,1632 @@
+/* ==========================================================================
+   Neconyan Slash Commands & Autocomplete UI
+   Deferred stylesheet loaded via data-sb-deferred-style in public/index.html.
+   Scoped under body.neconyan:not(.sbterm) so Termeownal keeps its terminal look.
+   ========================================================================== */
+
+/* Hide Neconyan-only chrome outside the Neconyan shell (including Termeownal). */
+.nn-ac-header,
+.nn-ac-details-header,
+.nn-source-label,
+.nn-scb-header,
+.nn-scb-search-icon,
+.nn-scb-empty-details,
+.nn-scb-empty-list,
+.nn-scb-details-bar {
+    display: none;
+}
+
+/* ==========================================================================
+   Semantic surface tokens (theme / dark / light)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) {
+    --nn-sc-surface: var(--neco-surface);
+    --nn-sc-raised: var(--neco-raised);
+    --nn-sc-ink: var(--neco-ink);
+    --nn-sc-muted: var(--neco-muted);
+    --nn-sc-border: var(--neco-border);
+    --nn-sc-code-bg: color-mix(in srgb, var(--neco-canvas) 62%, var(--neco-raised));
+    --nn-sc-code-border: color-mix(in srgb, var(--neco-border) 88%, var(--neco-ginger) 12%);
+    --nn-sc-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.16);
+    --nn-sc-accent: var(--neco-ginger);
+    --nn-sc-accent-hover: var(--neco-ginger-hover);
+    --nn-sc-secondary: var(--neco-pink);
+    --nn-sc-on-accent: var(--neco-on-accent);
+    --nn-sc-focus-ring: 0 0 0 2px var(--neco-ginger);
+}
+
+:root[data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+    --nn-sc-shadow: 0 14px 32px rgba(43, 35, 32, 0.14), 0 2px 8px rgba(43, 35, 32, 0.08);
+}
+
+/* Warm cocoa-dark override for data-stscript-style="dark" */
+body.neconyan:not(.sbterm)[data-stscript-style='dark'] {
+    --nn-sc-surface: rgb(35, 30, 29);
+    --nn-sc-raised: rgb(47, 40, 39);
+    --nn-sc-ink: rgb(246, 239, 232);
+    --nn-sc-muted: rgb(192, 179, 171);
+    --nn-sc-border: rgb(74, 64, 61);
+    --nn-sc-code-bg: rgb(26, 22, 22);
+    --nn-sc-code-border: rgb(68, 58, 56);
+    --nn-sc-shadow: 0 16px 38px rgba(10, 7, 6, 0.5), 0 2px 10px rgba(10, 7, 6, 0.3);
+}
+
+/* Warm paper-light override for data-stscript-style="light" */
+body.neconyan:not(.sbterm)[data-stscript-style='light'] {
+    --nn-sc-surface: rgb(252, 248, 243);
+    --nn-sc-raised: rgb(243, 236, 227);
+    --nn-sc-ink: rgb(43, 35, 32);
+    --nn-sc-muted: rgb(104, 90, 84);
+    --nn-sc-border: rgb(221, 210, 196);
+    --nn-sc-code-bg: rgb(246, 240, 232);
+    --nn-sc-code-border: rgb(216, 204, 190);
+    --nn-sc-shadow: 0 14px 32px rgba(43, 35, 32, 0.14), 0 2px 8px rgba(43, 35, 32, 0.08);
+}
+
+/* Keep tiny syntax text readable on both light and dark command surfaces. */
+body.neconyan:not(.sbterm) :is(.autoComplete, .autoComplete-details, .autoComplete-details .hljs.language-stscript) {
+    --ac-color-argName: color-mix(in srgb, var(--nn-sc-accent) 20%, var(--nn-sc-ink));
+    --ac-color-type: color-mix(in srgb, var(--nn-sc-secondary) 23%, var(--nn-sc-ink));
+    --ac-color-cmd: var(--nn-sc-ink);
+    --ac-color-symbol: var(--nn-sc-muted);
+    --ac-color-string: var(--ac-color-type);
+    --ac-color-number: var(--ac-color-argName);
+    --ac-color-variable: var(--ac-color-argName);
+    --ac-color-variableLanguage: var(--ac-color-type);
+    --ac-color-punctuation: var(--nn-sc-ink);
+    --ac-color-punctuationL1: var(--ac-color-argName);
+    --ac-color-punctuationL2: var(--ac-color-type);
+    --ac-color-comment: var(--nn-sc-muted);
+    --ac-color-keyword: var(--ac-color-type);
+}
+
+/* ==========================================================================
+   Autocomplete Floating Card (.autoComplete-wrap)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) .autoComplete-wrap {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    box-shadow: var(--nn-sc-shadow);
+    box-sizing: border-box;
+    font-family: var(--mainFontFamily);
+    z-index: 10000;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap:not(.isFloating) {
+    left: var(--leftOffset);
+    right: var(--rightOffset);
+    max-height: var(--nn-ac-wrap-max-h);
+}
+
+body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .autoComplete-detailsWrap):not(.isFloating).nn-ac-layout-hidden {
+    display: none;
+}
+
+/* Floating macro/caret popup keeps a 12px card radius and clean column layout */
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating {
+    --nn-ac-floating-w: min(50vw, calc(100% - 16px));
+    flex-direction: column;
+    border-radius: 12px;
+    left: clamp(8px, calc(var(--targetOffset, 8) * 1px), calc(100% - var(--nn-ac-floating-w) - 8px));
+    right: auto;
+    width: var(--nn-ac-floating-w);
+    max-width: calc(100vw - 16px);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating[data-macros-autocomplete-style='small'] {
+    --nn-ac-floating-w: clamp(250px, 33vw, 700px);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating::before,
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating::after {
+    content: none;
+    display: none;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating .autoComplete,
+body.neconyan:not(.sbterm) .autoComplete-wrap.isFloating[data-macros-autocomplete-style='small'] .autoComplete {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+/* Calico paw-print watermark glaze */
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-wrap,
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating),
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .slashCommandBrowser {
+    background:
+        linear-gradient(
+            color-mix(in srgb, var(--nn-sc-surface) 88%, transparent),
+            color-mix(in srgb, var(--nn-sc-surface) 88%, transparent)
+        ),
+        url('../img/neconyan/paw-cream.webp') 12px 10px / 18px 18px no-repeat,
+        url('../img/neconyan/paw-pink.webp') calc(100% - 14px) 28% / 14px 14px no-repeat,
+        url('../img/neconyan/paw-peach.webp') 18% calc(100% - 14px) / 15px 15px no-repeat,
+        url('../img/neconyan/paw-ink.webp') calc(100% - 22px) calc(100% - 16px) / 14px 14px no-repeat,
+        var(--nn-sc-surface);
+}
+
+/* ==========================================================================
+   Cozy Autocomplete Header Bar (.nn-ac-header)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > .nn-ac-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    background: color-mix(in srgb, var(--nn-sc-raised) 90%, transparent);
+    border-bottom: 1px solid var(--nn-sc-border);
+    flex: 0 0 auto;
+    min-width: 0;
+    user-select: none;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--nn-sc-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    font-size: 12px;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-surface));
+    color: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-ink));
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 32%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .nn-ac-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-surface));
+    color: var(--nn-sc-ink);
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 28%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .nn-ac-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-hints {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--nn-sc-muted);
+    white-space: nowrap;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-hints kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 5px;
+    border-radius: 5px;
+    border: 1px solid var(--nn-sc-border);
+    border-bottom-width: 2px;
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    font-family: var(--monoFontFamily);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-toggle {
+    --neconyan-control-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 4px 10px;
+    margin: 0;
+    border-radius: 10px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    font-family: var(--mainFontFamily);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-toggle:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-surface));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 44%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--nn-sc-focus-ring);
+}
+
+/* Higher specificity beats Calico's global [aria-pressed='true'] tint */
+:root body.neconyan:not(.sbterm) .autoComplete-wrap .nn-ac-header .nn-ac-details-toggle[aria-pressed='true'] {
+    background: var(--nn-sc-accent);
+    border-color: transparent;
+    color: var(--nn-sc-on-accent);
+}
+
+:root body.neconyan:not(.sbterm) .autoComplete-wrap .nn-ac-header .nn-ac-details-toggle[aria-pressed='true']:hover {
+    background: var(--nn-sc-accent-hover);
+    border-color: transparent;
+    color: var(--nn-sc-on-accent);
+}
+
+/* ==========================================================================
+   Autocomplete Command List & Real Rounded Rows (ul.autoComplete)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete {
+    --ac-color-border: var(--nn-sc-border);
+    --ac-color-background: transparent;
+    --ac-color-text: var(--nn-sc-ink);
+    --ac-color-hover: color-mix(in srgb, var(--nn-sc-accent) 11%, var(--nn-sc-raised));
+    --ac-color-selected: color-mix(in srgb, var(--nn-sc-accent) 17%, var(--nn-sc-raised));
+    --ac-color-selected-hover: color-mix(in srgb, var(--nn-sc-accent) 22%, var(--nn-sc-raised));
+    --ac-color-matched: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-ink));
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding: 6px;
+    margin: 0;
+    list-style: none;
+    background: transparent;
+    color: var(--nn-sc-ink);
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    container-type: inline-size;
+    font-family: var(--mainFontFamily);
+    font-size: 13px;
+    line-height: 1.4;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    scrollbar-width: thin;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(140px, 44%) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 3px;
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 7px 12px 7px 11px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--nn-sc-ink);
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+/* Strip stock display:contents cell padding/background from direct children */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > *,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > * {
+    background: transparent;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.isFiltered {
+    display: none;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.macro-ac-item) > .stopgap,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.macro-ac-item) > .stopgap {
+    display: none;
+}
+
+/* Left accent pill bar for selected row */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item::before,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--nn-sc-accent);
+    opacity: 0;
+    transition: opacity 140ms ease-out;
+    pointer-events: none;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:hover,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 10%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 24%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:hover > *,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:hover > *,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected > *,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected > *,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected:hover > *,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected:hover > * {
+    background: transparent;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected {
+    background: color-mix(in srgb, var(--nn-sc-accent) 17%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 46%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected::before,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected::before {
+    opacity: 1;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected:hover,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 21%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 54%, var(--nn-sc-border));
+}
+
+/* Subtle Calico paw stamp on hover/selected command rows */
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.blank),
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.blank) {
+    padding-right: 28px;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.blank)::after,
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.blank)::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    background: url('../img/neconyan/paw-pink.webp') center / contain no-repeat;
+    opacity: 0;
+    transform: translateY(-50%) rotate(-14deg) scale(0.65);
+    pointer-events: none;
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
+}
+
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.blank):is(:hover, .selected)::after,
+:root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.blank):is(:hover, .selected)::after {
+    opacity: 0.78;
+    transform: translateY(-50%) rotate(-14deg) scale(1);
+}
+
+/* Blank / empty autocomplete row */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.blank {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    padding: 14px 12px;
+    cursor: default;
+    color: var(--nn-sc-muted);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.blank:hover {
+    background: transparent;
+    border-color: transparent;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.blank > .type,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.blank > .help {
+    display: none;
+}
+
+/* Type badge pills (.type) */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .type,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .type {
+    grid-column: 1;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-family: var(--monoFontFamily);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-raised));
+    color: var(--nn-sc-ink);
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 30%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='namedArgument'] > .type,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='variable'] > .type {
+    background: color-mix(in srgb, var(--nn-sc-secondary) 16%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-secondary) 36%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='string'] > .type,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='number'] > .type,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='boolean'] > .type,
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='enum'] > .type {
+    background: color-mix(in srgb, var(--nn-sc-muted) 16%, var(--nn-sc-raised));
+    border-color: var(--nn-sc-border);
+}
+
+/* Command name + inline arguments (.specs) */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 4px 6px;
+    min-width: 0;
+    overflow: visible;
+    color: var(--nn-sc-ink);
+    text-align: start;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .name,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .name {
+    font-family: var(--monoFontFamily);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--nn-sc-ink);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* High-contrast accent match highlighting across Default, Mint Glass, and Plum Wine */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item .name .matched,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item .name .matched {
+    color: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-ink));
+    background: color-mix(in srgb, var(--nn-sc-accent) 26%, var(--nn-sc-raised));
+    text-decoration: underline;
+    text-decoration-color: var(--nn-sc-accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+    border-radius: 4px;
+    padding: 0 1px;
+    font-weight: 800;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .body,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    opacity: 1;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .body > .arguments,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body > .arguments {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    height: auto;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .body .argument,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body .argument {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 1px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--nn-sc-raised) 82%, var(--nn-sc-surface));
+    border: 1px solid var(--nn-sc-border);
+    color: var(--nn-sc-muted);
+    font-family: var(--monoFontFamily);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .body .argument.isRequired,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body .argument.isRequired {
+    color: var(--nn-sc-ink);
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 36%, var(--nn-sc-border));
+}
+
+/* Set the actual nested labels, not just their argument wrapper. */
+body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .slashCommandBrowser) .autoComplete > .item .argument .argument-name,
+body.neconyan:not(.sbterm) .autoComplete-details .argumentItem .argument .argument-name {
+    color: color-mix(in srgb, var(--nn-sc-accent) 20%, var(--nn-sc-ink));
+}
+
+body.neconyan:not(.sbterm) :is(.autoComplete-wrap, .slashCommandBrowser) .autoComplete > .item .argument .argument-type,
+body.neconyan:not(.sbterm) .autoComplete-details .argumentItem .argument .argument-type {
+    color: color-mix(in srgb, var(--nn-sc-secondary) 23%, var(--nn-sc-ink));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .specs > .body > .returns,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body > .returns {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-family: var(--monoFontFamily);
+    font-size: 11px;
+    color: var(--nn-sc-muted);
+    background: color-mix(in srgb, var(--nn-sc-secondary) 12%, var(--nn-sc-raised));
+}
+
+/* Readable description (.help > .helpContent) */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .help,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .help {
+    grid-column: 3;
+    grid-row: 1;
+    display: block;
+    min-width: 0;
+    opacity: 1;
+    overflow: hidden;
+    font-family: var(--mainFontFamily);
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--nn-sc-muted);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.selected > .help,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item.selected > .help {
+    color: var(--nn-sc-ink);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item > .help > .helpContent,
+body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .help > .helpContent {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    font-size: inherit;
+    max-height: none;
+    line-height: inherit;
+    opacity: 1;
+}
+
+/* Harmonize macro autocomplete rows (.macro-ac-item) with Neconyan tokens */
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.macro-ac-item {
+    gap: 8px;
+    padding: 7px 12px 7px 11px;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.macro-ac-item > .type {
+    min-width: 28px;
+    background: color-mix(in srgb, var(--nn-sc-secondary) 16%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-secondary) 36%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.macro-ac-item > .help > .helpContent {
+    -webkit-line-clamp: 1;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item.macro-ac-item > .macro-source.isThirdParty {
+    color: color-mix(in srgb, var(--nn-sc-accent) 26%, var(--nn-sc-ink));
+}
+
+/* Stack description cleanly below specs in narrow containers (phones & split desktop) */
+@container (max-width: 559px) {
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.macro-ac-item):not(.blank),
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.macro-ac-item):not(.blank) {
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+        column-gap: 9px;
+        row-gap: 3px;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.macro-ac-item):not(.blank) > .type,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.macro-ac-item):not(.blank) > .type {
+        grid-column: 1;
+        grid-row: 1;
+        margin-top: 1px;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.macro-ac-item):not(.blank) > .specs,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.macro-ac-item):not(.blank) > .specs {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.macro-ac-item):not(.blank) > .help,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.macro-ac-item):not(.blank) > .help {
+        grid-column: 2;
+        grid-row: 2;
+    }
+}
+
+/* ==========================================================================
+   Autocomplete Details Card (.autoComplete-detailsWrap, .autoComplete-details)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating) {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    top: auto;
+    max-height: var(--nn-ac-details-max-h);
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    box-shadow: var(--nn-sc-shadow);
+    box-sizing: border-box;
+    font-family: var(--mainFontFamily);
+    z-index: 10000;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating)::before,
+body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating)::after {
+    content: none;
+    display: none;
+}
+
+/* Floating macro details keeps its row layout while matching card look */
+body.neconyan:not(.sbterm) .autoComplete-detailsWrap.isFloating > .autoComplete-details {
+    border-radius: 12px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    box-shadow: var(--nn-sc-shadow);
+}
+
+/* Details header strip */
+body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating) > .nn-ac-details-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px 7px 12px;
+    background: color-mix(in srgb, var(--nn-sc-raised) 92%, transparent);
+    border-bottom: 1px solid var(--nn-sc-border);
+    flex: 0 0 auto;
+    user-select: none;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--nn-sc-muted);
+    letter-spacing: 0.02em;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-close {
+    --neconyan-control-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    min-height: 30px;
+    padding: 4px 8px;
+    margin: 0;
+    border-radius: 10px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-close:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-surface));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 44%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .nn-ac-details-close:focus-visible {
+    outline: none;
+    box-shadow: var(--nn-sc-focus-ring);
+}
+
+/* Scrollable details body */
+body.neconyan:not(.sbterm) .autoComplete-details {
+    --ac-color-border: var(--nn-sc-border);
+    --ac-color-background: transparent;
+    --ac-color-text: var(--nn-sc-ink);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 14px 14px;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--nn-sc-ink);
+    font-family: var(--mainFontFamily);
+    font-size: 13.5px;
+    line-height: 1.5;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    scrollbar-width: thin;
+}
+
+/* Command details head strip (.specs > .head) */
+body.neconyan:not(.sbterm) .autoComplete-details > .specs {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    background: var(--nn-sc-raised);
+    border: 1px solid var(--nn-sc-border);
+    border-bottom: 1px solid var(--nn-sc-border);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .name {
+    font-family: var(--monoFontFamily);
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--nn-sc-ink);
+    margin-right: auto;
+    word-break: break-word;
+}
+
+/* Source pill badge: replaces stock /favicon.ico + raw #F89406 / #51A351 */
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-family: var(--mainFontFamily);
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1.3;
+    opacity: 1;
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-accent) 16%, var(--nn-sc-surface));
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 34%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source::after {
+    content: none;
+    display: none;
+    background-image: none;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source.isCore:not(.isExtension) {
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-accent) 16%, var(--nn-sc-surface));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 34%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source.isExtension.isCore {
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-secondary) 16%, var(--nn-sc-surface));
+    border-color: color-mix(in srgb, var(--nn-sc-secondary) 36%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source.isExtension.isThirdParty {
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-accent) 22%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 44%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .source > .nn-source-label {
+    display: inline;
+    font-family: var(--mainFontFamily);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: inherit;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .head > .rawQuotes {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    font-size: 11px;
+    opacity: 1;
+    color: var(--nn-sc-muted);
+    background: var(--nn-sc-surface);
+    border: 1px solid var(--nn-sc-border);
+}
+
+/* Arguments mini-cards */
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--nn-sc-raised);
+    border: 1px solid var(--nn-sc-border);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--monoFontFamily);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--nn-sc-ink);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec .argument {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    color: var(--nn-sc-ink);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec .argument-type,
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec .argument-default,
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec .argument-enum {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--nn-sc-surface);
+    border: 1px solid var(--nn-sc-border);
+    color: var(--nn-sc-muted);
+    opacity: 1;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argumentSpec .argument.isRequired .argument-name {
+    color: color-mix(in srgb, var(--nn-sc-accent) 22%, var(--nn-sc-ink));
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .arguments > .argumentItem > .argument-description {
+    font-family: var(--mainFontFamily);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--nn-sc-muted);
+    opacity: 1;
+    margin: 0;
+}
+
+/* Returns pill */
+body.neconyan:not(.sbterm) .autoComplete-details > .specs > .body > .returns {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-secondary) 14%, var(--nn-sc-raised));
+    border: 1px solid color-mix(in srgb, var(--nn-sc-secondary) 32%, var(--nn-sc-border));
+    opacity: 1;
+}
+
+/* Help text & STscript code examples */
+body.neconyan:not(.sbterm) .autoComplete-details > .help {
+    display: block;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--nn-sc-ink);
+    word-break: break-word;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .help p {
+    margin: 0 0 8px;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .help p:last-child {
+    margin-bottom: 0;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .help code:not(pre code) {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--nn-sc-code-bg);
+    border: 1px solid var(--nn-sc-code-border);
+    color: var(--nn-sc-ink);
+    font-family: var(--monoFontFamily);
+    font-size: 0.9em;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details pre {
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--nn-sc-code-bg);
+    border: 1px solid var(--nn-sc-code-border);
+    color: var(--nn-sc-ink);
+    overflow-x: auto;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details pre > code,
+body.neconyan:not(.sbterm) .autoComplete-details pre > code.hljs.language-stscript {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--nn-sc-ink);
+    font-family: var(--monoFontFamily);
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Aliases pills */
+body.neconyan:not(.sbterm) .autoComplete-details > .aliases {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--nn-sc-border);
+    font-size: 12px;
+    color: var(--nn-sc-muted);
+    opacity: 1;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details > .aliases > .alias {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-family: var(--monoFontFamily);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--nn-sc-ink);
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-raised));
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 30%, var(--nn-sc-border));
+}
+
+/* Harmonize Macro details inside .autoComplete-details */
+body.neconyan:not(.sbterm) .autoComplete-details .macro-ac-details {
+    color: var(--nn-sc-ink);
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details .macro-arg-item {
+    border-radius: 8px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-raised);
+    padding: 6px 9px;
+}
+
+body.neconyan:not(.sbterm) .autoComplete-details .macro-arg-item.current {
+    background: color-mix(in srgb, var(--nn-sc-accent) 16%, var(--nn-sc-raised));
+    border-color: var(--nn-sc-accent);
+}
+
+/* ==========================================================================
+   Phone & Touch Autocomplete Ergonomics (<= 768px or pointer: coarse)
+   ========================================================================== */
+
+@media screen and (max-width: 1000px) {
+    /* Defeat stock SillyTavern's left: 50vw half-screen details squish */
+    body.neconyan:not(.sbterm) .autoComplete-detailsWrap:not(.isFloating):not(.full) {
+        left: var(--leftOffset, 8px);
+        right: var(--rightOffset, 8px);
+    }
+}
+
+@media screen and (max-width: 768px), (pointer: coarse) {
+    body.neconyan:not(.sbterm) .nn-ac-hints {
+        display: none;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > .nn-ac-header {
+        padding: 6px 8px 6px 10px;
+    }
+
+    body.neconyan:not(.sbterm) .nn-ac-details-toggle,
+    body.neconyan:not(.sbterm) .nn-ac-details-close {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0 12px;
+        font-size: 14px;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item {
+        min-height: 44px;
+        padding: 9px 12px;
+    }
+
+    /* Keep command suggestions scannable; the full signature remains in Details. */
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item[data-option-type='command'] > .specs > .body,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item > .specs > .body {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   Slash Command Browser (/help slash — .slashCommandBrowser)
+   ========================================================================== */
+
+body.neconyan:not(.sbterm) .slashCommandBrowser {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    margin: 4px 0;
+    border-radius: 16px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    box-shadow: var(--nn-sc-shadow);
+    box-sizing: border-box;
+    font-family: var(--mainFontFamily);
+    container: nn-slash-browser / inline-size;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+/* Cozy browser header */
+body.neconyan:not(.sbterm) .slashCommandBrowser > .nn-scb-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--nn-sc-border);
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 16px;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-raised));
+    color: color-mix(in srgb, var(--nn-sc-accent) 18%, var(--nn-sc-ink));
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 34%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-title {
+    font-family: var(--sb-font-display, var(--mainFontFamily));
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--nn-sc-ink);
+    margin: 0;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-raised));
+    color: var(--nn-sc-ink);
+    border: 1px solid color-mix(in srgb, var(--nn-sc-accent) 28%, var(--nn-sc-border));
+}
+
+/* Accent-aware filter pills */
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn {
+    --neconyan-control-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 5px 13px;
+    margin: 0;
+    border-radius: 999px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-raised);
+    color: var(--nn-sc-ink);
+    font-family: var(--mainFontFamily);
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-raised));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 40%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--nn-sc-focus-ring);
+}
+
+:root body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filters .nn-scb-filter-btn[aria-pressed='true'] {
+    background: var(--nn-sc-accent);
+    border-color: transparent;
+    color: var(--nn-sc-on-accent);
+}
+
+:root body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filters .nn-scb-filter-btn[aria-pressed='true']:hover {
+    background: var(--nn-sc-accent-hover);
+    border-color: transparent;
+    color: var(--nn-sc-on-accent);
+}
+
+/* Search bar */
+body.neconyan:not(.sbterm) .slashCommandBrowser > .search {
+    display: flex;
+    width: 100%;
+    margin: 0;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin: 0;
+    font-size: 13.5px;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-search-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: var(--nn-sc-muted);
+    pointer-events: none;
+    z-index: 1;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-search-text {
+    display: none;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput {
+    --neconyan-control-radius: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 12px 8px 36px;
+    margin: 0;
+    border-radius: 10px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-raised);
+    color: var(--nn-sc-ink);
+    font-family: var(--mainFontFamily);
+    font-size: 13.5px;
+    line-height: 1.4;
+    box-sizing: border-box;
+    box-shadow: none;
+    transition: border-color 140ms ease-out, box-shadow 140ms ease-out, background-color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput::placeholder {
+    color: var(--nn-sc-muted);
+    opacity: 0.9;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput:focus {
+    outline: none;
+    border-color: var(--nn-sc-accent);
+    box-shadow: var(--nn-sc-focus-ring);
+    background: var(--nn-sc-surface);
+}
+
+/* Master-detail command container */
+body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    min-height: 220px;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete {
+    position: static;
+    border: 1px solid var(--nn-sc-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--nn-sc-raised) 44%, var(--nn-sc-surface));
+    max-height: 58vh;
+    padding: 6px;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-list {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 14px;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--nn-sc-muted);
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-list[hidden] {
+    display: none;
+}
+
+/* Browser details card overrides floating autocomplete positioning */
+body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete-detailsWrap {
+    position: static;
+    inset: auto;
+    width: 100%;
+    max-height: 58vh;
+    z-index: 1;
+    border-radius: 12px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    box-shadow: none;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete-detailsWrap::before,
+body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete-detailsWrap::after {
+    content: none;
+    display: none;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--nn-sc-raised);
+    border-bottom: 1px solid var(--nn-sc-border);
+    flex: 0 0 auto;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back,
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-close {
+    --neconyan-control-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 6px 12px;
+    margin: 0;
+    border-radius: 10px;
+    border: 1px solid var(--nn-sc-border);
+    background: var(--nn-sc-surface);
+    color: var(--nn-sc-ink);
+    font-family: var(--mainFontFamily);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: none;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back:hover,
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-close:hover {
+    background: color-mix(in srgb, var(--nn-sc-accent) 14%, var(--nn-sc-surface));
+    border-color: color-mix(in srgb, var(--nn-sc-accent) 44%, var(--nn-sc-border));
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back:focus-visible,
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-close:focus-visible {
+    outline: none;
+    box-shadow: var(--nn-sc-focus-ring);
+}
+
+/* Cozy empty details state (wide split view only) */
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-details {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 240px;
+    padding: 24px 20px;
+    border-radius: 12px;
+    border: 1px dashed var(--nn-sc-border);
+    background: color-mix(in srgb, var(--nn-sc-raised) 55%, var(--nn-sc-surface));
+    color: var(--nn-sc-muted);
+    text-align: center;
+    box-sizing: border-box;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-details > .fa-solid {
+    font-size: 22px;
+    color: var(--nn-sc-accent);
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-details-title {
+    color: var(--nn-sc-ink);
+    font-weight: 700;
+}
+
+body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-empty-details-sub {
+    max-width: 28ch;
+    font-size: 13.5px;
+    line-height: 1.45;
+}
+
+/* Give this system message the chat width, not a character's bubble width. */
+body.neconyan:not(.sbterm) #chat .mes:has(.slashCommandBrowser) {
+    display: block;
+    width: min(100%, 820px);
+    max-width: none;
+    margin-inline: auto;
+}
+
+@media (min-width: 769px) {
+    body.neconyan:not(.sbterm) #chat .mes:has(.slashCommandBrowser) {
+        box-sizing: border-box;
+        width: min(var(--nn-scb-chat-width, 100%), 820px);
+        align-self: center;
+        margin-inline: 0;
+    }
+}
+
+body.neconyan:not(.sbterm) #chat .mes:has(.slashCommandBrowser) > .mesAvatarWrapper {
+    display: none;
+}
+
+body.neconyan:not(.sbterm) #chat .mes:not(.smallSysMes):has(.slashCommandBrowser) :is(.mes_block, .mes_text) {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Wide container (>= 700px): side-by-side 2-column split */
+@container nn-slash-browser (min-width: 700px) {
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer {
+        display: grid;
+        grid-template-columns: minmax(260px, 1.05fr) minmax(300px, 1fr);
+        align-items: start;
+        gap: 12px;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete {
+        grid-column: 1;
+        max-height: 54dvh;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer:not(.has-selection) > .nn-scb-empty-details {
+        display: flex;
+        grid-column: 2;
+        position: sticky;
+        top: 8px;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer.has-selection > .nn-scb-empty-details {
+        display: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete-detailsWrap {
+        grid-column: 2;
+        position: sticky;
+        top: 8px;
+        right: auto;
+        left: auto;
+        bottom: auto;
+        width: 100%;
+        max-height: 54dvh;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back {
+        display: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-bar {
+        justify-content: flex-end;
+    }
+}
+
+/* Narrow browser: show one full-width panel at a time. */
+@container nn-slash-browser (width < 700px) {
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer {
+        display: flex;
+        flex-direction: column;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer.has-selection > .autoComplete {
+        display: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .commandContainer > .autoComplete-detailsWrap {
+        position: static;
+        right: auto;
+        top: auto;
+        width: 100%;
+        max-height: 48dvh;
+        flex: 0 0 auto;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back {
+        display: inline-flex;
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-close {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+@media screen and (max-width: 768px), (pointer: coarse) {
+    body.neconyan:not(.sbterm) .slashCommandBrowser {
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput {
+        min-height: 44px;
+        font-size: 15px;
+    }
+}
+
+/* ==========================================================================
+   Reduced-motion compliance (prefers-reduced-motion + body.neconyan.reduced-motion)
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan:not(.sbterm) .nn-ac-details-toggle {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item::before,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item::before {
+        transition: none;
+    }
+
+    :root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.blank)::after,
+    :root[data-neconyan-palette='calico'] body.neconyan:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.blank)::after {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .nn-ac-details-close {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput {
+        transition: none;
+    }
+
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-back,
+    body.neconyan:not(.sbterm) .slashCommandBrowser .nn-scb-details-close {
+        transition: none;
+    }
+}
+
+body.neconyan.reduced-motion:not(.sbterm) .nn-ac-details-toggle,
+body.neconyan.reduced-motion:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .autoComplete > .item,
+body.neconyan.reduced-motion:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item::before,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .autoComplete > .item::before,
+:root[data-neconyan-palette='calico'] body.neconyan.reduced-motion:not(.sbterm) .autoComplete-wrap > ul.autoComplete > .item:not(.blank)::after,
+:root[data-neconyan-palette='calico'] body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .autoComplete > .item:not(.blank)::after,
+body.neconyan.reduced-motion:not(.sbterm) .nn-ac-details-close,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .nn-scb-filter-btn,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser > .search > .searchLabel > .searchInput,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .nn-scb-details-back,
+body.neconyan.reduced-motion:not(.sbterm) .slashCommandBrowser .nn-scb-details-close {
+    transition: none;
+}

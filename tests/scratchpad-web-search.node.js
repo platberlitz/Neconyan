@@ -458,7 +458,7 @@ test('search errors, timeouts, cancellation and oversized responses are bounded'
         body: { [Symbol.asyncIterator]() { return { next: () => new Promise(() => {}) }; } } });
     await assert.rejects(web.performWebSearch(brave, {
         directories: a.directories, timeoutMs: 15, fetch: async () => stalled(),
-    }), error => error.code === 'SCRATCHPAD_WEB_SEARCH_TIMEOUT' && error.message === 'The web search timed out after 20 seconds.');
+    }), error => error.code === 'SCRATCHPAD_WEB_SEARCH_TIMEOUT' && error.message === 'The web search timed out after 0.015 seconds.');
 
     const bodyController = new AbortController();
     const bodyCancel = web.performWebSearch(brave, {
@@ -739,7 +739,7 @@ test('custom assistant prompts still receive failure honesty rules and reply his
 });
 
 test('stored metadata is internal-only and imported metadata is never trusted evidence', () => {
-    const input = { role: 'assistant', text: 'Answer.', webSearch: { provider: 'brave', query: 'A query',
+    const input = { id: 'msg-search', role: 'assistant', text: 'Answer.', webSearch: { provider: 'brave', query: 'A query',
         sources: [{ title: 'One', url: 'https://example.com/one' }, { title: 'Bad', url: 'https://user:pass@example.com/two' }],
         error: 'Search failed.' } };
     assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: false }).webSearch, undefined);

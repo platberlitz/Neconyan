@@ -16,7 +16,7 @@ import { uuidv4 } from '../utils.js';
 import { getPreparedMewmoryContext, setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
 import { isAgentWorkPending, waitForAgentWorkIdle } from '../extensions/in-chat-agents/agent-work-state.js';
 import { t, translate } from '../i18n.js';
-import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
+import { getGroupPromptViewers, hasRestrictedGroupHistory } from '../group-chat-visibility.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.js';
 import { decorateMessages, MEWMORY_OFF_RECORD_KEY, putBackOnRecord, recallSummary, stampMessage } from './in-chat.js';
 
@@ -29,6 +29,8 @@ export const MEWMORY_CONFIG_CHANGED_KEY = 'neconyan.mewmory.config.changed';
 const NEW_CHAT_MARK = 'mewmory_new_chat';
 let initialized = false;
 let timer;
+let updateSequence = 0;
+let hiddenWakeBound = false;
 let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
@@ -51,6 +53,15 @@ export function getMewmoryLocator() {
 
 const key = locator => JSON.stringify(locator);
 export const getMewmoryScope = () => key([getMewmoryLocator(), getChatGeneration(), selectionVersion]);
+
+/** What the rail and the panel header draw, so a refresh that changes none of it stays silent. */
+function mewmoryDisplaySignature() {
+    return JSON.stringify([
+        mewmory.error, mewmory.loading, mewmory.busy, mewmory.preparing, mewmory.backfilling,
+        mewmory.view?.revision ?? null, mewmory.view?.enabled ?? null,
+        mewmory.config?.revision ?? null, mewmory.stories?.length ?? null, mewmory.spend ?? null,
+    ]);
+}
 
 export function notifyMewmory() {
     window.dispatchEvent(new CustomEvent('mewmory:updated'));
@@ -89,7 +100,7 @@ export async function requestMewmory(route, data = {}, { signal, scope = getMewm
         if (result.job) scheduleUpdate();
         return result;
     } finally {
-        if (invalidates) invalidateMewmoryRefresh();
+        if (invalidates && scope === getMewmoryScope()) invalidateMewmoryRefresh();
     }
 }
 
@@ -140,21 +151,28 @@ async function refreshCurrentChat(filters, { signal }) {
     const currentKey = getMewmoryScope();
     const version = ++refreshVersion;
     const current = () => currentKey === getMewmoryScope() && version === refreshVersion;
+    // A background refresh of the chat already on screen updates the badge and the
+    // header. It should not flash the panel back to its loading state to do it.
+    const quiet = viewKey === currentKey && Boolean(mewmory.view);
     if (viewKey !== currentKey) {
         mewmory.view = null;
         mewmory.error = '';
         viewKey = currentKey;
     }
-    mewmory.loading = Boolean(locator);
-    notifyMewmory();
+    const before = mewmoryDisplaySignature();
+    if (!quiet) {
+        mewmory.loading = Boolean(locator);
+        notifyMewmory();
+    }
     try {
-        const config = await requestMewmory('config/get', {}, { signal, scope: currentKey });
+        const [config, view] = await Promise.all([
+            requestMewmory('config/get', {}, { signal, scope: currentKey }),
+            locator ? requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null,
+        ]);
         if (!current()) return null;
         if (!mewmory.config || config.config.revision >= mewmory.config.revision) mewmory.config = config.config;
         mewmory.stories = config.stories;
         mewmory.spend = config.spend ?? null;
-        const view = locator ? await requestMewmory('inspect', { locator, ...filters }, { signal, scope: currentKey }) : null;
-        if (!current()) return null;
         if (!view || !mewmory.view || view.revision >= mewmory.view.revision) mewmory.view = view;
         mewmory.error = '';
         return view;
@@ -170,7 +188,7 @@ async function refreshCurrentChat(filters, { signal }) {
             if (processing?.status === 'failed') mewmory.error = processing.error;
             const operation = mewmory.view?.operations?.[0];
             if (['failed', 'interrupted'].includes(operation?.state)) mewmory.error = operation.error?.message || 'Memory processing needs attention.';
-            notifyMewmory();
+            if (!quiet || mewmoryDisplaySignature() !== before) notifyMewmory();
             if (mewmory.busy) scheduleUpdate();
         }
     }
@@ -663,15 +681,33 @@ export async function processMewmory({ all = false, checkpoint = false, unreadOn
     }
 }
 
-function scheduleUpdate(delay = 1500) {
+function scheduleUpdate(delay = 1500, waitingDelay = 15000) {
+    const sequence = ++updateSequence;
+    const scope = getMewmoryScope();
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
+        if (scope !== getMewmoryScope()) return;
+        // Nothing on this page is visible, so wait for the reader to come back
+        // instead of asking the server for a panel nobody is looking at.
+        if (document.visibilityState === 'hidden') {
+            if (!hiddenWakeBound) {
+                hiddenWakeBound = true;
+                window.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState !== 'visible') return;
+                    hiddenWakeBound = false;
+                    scheduleUpdate();
+                });
+            }
+            return;
+        }
         if (getMewmoryLocator()) await refreshMewmory();
+        if (sequence !== updateSequence || scope !== getMewmoryScope()) return;
         const health = mewmory.view?.health;
         const pending = mewmory.config?.excludeHistory ? health?.checkpointPending : health?.pending;
         const waiting = mewmory.view?.enabled && mewmory.config?.autoUpdate && mewmory.config?.roles?.extractor?.enabled
             && pending > 0 && !['failed', 'cancelled'].includes(health?.processing?.status);
-        if (mewmory.busy || waiting) scheduleUpdate(mewmory.busy ? 1500 : 15000);
+        if (mewmory.busy) scheduleUpdate();
+        else if (waiting) scheduleUpdate(waitingDelay, Math.min(waitingDelay * 2, 120000));
     }, delay);
 }
 
@@ -731,8 +767,8 @@ function installInChatControls() {
         lastRecall = null;
         const message = chat[Number(messageId)];
         if (!message || message.is_user || type === 'first_message') return;
-        const summary = recall?.scope === getMewmoryScope() && (recall.summary?.records.length || recall.summary?.passages)
-            ? recall.summary : null;
+        // With no local preparation, leave any recall saved by another path alone.
+        const summary = recall?.scope === getMewmoryScope() ? recall.summary : undefined;
         if (stampMessage(message, { summary, offRecord: isMewmoryOffRecord() })) scheduleDecorate();
     });
     eventSource.on(event_types.MESSAGE_SENT, async messageId => {
@@ -771,6 +807,7 @@ export function initMewmory() {
         mewmory.view = null;
         mewmory.error = '';
         mewmory.filters = {};
+        mewmory.focusMessage = null;
         invalidateMewmoryRefresh();
         void refreshMewmory();
         scheduleUpdate();
@@ -830,12 +867,13 @@ export function updatePreparedMewmoryPresentation(context) {
 
 export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchUpOverride } = {}) {
     const locator = getMewmoryLocator();
+    lastRecall = null;
     setPreparedMewmoryContext(null, null);
-    // Chat-wide records cannot prove which scene participants heard their sources.
-    if (hasRestrictedGroupHistory()) return { enabled: false, chat: messages };
     if (!locator) return { enabled: false, chat: messages };
-    const generation = getChatGeneration();
     const currentKey = getMewmoryScope();
+    // A group speaker who missed lines recalls only memories built from what they heard.
+    const viewers = hasRestrictedGroupHistory() ? getGroupPromptViewers() : null;
+    const generation = getChatGeneration();
     mewmory.preparing = true;
     notifyMewmory();
     try {
@@ -843,19 +881,26 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then send again so Mewmory can add memories.');
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
         invalidateMewmoryRefresh();
-        const view = await refreshMewmory(undefined, { signal });
-        if (getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
-        if (!view) throw new Error(mewmory.error || 'Mewmory could not read this chat. Try again.');
-        if (!view.enabled) return { enabled: false, chat: messages };
         const tokenizer = getFriendlyTokenizerName();
+        const history = messages.filter(message => Number.isInteger(message.mewmorySourceIndex)).map(message => ({
+            index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
+        }));
+        // With memory off for this chat the server answers before it needs the
+        // prompt. Sending the whole history anyway costs a large request on
+        // every reply, so ask without it and resend only if the view was stale.
+        const omittedHistory = mewmory.view?.enabled === false && !mewmoryCatchUpOverride;
         const input = {
             locator, tokenizer, integrity: chat_metadata.integrity,
             ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
-            history: messages.filter(message => Number.isInteger(message.mewmorySourceIndex)).map(message => ({
-                index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
-            })),
+            ...(viewers ? { viewers } : {}),
+            ...(omittedHistory ? { historyOmitted: true } : { history }),
         };
         let result = await requestMewmory('prepare', input, { signal });
+        if (result.needsHistory) {
+            delete input.historyOmitted;
+            input.history = history;
+            result = await requestMewmory('prepare', input, { signal });
+        }
         if (result.waiting) {
             if (!result.extractorEnabled || mewmory.config?.roles?.extractor?.error) {
                 throw Object.assign(new Error('Enable and configure Facts and events to record older messages, or reply now with the extra original messages.'), { code: 'MEWMORY_WAIT_FAILED' });
@@ -883,10 +928,18 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
             }
         }
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed while memories were being picked. Send again.');
+        if (!result.enabled) {
+            lastRecall = { scope: currentKey, summary: null };
+            return { enabled: false, chat: messages };
+        }
         const excluded = new Set(result.excludedIndices);
         mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
-        mewmory.view.preview = result;
-        mewmory.view.previewCurrent = true;
+        if (mewmory.view?.enabled) {
+            mewmory.view.preview = result;
+            mewmory.view.previewCurrent = true;
+        }
+        // Agents check whose view these memories were recalled for before reading them.
+        if (viewers) result.viewers = viewers;
         setPreparedMewmoryContext(locator.chat, result);
         return { ...result, locator, tokenizer, scope: currentKey, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
     } catch (error) {
@@ -899,6 +952,7 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
 }
 
 export async function validateMewmoryGeneration(context, prompt, tokenBudget, { signal } = {}) {
+    lastRecall = null;
     if (!context?.enabled) return;
     try {
         const plainText = typeof prompt === 'string' ? prompt : prompt.map(message => typeof message.content === 'string'

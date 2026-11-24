@@ -27,7 +27,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     isAvatarInConversationGroup: () => false,
     persistConversationStore: jest.fn(),
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({ updateUserFooter: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({ renderConversationGroupMemberSummary: () => false, updateUserFooter: jest.fn() }));
 
 const { getConversationPersonaName } = await import('../public/scripts/neconyan-conversation/personas.js');
 

@@ -5,6 +5,7 @@ export const SERVER_PLUGIN_UPDATE_PREPARE_MESSAGE = 'neconyan:server-plugin-upda
 export const SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE = 'neconyan:server-plugin-update:cancel';
 export const SERVER_PLUGIN_UPDATE_RESPONSE_MESSAGE = 'neconyan:server-plugin-update:response';
 export const SERVER_STARTUP_READY_MESSAGE = 'neconyan:server-startup:ready';
+export const SERVER_MEMORY_SAMPLE_MESSAGE = 'neconyan:memory-sample';
 export const SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV = 'NECONYAN_SERVER_PLUGIN_UPDATE_API';
 export const SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION = '1';
 

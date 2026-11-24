@@ -611,6 +611,8 @@ export function cancelDebounce(func) {
     if (debounceMap.has(func)) {
         clearTimeout(debounceMap.get(func));
         debounceMap.delete(func);
+    } else if (typeof func?.cancel === 'function') {
+        func.cancel();
     }
 }
 
@@ -2874,7 +2876,7 @@ export async function importFromExternalUrl(url, { preserveFileName = null } = {
                 if (preserveFileName) {
                     extraData.set(bridged.file, preserveFileName);
                 }
-                await processDroppedFiles([bridged.file], extraData);
+                await processDroppedFiles([bridged.file], extraData, { sourceUrl: jannyUrl });
                 return;
             }
             const guidance = jannyBridgeGuidance(bridged.error, bridged.retryAfter);
@@ -2909,7 +2911,7 @@ export async function importFromExternalUrl(url, { preserveFileName = null } = {
 
     switch (customContentType) {
         case 'character':
-            await processDroppedFiles([file], extraData);
+            await processDroppedFiles([file], extraData, { sourceUrl: isValidUrl(url) ? url : '' });
             break;
         case 'lorebook':
             await importWorldInfo(file);

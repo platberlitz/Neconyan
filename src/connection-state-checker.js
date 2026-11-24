@@ -37,6 +37,7 @@ const NETSTAT_TCP_STATES = new Set([
 
 /** @type {{ platform: string, expiresAt: number, promise: Promise<Set<string> | null> } | null} */
 let connectionTableCache = null;
+let linuxProcTableAvailable = true;
 
 function normalizeAddress(address) {
     if (!address) {
@@ -247,22 +248,32 @@ function parseNetstatOutput(text) {
 }
 
 async function getLinuxConnections() {
+    if (!linuxProcTableAvailable) {
+        return null;
+    }
+
     const connections = new Set();
+    let readAny = false;
 
     for (const [file, isIpv6] of [['/proc/net/tcp', false], ['/proc/net/tcp6', true]]) {
         try {
             const text = await fs.promises.readFile(file, 'utf8');
+            readAny = true;
             for (const key of parseLinuxTcpTable(text, isIpv6)) {
                 connections.add(key);
             }
         } catch (error) {
             if (error?.code !== 'ENOENT') {
-                throw error;
+                // A denied or unreadable proc table cannot prove a disconnect.
+                // Stop reading it on every poll and let callers fail open.
+                linuxProcTableAvailable = false;
+                console.debug('Unable to read the Linux connection table:', error?.message ?? error);
+                return null;
             }
         }
     }
 
-    return connections;
+    return readAny ? connections : null;
 }
 
 async function getNetstatConnections(platform) {
@@ -388,7 +399,10 @@ export function pollSocketConnection(socket, intervalMs = DEFAULT_POLL_INTERVAL_
 
     let stopped = false;
     let checking = false;
-    const interval = Math.max(50, Number(intervalMs) || DEFAULT_POLL_INTERVAL_MS);
+    const configuredInterval = Math.max(50, Number(intervalMs) || DEFAULT_POLL_INTERVAL_MS);
+    // Windows and macOS shell out to netstat for every check, so a 150 ms poll
+    // reads the process table back to back for the whole reply. Linux reads proc files.
+    const interval = os.platform() === 'linux' ? configuredInterval : Math.max(configuredInterval, 1000);
 
     // Snapshot the socket's 4-tuple address once obtained, then check the OS
     // connection table against the snapshot. The live socket fields (used by
@@ -450,6 +464,7 @@ export function pollSocketConnection(socket, intervalMs = DEFAULT_POLL_INTERVAL_
 export const testExports = {
     clearConnectionTableCache: () => {
         connectionTableCache = null;
+        linuxProcTableAvailable = true;
     },
     connectionKey,
     collapseIpv6Address,

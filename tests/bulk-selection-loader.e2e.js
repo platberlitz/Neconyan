@@ -24,8 +24,10 @@ async function prepare(browser, phone) {
     page.on('pageerror', error => console.error(error.message));
     page.on('console', message => { if (message.type() === 'error') console.error(message.text()); });
     await page.route('**/api/characters/all', route => route.fulfill({ json: CARDS }));
-    const storage = createMockRoleplayStore(() => page.evaluate(async () =>
-        (await import('/scripts/roleplay-save-chain.js')).roleplayAccountStamp().account));
+    const { promise: account, resolve: setAccount } = Promise.withResolvers();
+    // Groups can load before the page binds the account. Use the same server
+    // account that the page will receive rather than reading its startup state.
+    const storage = createMockRoleplayStore(() => account);
     await page.route('**/api/groups/all', route => storage.readGroups(route, GROUPS));
     await page.route('**/api/extensions/discover', route => route.fulfill({ json: [] }));
     await page.route('**/thumbnail?*', route => route.fulfill({ path: '../public/img/neconyan-icon-192.png', contentType: 'image/png' }));
@@ -33,6 +35,7 @@ async function prepare(browser, phone) {
         const response = await route.fetch();
         const data = await response.json();
         if (typeof data.settings !== 'string') return route.fulfill({ response });
+        setAccount(data.roleplayAccount);
         const settings = JSON.parse(data.settings);
         settings.firstRun = false;
         settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];

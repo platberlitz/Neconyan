@@ -27,7 +27,7 @@ final class PendingApkUpdate {
     }
 
     String restore(long installedVersion) throws IOException {
-        if (!record.isFile()) return null;
+        if (!record.isFile()) { clear(); return null; }
         if (record.length() <= 96 && apk.isFile()) {
             String value = new String(Files.readAllBytes(record.toPath()), StandardCharsets.UTF_8);
             try {

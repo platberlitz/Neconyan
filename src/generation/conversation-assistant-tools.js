@@ -48,7 +48,18 @@ export async function generateConversationAssistantReply(context, snapshot, opti
         }
         if (classifyGenerationOutcome(response?.response)) return response;
         const calls = normaliseRoleplayToolCalls(response, ASSISTANT_TOOL_NAMES);
-        if (!calls.length) return response;
+        if (!calls.length) {
+            // An explicit retry of an empty final answer reuses all tool
+            // results and asks only for the missing prose, with tools off.
+            if (!options.stepNamespace || String(response?.text ?? '').trim()) return response;
+            const retryKey = `${responseKey}:${options.stepNamespace}`;
+            const savedRetry = savedStep(context, retryKey, identity);
+            if (savedRetry) return savedRetry;
+            captureConversationAssistantSource(context, snapshot);
+            const retried = await generate({ ...options, messages: [...options.messages, ...history],
+                functionTools: [], generationType: 'normal', stepNamespace: `conversation-assistant:${round}:${options.stepNamespace}` });
+            return saveStep(context, retryKey, identity, retried);
+        }
         totalCalls += calls.length;
         if (round === MAX_ROUNDS || totalCalls > 128) throw invalid('The assistant reached the tool-call limit for this reply.');
         const results = [];

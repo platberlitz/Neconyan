@@ -50,7 +50,7 @@ export function deriveUiThemePreview(theme) {
     return { ...colours, tone: contrastRatio(colours.surface, 'rgb(0, 0, 0)') > 9 ? 'light' : 'dark' };
 }
 
-const holdMilliseconds = 1500;
+const themeApplyHoldMs = 1500;
 const userScrollEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
 
 function scrollParent(node) {
@@ -61,31 +61,41 @@ function scrollParent(node) {
 }
 
 /**
- * Applying a theme swaps stylesheets and custom CSS, which can resize content above the
- * gallery. Browsers without scroll anchoring (Safari) then move the page under the finger,
- * so keep the picked card where it was until the theme settles or the user scrolls.
- * The hold starts once the theme has applied, since that can take a while on slow phones.
+ * Keep the control in place through a layout update, even in browsers without scroll anchoring.
+ * Filtering only needs the next two frames. Applying a theme can resize content above the
+ * gallery for longer, and also needs to restore the card grid's own scroll position.
  */
-export function holdCardInPlace(card, grid) {
-    const scroller = scrollParent(grid);
-    const top = card.getBoundingClientRect().top;
-    const gridTop = grid.scrollTop;
+function holdInPlace(anchor, { grid, duration = 0 } = {}) {
+    const scroller = scrollParent(grid ?? anchor);
+    const top = anchor.getBoundingClientRect().top;
+    const gridTop = grid?.scrollTop;
     const pageX = window.scrollX;
     const pageY = window.scrollY;
     let end = 0;
     let frame = 0;
+    let passes = 0;
+    let observer;
     const stop = () => {
         cancelAnimationFrame(frame);
+        observer?.disconnect();
         for (const type of userScrollEvents) window.removeEventListener(type, stop, true);
     };
-    const settle = () => {
-        if (!card.isConnected) return stop();
-        end ||= performance.now() + holdMilliseconds;
+    const restore = () => {
         if (window.scrollY !== pageY) window.scrollTo(pageX, pageY);
-        if (grid.scrollTop !== gridTop) grid.scrollTop = gridTop;
-        const drift = card.getBoundingClientRect().top - top;
+        if (grid && grid.scrollTop !== gridTop) grid.scrollTop = gridTop;
+        const drift = anchor.getBoundingClientRect().top - top;
         if (scroller && Math.abs(drift) >= 1) scroller.scrollTop += drift;
-        if (performance.now() < end) frame = requestAnimationFrame(settle);
+    };
+    const settle = () => {
+        if (!anchor.isConnected) return stop();
+        end ||= performance.now() + duration;
+        restore();
+        if (!passes && !duration && scroller) {
+            // A Settings update can run after our frame callback. Correct its DOM changes before paint.
+            observer = new MutationObserver(() => anchor.isConnected ? restore() : stop());
+            observer.observe(scroller, { subtree: true, childList: true, attributeFilter: ['class', 'style', 'hidden'] });
+        }
+        if (++passes < 3 || performance.now() < end) frame = requestAnimationFrame(settle);
         else stop();
     };
     for (const type of userScrollEvents) window.addEventListener(type, stop, { capture: true, passive: true });
@@ -132,7 +142,15 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
         const button = element('button', 'nn-ui-theme-filter', translate(['All', 'Dark', 'Light'][index]));
         button.type = 'button';
         button.dataset.tone = value;
-        button.addEventListener('click', () => { tone = value; filter(); });
+        button.addEventListener('click', () => {
+            const settle = holdInPlace(filters);
+            const changed = tone !== value;
+            tone = value;
+            filter();
+            // A different result set starts at its first card, not the old list's scroll offset.
+            if (changed) grid.scrollTop = 0;
+            settle();
+        });
         filters.append(button);
         return button;
     });
@@ -231,7 +249,7 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
                     button.append(palette, name, meta);
                     button.addEventListener('focus', () => setTabStop(button));
                     button.addEventListener('click', () => {
-                        const settle = holdCardInPlace(button, grid);
+                        const settle = holdInPlace(button, { grid, duration: themeApplyHoldMs });
                         onSelect(theme.name);
                         settle();
                     });

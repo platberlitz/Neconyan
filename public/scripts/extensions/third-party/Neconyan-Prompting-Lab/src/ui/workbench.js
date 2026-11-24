@@ -15,24 +15,8 @@ const READOUT_ROWS = [
 ];
 
 /** Counts what the lab holds, so the workspace can show its own inventory. */
-async function readInventory() {
-    const [suites, cases, drafts, prompts, ledger] = await Promise.all([
-        storage.listSuites(),
-        storage.listCases(),
-        storage.listDrafts(),
-        storage.listPromptDrafts(),
-        storage.countLedger(),
-    ]);
-    const runCounts = await Promise.all(cases.map(testCase => storage.listRuns(testCase.id)));
-    return {
-        suites: suites.length,
-        cases: cases.length,
-        checks: cases.reduce((total, testCase) => total + (testCase.assertions?.length ?? 0), 0),
-        runs: runCounts.reduce((total, runs) => total + runs.length, 0),
-        drafts: drafts.length,
-        prompts: prompts.length,
-        ledger,
-    };
+function readInventory() {
+    return storage.getInventory();
 }
 
 /**

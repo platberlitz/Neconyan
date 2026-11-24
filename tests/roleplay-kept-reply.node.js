@@ -35,10 +35,11 @@ function editChat(f, mutate) {
     });
 }
 
-function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1, recovery = false, offRecord = false } = {}) {
+function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1, recovery = false, offRecord = false, missedBy = null } = {}) {
     const f = fixture(t, group);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    if (missedBy) f.records.at(-1).extra = { ...f.records.at(-1).extra, group_scene: { present: groupSpeakers.filter(avatar => avatar !== missedBy), whisper_to: [] } };
     if (offRecord) f.records[0].chat_metadata = { ...f.records[0].chat_metadata, mewmory_off_record: true };
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     if (group) {
@@ -641,8 +642,9 @@ test('a Deep Swipe user alternative keeps the user role and target message', asy
     const named = captureRoleplayNamedWorkflow('deep-swipe.user', { instruction: 'Rewrite this as me.' });
     const f = prepared(t, { effect: 'alternative', named, messageIndex: 0 });
     const child = await f.child();
-    saveCandidate({ dirs: f.dirs, child, text: 'A rewritten user line.' });
-    keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
+    saveCandidate({ dirs: f.dirs, child, text: 'A rewritten user line.', reasoning: 'Thinking about the rewrite.' });
+    const before = f.records()[1];
+    const kept = keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
     const saved = f.records();
     assert.equal(saved.length, 3);
     assert.equal(saved[1].is_user, true);
@@ -650,9 +652,12 @@ test('a Deep Swipe user alternative keeps the user role and target message', asy
     assert.deepEqual(saved[1].swipes, ['Original', 'A rewritten user line.']);
     assert.equal(saved[1].swipe_id, undefined);
     assert.equal(saved[1].mes, 'Original');
+    assert.deepEqual(saved[1].extra, before.extra);
+    assert.equal(saved[1].swipe_info[1].extra.reasoning, 'Thinking about the rewrite.');
+    assert.equal(kept.textHash, roleplayHash(saved[1].swipes[1]));
 });
 
-test('a group speaker keeps its avatar and generation identity', async t => {
+test('a group speaker keeps its avatar, generation identity and who heard the reply', async t => {
     const f = prepared(t, { group: true });
     const child = await f.child();
     saveCandidate({ dirs: f.dirs, child, text: 'A group speaker reply.', reasoning: 'Speaking as Nova' });
@@ -664,6 +669,18 @@ test('a group speaker keeps its avatar and generation identity', async t => {
     assert.equal(saved[3].force_avatar, 'Nova.png');
     assert.equal(saved[3].extra.gen_id, 5);
     assert.equal(saved[3].extra.reasoning, 'Speaking as Nova');
+    assert.deepEqual(saved[3].extra.group_scene, { present: ['Nova.png'], whisper_to: [] });
+});
+
+test('a kept reply from a first speaker who missed the line they answer records that they heard it', async t => {
+    const f = prepared(t, { group: true, groupSpeakers: ['Nova.png', 'Other.png'], missedBy: 'Nova.png' });
+    assert.equal(getJob(f.dirs, f.jobId).intent.request.group.speakers[0].hears, f.records().length - 2);
+    const child = await f.child();
+    saveCandidate({ dirs: f.dirs, child, text: 'Nova answers the line she missed.' });
+    keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
+    const saved = f.records();
+    assert.equal(saved.at(-1).mes, 'Nova answers the line she missed.');
+    assert.deepEqual(saved.at(-2).extra.group_scene.present, ['Other.png', 'Nova.png']);
 });
 
 test('a restart interruption with a saved delivery proof stays retryable and writes nothing', async t => {

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { collectTests, PINNED_FILES, TESTS_DIRECTORY, testListNeedsEdge, TIMINGS_PATH } from './release-e2e-groups.js';
 import { inlineCode } from './release-e2e-summary.js';
 
-const SMOKE_FILES = ['catline-icons.e2e.js', 'neconyan-conversation-empty.e2e.js'];
+const SMOKE_FILES = ['catline-icons.e2e.js', 'neconyan-conversation-empty.e2e.js', 'mobile-app-layout.e2e.js'];
 const CHANGED_FILE_BUDGET_SECONDS = 120;
 const UNKNOWN_SECONDS_PER_TEST = 25;
 

@@ -158,6 +158,110 @@ export function canonical(value) {
     return JSON.stringify(value ?? null);
 }
 
+/**
+ * True only for the values JSON.stringify would round-trip exactly (a tree of plain objects,
+ * dense arrays, strings, booleans, null and finite numbers other than -0), each with this realm's
+ * Object or Array prototype, no toJSON and only data properties. Anything else, such as undefined, -0,
+ * dates, functions, symbols, bigints, cycles, custom or foreign prototypes, is refused so callers keep
+ * their legacy handling of it.
+ */
+export function isStrictJsonTree(value, ancestors = new Set()) {
+    if (value === null) return true;
+    switch (typeof value) {
+        case 'string':
+        case 'boolean':
+            return true;
+        case 'number':
+            return Number.isFinite(value) && !Object.is(value, -0);
+        case 'object':
+            break;
+        default:
+            return false;
+    }
+    // JSON.stringify would call a toJSON hook, enumerable or not, and write something else.
+    if (typeof value.toJSON === 'function') return false;
+    // Arguments, Math, and Date, String or Error objects given another prototype keep an internal tag (or a hidden
+    // Symbol.toStringTag) that the prototype checks below cannot see.
+    const isArray = Array.isArray(value);
+    if (Object.prototype.toString.call(value) !== (isArray ? '[object Array]' : '[object Object]')) return false;
+    if (ancestors.has(value)) return false;
+    ancestors.add(value);
+    try {
+        if (isArray) {
+            if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+            for (let index = 0; index < value.length; index += 1) {
+                if (!isStrictJsonProperty(value, index, ancestors)) return false;
+            }
+            // Every index is an own property above, so any further enumerable key makes the count differ.
+            if (Object.keys(value).length !== value.length) return false;
+            return !hasEnumerableSymbol(value);
+        }
+        if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+        if (hasEnumerableSymbol(value)) return false;
+        for (const key of Object.keys(value)) {
+            if (!isStrictJsonProperty(value, key, ancestors)) return false;
+        }
+        return true;
+    } finally {
+        ancestors.delete(value);
+    }
+}
+
+function hasEnumerableSymbol(value) {
+    const symbols = Object.getOwnPropertySymbols(value);
+    return symbols.length > 0 && symbols.some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
+}
+
+// An own data property whose value is strict JSON. An accessor is refused rather than called: it could answer
+// differently each time it is read, and the checked path then settles it as it always has.
+function isStrictJsonProperty(owner, key, ancestors) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+    return descriptor !== undefined && 'value' in descriptor && isStrictJsonTree(descriptor.value, ancestors);
+}
+
+/**
+ * SHA-256 of `canonical(value)` without building that text: it is fed to the hash in pieces,
+ * so hashing a whole chat never holds it as one string. Only for values `isStrictJsonTree` accepts.
+ */
+export function canonicalSha256(value) {
+    const hash = crypto.createHash('sha256');
+    let pending = '';
+    const emit = piece => {
+        pending += piece;
+        if (pending.length >= 65536) {
+            hash.update(pending);
+            pending = '';
+        }
+    };
+    const walk = node => {
+        if (Array.isArray(node)) {
+            emit('[');
+            for (let index = 0; index < node.length; index += 1) {
+                if (index > 0) emit(',');
+                walk(node[index]);
+            }
+            emit(']');
+        } else if (node && typeof node === 'object') {
+            emit('{');
+            const keys = Object.keys(node).sort();
+            for (let index = 0; index < keys.length; index += 1) {
+                if (index > 0) emit(',');
+                emit(JSON.stringify(keys[index]));
+                emit(':');
+                walk(node[keys[index]]);
+            }
+            emit('}');
+        } else if (typeof node === 'number' && Number.isFinite(node)) {
+            // Both print a finite number the same way, and this skips a JSON.stringify call per number.
+            emit(String(node));
+        } else {
+            emit(JSON.stringify(node ?? null));
+        }
+    };
+    walk(value);
+    return hash.update(pending).digest('hex');
+}
+
 export function jobKey(id) {
     return crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 32);
 }
@@ -457,6 +561,19 @@ export function listJobs(directories, { owner, includeDismissed = false } = {}) 
         .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
 }
 
+/**
+ * Filter the shared read-only ledger and clone only the jobs that match. The
+ * runner polls every owner; parsing the whole ledger each time costs more than
+ * the few matching jobs it actually needs.
+ */
+export function selectJobs(directories, predicate) {
+    const store = readStore(directories);
+    return Object.values(store.jobs)
+        .filter(predicate)
+        .map(job => structuredClone(job))
+        .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0));
+}
+
 export function getJob(directories, id) {
     const job = readStore(directories).jobs[jobKey(id)];
     return job ? structuredClone(job) : null;
@@ -709,7 +826,11 @@ function finaliseCancelledAncestors(store, completed) {
         if (parent.state === 'waiting' && parent.cancellation?.requested && allChildrenTerminal) {
             parent.state = 'cancelled';
             parent.finishedAt = now();
-            parent.error = null;
+            // A cancelled Roleplay memory wait still has a recovery choice
+            // for the same accepted message, even when seen through its root.
+            parent.error = parent.type === 'media.roleplay-workflow' ? (parent.children ?? [])
+                .map(id => store.jobs[jobKey(id)])
+                .find(child => child?.state === 'cancelled' && child.error?.code === 'MEWMORY_WAIT_ABORTED')?.error ?? null : null;
             parent.recoverability = 'terminal';
             parent.updatedAt = now();
         }
@@ -787,10 +908,10 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
             descendants.push(child);
             pending.push(...(child.children ?? []));
         }
-        // Only a running server reply child has a keeper write to finish. A
-        // vector, caption or other auxiliary child does not extend the wait.
+        // A running reply child may have generated content left to save. An
+        // auxiliary child such as a vector or caption does not extend the wait.
         const activeDescendant = descendants.some(child => child.state === 'running'
-            && (child.type === 'roleplay.reply' || child.type === 'roleplay.candidate'));
+            && ['roleplay.reply', 'roleplay.candidate', 'conversation.participant'].includes(child.type));
         for (const child of descendants) {
             if (TERMINAL_STATES.includes(child.state)) continue;
             child.cancellation = { requested: true, requestedAt: now(), reason };
@@ -805,7 +926,7 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
         // parent waiting on a running child is still doing work: its terminal
         // state waits until that child and its server keeper have finished.
         const survivesForChild = activeDescendant
-            && (job.type === 'media.roleplay-workflow' || job.type === 'roleplay.reply');
+            && ['media.roleplay-workflow', 'roleplay.reply', 'conversation.reply'].includes(job.type);
         if ((job.state === 'queued' || job.state === 'waiting') && !survivesForChild) {
             job.state = 'cancelled';
             job.finishedAt = now();
@@ -870,6 +991,9 @@ export function clearFinishedJobs(directories, { owner } = {}) {
  */
 export function explicitRetryRecovery(job) {
     return { recoverability: 'resumable', recoveryStep: null, recoverySteps: [],
+        ...(['conversation.reply', 'conversation.participant'].includes(job.type) && job.error?.code === 'CONVERSATION_EMPTY_REPLY'
+            ? { emptyReplyRetries: (job.emptyReplyRetries ?? 0) + 1 } : {}),
+        ...(job.error?.code === 'HORDE_TASK_TERMINAL' ? { hordeRetryAttempt: (job.hordeRetryAttempt ?? 0) + 1 } : {}),
         resume: typeof job.resume === 'string' && job.resume.startsWith('provider:') ? null : job.resume ?? null };
 }
 
@@ -891,10 +1015,12 @@ export function retryConversationFamily(directories, id) {
             }
             child.state = child.children?.length ? 'waiting' : 'queued';
             child.stage = child.children?.length ? 'children' : null;
+            Object.assign(child, explicitRetryRecovery(child));
             child.error = null;
             child.result = null;
             child.finishedAt = null;
-            Object.assign(child, explicitRetryRecovery(child));
+            child.dismissed = false;
+            delete child.dismissedReason;
             child.attempt += 1;
             child.updatedAt = now();
             changed = true;
@@ -902,14 +1028,50 @@ export function retryConversationFamily(directories, id) {
         for (const childId of root.children ?? []) {
             retryChild(store.jobs[jobKey(childId)]);
         }
-        if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'None of the replies in this Conversation can be retried.');
-        root.state = 'waiting';
-        root.stage = 'children';
+        const preparing = (root.children ?? []).some(id => {
+            const child = store.jobs[jobKey(id)];
+            return child?.parentId === root.id && child.state === 'waiting' && child.stage === 'preparing';
+        });
+        if (!changed && !preparing) throw fail(409, 'JOB_NOT_RETRYABLE', 'None of the replies in this Conversation can be retried.');
+        root.state = preparing ? 'queued' : 'waiting';
+        root.stage = preparing ? null : 'children';
         root.error = null;
         root.result = null;
         root.finishedAt = null;
+        root.dismissed = false;
+        delete root.dismissedReason;
         root.recoverability = 'resumable';
         root.updatedAt = now();
+        return { job: root };
+    });
+}
+
+/** Reopen the root and any failed candidate together: a candidate cannot run under a terminal root. */
+export function retryRoleplayFamily(directories, id, owner) {
+    return mutateJobs(directories, store => {
+        const root = store.jobs[jobKey(id)];
+        if (!root || root.owner !== owner || root.type !== 'media.roleplay-workflow') {
+            throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
+        }
+        const children = (root.children ?? []).map(id => store.jobs[jobKey(id)]);
+        if (!['failed', 'interrupted'].includes(root.state) || root.cancellation?.requested
+            || children.some(child => !child || child.parentId !== root.id || child.owner !== owner
+                || !['completed', 'failed', 'interrupted'].includes(child.state) || child.cancellation?.requested)) {
+            throw fail(409, 'JOB_NOT_RETRYABLE', 'This Roleplay reply cannot be tried again.');
+        }
+        const reopen = (job, state, stage) => {
+            Object.assign(job, explicitRetryRecovery(job), { state, stage, error: null, finishedAt: null,
+                dismissed: false, updatedAt: now() });
+            delete job.dismissedReason;
+        };
+        let waiting = false;
+        for (const child of children) {
+            if (child.state === 'completed') continue;
+            if (child.type !== 'roleplay.candidate') throw fail(409, 'JOB_NOT_RETRYABLE', 'This Roleplay reply has an unsettled step.');
+            reopen(child, 'queued', null);
+            waiting = true;
+        }
+        reopen(root, waiting ? 'waiting' : 'queued', waiting ? 'children' : null);
         return { job: root };
     });
 }

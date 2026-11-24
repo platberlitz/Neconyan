@@ -13,7 +13,7 @@ const clone = jest.fn(() => { throw new Error('Unexpected remote clone'); });
 jest.unstable_mockModule('../src/git/client.js', () => ({ createGitClient: () => ({ clone }) }));
 jest.unstable_mockModule('simple-git', () => ({
     CheckRepoActions: { IS_REPO_ROOT: 'IS_REPO_ROOT' },
-    default: () => { throw new Error('Unexpected Git mutation'); },
+    simpleGit: () => { throw new Error('Unexpected Git mutation'); },
 }));
 
 jest.unstable_mockModule('../src/util.js', () => ({

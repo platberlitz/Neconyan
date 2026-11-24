@@ -7,10 +7,18 @@ import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
 import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
 import { validPresetValue } from './preset-fields.js';
+import { scenarioNoteSelector } from './scenario-note-references.js';
+import {
+    assertAllowedLorebookKeys,
+    EXTRA_ACTIVATION_FIELDS,
+    LOREBOOK_ACTIVATION_FIELDS,
+    LOREBOOK_EDITABLE_FIELDS,
+    validateLorebookField,
+} from './lorebook-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
-const MAX_CHANGES = 24;
+export const MAX_CHANGES = 24;
 
 export const TEXT_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => value.type === 'text').map(([key, value]) => [key, value.label])));
 export const LIST_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => ['greetings', 'tags'].includes(value.type)).map(([key, value]) => [key, value.label])));
@@ -79,9 +87,9 @@ export function normaliseChange(value) {
         const personaTarget = ['persona-avatar', 'persona-note-avatar'].includes(value.target);
         if (personaTarget && (typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200 || value.character !== undefined)) fail('A persona avatar suggestion must name only the shared persona.');
         if (!personaTarget && value.persona !== undefined) fail('Only a persona avatar suggestion can name a persona.');
-        if (value.target === 'persona-note-avatar') {
-            if (typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200) fail('A Scenario Note avatar needs its exact saved note ID.');
-        } else if (value.noteId !== undefined) fail('Only a Scenario Note avatar can name a note.');
+        const note = value.target === 'persona-note-avatar' ? scenarioNoteSelector(value) : null;
+        if (value.target === 'persona-note-avatar' && !note) fail('A Scenario Note avatar needs its exact shared note reference.');
+        if (value.target !== 'persona-note-avatar' && (value.noteId !== undefined || value.noteRef !== undefined)) fail('Only a Scenario Note avatar can name a note.');
         if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 10_000) fail('Write an image prompt between 1 and 10000 characters.');
         if (value.negative !== undefined && (typeof value.negative !== 'string' || value.negative.length > 10_000)) fail('The negative image prompt must be text up to 10000 characters.');
         if (value.character !== undefined && (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200)) fail('This image suggestion needs an unambiguous shared character name.');
@@ -89,7 +97,7 @@ export function normaliseChange(value) {
         return { type: 'image', action: value.action, target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
             ...(source ? { source } : {}),
             ...(value.character ? { character: value.character.trim() } : {}), ...(value.persona ? { persona: value.persona.trim() } : {}),
-            ...(value.target === 'persona-note-avatar' ? { noteId: value.noteId } : {}), reason };
+            ...note, reason };
     }
     if (value.type === 'notebook') {
         const definition = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === value.action && NOTE_MUTATING_KINDS.includes(item.kind));
@@ -114,30 +122,46 @@ export function normaliseChange(value) {
     if (value.type === 'lorebook') {
         const book = text(value.book, 300).trim();
         if (!book) fail('This lorebook change does not say which lorebook.');
+        if (!['add', 'edit', 'delete'].includes(value.action)) fail('This lorebook change has an unknown action.');
+        assertAllowedLorebookKeys(value, value.action, fail);
         if (value.action === 'add') {
+            if (value.content !== undefined && typeof value.content !== 'string') fail('Lorebook content must be text.');
             const content = text(value.content);
             if (!content.trim()) fail('This new lorebook entry has no content.');
-            return {
+            if (value.title !== undefined && typeof value.title !== 'string') fail('Lorebook title must be text.');
+            const change = {
                 type: 'lorebook', action: 'add', book, reason,
-                title: text(value.title, 300).trim(),
-                keys: stringList(value.keys),
+                title: value.title === undefined ? '' : text(value.title, 300).trim(),
+                keys: value.keys === undefined ? [] : validateLorebookField('keys', value.keys, fail),
                 content,
-                constant: value.constant === true,
+                constant: value.constant === undefined ? false : validateLorebookField('constant', value.constant, fail),
             };
-        }
-        if (value.action === 'edit' || value.action === 'delete') {
-            const uid = messageNumber(value.uid);
-            if (uid === null) fail('This lorebook change does not say which entry.');
-            if (value.action === 'delete') return { type: 'lorebook', action: 'delete', book, uid, reason };
-            const change = { type: 'lorebook', action: 'edit', book, uid, reason };
-            if (typeof value.title === 'string') change.title = text(value.title, 300).trim();
-            if (value.keys !== undefined) change.keys = stringList(value.keys);
-            if (typeof value.content === 'string') change.content = text(value.content);
-            if (typeof value.constant === 'boolean') change.constant = value.constant;
-            if (!['title', 'keys', 'content', 'constant'].some(key => key in change)) fail('This lorebook edit does not change anything.');
+            for (const field of EXTRA_ACTIVATION_FIELDS) {
+                if (Object.hasOwn(value, field) && value[field] !== undefined) {
+                    change[field] = validateLorebookField(field, value[field], fail);
+                }
+            }
             return change;
         }
-        fail('This lorebook change has an unknown action.');
+        const uid = messageNumber(value.uid);
+        if (uid === null) fail('This lorebook change does not say which entry.');
+        if (value.action === 'delete') return { type: 'lorebook', action: 'delete', book, uid, reason };
+        const change = { type: 'lorebook', action: 'edit', book, uid, reason };
+        if (Object.hasOwn(value, 'title') && value.title !== undefined) {
+            if (typeof value.title !== 'string') fail('Lorebook title must be text.');
+            change.title = text(value.title, 300).trim();
+        }
+        if (Object.hasOwn(value, 'content') && value.content !== undefined) {
+            if (typeof value.content !== 'string') fail('Lorebook content must be text.');
+            change.content = text(value.content);
+        }
+        for (const field of LOREBOOK_ACTIVATION_FIELDS) {
+            if (Object.hasOwn(value, field) && value[field] !== undefined) {
+                change[field] = validateLorebookField(field, value[field], fail);
+            }
+        }
+        if (!LOREBOOK_EDITABLE_FIELDS.some(key => key in change)) fail('This lorebook edit does not change anything.');
+        return change;
     }
     if (value.type === 'persona' || value.type === 'persona-note') {
         if (value.action === 'create') {
@@ -151,10 +175,11 @@ export function normaliseChange(value) {
         if (!['replace', 'edit', undefined].includes(value.action) || typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200) fail('This persona change needs the shared persona name and a replace action.');
         try {
             if (value.type === 'persona' && value.field === 'avatar') fail('Use a generated persona avatar suggestion to replace the portrait.');
-            if (value.type === 'persona-note' && (!['name', 'description', 'avatar'].includes(value.field) || typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200)) fail('This Scenario Note change needs an existing note ID and a supported field.');
+            const note = value.type === 'persona-note' ? scenarioNoteSelector(value) : null;
+            if (value.type === 'persona-note' && (!note || !['name', 'description', 'avatar'].includes(value.field))) fail('This Scenario Note change needs a shared note reference and a supported field.');
             if (value.field === 'avatar' && value.value !== '') fail('Generate a Scenario Note avatar to replace it, or use an empty value to remove it.');
             return { type: value.type, persona: value.persona.trim(), field: value.field, value: personaFieldValue(value.field, value.value), reason,
-                ...(value.type === 'persona-note' ? { noteId: value.noteId } : {}) };
+                ...note };
         } catch (error) { fail(error.message); }
     }
     if (value.type === 'character') {
@@ -270,7 +295,10 @@ export function splitReply(reply) {
     for (const match of source.matchAll(FENCE_PATTERN)) {
         if (match.index > last) parts.push({ type: 'text', text: source.slice(last, match.index) });
         last = match.index + match[0].length;
-        if (index >= MAX_CHANGES) continue;
+        if (index >= MAX_CHANGES) {
+            parts.push({ type: 'text', text: match[0] });
+            continue;
+        }
         const raw = match[1].trim();
         let change = null;
         let error = '';

@@ -1,7 +1,9 @@
-import { getActiveCompanionResults, getPlotCompassOpeningNote, isDiceRollerAgent, isEmptyOutputSentinel, isPlotCompassAgent, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getPlotCompassChoiceDirective, getPlotCompassContentWithChoice, getPlotCompassOpeningNote, isDiceRollerAgent, isEmptyOutputSentinel, isPlotCompassAgent, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { buildDiceDirective, findDiceRollsForGeneration } from '../../public/scripts/extensions/in-chat-agents/companion/dice.js';
-import { buildTrackerEchoGuard, getActiveInlineTrackerTags, getOwnedCompanionTrackerShape } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
+import { buildTrackerEchoGuard, getActiveCompanionTrackerLineKeys, getActiveInlineTrackerLineKeys, getActiveInlineTrackerTags, getOwnedCompanionTrackerLineKeys, getOwnedCompanionTrackerShape, getVisibleCompanionTrackerLineKeys } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { isNativeCompanion } from './agent-definition.js';
+
+const OUTPUT_LINE_KEY_SCAN_DEPTH = 12;
 
 export function resolveSavedCompanionText(content, host, snapshot, environment) {
     const names = environment.names;
@@ -13,16 +15,32 @@ export function resolveSavedCompanionText(content, host, snapshot, environment) 
     } finally { environment.names = names; }
 }
 
+/** Line formats an active companion has written lately, so custom formats its prompt only implies are still owned. */
+function collectRecentCompanionOutputLineKeys(active, messages) {
+    const companions = new Map(active.filter(isNativeCompanion).map(agent => [agent.id, agent])), keys = new Set();
+    for (let index = messages.length - 1, seen = 0; index >= 0 && seen < OUTPUT_LINE_KEY_SCAN_DEPTH; index--, seen++) {
+        for (const [id, result] of Object.entries(getActiveCompanionResults(messages[index]))) {
+            const agent = companions.get(id);
+            if (!agent || result?.status !== 'done' || !result.content?.trim()) continue;
+            for (const key of getOwnedCompanionTrackerLineKeys(agent, result.content)) keys.add(key);
+        }
+    }
+    return keys;
+}
+
 /** Saved feedback and retained notes have separate ownership and must never be injected twice. */
 export function prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, policies, generationType) {
     const hidden = new Set(snapshot.agents.hiddenIds ?? []);
     const messages = records.slice(1).filter(message => !(generationType === 'continue' && message === records.at(-1)));
     const owners = new Map([...historyAgents, ...active].map(agent => [agent.id, agent]));
     const inlineTags = getActiveInlineTrackerTags(active), shapes = new Map(), feedback = [];
+    const inlineLineKeys = getActiveInlineTrackerLineKeys(active), lineKeys = new Set();
     const rememberShape = (agent, body) => {
         const shape = agent && getOwnedCompanionTrackerShape(agent, body);
         if (shape && !inlineTags.has(shape.tag)) shapes.set(shape.tag, shape.shape);
-        return shape && !inlineTags.has(shape.tag) ? shape.tag : null;
+        const visible = agent ? getVisibleCompanionTrackerLineKeys(agent, body, inlineLineKeys) : new Set();
+        for (const key of visible) lineKeys.add(key);
+        return (shape && !inlineTags.has(shape.tag)) || visible.size > 0;
     };
     const diceExtensions = [];
     for (const agent of active.filter(isDiceRollerAgent)) {
@@ -40,32 +58,55 @@ export function prepareCompanionFeedback(active, historyAgents, records, snapsho
             position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan });
     }
     for (const agent of active) {
-        if (!isNativeCompanion(agent) || hidden.has(agent.id) || !agent.companion.feedback.enabled) continue;
+        if (!isNativeCompanion(agent) || hidden.has(agent.id)) continue;
+        const plotCompass = isPlotCompassAgent(agent), enabled = agent.companion.feedback.enabled;
+        if (!enabled && !plotCompass) continue;
+        const opening = plotCompass && getPlotCompassOpeningNote(records[0]?.chat_metadata, agent.id);
+        let latest = null;
+        if (plotCompass) {
+            for (let index = messages.length - 1; index >= 0; index--) {
+                const host = messages[index], result = getActiveCompanionResults(host)[agent.id];
+                if (result?.status !== 'done' || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
+                latest = { host, result };
+                break;
+            }
+            if (!latest && opening && !isEmptyOutputSentinel(opening.content)) latest = { host: null, result: opening };
+        }
         const selected = [];
-        for (let index = messages.length - 1; index >= 0 && selected.length < agent.companion.feedback.depth; index--) {
+        for (let index = messages.length - 1; enabled && index >= 0 && selected.length < agent.companion.feedback.depth; index--) {
             const host = messages[index], result = getActiveCompanionResults(host)[agent.id];
-            if ((host.is_user && !isPlotCompassAgent(agent)) || result?.status !== 'done' || (result.includeInChatHistory === true && !host.is_user) || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
-            selected.unshift(resolveSavedCompanionText(result.content, host, snapshot, environment));
+            if ((host.is_user && !plotCompass) || result?.status !== 'done' || (result.includeInChatHistory === true && !host.is_user) || !result.content?.trim() || isEmptyOutputSentinel(result.content)) continue;
+            selected.unshift({ host, result });
         }
-        const opening = isPlotCompassAgent(agent) && getPlotCompassOpeningNote(records[0]?.chat_metadata, agent.id);
-        if (opening && selected.length < agent.companion.feedback.depth && !isEmptyOutputSentinel(opening.content)) {
-            selected.unshift(resolveSavedCompanionText(opening.content, { is_system: true }, snapshot, environment));
+        if (enabled && opening && selected.length < agent.companion.feedback.depth && !isEmptyOutputSentinel(opening.content)) {
+            selected.unshift({ host: null, result: opening });
         }
-        const body = selected.filter(Boolean).join('\n\n');
-        if (body) feedback.push({ agent, body, tag: rememberShape(agent, body) });
+        const parts = selected.map(({ host, result }) => {
+            const current = plotCompass && host === latest?.host && result === latest?.result;
+            const content = plotCompass ? getPlotCompassContentWithChoice(result, { instruction: current, historical: !current }) : result.content;
+            return resolveSavedCompanionText(content, host ?? { is_system: true }, snapshot, environment);
+        });
+        if (latest && !selected.some(({ host, result }) => host === latest.host && result === latest.result)) {
+            const directive = getPlotCompassChoiceDirective(latest.result);
+            if (directive) parts.push(resolveSavedCompanionText(directive, latest.host ?? { is_system: true }, snapshot, environment));
+        }
+        const body = parts.filter(Boolean).join('\n\n');
+        if (body) feedback.push({ agent, body, guarded: rememberShape(agent, body) });
     }
     const retained = selectCompanionChatHistory(messages, { policies });
     for (const [host, ids] of retained) {
         const results = getActiveCompanionResults(host);
         for (const id of ids) rememberShape(owners.get(id), resolveSavedCompanionText(results[id].content, host, snapshot, environment));
     }
+    const guarded = shapes.size > 0 || lineKeys.size > 0;
     let guardIncluded = false;
-    const extensions = [...diceExtensions, ...feedback.map(({ agent, body, tag }) => {
-        const guard = tag && !guardIncluded ? buildTrackerEchoGuard(shapes) + '\n\n' : '';
-        guardIncluded ||= Boolean(tag);
+    const extensions = [...diceExtensions, ...feedback.map(({ agent, body, guarded: owns }) => {
+        const guard = owns && !guardIncluded ? buildTrackerEchoGuard(shapes, lineKeys) + '\n\n' : '';
+        guardIncluded ||= owns;
         return { key: `inchat_agent_companion_${agent.id}`, content: `[${agent.name || 'Companion'} - auxiliary notes]\n${guard}${body}`,
             position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan };
     })];
-    if (shapes.size && !guardIncluded) extensions.push({ key: 'inchat_agent_companion_tracker_echo_guard', content: buildTrackerEchoGuard(shapes), position: 1, depth: 0, role: 'system', scan: false });
-    return { extensions, trackerTags: [...shapes.keys()] };
+    if (guarded && !guardIncluded) extensions.push({ key: 'inchat_agent_companion_tracker_echo_guard', content: buildTrackerEchoGuard(shapes, lineKeys), position: 1, depth: 0, role: 'system', scan: false });
+    const trackerLineKeys = getActiveCompanionTrackerLineKeys(active, [...lineKeys, ...collectRecentCompanionOutputLineKeys(active, messages)]);
+    return { extensions, trackerTags: [...shapes.keys()], trackerLineKeys: [...trackerLineKeys] };
 }

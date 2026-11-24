@@ -2,14 +2,21 @@
     border-radius: 50%;
     position: relative;
     overflow: hidden;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
 }
 
 .avatar_collage img {
     position: absolute;
+    display: block;
     overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    object-fit: cover;
+    object-position: center;
 }
 
-.collage_2 .img_1 {
+.avatar_collage.collage_2 .img_1 {
     left: 0;
     top: 0;
     max-width: 50%;
@@ -18,7 +25,7 @@
     height: 100%;
 }
 
-.collage_2 .img_2 {
+.avatar_collage.collage_2 .img_2 {
     left: 50%;
     top: 0;
     max-width: 50%;
@@ -27,7 +34,7 @@
     height: 100%;
 }
 
-.collage_3 .img_1 {
+.avatar_collage.collage_3 .img_1 {
     left: 0;
     top: 0;
     max-width: 50%;
@@ -36,7 +43,7 @@
     height: 50%;
 }
 
-.collage_3 .img_2 {
+.avatar_collage.collage_3 .img_2 {
     left: 50%;
     top: 0;
     max-width: 50%;
@@ -45,7 +52,7 @@
     height: 50%;
 }
 
-.collage_3 .img_3 {
+.avatar_collage.collage_3 .img_3 {
     left: 0;
     top: 50%;
     max-width: 100%;
@@ -54,7 +61,7 @@
     height: 50%;
 }
 
-.collage_4 .img_1 {
+.avatar_collage.collage_4 .img_1 {
     left: 0;
     top: 0;
     max-width: 50%;
@@ -63,7 +70,7 @@
     height: 50%;
 }
 
-.collage_4 .img_2 {
+.avatar_collage.collage_4 .img_2 {
     left: 50%;
     top: 0;
     max-width: 50%;
@@ -72,7 +79,7 @@
     height: 50%;
 }
 
-.collage_4 .img_3 {
+.avatar_collage.collage_4 .img_3 {
     left: 0;
     top: 50%;
     max-width: 50%;
@@ -81,7 +88,7 @@
     height: 50%;
 }
 
-.collage_4 .img_4 {
+.avatar_collage.collage_4 .img_4 {
     left: 50%;
     top: 50%;
     max-width: 50%;

@@ -14,7 +14,7 @@ import { buildMinimalPromptInstruction, flushPromptInjection, getEffectivePrompt
 import { eventSource, event_types, getContext } from './st-api.js';
 import { attributionChatGeneration, autoSyncPendingRecord, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, isStreamingGenerationActive, lastCharKey, lastProcessedMessageSignature, pendingAttributionVerifications, runtimeState, selectedCharacterKeys, setAttributionChatGeneration, setEnabledLifecycleSynchronizer, setIsStreamingGenerationActive, setLastCharKey, setLastProcessedMessageSignature, setPendingAttributionVerifications, setSwapMode, settings, swapMode } from './state.js';
 import { beginStreamingPaint, endStreamingPaint, paintPreviewMessage } from './streaming-paint.js';
-import { confirmAutoSyncRecord, doAutoSyncMarkersMatch, ensureRegexScript, getAutoSyncRecord, getCharKey, getStorageKey, initAutoSync, loadData, markCurrentPersonaKept, migrateLegacyLocalStorageIfNeeded, migrateRenamedCharacterStorage, migrateRenamedChatStorage, persistLocalEnabledState, saveData, stopAutoSyncPolling, syncAutoSyncPolling, tryLoadFromCard, updateAutoSyncUI } from './storage.js';
+import { confirmAutoSyncRecord, doAutoSyncMarkersMatch, ensureRegexScript, getAutoSyncRecord, getCharKey, getStorageKey, hasInstalledTrimRules, initAutoSync, loadData, markCurrentPersonaKept, migrateLegacyLocalStorageIfNeeded, migrateRenamedCharacterStorage, migrateRenamedChatStorage, persistLocalEnabledState, saveData, stopAutoSyncPolling, syncAutoSyncPolling, tryLoadFromCard, updateAutoSyncUI } from './storage.js';
 import { applyRestoredPersonaColor, applyThemeOrBrightnessChange, clearAutoColorizeIndicators, createUI, ensurePersonaCharacter, mountWandMenuItem, renamePersonaCharacter, syncUIWithSettings, updateCharList, updateLegend } from './ui.js';
 import { registerSettingsSetupTask } from '../../../../settings-setup.js';
 import { cancelStreamingAttributionVerification, captureLoadedAttributionMessageBaseline, clearAutoAttributionVerificationQueue, queueAutoAttributionVerificationForRenderedMessages, scheduleStreamingAttributionVerification } from './verify.js';
@@ -134,7 +134,9 @@ export function syncAutomaticRuntime() {
         return false;
     }
     const activated = startAutomaticRuntime();
-    scheduleRegexScriptInstall();
+    // Once the trim rules are in place, a settings save no longer needs a one-second
+    // setup task that server-routed replies must wait for.
+    if (activated || !hasInstalledTrimRules()) scheduleRegexScriptInstall();
     registerDialogueColorsMacro();
     if (!activated) return false;
 

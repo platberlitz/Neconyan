@@ -140,6 +140,16 @@ const themeIds = readThemeIds();
 const runtimeIds = themeIds.filter(id => id !== 'calico');
 
 describe('shell style runtime stylesheets', () => {
+    test('Cozy Warm keeps the default phone composer inset so the text box is not narrower', () => {
+        const ast = parse(readSource('public', 'css', 'shell-styles', 'cozy-warm.css'));
+        const phone = ast.stylesheet.rules.find(rule => rule.type === 'media' && /max-width:\s*768px/.test(rule.media));
+        expect(phone).toBeDefined();
+        const composer = phone.rules.find(rule => rule.selectors?.some(selector => /#form_sheld\.neconyan-cat-panel #send_form$/.test(selector)));
+        expect(composer).toBeDefined();
+        const padding = composer.declarations.find(declaration => declaration.property === 'padding');
+        expect(padding?.value).toBe('4px');
+    });
+
     test('Windows page layouts and caption ink stay in their owning styles and roots', () => {
         for (const id of ['windows-xp', 'windows-98', 'windows-aero']) {
             const source = readSource('public', 'css', 'shell-styles', `${id}.css`);

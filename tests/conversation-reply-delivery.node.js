@@ -27,3 +27,23 @@ test('shared delivery preserves quoted commands, speaker references and the succ
     await deliverConversationReply('Later [schedule_update: status="dnd"]\nAgain', settings, { ...host, groupId: '', splitEveryLine: true });
     assert.deepEqual(events[1][1].scheduleUpdates, ['status="dnd"']);
 });
+
+test('a schedule command in its own paragraph does not create an empty bubble', async () => {
+    const speaker = { avatar: 'a.png', name: 'Aster' };
+    const settings = { schedule_command_enabled: true };
+    const messages = [];
+    const updates = [];
+    const host = {
+        fallbackSpeaker: speaker, getSpeakers: () => [speaker],
+        append: async text => { messages.push(text); return true; },
+        commitCommands: async commands => { updates.push(...commands.scheduleUpdates); },
+    };
+    const command = '[schedule_update: status="dnd"]';
+    const empty = await deliverConversationReply(command, settings, host);
+    assert.equal(empty.posted, false);
+    assert.deepEqual(updates, []);
+    const reply = await deliverConversationReply(`${command}\n\nI’ll be working.\n\n${command}`, settings, host);
+    assert.equal(reply.posted, true);
+    assert.deepEqual(messages, ['I’ll be working.']);
+    assert.deepEqual(updates, ['status="dnd"', 'status="dnd"']);
+});

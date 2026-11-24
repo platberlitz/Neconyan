@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 import { searchAgentList, searchAgentTemplates } from './in-chat-agents-e2e-helpers.js';
+import { composeCatalogueRevision } from '../public/scripts/extensions/in-chat-agents/library-startup.js';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -19,7 +20,7 @@ test.beforeEach(async ({ page }) => {
     await page.route(/\/api\/.*\/generate-quiet(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Generation is disabled during agent UI checks.' } }));
 });
 
-async function openAgents(page, withChat = false, navigate = action => action()) {
+async function openAgents(page, withChat = false, navigate = action => action(), beforeOpen = () => {}) {
     await navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
@@ -32,12 +33,19 @@ async function openAgents(page, withChat = false, navigate = action => action())
         const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
         if (await skipTour.isVisible()) await skipTour.click();
     }
+    await beforeOpen();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
     await expect(page.locator('#ica--settings')).toBeVisible({ timeout: 45000 });
 }
 
 async function headers(page) {
     return page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
+}
+
+async function readSavedAgents(api, requestHeaders) {
+    const response = await api.post('/api/settings/get', { headers: requestHeaders, data: { sections: ['agents'] } });
+    expect(response.ok()).toBe(true);
+    return (await response.json()).inChatAgents;
 }
 
 async function capture(page, info, name) {
@@ -149,7 +157,19 @@ for (const width of [1280, 393]) {
             const requestHeaders = await headers(page);
             try {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
-                await openAgents(page);
+                const { revision } = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/revision.json', import.meta.url)));
+                await isolateSettingsSaves(page, settings => {
+                    openOnManage(settings);
+                    (settings.accountStorage ??= {})['ica--catalogue-revision'] = composeCatalogueRevision(revision);
+                });
+                let catalogueRequests = 0;
+                await page.route(/\/in-chat-agents\/templates\/index\.json(?:\?|$)/, route => {
+                    catalogueRequests++;
+                    return route.continue();
+                });
+                await openAgents(page, false, undefined, () => {
+                    expect(catalogueRequests).toBe(0);
+                });
                 await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
                 await searchAgentList(page, 'Version check:', { count: 4 });
                 for (const agent of agents) {
@@ -168,6 +188,7 @@ for (const width of [1280, 393]) {
                     await expect(card.locator('.ica--card-pill--version-update')).toHaveCount(agent === agents[0] ? 1 : 0);
                 }
                 const outdated = page.locator(`[data-agent-id="${agents[0].id}"]`);
+                expect(catalogueRequests).toBe(1);
                 await outdated.scrollIntoViewIfNeeded();
                 await capture(page, info, 'agent-name-versions');
                 await outdated.locator('.ica--card-pill--version-update').click();
@@ -201,6 +222,9 @@ for (const width of [1280, 393]) {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
                 await openAgents(page);
                 if (await skipTour.isVisible()) await skipTour.click();
+                // Updates are for all installed agents, even when the current search matches none.
+                await searchAgentList(page, 'no matching agent for this search');
+                await expect(page.locator('#ica--agentList .ica--empty-state')).toBeVisible();
                 const banner = page.locator('#ica--updateBanner');
                 await expect(banner).toBeVisible();
                 await expect(banner.locator('.ica--update-banner-title')).toHaveText(/^\d+ agent updates? ready$/);
@@ -353,8 +377,7 @@ for (const width of [1280, 393]) {
                 await openCardQuickSettings(page);
                 await expect(length).toHaveValue('About 300 to 450 words');
                 await expect(context).toHaveValue('0');
-                const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
-                const saved = (await response.json()).inChatAgents.find(item => item.id === agent.id);
+                const saved = (await readSavedAgents(page.request, requestHeaders)).find(item => item.id === agent.id);
                 expect(saved.settings.auditMarker).toBe('preserve');
                 expect(saved.enabled).toBe(false);
             } finally {
@@ -414,8 +437,7 @@ for (const width of [1280, 393]) {
                 await searchAgentList(page, agent.name, { count: 1 });
                 await openCardQuickSettings(page);
                 await expect(page.locator('.ica--quick-settings').getByLabel('Translate into', { exact: true })).toHaveValue('English');
-                const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
-                const saved = (await response.json()).inChatAgents.find(item => item.id === agent.id);
+                const saved = (await readSavedAgents(page.request, requestHeaders)).find(item => item.id === agent.id);
                 expect(saved.settings).toEqual({ targetLanguage: 'English', auditMarker: 'preserve' });
                 expect(saved.enabled).toBe(false);
             } finally {
@@ -682,8 +704,7 @@ test.describe('Agents navigation with an open chat', () => {
                     await page.unroute('**/api/in-chat-agents/save');
                     await searchAgentList(page, name, { count: 1 });
 
-                    const settingsResponse = await page.request.post('/api/settings/get', { headers: await headers(page), data: {} });
-                    const saved = (await settingsResponse.json()).inChatAgents.find(agent => agent.name === name);
+                    const saved = (await readSavedAgents(page.request, await headers(page))).find(agent => agent.name === name);
                     expect(saved.companion.trigger).toBe('manual');
                     const seeded = { ...saved, settings: { ...saved.settings, auditMarker: 'keep unknown settings' } };
                     expect((await page.request.post('/api/in-chat-agents/save', { headers: await headers(page), data: seeded })).ok()).toBe(true);
@@ -708,8 +729,7 @@ test.describe('Agents navigation with an open chat', () => {
                     await page.locator('dialog.popup:visible .popup-button-ok').click();
                     expect((await updatedAgent).ok()).toBe(true);
                     await expect(editor).toBeHidden();
-                    const reloaded = await page.request.post('/api/settings/get', { headers: await headers(page), data: {} });
-                    const persisted = (await reloaded.json()).inChatAgents.find(agent => agent.id === saved.id);
+                    const persisted = (await readSavedAgents(page.request, await headers(page))).find(agent => agent.id === saved.id);
                     expect(persisted.description).toBe('Saved after reloading.');
                     expect(persisted.settings.auditMarker).toBe('keep unknown settings');
                     expect(persisted.prompt).toBe('Write one short note about the scene.');
@@ -811,12 +831,13 @@ test('saved agent setups survive reload and recover from a failed load without d
     const api = page.request;
     const requestHeaders = await headers(page);
     const initial = await (await api.post('/api/settings/get', { headers: requestHeaders, data: {} })).json();
+    const initialAgents = await readSavedAgents(api, requestHeaders);
     const initialSettings = JSON.parse(initial.settings);
     const originalGlobals = structuredClone(initialSettings.extension_settings.inChatAgents?.globalSettings);
     const originalSelection = initialSettings.accountStorage?.['ica--selected-setup'];
     const globals = originalGlobals || {};
     const referencedProfiles = [...new Set([
-        ...initial.inChatAgents.map(agent => agent.connectionProfile),
+        ...initialAgents.map(agent => agent.connectionProfile),
         globals.connectionProfile, globals.companionConnectionProfile, globals.trackerRepairConnectionProfile,
         ...[globals.connectionFallbacks, globals.companionConnectionFallbacks, globals.trackerRepairConnectionFallbacks]
             .flatMap(list => Array.isArray(list) ? list : []),
@@ -866,7 +887,7 @@ test('saved agent setups survive reload and recover from a failed load without d
         await page.locator('#ica--setupLoad').click();
         await expect(page.locator('#ica--setupStatus')).toHaveAttribute('data-tone', 'error');
         expect(failed).toBe(true);
-        const readAgent = async () => (await (await api.post('/api/settings/get', { headers: await headers(page), data: {} })).json()).inChatAgents.find(item => item.id === id);
+        const readAgent = async () => (await readSavedAgents(api, await headers(page))).find(item => item.id === id);
         expect((await readAgent()).prompt).toBe('Changed after saving');
         await page.locator('#ica--setupLoad').click();
         await expect(page.locator('#ica--setupStatus')).toHaveAttribute('data-tone', 'saved');
@@ -888,7 +909,7 @@ test('saved agent setups survive reload and recover from a failed load without d
         await page.close();
         await api.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id } });
         if (presetId) await api.post('/api/in-chat-agents/presets/delete', { headers: requestHeaders, data: { id: presetId } });
-        for (const original of initial.inChatAgents) await api.post('/api/in-chat-agents/save', { headers: requestHeaders, data: original });
+        for (const original of initialAgents) await api.post('/api/in-chat-agents/save', { headers: requestHeaders, data: original });
         const response = await api.post('/api/settings/get', { headers: requestHeaders, data: {} });
         const settings = JSON.parse((await response.json()).settings);
         if (originalGlobals === undefined) delete settings.extension_settings.inChatAgents.globalSettings;
@@ -904,26 +925,15 @@ test('setup controls wait for a slow agent library and retry a failed initial lo
     await openAgents(page);
     const api = page.request;
     const requestHeaders = await headers(page);
-    const initial = await (await api.post('/api/settings/get', { headers: requestHeaders, data: {} })).json();
-    const preset = { id: `library-ready-${Date.now()}`, name: 'Library readiness check', version: 1, agents: initial.inChatAgents, globalSettings: {} };
+    const initialAgents = await readSavedAgents(api, requestHeaders);
+    const preset = { id: `library-ready-${Date.now()}`, name: 'Library readiness check', version: 1, agents: initialAgents, globalSettings: {} };
     expect((await api.post('/api/in-chat-agents/presets/save', { headers: requestHeaders, data: preset })).ok()).toBe(true);
     let release;
     let pending = false;
     const held = new Promise(resolve => { release = resolve; });
     try {
-        // Several extensions read this shared endpoint during boot. Tag the
-        // actual agent-library caller instead of relying on request order.
-        await page.addInitScript(() => {
-            const fetch = window.fetch;
-            window.fetch = function (input, init) {
-                if (input === '/api/settings/get' && new Error().stack.includes('/extensions/in-chat-agents/')) {
-                    init = { ...init, headers: { ...init?.headers, 'X-Neconyan-Agent-Library-Test': '1' } };
-                }
-                return fetch.call(this, input, init);
-            };
-        });
         await page.route('**/api/settings/get', async route => {
-            if (pending || route.request().headers()['x-neconyan-agent-library-test'] !== '1') return route.fallback();
+            if (pending || !route.request().postDataJSON()?.sections?.includes('agents')) return route.fallback();
             pending = true;
             await held;
             return route.fulfill({ status: 503, body: 'Temporary library failure' });
@@ -943,7 +953,7 @@ test('setup controls wait for a slow agent library and retry a failed initial lo
         await expect(page.locator('#ica--setupSave')).toBeDisabled();
         await expect(page.locator('#ica--setupStatus')).toContainText('could not be loaded');
         const saved = await (await api.post('/api/in-chat-agents/presets/list', { headers: requestHeaders, data: {} })).json();
-        expect(saved.find(item => item.id === preset.id).agents).toEqual(initial.inChatAgents);
+        expect(saved.find(item => item.id === preset.id).agents).toEqual(initialAgents);
         await page.locator('#ica--setupRefresh').click();
         await expect(page.locator('#ica--setupSave')).toBeEnabled();
         await expect(page.locator('#ica--setupSelect')).toBeEnabled();

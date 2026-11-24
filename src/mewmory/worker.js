@@ -7,7 +7,7 @@ import { readConfig, resolvedRoleIdentity } from './models.js';
 import { overDailyLimit } from './spend.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
-import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath } from './store.js';
+import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath, updateProcessing } from './store.js';
 
 const running = new Map();
 /** Stop work for a disabled chat without waiting on a remote model. */
@@ -116,22 +116,23 @@ export async function startProcessing(directories, locator, { all = false, check
     return state;
 }
 
+function processingEligibility(directories, locator, branchId, job, signal) {
+    const current = readStateShared(directories, locator);
+    if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return 'stop';
+    return current.enabled ? 'eligible' : 'disabled';
+}
+
 async function run(directories, locator, branchId, job, signal, call) {
-    const finish = (status, error = '', errorStatus = null, extra = {}) => mutateState(directories, locator, current => {
-        if (current.branchId !== branchId || current.processing?.id !== job.id) return;
-        Object.assign(current.processing, { status, error, errorStatus, finishedAt: Date.now(), ...extra });
-        if (status !== 'failed') {
-            delete current.processing.failures;
-            delete current.processing.retryAt;
-            delete current.processing.busy;
-        }
-    }, undefined, { existingOnly: true });
+    const finish = (status, error = '', errorStatus = null, extra = {}) => updateProcessing(directories, locator,
+        { branchId, jobId: job.id, existingOnly: true },
+        { set: { status, error, errorStatus, finishedAt: Date.now(), ...extra },
+            remove: status === 'failed' ? [] : ['failures', 'retryAt', 'busy'] });
     try {
         for (let staleRetries = 0; ;) {
             await yieldToRequests();
-            const current = readStateShared(directories, locator);
-            if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return;
-            if (!current.enabled) break;
+            const eligibility = processingEligibility(directories, locator, branchId, job, signal);
+            if (eligibility === 'stop') return;
+            if (eligibility === 'disabled') break;
             if (job.automatic) {
                 const config = readConfig(directories);
                 // Automatic updates pause for the rest of the day once the daily limit is used up.
@@ -168,10 +169,9 @@ export async function waitForProcessing(directories, locator) {
 export async function cancelProcessing(directories, locator) {
     const state = await loadCurrentState(directories, locator);
     running.get(statePath(directories, locator))?.controller.abort();
-    return mutateState(directories, locator, current => {
-        current.processing = { ...current.processing, status: 'cancelled', finishedAt: Date.now(),
-            fingerprint: fingerprint(current, readConfig(directories)) };
-    }, state.revision);
+    return updateProcessing(directories, locator,
+        { branchId: state.branchId, jobId: state.processing?.id, expectedRevision: state.revision },
+        { set: { status: 'cancelled', finishedAt: Date.now(), fingerprint: fingerprint(state, readConfig(directories)) } }).state;
 }
 
 /** One bounded scan also resumes persisted manual work after a restart. */
@@ -201,9 +201,11 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             }
             const automaticAllowed = config.autoUpdate && !capped && key === followed;
             if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !automaticAllowed))) {
-                mutateState(directories, story.locator, state => {
-                    if (state.processing?.status === 'running') Object.assign(state.processing, { status: 'complete', finishedAt: Date.now() });
-                }, undefined, { existingOnly: true });
+                const state = readStateShared(directories, story.locator);
+                if (state.enabled && (!state.processing?.automatic || automaticAllowed)) continue;
+                updateProcessing(directories, story.locator,
+                    { branchId: state.branchId, jobId: state.processing?.id, status: 'running', existingOnly: true },
+                    { set: { status: 'complete', finishedAt: Date.now() } });
                 continue;
             }
             if (!story.enabled || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
@@ -215,7 +217,8 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
                 const last = reconciled.get(key);
                 if (last?.idle && Date.now() - last.at < RECONCILE_REFRESH_MS
                     && last.stamp === hash([shared, chat, fileStamp(key)])) continue;
-                state = await loadCurrentState(directories, story.locator);
+                // The periodic pass is the safety net for an input nothing noticed changing, so it reconciles from scratch.
+                state = await loadCurrentState(directories, story.locator, { fresh: Boolean(last?.idle) && Date.now() - last.at >= RECONCILE_REFRESH_MS });
             } else {
                 state = readStateShared(directories, story.locator);
             }
@@ -260,11 +263,11 @@ export async function pauseInterruptedProcessing(getDirectories) {
             }
             if (story.processing?.status !== 'running') continue;
             try {
-                mutateState(directories, story.locator, state => {
-                    if (state.processing?.status !== 'running') return;
-                    Object.assign(state.processing, { status: 'failed', error: 'Neconyan restarted in safe mode, so this update was paused. Update memories again when you are ready.', errorStatus: 503, finishedAt: Date.now() });
-                    paused++;
-                }, undefined, { existingOnly: true });
+                const state = readStateShared(directories, story.locator);
+                const result = updateProcessing(directories, story.locator,
+                    { branchId: state.branchId, jobId: state.processing?.id, status: 'running', existingOnly: true },
+                    { set: { status: 'failed', error: 'Neconyan restarted in safe mode, so this update was paused. Update memories again when you are ready.', errorStatus: 503, finishedAt: Date.now() } });
+                if (result.changed) paused++;
             } catch (error) {
                 console.warn('[Mewmory] Could not pause saved processing:', error.message);
             }
@@ -291,7 +294,13 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
         scanning = true;
         try {
             const users = await getDirectories();
-            for (let index = 0; index < users.length; index++) await scanProcessing(users[(firstUser + index) % users.length], call, { reconcile });
+            for (let index = 0; index < users.length; index++) {
+                try {
+                    await scanProcessing(users[(firstUser + index) % users.length], call, { reconcile });
+                } catch (error) {
+                    console.warn('[Mewmory] Could not scan an account’s saved stories:', error.message);
+                }
+            }
             firstUser = users.length ? (firstUser + 1) % users.length : 0;
         } catch (error) {
             console.warn('[Mewmory] Could not scan saved stories:', error.message);

@@ -1,6 +1,6 @@
 import { Fuse, lodash } from '../lib.js';
 
-import { saveSettings, substituteParams, getRequestHeaders, chat_metadata, this_chid, characters, saveCharacterDebounced, menu_type, eventSource, event_types, getExtensionPromptByName, saveMetadata, getCurrentChatId, extension_prompt_roles, create_save, createOrEditCharacter, name1, getOneCharacter, select_selected_character, getEntitiesList } from '../script.js';
+import { saveSettings, substituteParams, getRequestHeaders, chat_metadata, this_chid, characters, saveCharacterDebounced, menu_type, eventSource, event_types, getExtensionPromptByName, saveMetadata, getCurrentChatId, extension_prompt_roles, create_save, createOrEditCharacter, name1, getEntitiesList } from '../script.js';
 import { download, debounce, initScrollHeight, resetScrollHeight, parseJsonFile, extractDataFromPng, getFileBuffer, getCharaFilename, getSortableDelay, escapeRegex, PAGINATION_TEMPLATE, navigation_option, waitUntilCondition, isTrueBoolean, setValueByPath, flashHighlight, select2ModifyOptions, getSelect2OptionId, dynamicSelect2DataViaAjax, highlightRegex, select2ChoiceClickSubscribe, isFalseBoolean, getSanitizedFilename, checkOverwriteExistingData, parseStringArray, cancelDebounce, findChar, onlyUnique, equalsIgnoreCaseAndAccents, uuidv4, normalizeArray, getUniqueName, logSlashCommandWarn, addLongPressEvent, escapeHtml } from './utils.js';
 import { extension_settings, getContext } from './extensions.js';
 import { NOTE_MODULE_NAME, getAuthorsNoteDepth, getAuthorsNotePosition, getAuthorsNoteRole, shouldWIAddPrompt } from './authors-note.js';
@@ -13,6 +13,7 @@ import { debounce_timeout } from './constants.js';
 import { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
 export { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
 import { isKeywordActivationSuppressed } from './world-info-policy.js';
+import { hasEditableWorldInfoId } from './world-info-entry-id.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -25,11 +26,13 @@ import { StructuredCloneMap } from './util/StructuredCloneMap.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { getOrCreatePersonaDescriptor, setPersonaDescription, updatePersonaLorebookActions, user_avatar } from './personas.js';
-import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { setPersonaDescription, updatePersonaLorebookActions } from './personas.js';
+import { getFreeCharacterBookEntryId, serializeCharacterBookKeys, serializeWorldInfoEntry } from './world-info-character-book.js';
+import { convertCharacterBookEntry, worldInfoPositions } from './world-info-character-book-entry.js';
 import { detectEmbeddedLorebookCandidates, findMatchingLorebookName, getLinkedAuxBooks, isEmbeddedBookLinked } from './world-info-batch-helpers.js';
 import { applyWorldInfoTimedEffects, filterWorldInfoInclusionGroups, getTimedEffectWindow, matchesWorldInfoEntry, normalizeWorldInfoKey, parseWorldInfoKeyRegex, passesWorldInfoProbability, prepareWorldInfoEntries, resolveWorldInfoTimedEffects } from './world-info-scan-core.js';
 import { parseLorebookImport } from './neconyan-lorebook-tools-core.js';
+import { countGroupPromptHiddenMessages } from './group-chat-visibility.js';
 import { planLorebookRepair, repairChangeText, repairDefectText } from './neconyan-lorebook-repair.js';
 import { classifyKey } from './neconyan-lorebook-keytest.js';
 import { createKeyTestSection } from './neconyan-lorebook-keytest-panel.js';
@@ -42,6 +45,8 @@ import {
     unfileNeconyanLorebook,
 } from './neconyan-lorebook-folders.js';
 import { createSelectPicker } from './select-picker.js';
+import { clearLorebookNotice, filterUntoldLorebookLinks, findMissingLorebookLinks, listLorebookLinks, noteLorebookChatOpened, readConversationLorebooks } from './lorebook-links.js';
+import { linkPointsAt } from './lorebook-link-rewrite.js';
 
 // Neconyan divergence: World Info is integrated with the fork shell and auxiliary lorebook sources while retaining upstream scan helpers.
 export const world_info_insertion_strategy = {
@@ -286,6 +291,14 @@ class WorldInfoBuffer {
      */
     #startDepth = 0;
 
+    /** Bumped whenever the depth, injection or recursion buffers change. */
+    #cacheVersion = 0;
+
+    /** Last scan text per depth, entry flags and scan state. */
+    #textCache = new Map();
+
+    #textCacheVersion = -1;
+
     /**
      * Initialize the buffer with the given messages.
      * @param {string[]} messages Array of messages to add to the buffer
@@ -342,6 +355,18 @@ class WorldInfoBuffer {
             depth = MAX_SCAN_DEPTH;
         }
 
+        if (this.#textCacheVersion !== this.#cacheVersion) {
+            this.#textCache.clear();
+            this.#textCacheVersion = this.#cacheVersion;
+        }
+        const cacheKey = `${depth}|${scanState}|${entry.matchPersonaDescription ? 1 : 0}${entry.matchCharacterDescription ? 1 : 0}`
+            + `${entry.matchCharacterPersonality ? 1 : 0}${entry.matchCharacterDepthPrompt ? 1 : 0}`
+            + `${entry.matchScenario ? 1 : 0}${entry.matchCreatorNotes ? 1 : 0}`;
+        const cached = this.#textCache.get(cacheKey);
+        if (cached !== undefined) {
+            return cached;
+        }
+
         const MATCHER = '\x01';
         const JOINER = '\n' + MATCHER;
         let result = MATCHER + this.#depthBuffer.slice(this.#startDepth, depth).join(JOINER);
@@ -376,6 +401,7 @@ class WorldInfoBuffer {
             result += JOINER + this.#recurseBuffer.join(JOINER);
         }
 
+        this.#textCache.set(cacheKey, result);
         return result;
     }
 
@@ -423,6 +449,7 @@ class WorldInfoBuffer {
      */
     addRecurse(message) {
         this.#recurseBuffer.push(message);
+        this.#cacheVersion++;
     }
 
     /**
@@ -431,6 +458,7 @@ class WorldInfoBuffer {
      */
     addInject(message) {
         this.#injectBuffer.push(message);
+        this.#cacheVersion++;
     }
 
     /**
@@ -446,6 +474,7 @@ class WorldInfoBuffer {
      */
     advanceScan() {
         this.#skew++;
+        this.#cacheVersion++;
     }
 
     /**
@@ -532,10 +561,10 @@ class WorldInfoBuffer {
  */
 class WorldInfoTimedEffects {
     /**
-     * Array of chat messages.
-     * @type {string[]}
+     * Chat length used as the timed effect clock. A group member's scan skips lines they missed, but the clock counts them.
+     * @type {number}
      */
-    #chat = [];
+    #chatLength = 0;
 
     /**
      * Array of entries.
@@ -601,7 +630,7 @@ class WorldInfoTimedEffects {
      * @param {boolean} isDryRun Whether the operation is a dry run
      */
     constructor(chat, entries, isDryRun = false) {
-        this.#chat = chat;
+        this.#chatLength = chat.length + countGroupPromptHiddenMessages();
         this.#entries = entries;
         this.#isDryRun = isDryRun;
         this.#ensureChatMetadata();
@@ -656,7 +685,7 @@ class WorldInfoTimedEffects {
      * @returns {WITimedEffect} Timed effect for the entry
      */
     #getEntryTimedEffect(type, entry, isProtected) {
-        const { start, end } = getTimedEffectWindow(this.#chat.length, Number(entry[type]));
+        const { start, end } = getTimedEffectWindow(this.#chatLength, Number(entry[type]));
         return {
             hash: this.#getEntryHash(entry),
             start,
@@ -678,7 +707,7 @@ class WorldInfoTimedEffects {
             console.log(`[WI] Processing ${type} entry ${key}`, value);
             const entry = this.#entries.find(x => String(this.#getEntryHash(x)) === String(value.hash));
 
-            if (this.#chat.length <= Number(value.start) && !value.protected) {
+            if (this.#chatLength <= Number(value.start) && !value.protected) {
                 console.log(`[WI] Removing ${type} entry ${key} from timedWorldInfo: chat not advanced`, value);
                 delete chat_metadata.timedWorldInfo[type][key];
                 continue;
@@ -686,7 +715,7 @@ class WorldInfoTimedEffects {
 
             // Missing entries (they could be from another character's lorebook)
             if (!entry) {
-                if (this.#chat.length >= Number(value.end)) {
+                if (this.#chatLength >= Number(value.end)) {
                     console.log(`[WI] Removing ${type} entry from timedWorldInfo: entry not found and interval passed`, entry);
                     delete chat_metadata.timedWorldInfo[type][key];
                 }
@@ -700,7 +729,7 @@ class WorldInfoTimedEffects {
                 continue;
             }
 
-            if (this.#chat.length >= Number(value.end)) {
+            if (this.#chatLength >= Number(value.end)) {
                 console.log(`[WI] Removing ${type} entry from timedWorldInfo: ${type} interval passed`, entry);
                 delete chat_metadata.timedWorldInfo[type][key];
                 if (typeof onEnded === 'function') {
@@ -724,7 +753,7 @@ class WorldInfoTimedEffects {
                 continue;
             }
 
-            if (this.#chat.length < entry.delay) {
+            if (this.#chatLength < entry.delay) {
                 buffer.push(entry);
                 console.log('[WI] Timed effect "delay" applied to entry', entry);
             }
@@ -735,7 +764,7 @@ class WorldInfoTimedEffects {
      * Checks for timed effects on chat messages.
      */
     checkTimedEffects() {
-        const { metadata, active } = resolveWorldInfoTimedEffects(this.#entries, this.#chat.length, chat_metadata.timedWorldInfo, this.#isDryRun);
+        const { metadata, active } = resolveWorldInfoTimedEffects(this.#entries, this.#chatLength, chat_metadata.timedWorldInfo, this.#isDryRun);
         chat_metadata.timedWorldInfo = metadata;
         for (const type of ['sticky', 'cooldown', 'delay']) {
             this.#buffer[type] = this.#entries.filter(entry => active[type].has(entry.hash));
@@ -784,7 +813,7 @@ class WorldInfoTimedEffects {
      */
     setTimedEffects(activatedEntries) {
         if (this.#isDryRun) return;
-        chat_metadata.timedWorldInfo = applyWorldInfoTimedEffects(chat_metadata.timedWorldInfo, activatedEntries, this.#chat.length);
+        chat_metadata.timedWorldInfo = applyWorldInfoTimedEffects(chat_metadata.timedWorldInfo, activatedEntries, this.#chatLength);
     }
 
     /**
@@ -996,16 +1025,7 @@ export function updateWorldInfoSettings(settings, activeWorldInfo) {
     saveSettingsDebounced();
 }
 
-export const world_info_position = {
-    before: 0,
-    after: 1,
-    ANTop: 2,
-    ANBottom: 3,
-    atDepth: 4,
-    EMTop: 5,
-    EMBottom: 6,
-    outlet: 7,
-};
+export const world_info_position = worldInfoPositions;
 
 export const wi_anchor_position = {
     before: 0,
@@ -1163,7 +1183,10 @@ export function setWorldInfoSettings(settings, data) {
     $('#world_info').trigger('change');
     $('#world_editor_select').trigger('change');
 
+    globalThis.addEventListener?.('sb:conversation-workspace-state-changed', () => scheduleLorebookLinkCheck());
+
     eventSource.on(event_types.CHAT_CHANGED, async () => {
+        scheduleLorebookLinkCheck();
         const hasWorldInfo = !!chat_metadata[METADATA_KEY] && world_names.includes(chat_metadata[METADATA_KEY]);
         $('.chat_lorebook_button').toggleClass('world_set', hasWorldInfo);
         // Pre-cache the world info data for the chat for quicker first prompt generation
@@ -2829,31 +2852,20 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
             return;
         }
 
-        if (world_info.charLore) {
-            world_info.charLore = world_info.charLore
-                .map(charLore => ({ ...charLore, extraBooks: charLore.extraBooks?.filter(book => book !== name) ?? [] }))
-                .filter(charLore => charLore.extraBooks.length > 0);
-
-            saveSettingsDebounced();
-        }
-
-        // Selected world_info automatically refreshes
+        // Selected world_info and character extra lorebooks are reconciled inside deleteWorldInfo after the server accepts the delete.
         await deleteWorldInfo(name);
     });
 
     // Before printing the WI, we check if we should enable/disable search sorting
     verifyWorldInfoSearchSortRule();
 
-    function getDataArray(callback) {
-        // Convert the data.entries object into an array
-        let entriesArray = Object.keys(data.entries).map(uid => {
-            const entry = data.entries[uid];
-            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-                return null;
-            }
+    function getDataArray() {
+        // Only paginate entries the editor can safely address. Health reports broken records.
+        let entriesArray = Object.entries(data.entries).flatMap(([slot, entry]) => {
+            if (!hasEditableWorldInfoId(slot, entry)) return [];
             entry.displayIndex = entry.displayIndex ?? entry.uid;
-            return entry;
-        }).filter(entry => entry !== null);
+            return [entry];
+        });
 
         // Apply the filter and do the chosen sorting
         entriesArray = addMissingWorldInfoFields(entriesArray);
@@ -2866,35 +2878,34 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         const keys = entriesArray.flatMap(entry => [...entry.key, ...entry.keysecondary]);
         updateWorldEntryKeyOptionsCache(keys, { reset: true });
 
-        // Run the callback for printing this
-        typeof callback === 'function' && callback(entriesArray);
         return entriesArray;
     }
 
-    updateWorldInfoWorkspaceState({ name, data, filteredEntries: getDataArray().length });
-
+    const entries = getDataArray();
+    const pager = $('#world_info_pagination');
     const storageKey = 'WI_PerPage';
-    const perPageDefault = 25;
+    const pageSizeOptions = [10, 25, 50, 100, 500, 1000];
+    const savedPageSize = Number(accountStorage.getItem(storageKey));
+    const pageSize = pageSizeOptions.includes(savedPageSize) ? savedPageSize : 25;
     let startPage = 1;
 
     if (navigation === navigation_option.previous) {
-        startPage = $('#world_info_pagination').pagination('getCurrentPageNum');
+        startPage = Math.min(pager.pagination('getCurrentPageNum') || 1, Math.max(1, Math.ceil(entries.length / pageSize)));
     }
 
     const navigationTargetUid = requestedUid ?? (isDesktopSplit ? desktopSelectedWorldInfoUid : null);
     if (navigationTargetUid !== null) {
-        const data = getDataArray();
-        const uidIndex = data.findIndex(x => x.uid === navigationTargetUid);
-        const perPage = Number(accountStorage.getItem(storageKey)) || perPageDefault;
+        const uidIndex = entries.findIndex(x => Number(x.uid) === navigationTargetUid);
         if (uidIndex >= 0) {
-            startPage = Math.floor(uidIndex / perPage) + 1;
+            startPage = Math.floor(uidIndex / pageSize) + 1;
         }
     }
 
-    $('#world_info_pagination').pagination({
-        dataSource: getDataArray,
-        pageSize: Number(accountStorage.getItem(storageKey)) || perPageDefault,
-        sizeChangerOptions: [10, 25, 50, 100, 500, 1000],
+    let restorePageSizeFocus = false;
+    pager.prop('hidden', entries.length === 0).pagination({
+        dataSource: entries,
+        pageSize,
+        sizeChangerOptions: pageSizeOptions,
         showSizeChanger: true,
         pageRange: 1,
         pageNumber: startPage,
@@ -2904,9 +2915,8 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         nextText: '>',
         formatNavigator: PAGINATION_TEMPLATE,
         showNavigator: true,
-        callback: async function (/** @type {object[]} */ page) {
+        callback: function (/** @type {object[]} */ page) {
             try {
-                clearEntryList(worldEntriesList);
                 clearEntryList(desktopEditorHost);
                 clearWorldInfoDesktopEditor();
 
@@ -2914,7 +2924,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
 
                 for (const entry of page) {
                     try {
-                        const block = await getWorldEntry(name, data, entry, {
+                        const block = buildWorldEntry(name, data, entry, {
                             desktopEditorHost,
                             isDesktopSplit,
                             selectedUid: desktopSelectedWorldInfoUid,
@@ -2937,6 +2947,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     blocks.forEach(block => block.find('.drag-handle').attr('title', hint));
                 }
 
+                clearEntryList(worldEntriesList);
                 if (folderUI) {
                     folderUI.render(worldEntriesList[0], blocks, Boolean(String($('#world_info_search').val()).trim()));
                 } else {
@@ -2951,23 +2962,23 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                     }
                 }
 
-                const filteredEntryCount = getDataArray().length;
-                const pageSize = Number(accountStorage.getItem(storageKey)) || perPageDefault;
-                $('#world_info_pagination').prop('hidden', filteredEntryCount <= pageSize);
-                updateWorldInfoWorkspaceState({ name, data, filteredEntries: filteredEntryCount });
+                updateWorldInfoWorkspaceState({ name, data, filteredEntries: entries.length });
                 updateWorldInfoResultsSummary({
                     totalEntries: Object.keys(data.entries).length,
-                    filteredEntries: filteredEntryCount,
-                    pageEntries: page.length,
+                    filteredEntries: entries.length,
+                    pageEntries: blocks.length,
                 });
             } catch (error) {
                 console.error('Error while rendering WI entries:', error);
             }
         },
-        afterSizeSelectorChange: function (e) {
-            accountStorage.setItem(storageKey, e.target.value);
-            const pageSize = Number(e.target.value) || perPageDefault;
-            $('#world_info_pagination').prop('hidden', getDataArray().length <= pageSize);
+        beforeSizeSelectorChange: function (event) {
+            restorePageSizeFocus = event.target === document.activeElement;
+        },
+        afterSizeSelectorChange: function (_, size) {
+            accountStorage.setItem(storageKey, String(size));
+            // Pagination.js replaces the selector when it redraws the controls.
+            if (restorePageSizeFocus) pager.find('.J-paginationjs-size-select')[0]?.focus({ preventScroll: true });
         },
         afterPaging: function () {
             $('#world_popup_entries_list textarea[name="comment"]').each(function () {
@@ -2976,26 +2987,13 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         },
     });
 
-    if (navigationTargetUid !== null) {
-        const selector = `#world_popup_entries_list [uid="${navigationTargetUid}"]`;
-        waitUntilCondition(() => document.querySelector(selector) !== null).finally(() => {
-            const element = $(selector);
-
-            if (element.length === 0) {
-                console.log(`Could not find element for uid ${navigationTargetUid}`);
-                return;
-            }
-
-            const elementOffset = element.offset();
-            const parentOffset = element.parent().offset();
-            const scrollOffset = elementOffset.top - parentOffset.top;
-            if (isDesktopSplit) {
-                worldEntriesList.scrollTop(scrollOffset);
-            } else {
-                $('#WorldInfo').scrollTop(scrollOffset);
-            }
-            if (flashOnNav) flashHighlight(element);
-        });
+    if (requestedUid !== null) {
+        const element = worldEntriesList.find(`.world_entry[uid="${requestedUid}"]`);
+        const target = isDesktopSplit && !flashOnNav
+            ? desktopEditorHost.children()[0] ?? element[0]
+            : element[0];
+        target?.scrollIntoView({ block: 'nearest' });
+        if (element.length && flashOnNav) flashHighlight(element);
     }
 
     $('#world_popup_new').off('click').on('click', async () => {
@@ -3423,7 +3421,8 @@ function getWIOriginalDataIndex(data, uid) {
     if (Number.isInteger(mappedIndex) && data.originalData?.entries?.[mappedIndex]) {
         return mappedIndex;
     }
-    return data.originalData?.entries?.findIndex(x => String(x.id ?? x.uid) === String(uid)) ?? -1;
+    if (data.originalDataUidMap) return -1;
+    return data.originalData?.entries?.findIndex(x => String(x?.id ?? x?.uid) === String(uid)) ?? -1;
 }
 
 // Neconyan: built-in extension writers need one atomic resync after populating a new imported-book entry.
@@ -4065,6 +4064,10 @@ function setCommentPlaceholder(keys, commentInput) {
  * @param {object} entry - The entry object to be edited.
  */
 export async function getWorldEntry(name, data, entry, options = {}) {
+    return buildWorldEntry(name, data, entry, options);
+}
+
+function buildWorldEntry(name, data, entry, options = {}) {
     if (!data.entries[entry.uid]) return;
     const finishRender = trackWorldInfoEntryRender(data, entry.uid);
 
@@ -4073,7 +4076,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         isDesktopSplit = isWorldInfoDesktopSplitLayout(),
         selectedUid = desktopSelectedWorldInfoUid,
     } = options;
-    const isSelectedEntry = isDesktopSplit && selectedUid === entry.uid;
+    const isSelectedEntry = isDesktopSplit && selectedUid === Number(entry.uid);
     const headerTemplate = WI_ENTRY_HEADER_TEMPLATE.clone();
     headerTemplate.data('uid', entry.uid);
     headerTemplate.attr('uid', entry.uid);
@@ -4096,7 +4099,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         !skipReset && await resetScrollHeight(this);
         data.entries[uid].comment = value;
         setWIOriginalDataValue(data, uid, 'comment', data.entries[uid].comment);
-        if (desktopSelectedWorldInfoUid === uid) {
+        if (desktopSelectedWorldInfoUid === Number(uid)) {
             setWorldInfoDesktopEditorMeta(data.entries[uid]);
         }
         !noSave && await saveWorldInfo(name, data);
@@ -4130,7 +4133,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         const deleted = await deleteWorldInfoEntry(data, uid);
         if (!deleted) return;
         deleteWIOriginalDataValue(data, uid);
-        if (desktopSelectedWorldInfoUid === uid) {
+        if (desktopSelectedWorldInfoUid === Number(uid)) {
             desktopSelectedWorldInfoUid = null;
         }
         await saveWorldInfo(name, data);
@@ -4640,12 +4643,12 @@ export async function getWorldEntry(name, data, entry, options = {}) {
             if ($(event.target).closest('textarea, input, select, option, button, .menu_button, .killSwitch').length) {
                 return;
             }
-            updateEditor(entry.uid, false);
+            updateEditor(Number(entry.uid), false);
         });
         icon.closest('button').on('click', function (event) {
             event.preventDefault();
             event.stopPropagation();
-            updateEditor(entry.uid, false);
+            updateEditor(Number(entry.uid), false);
         });
 
         if (isSelectedEntry) {
@@ -5418,8 +5421,9 @@ async function renameWorldInfo(name, data) {
             saveSettingsDebounced();
         }
 
-        await updateWorldInfoLinks(oldName, newName);
+        await updateWorldInfoLinks(oldName, newName, renamed?.notebooks ?? null);
         await updateWorldInfoList();
+        syncOpenCardLorebookField(oldName, newName);
 
         try {
             await updateNeconyanLorebookFolders(metadata => renameNeconyanLorebookAssignment(metadata, oldName, newName), { retainOnFailure: true });
@@ -5445,107 +5449,39 @@ async function renameWorldInfo(name, data) {
 }
 
 /**
- * Retargets all character lore links from an old world info name to a new one, with an optional confirmation for primary lorebook links
+ * Moves every link to a renamed lorebook to its new name through the shared rewrite in lorebook-link-cleanup.js.
  * @param {string} oldName Previous WI file name
  * @param {string} newName New WI file name
+ * @param {object|null} [notebooks] The server's report on the Notebook links it moved
  * @returns {Promise<void>}
  */
-async function updateWorldInfoLinks(oldName, newName) {
-    const existingCharLores = world_info.charLore?.filter((e) => e.extraBooks?.includes(oldName));
-    if (existingCharLores && existingCharLores.length > 0) {
-        existingCharLores.forEach((charLore) => {
-            const tempCharLore = charLore.extraBooks.filter((e) => e !== oldName);
-            tempCharLore.push(newName);
-            charLore.extraBooks = tempCharLore;
-        });
-        saveSettingsDebounced();
-    }
+async function updateWorldInfoLinks(oldName, newName, notebooks = null) {
+    const { rewriteLorebookLinks } = await import('./lorebook-link-cleanup.js');
+    await rewriteLorebookLinks(oldName, newName, { notebooks });
+}
 
-    if (power_user.persona_description_lorebook === oldName) {
-        power_user.persona_description_lorebook = newName;
-        const descriptor = getOrCreatePersonaDescriptor();
-        descriptor.lorebook = newName;
-        setPersonaDescription();
-        saveSettingsDebounced();
-    }
+/**
+ * Removes every link to a deleted lorebook (cards, extra lorebooks, personas, chats, Conversation overrides) and
+ * clears the open character editor's lorebook field.
+ * @param {string} name Deleted WI file name
+ * @param {object|null} [notebooks] The server's report on the Notebook links it removed
+ * @returns {Promise<void>}
+ */
+async function unlinkDeletedWorldInfo(name, notebooks = null) {
+    const { rewriteLorebookLinks } = await import('./lorebook-link-cleanup.js');
+    await rewriteLorebookLinks(name, null, { notebooks });
+    syncOpenCardLorebookField(name, null);
+}
 
-    for (const descriptor of Object.values(power_user.persona_descriptions ?? {})) {
-        if (descriptor?.lorebook === oldName) {
-            descriptor.lorebook = newName;
-            saveSettingsDebounced();
-        }
-    }
-
-    if (chat_metadata[METADATA_KEY] === oldName) {
-        chat_metadata[METADATA_KEY] = newName;
-        await saveMetadata();
-    }
-
-    // find all characters using the old lorebook name as their primary world
-    const linkedChIDs = [];
-    characters.forEach((character, chid) => {
-        if (character.data?.extensions?.world === oldName) {
-            linkedChIDs.push(chid);
-        }
-    });
-
-    if (!linkedChIDs.length) {
+/** Keeps the open character editor's lorebook field in step with the card link that was just rewritten. */
+function syncOpenCardLorebookField(oldName, newName) {
+    const field = $('#character_world');
+    if (!linkPointsAt(field.val(), oldName)) return;
+    if (menu_type !== 'create' && this_chid !== undefined && linkPointsAt(characters[this_chid]?.data?.extensions?.world, oldName)) {
         return;
     }
-
-    // Trigger the confirmation popup
-    const updatePastLinksConfirm = await Popup.show.confirm(
-        t`World/Lorebook renamed!`,
-        `<p>${t`Auxiliary Lorebook links have been updated. Would you like to update primary lorebook links for ${linkedChIDs.length} character(s) as well?`}</p>`,
-    ) == POPUP_RESULT.AFFIRMATIVE;
-
-    if (updatePastLinksConfirm) {
-        let activeCharacterUpdated = false;
-
-        for (const chid of linkedChIDs) {
-            const character = characters[chid];
-
-            try {
-                // /merge-attributes API call to update the file on the backend silently
-                const response = await fetch('/api/characters/merge-attributes', {
-                    method: 'POST',
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({
-                        avatar: character.avatar,
-                        data: {
-                            extensions: {
-                                world: newName,
-                            },
-                        },
-                    }),
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Merge API returned ${response.status}`);
-                }
-
-                // used to update the data in the browser's memory
-                await getOneCharacter(character.avatar);
-
-                // Flag if the currently open character was affected
-                if (String(chid) === String(this_chid)) {
-                    activeCharacterUpdated = true;
-                }
-
-                toastr.success(`Successfully updated link for ${character.name}.`);
-            } catch (e) {
-                toastr.error(`Could not update link for ${character.name}.`);
-                console.error(`Backend update for character ${character.name} failed:`, e);
-            }
-        }
-
-        // update the UI fields
-        // only required if the currently selected character was changed
-        if (activeCharacterUpdated) {
-            select_selected_character(this_chid, { switchMenu: false });
-            setWorldInfoButtonClass(this_chid, true);
-        }
-    }
+    field.val(newName ?? '');
+    setWorldInfoButtonClass(undefined, Boolean(newName));
 }
 
 /**
@@ -5573,6 +5509,7 @@ export async function deleteWorldInfo(worldInfoName) {
             return false;
         }
         saveTarget = null;
+        const deleted = await response.json().catch(() => null);
 
         invalidateWorldInfoCache(worldInfoName);
         worldInfoCommittedEntryInstances.delete(worldInfoName);
@@ -5593,24 +5530,7 @@ export async function deleteWorldInfo(worldInfoName) {
         }
         $('#world_editor_select').trigger('change');
 
-        if ($('#character_world').val() === worldInfoName) {
-            $('#character_world').val('').trigger('change');
-            setWorldInfoButtonClass(undefined, false);
-            if (menu_type != 'create') {
-                saveCharacterDebounced();
-            }
-        }
-
-        if (power_user.persona_description_lorebook === worldInfoName) {
-            power_user.persona_description_lorebook = '';
-            if (power_user.personas[user_avatar]) {
-                const object = getOrCreatePersonaDescriptor();
-                object.lorebook = '';
-            }
-            $('#persona_lore_button').toggleClass('world_set', false);
-            setPersonaDescription();
-            saveSettingsDebounced();
-        }
+        await unlinkDeletedWorldInfo(worldInfoName, deleted?.notebooks ?? null);
     } finally {
         releaseSaveBlock(saveTarget);
         if (saveTarget === null) await eventSource.emit(event_types.WORLDINFO_DELETED, worldInfoName);
@@ -5707,6 +5627,62 @@ export async function createNewWorldInfo(worldName, { interactive = false } = {}
     }
 
     return true;
+}
+
+let lorebookLinkCheckTimer = null;
+
+/** What the open chat is, for the lorebook link check: a key that changes whenever another chat or Conversation opens, and its cards. */
+function describeOpenLorebookScope() {
+    const conversation = readConversationLorebooks();
+    if (conversation) return { chatKey: conversation.key, cards: [], conversation };
+    const context = getContext();
+    const group = context.groupId ? context.groups?.find(item => item.id == context.groupId) : null;
+    const cards = group
+        ? (group.members ?? [])
+            .filter(avatar => !group.disabled_members?.includes(avatar))
+            .map(avatar => characters.find(item => item.avatar === avatar))
+            .filter(Boolean)
+        : [characters[this_chid]].filter(Boolean);
+    const chatId = getCurrentChatId();
+    return { chatKey: chatId ? `${group ? `group:${group.id}` : (cards[0]?.avatar ?? '')}|${chatId}` : '', cards, conversation: null };
+}
+
+/**
+ * Runs a moment after a chat or the Conversation workspace opens, once the other open-time events have settled.
+ * The open itself is noted at once, so opening another chat and coming straight back still counts as a reopen.
+ */
+function scheduleLorebookLinkCheck() {
+    try {
+        noteLorebookChatOpened(describeOpenLorebookScope().chatKey);
+    } catch (error) {
+        console.warn('[WI] Could not note the chat that opened', error);
+    }
+    clearTimeout(lorebookLinkCheckTimer);
+    lorebookLinkCheckTimer = setTimeout(() => void checkOpenChatLorebookLinks(), 400);
+}
+
+/**
+ * Lists the lorebooks the open chat links and, only when one is not in the page's list, hands it to the lazily
+ * loaded notice. In the Conversation workspace that is the lorebook override of the open Conversation; in a
+ * Roleplay chat it is the card (or group member) links and the chat's own lorebook. Changes no link and no data.
+ */
+async function checkOpenChatLorebookLinks() {
+    try {
+        const { chatKey, cards, conversation } = describeOpenLorebookScope();
+        noteLorebookChatOpened(chatKey);
+        if (!chatKey) return;
+        const links = conversation
+            ? listLorebookLinks({ conversationOverrides: conversation.overrides })
+            : listLorebookLinks({ cards, charLore: world_info.charLore, chatLorebook: chat_metadata[METADATA_KEY] });
+        if (isEmbeddedOfferHolding()) return;
+        const candidates = filterUntoldLorebookLinks(chatKey, Array.isArray(world_names) ? findMissingLorebookLinks(links, world_names) : links);
+        if (!candidates.length) return;
+
+        const { reportMissingLorebookLinks } = await import('./lorebook-link-notice.js');
+        await reportMissingLorebookLinks({ chatKey, candidates, isHeld: isEmbeddedOfferHolding });
+    } catch (error) {
+        console.warn('[WI] Could not check the lorebook links of this chat', error);
+    }
 }
 
 async function getCharacterLore() {
@@ -6548,56 +6524,7 @@ export function convertCharacterBook(characterBook) {
 
     characterBook.entries.forEach((entry, index) => {
         const uid = getFreeWorldEntryUid(result);
-        const toRegex = key => entry.use_regex && !parseRegexFromString(key)
-            ? `/${escapeCharacterBookRegex(key)}/`
-            : key;
-        result.entries[uid] = {
-            ...newWorldInfoEntryTemplate,
-            uid,
-            key: Array.isArray(entry.keys) ? entry.keys.map(toRegex) : [],
-            keysecondary: Array.isArray(entry.secondary_keys) ? entry.secondary_keys.map(toRegex) : [],
-            comment: entry.comment || '',
-            content: entry.content,
-            constant: entry.constant || false,
-            selective: entry.selective || false,
-            order: entry.insertion_order,
-            position: normalizeCharacterBookPosition(entry.extensions?.position, entry.position, world_info_position),
-            excludeRecursion: entry.extensions?.exclude_recursion ?? false,
-            preventRecursion: entry.extensions?.prevent_recursion ?? false,
-            delayUntilRecursion: entry.extensions?.delay_until_recursion ?? false,
-            disable: entry.enabled === false,
-            addMemo: !!entry.comment,
-            displayIndex: entry.extensions?.display_index ?? index,
-            probability: entry.extensions?.probability ?? 100,
-            useProbability: entry.extensions?.useProbability ?? true,
-            depth: entry.extensions?.depth ?? DEFAULT_DEPTH,
-            selectiveLogic: entry.extensions?.selectiveLogic ?? world_info_logic.AND_ANY,
-            outletName: entry.extensions?.outlet_name ?? '',
-            group: entry.extensions?.group ?? '',
-            groupOverride: entry.extensions?.group_override ?? false,
-            groupWeight: entry.extensions?.group_weight ?? DEFAULT_WEIGHT,
-            scanDepth: entry.extensions?.scan_depth ?? null,
-            caseSensitive: entry.case_sensitive ?? entry.extensions?.case_sensitive ?? null,
-            matchWholeWords: entry.extensions?.match_whole_words ?? null,
-            useGroupScoring: entry.extensions?.use_group_scoring ?? null,
-            characterFilter: entry.character_filter,
-            automationId: entry.extensions?.automation_id ?? '',
-            role: entry.extensions?.role ?? extension_prompt_roles.SYSTEM,
-            vectorized: entry.extensions?.vectorized ?? false,
-            sticky: entry.extensions?.sticky ?? null,
-            cooldown: entry.extensions?.cooldown ?? null,
-            delay: entry.extensions?.delay ?? null,
-            matchPersonaDescription: entry.extensions?.match_persona_description ?? false,
-            matchCharacterDescription: entry.extensions?.match_character_description ?? false,
-            matchCharacterPersonality: entry.extensions?.match_character_personality ?? false,
-            matchCharacterDepthPrompt: entry.extensions?.match_character_depth_prompt ?? false,
-            matchScenario: entry.extensions?.match_scenario ?? false,
-            matchCreatorNotes: entry.extensions?.match_creator_notes ?? false,
-            extensions: entry.extensions ?? {},
-            triggers: entry.extensions?.triggers || [],
-            ignoreBudget: entry.extensions?.ignore_budget ?? false,
-            agentBlacklisted: entry.extensions?.agent_blacklisted ?? entry.agentBlacklisted ?? false,
-        };
+        result.entries[uid] = convertCharacterBookEntry(entry, uid, index);
         result.originalDataUidMap[uid] = index;
     });
 
@@ -6619,6 +6546,29 @@ export function setWorldInfoButtonClass(chid, forceValue = undefined) {
     $('#set_character_world, #world_button').toggleClass('world_set', worldSet);
 }
 
+/** Cards whose embedded-lorebook offer (popup or toast) is on screen right now. */
+const embeddedOffersOnScreen = new Set();
+
+/** Whether the embedded-lorebook offer has not been made for this card yet and would be made now. */
+function embeddedWorldOfferDue(chid) {
+    const character = characters[chid];
+    if (!character?.data?.character_book) return false;
+    const worldName = character.data.extensions?.world;
+    const bookName = character.data.character_book?.name || `${character.name}'s Lorebook`;
+    const fileName = getCharaFilename(null, { manualAvatarKey: character.avatar });
+    const auxBooks = getLinkedAuxBooks(world_info.charLore, fileName);
+    return !accountStorage.getItem(`AlertWI_${character.avatar}`) && !isEmbeddedBookLinked(bookName, worldName, auxBooks, world_names);
+}
+
+/**
+ * Whether the embedded-lorebook offer of the open card is about to show or is on screen. The missing-links notice
+ * waits for the next time the chat opens then, so it never covers the offer or names a lorebook the offer may import.
+ */
+function isEmbeddedOfferHolding() {
+    const avatar = characters[this_chid]?.avatar;
+    return Boolean(avatar) && (embeddedOffersOnScreen.has(avatar) || embeddedWorldOfferDue(this_chid));
+}
+
 export function checkEmbeddedWorld(chid) {
     $('#import_character_info').hide();
 
@@ -6631,12 +6581,11 @@ export function checkEmbeddedWorld(chid) {
 
         // Only show the alert once per character
         const checkKey = `AlertWI_${characters[chid].avatar}`;
-        const worldName = characters[chid]?.data?.extensions?.world;
-        const bookName = characters[chid]?.data?.character_book?.name || `${characters[chid]?.name}'s Lorebook`;
-        const fileName = getCharaFilename(null, { manualAvatarKey: characters[chid].avatar });
-        const auxBooks = getLinkedAuxBooks(world_info.charLore, fileName);
-        if (!accountStorage.getItem(checkKey) && !isEmbeddedBookLinked(bookName, worldName, auxBooks, world_names)) {
+        if (embeddedWorldOfferDue(chid)) {
             accountStorage.setItem(checkKey, 'true');
+            const avatar = characters[chid].avatar;
+            embeddedOffersOnScreen.add(avatar);
+            clearLorebookNotice();
 
             if (power_user.world_import_dialog) {
                 const html = `<h3>This character has an embedded World/Lorebook.</h3>
@@ -6648,12 +6597,12 @@ export function checkEmbeddedWorld(chid) {
                         saveCharacterDebounced();
                     }
                 };
-                callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: 'Yes' }).then(checkResult);
+                callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: 'Yes' }).then(checkResult).finally(() => embeddedOffersOnScreen.delete(avatar));
             } else {
                 toastr.info(
                     'To import and use it, select "Import Card Lore" in the "More..." dropdown menu on the character panel.',
                     `${characters[chid].name} has an embedded World/Lorebook`,
-                    { timeOut: 5000, extendedTimeOut: 10000 },
+                    { timeOut: 5000, extendedTimeOut: 10000, onHidden: () => embeddedOffersOnScreen.delete(avatar) },
                 );
             }
         }

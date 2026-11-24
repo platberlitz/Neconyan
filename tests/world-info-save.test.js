@@ -7,6 +7,7 @@ import lodash from 'lodash';
 import { event_types } from '../public/scripts/events.js';
 import { StructuredCloneMap } from '../public/scripts/util/StructuredCloneMap.js';
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
+import { convertCharacterBookEntry } from '../public/scripts/world-info-character-book-entry.js';
 import { NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook } from '../public/scripts/neconyan-lorebook-folders.js';
 import { sendCompanionResultToLorebook } from '../public/scripts/extensions/in-chat-agents/companion/lorebook-sender.js';
 import { planLorebookRepair, repairChangeText, repairDefectText } from '../public/scripts/neconyan-lorebook-repair.js';
@@ -77,7 +78,7 @@ function createHost(initialBook = book()) {
         lodash, structuredClone, Map, WeakMap, Set, TextEncoder, FormData, console,
         escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
         callGenericPopup: jest.fn(async () => {}), POPUP_TYPE: { TEXT: 1, CONFIRM: 2 },
-        escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry,
+        escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry, convertCharacterBookEntry,
         NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
         planLorebookRepair, repairChangeText, repairDefectText, planWorldInfoVectorization,
         setTimeout, clearTimeout, event_types,
@@ -99,7 +100,7 @@ function createHost(initialBook = book()) {
         t: (strings, ...values) => String.raw({ raw: strings }, ...values),
         toastr: { error: jest.fn(), success: jest.fn(), warning: jest.fn(), info: jest.fn() },
         Popup: HostPopup,
-        saveSettingsDebounced: jest.fn(), updateWorldInfoLinks: jest.fn(async () => {}),
+        saveSettingsDebounced: jest.fn(), updateWorldInfoLinks: jest.fn(async () => {}), unlinkDeletedWorldInfo: jest.fn(async () => {}), syncOpenCardLorebookField: jest.fn(),
         saveSettings: jest.fn(async () => true),
         clearWorldInfoDesktopEditor: jest.fn(),
         document: { activeElement: null, createElement: createDomElement },
@@ -147,10 +148,11 @@ function createHost(initialBook = book()) {
             case '/api/worldinfo/rename':
                 books.delete(body.oldName);
                 books.set(body.newName, structuredClone(body.data));
-                result = { ok: true, name: body.newName, revision: JSON.stringify(body.data) };
+                result = { ok: true, name: body.newName, revision: JSON.stringify(body.data), notebooks: { links: 1, notebooks: ['nb'], skipped: [] } };
                 break;
             case '/api/worldinfo/delete':
                 books.delete(body.name);
+                result = { ok: true, notebooks: { links: 2, notebooks: ['nb'], skipped: [] } };
                 break;
             case '/api/worldinfo/import': {
                 const name = String(body.get('name'));
@@ -1426,6 +1428,15 @@ describe('World Info lifecycle coordination', () => {
         expect(host.context.worldInfoCache.has('Lore')).toBe(false);
         expect(host.books.get('Renamed')).toMatchObject({ entries: { 0: { depth: 9 } }, extensions: external.extensions });
         expect(host.context.eventSource.emit).toHaveBeenCalledWith(event_types.WORLDINFO_RENAMED, 'Lore', 'Renamed');
+    });
+
+    test('rename and delete pass the server report on Notebook links to the link cleanup', async () => {
+        const host = createHost();
+        const data = await host.context.loadWorldInfo('Lore');
+        await host.context.renameWorldInfo('Lore', data);
+        expect(host.context.updateWorldInfoLinks).toHaveBeenCalledWith('Lore', 'Renamed', { links: 1, notebooks: ['nb'], skipped: [] });
+        await host.context.deleteWorldInfo('Renamed');
+        expect(host.context.unlinkDeletedWorldInfo).toHaveBeenCalledWith('Renamed', { links: 2, notebooks: ['nb'], skipped: [] });
     });
 
     test.each(['delete', 'replace', 'import'])('%s discards blocked saves and publishes only installed data', async operation => {

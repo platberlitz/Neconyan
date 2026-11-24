@@ -25,6 +25,7 @@ const AT_AUTO_CHAT_MARKER = 'auto_chat_at';
 const LAST_IDLE_SESSION_PREFIX = 'sb_conv_last_idle_session_';
 const LAST_CHIME_SESSION_PREFIX = 'sb_conv_last_chime_session_';
 const SCHEDULE_TRIGGER_LIMIT = 100;
+const SCHEDULE_GRACE_MINUTES = 5;
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -56,13 +57,21 @@ function scheduleTriggerCap(triggers) {
 }
 
 /** The clock fields the browser reads locally, resolved in the user's named zone. */
-export function getConversationAutomationClock(now, timeZone = 'UTC') {
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour12: false, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(now));
+function automationClockFormatter(timeZone) {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, hour12: false, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function conversationClockAt(now, formatter) {
+    const parts = formatter.formatToParts(now);
     const get = type => parts.find(part => part.type === type)?.value || '';
     const hour = Number(get('hour')) % 24;
     const minute = get('minute');
     const dayOfWeek = Math.max(0, WEEKDAYS.indexOf(get('weekday')));
     return { dayOfWeek, hour, minuteKey: `${String(hour).padStart(2, '0')}:${minute}`, dateKey: `${get('year')}-${get('month')}-${get('day')}` };
+}
+
+export function getConversationAutomationClock(now, timeZone = 'UTC') {
+    return conversationClockAt(Number(new Date(now)), automationClockFormatter(timeZone));
 }
 
 /** A deterministic key for one logical autonomous occurrence. */
@@ -148,22 +157,31 @@ export function selectConversationReminder({ reminders = [], targets = new Map()
 /** A due weekly or legacy scheduled message for one thread. */
 export function selectConversationScheduledMessage({ settings = {}, branch = null, target = null, now = Date.now(), timeZone = 'UTC', taken = () => false } = {}) {
     if (!settings.auto_message || !branch || !target) return null;
-    const { dayOfWeek, minuteKey, dateKey } = getConversationAutomationClock(now, timeZone);
+    const weekly = safeParseWeeklySchedule(settings.weekly_schedule);
+    const lines = String(settings.ai_schedule || '').split('\n');
+    // Another speaker or reminder can occupy the worker during the due minute.
+    // Match real elapsed minutes so midnight and timezone changes keep the original key.
+    const formatter = weekly.length || lines.some(line => /^\s*\d{2}:\d{2}/.test(line))
+        ? automationClockFormatter(timeZone) : null;
+    const clocks = formatter ? Array.from({ length: SCHEDULE_GRACE_MINUTES + 1 },
+        (_, minute) => conversationClockAt(now - minute * 60000, formatter)) : [];
     const triggers = branch.scheduleTriggers || {};
     const candidates = [];
-    for (const entry of safeParseWeeklySchedule(settings.weekly_schedule)) {
+    for (const entry of weekly) {
         if (!entry || entry.enabled === false) continue;
-        if (!Array.isArray(entry.days) || !entry.days.includes(dayOfWeek)) continue;
-        if (entry.time !== minuteKey) continue;
-        candidates.push({ key: `weekly:${dateKey}:${entry.time}:${entry.message}`, directive: `[System directive: Your weekly schedule is due: "${entry.message}". Send a message with this context in mind.]`, label: `weekly:${entry.time}`, raw: entry.message });
+        if (!Array.isArray(entry.days)) continue;
+        const due = clocks.find(clock => clock.minuteKey === entry.time && entry.days.includes(clock.dayOfWeek));
+        if (!due) continue;
+        candidates.push({ key: `weekly:${due.dateKey}:${entry.time}:${entry.message}`, directive: `[System directive: Your weekly schedule is due: "${entry.message}". Send a message with this context in mind.]`, label: `weekly:${entry.time}`, raw: entry.message });
     }
-    for (const line of String(settings.ai_schedule || '').split('\n')) {
+    for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         const absolute = trimmed.match(/^(\d{2}):(\d{2})\s*-\s*(.*)$/);
         if (absolute) {
-            if (`${absolute[1]}:${absolute[2]}` === minuteKey) {
-                candidates.push({ key: `absolute:${dateKey}:${minuteKey}:${trimmed}`, directive: `[System directive: Your schedule is due: "${absolute[3]}". Send a message with this context in mind.]`, label: trimmed, raw: absolute[3] });
+            const due = clocks.find(clock => clock.minuteKey === `${absolute[1]}:${absolute[2]}`);
+            if (due) {
+                candidates.push({ key: `absolute:${due.dateKey}:${due.minuteKey}:${trimmed}`, directive: `[System directive: Your schedule is due: "${absolute[3]}". Send a message with this context in mind.]`, label: trimmed, raw: absolute[3] });
             }
             continue;
         }

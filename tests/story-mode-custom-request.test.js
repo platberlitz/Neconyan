@@ -6,7 +6,8 @@ import { parse } from 'acorn';
 import yaml from 'yaml';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { filterChatCompletionSamplingParameters, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort } from '../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort, stripModelBracketTags } from '../public/scripts/chat-reasoning-capabilities.js';
+import { coerceRequestBoolean } from '../public/scripts/chat-preset-request.js';
 import { CHAT_COMPLETION_SOURCES, OPENAI_REASONING_EFFORT_MODELS, OPENAI_VERBOSITY_MODELS } from '../src/constants.js';
 import { assertSameOriginHttpUrl, parseHttpBaseUrl, validateSafePathSegment } from '../src/endpoints/provider-url-validation.js';
 import { applyReasoningEffortNormalization, toWireReasoningEffort } from '../src/reasoning-effort.js';
@@ -34,14 +35,14 @@ async function sendCustom(body) {
         CHAT_COMPLETION_SOURCES, OPENAI_REASONING_EFFORT_MODELS, OPENAI_VERBOSITY_MODELS,
         applyGenerationRequestControls, requestUsesReasoning, applyKimiK3ModelParameterConstraints, isKimiK3Model,
         applyReasoningEffortNormalization, toWireReasoningEffort, filterChatCompletionSamplingParameters,
-        checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort,
+        checkChatReasoningEffort, getNativeReasoningRoute, resolveKnownInvalidNoneEffort, stripModelBracketTags, coerceRequestBoolean,
         assertSameOriginHttpUrl, parseHttpBaseUrl, validateSafePathSegment, trimTrailingSlash,
         TEXT_COMPLETION_MODELS: [], SECRET_KEYS: { CUSTOM: 'custom' },
         readSecret: () => 'test-secret',
         secretIdExists: () => true,
         embedOpenRouterMedia: () => {}, applyLocalPromptCacheScope: () => {}, abortOnRequestClose: () => {},
         logVerboseGenerationRequest: () => {}, summarizeLlmPayloadForLog: value => value,
-        isExpectedStreamAbort: () => false,
+        isExpectedStreamAbort: () => false, getResumableGeneration: () => undefined,
         fetch: jest.fn(async () => ({ ok: true, json: async () => ({ choices: [] }) })),
     });
     load(context, 'util.js', ['mergeObjectWithYaml', 'excludeKeysByYaml']);
@@ -65,6 +66,11 @@ async function sendCustom(body) {
 }
 
 describe('final Custom request controls', () => {
+    test.each([['[openai]o3', 8192], ['[openai]gpt-5.4', 8192], ['[o3]gpt-4o', 160]])('uses the model rather than its tag to cap the output for %s', async (model, maxTokens) => {
+        const result = await sendCustom({ model, request_controls: { maxOutputTokens: 160 } });
+        expect(result).toMatchObject({ model, max_tokens: maxTokens });
+    });
+
     test('caps the final ordinary payload after YAML overrides, including a max_completion_tokens override', async () => {
         const result = await sendCustom({
             include_reasoning: true,

@@ -303,6 +303,7 @@ export function createSelectPicker(select, {
                 const heading = element('div', parent ? 'sb-select-picker-group' : 'sb-select-picker-group is-divider', parent?.label);
                 heading.setAttribute('role', parent ? 'heading' : 'separator');
                 if (parent) heading.setAttribute('aria-level', '3');
+                if (parent?.hasAttribute('data-i18n-ignore')) heading.setAttribute('data-i18n-ignore', '');
                 nodes.push(heading);
                 group = parent;
             }

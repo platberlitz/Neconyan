@@ -259,7 +259,8 @@ export async function mountLorebookTools(root) {
         function renderHealthBadge(count) {
             healthBadge.textContent = count ? String(count) : '';
             healthBadge.hidden = !count;
-            healthButton.classList.toggle('neco-lore-has-issues', count > 0);
+            healthIcon.classList.toggle('fa-shield-halved', !count);
+            healthIcon.classList.toggle('fa-triangle-exclamation', count > 0);
             healthButton.title = count
                 ? `Health check: ${count} error${count === 1 ? '' : 's'} or warning${count === 1 ? '' : 's'}. Click to review.`
                 : 'Health check: no errors or warnings found yet. Click for the full check.';
@@ -491,9 +492,22 @@ export async function mountLorebookTools(root) {
         }
 
         async function open(nextMode, source = null) {
-            if (busy || !getWorldInfoEditorSnapshot()?.data) return;
+            const editor = getWorldInfoEditorSnapshot();
+            if (busy || !editor?.data) return;
             if (source) opener = source;
             showMode(nextMode);
+            if (nextMode === 'health') {
+                // Inspect damaged books without rewriting them just to open Health.
+                await run(async () => {
+                    const result = await historyRequest(editor.name, { summary: true });
+                    histories.set(editor.name, result.history);
+                });
+                if (mode === 'health' && getWorldInfoEditorSnapshot()?.name === editor.name) {
+                    panel.querySelector('[data-mode="health"]')?.focus({ preventScroll: true });
+                    await runHealth();
+                }
+                return;
+            }
             await run(async () => {
                 if (!await prepare()) { close(); return; }
                 for (const toolMode of ['search', 'delimiters', 'merge']) clearPreview(toolMode);
@@ -530,7 +544,6 @@ export async function mountLorebookTools(root) {
                 await refreshSaved();
             });
             panel.querySelector(`[data-mode="${nextMode}"]`)?.focus();
-            if (mode === 'health' && nextMode === 'health') await runHealth();
             if (mode === 'tokens' && nextMode === 'tokens') await run(renderTokens);
         }
 

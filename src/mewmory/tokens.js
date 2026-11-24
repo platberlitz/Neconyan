@@ -1,10 +1,9 @@
-import { get_encoding } from 'tiktoken';
 import { getTokenizerModel } from '../endpoints/tokenizers.js';
+import { getTiktokenEncoding } from '../tiktoken-cache.js';
 import { fail } from './core.js';
 
 export { getTokenizerModel };
 export const TOKENIZERS = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
-const encodings = new Map();
 
 export async function getCounter(choice = 'o200k_base', hint = {}) {
     if (choice === 'auto') {
@@ -18,8 +17,7 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
         }
     }
     if (['o200k_base', 'cl100k_base', 'gpt2'].includes(choice)) {
-        if (!encodings.has(choice)) encodings.set(choice, get_encoding(choice));
-        const encoder = encodings.get(choice);
+        const encoder = getTiktokenEncoding(choice);
         return { name: choice, count: value => encoder.encode(String(value), [], []).length };
     }
     const tokenizers = await import('../endpoints/tokenizers.js');

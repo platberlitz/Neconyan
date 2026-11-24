@@ -1,19 +1,21 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
+import { getPublicAssetStamp } from '../src/frontend-assets.js';
 import { redirectLegacyFrontendAsset, setPublicAssetHeaders } from '../src/middleware/frontend-assets.js';
 
-function getHeadersFor(requestPath) {
+function getHeadersFor(requestPath, { query = {}, stat } = {}) {
     const headers = new Map();
 
     setPublicAssetHeaders({
+        req: { query },
         setHeader: (name, value) => headers.set(name, value),
-    }, requestPath);
+    }, requestPath, stat);
 
     return headers;
 }
 
-function getCacheControlFor(requestPath) {
-    return getHeadersFor(requestPath).get('Cache-Control');
+function getCacheControlFor(requestPath, options) {
+    return getHeadersFor(requestPath, options).get('Cache-Control');
 }
 
 describe('frontend asset fallback headers', () => {
@@ -57,6 +59,15 @@ describe('frontend asset fallback headers', () => {
         expect(getCacheControlFor('/script.js')).toBe('no-cache');
         expect(getCacheControlFor('/scripts/chat-render-lifecycle/render-window.js')).toBe('no-cache');
         expect(getCacheControlFor('/scripts/bootstrap.mjs')).toBe('no-cache');
+    });
+
+    test('caches a script only under its own file label', () => {
+        const stat = { isFile: () => true, size: 1234, mtimeMs: 1_700_000_000_000 };
+        const stamp = getPublicAssetStamp(stat);
+        expect(getCacheControlFor('/script.js', { query: { v: stamp }, stat }))
+            .toContain('immutable');
+        expect(getCacheControlFor('/script.js', { query: { v: 'old-label' }, stat })).toBe('no-cache');
+        expect(getCacheControlFor('/script.js', { stat })).toBe('no-cache');
     });
 
     test('revalidates unversioned stylesheets alongside their scripts', () => {

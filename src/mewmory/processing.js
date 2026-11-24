@@ -8,6 +8,10 @@ import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersio
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
+import { batchState, memberHeard, memoryAudience, memoryFloor, memoryHorizon, sameAudience, sourceAudience } from './viewers.js';
+
+/** Lets a test look at the working state as a model request goes out, and at the state a batch hands back. */
+export const testHooks = { beforeModelRequest: null, afterBatch: null };
 
 // startProcessing owns production admission, but processBatch is exported for tests and
 // future callers. This separate map joins another direct call to processBatch, so two
@@ -43,6 +47,26 @@ export function pendingSources(state, config, { checkpoint = false, through = In
     const coverage = checkpoint ? state.checkpoints : state.coverage;
     return state.timeline.filter(ref => sourceEligible(state, ref, through)
         && (unreadOnly ? !sourceRead(coverage, ref) : coverage[refKey(ref)] !== policy));
+}
+
+/**
+ * What the inspection shows from one pass over the timeline: messages not yet read, messages without a
+ * preservation checkpoint, and messages that count as read but under an older policy. The same marks
+ * pendingSources applies, without walking and checking every message three times.
+ */
+export function pendingCounts(state, config, { followCheckpoints = false } = {}) {
+    const policy = processingVersion(config);
+    const marks = followCheckpoints ? state.checkpoints : state.coverage;
+    let unread = 0;
+    let checkpointUnread = 0;
+    let pending = 0;
+    for (const ref of state.timeline) {
+        if (!sourceEligible(state, ref)) continue;
+        if (!sourceRead(state.coverage, ref)) unread++;
+        if (!sourceRead(state.checkpoints, ref)) checkpointUnread++;
+        if (marks[refKey(ref)] !== policy) pending++;
+    }
+    return { unread, checkpointUnread, rereadPending: pending - (followCheckpoints ? checkpointUnread : unread) };
 }
 
 export function addUsage(state, entries) {
@@ -124,7 +148,9 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     const sceneText = scene.map(source => source.speaker + '\n' + source.text).join('\n');
     const lowered = sceneText.toLocaleLowerCase();
     const matchScore = matchScorer(sceneText);
-    const records = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
+    // In a group chat the model sees only memories every listener of this batch could read.
+    const view = batchState(state, sourceAudience(state, refs[0]), sourceAt(state, refs[0])?.sequence) || state;
+    const records = eligibleRecords(view, { asOf }).filter(record => objectiveKinds.includes(record.kind));
     const entities = currentRecords(records.filter(record => record.kind === 'entity'), record => record.entityId);
     const readEntities = new Set(entities.filter(record => record.origin !== 'character_card').map(record => record.entityId));
     const context = state.contextSources.filter(ref => sourceEligible(state, ref))
@@ -157,8 +183,8 @@ export function extractionInput(state, refs, asOf, checkpoint) {
     return {
         policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
         sources: [...scene, ...cards, ...lore], existing: [...reference, ...states, ...relevant],
-        authorOverrides: state.records.filter(record => record.authorOverride && record.asOf <= asOf)
-            .map(record => objectiveKinds.includes(record.kind) && recordEligible(state, record, { asOf }) ? existingRecord(record)
+        authorOverrides: view.records.filter(record => record.authorOverride && record.asOf <= asOf)
+            .map(record => objectiveKinds.includes(record.kind) && recordEligible(view, record, { asOf }) ? existingRecord(record)
                 : { id: record.id, kind: record.kind, excluded: record.excluded, status: record.status }),
     };
 }
@@ -189,19 +215,22 @@ function batchRefs(value, batch) {
 }
 
 /** Repairs the slips cheap models make, so one wrong detail does not sink an otherwise good reply. */
-function tidyProposal(state, proposed, batch, asOf) {
+function tidyProposal(state, proposed, batch, usableRecords) {
     const tidy = { ...proposed, id: cleanId(proposed.id), subjectIds: cleanIds(proposed.subjectIds) };
     for (const key of ['entityId', 'ownerId']) if (key in tidy) tidy[key] = cleanId(tidy[key]);
     tidy.refs = batchRefs(proposed.refs, batch);
     tidy.evidenceRefs = batchRefs(proposed.evidenceRefs || [], batch);
-    const usable = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
-    tidy.dependencies = (Array.isArray(proposed.dependencies) ? proposed.dependencies : [])
-        .map(dependency => usable.find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
+    const proposedDependencies = Array.isArray(proposed.dependencies) ? proposed.dependencies : [];
+    tidy.dependencies = proposedDependencies
+        .map(dependency => usableRecords().find(record => record.id === (typeof dependency === 'string' ? dependency : dependency?.id)))
         .filter(Boolean).map(record => ({ id: record.id, version: record.version }));
     if (tidy.kind === 'knowledge' && typeof tidy.evidenceText === 'string') {
-        const sources = [...tidy.refs, ...batch.values()];
-        const found = sources.map(ref => ({ ref, quote: findQuote(sourceAt(state, ref)?.text || '', tidy.evidenceText) }))
-            .find(item => item.quote);
+        // The first source that holds the quote decides; the later ones are not searched.
+        let found = null;
+        for (const ref of [...tidy.refs, ...batch.values()]) {
+            const quote = findQuote(sourceAt(state, ref)?.text || '', tidy.evidenceText);
+            if (quote) { found = { ref, quote }; break; }
+        }
         if (found) {
             tidy.evidenceText = found.quote;
             tidy.refs = uniqueRefs([...tidy.refs, found.ref]);
@@ -225,8 +254,17 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
     object(output, 'Extraction');
     const refs = new Set(input.sources.map(refKey));
     const batch = new Map(input.sources.map(source => [source.id, { id: source.id, revision: source.revision }]));
+    const chatSources = input.sources.filter(source => source.type === 'chat');
+    const audience = chatSources.length ? sourceAudience(state, chatSources[0]) : null;
+    const view = batchState(state, audience, chatSources[0]?.sequence) || state;
+    // Everything the model saw for this batch, so a member caught up on all of it may read what it wrote.
+    const shown = [...input.existing || [], ...input.authorOverrides || []];
+    const lines = [input.asOf, ...chatSources.map(source => source.sequence)];
+    // Nothing is saved until every proposal is tidied, so one list of usable memories serves them all.
+    let usable;
+    const usableRecords = () => usable ??= eligibleRecords(view, { asOf: input.asOf }).filter(record => objectiveKinds.includes(record.kind));
     const records = list(output.records ?? [], 'Extracted records', Infinity).slice(0, 80)
-        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, input.asOf));
+        .filter(proposed => proposed && typeof proposed === 'object').map(proposed => tidyProposal(state, proposed, batch, usableRecords));
     const order = { entity: 0, state: 1, event: 2, relationship: 3, knowledge: 4, commitment: 5 };
     const seen = new Set();
     for (const proposed of records.slice().sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9))) try {
@@ -234,7 +272,7 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
         seen.add(proposed.id);
         let candidate = { ...proposed, ...settleSignificance(state, proposed, refs) };
         if (candidate.kind === 'entity') {
-            const previous = state.records.find(record => record.id === candidate.id && recordEligible(state, record, { asOf: input.asOf }));
+            const previous = view.records.find(record => record.id === candidate.id && recordEligible(view, record, { asOf: input.asOf }));
             if (previous) {
                 candidate = {
                     ...candidate,
@@ -245,11 +283,20 @@ export function applyExtraction(state, output, input, skipped = [], interviewSki
                 for (const ref of previous.refs) refs.add(refKey(ref));
             }
         }
+        if (candidate.kind === 'knowledge' && !memberHeard(state, audience, cleanId(candidate.ownerId))) {
+            fail('A character cannot know a line they did not hear, so that memory was left out.');
+        }
         const record = validateRecord(state, candidate, { asOf: input.asOf, origin: 'objective_extractor', allowedRefs: refs });
         record.asOf = Math.max(-1, ...record.refs.map(ref => sourceAt(state, ref).sequence),
             ...record.dependencies.map(dependency => recordRevision(state, dependency.id, dependency.version).asOf));
-        record.provenance = input.provenance;
-        record.inputRefs = input.sources.filter(source => source.type === 'chat').map(({ id, revision }) => ({ id, revision }));
+        // Group memories remember who heard the lines they came from, so only those members recall them.
+        if (state.locator?.group) {
+            const horizon = memoryHorizon(state, lines, [...shown, ...record.dependencies]);
+            const floor = memoryFloor(state, chatSources.map(source => source.sequence), [...shown, ...record.dependencies]);
+            record.provenance = { ...input.provenance, audience: audience ? structuredClone(audience) : null,
+                ...(horizon !== null ? { horizon } : {}), ...(floor !== null ? { floor } : {}) };
+        } else record.provenance = input.provenance;
+        record.inputRefs = chatSources.map(({ id, revision }) => ({ id, revision }));
         putRecord(state, record, { automatic: true });
     } catch (error) {
         if (![400, 409].includes(error.status)) throw error;
@@ -338,13 +385,19 @@ export function applyInterview(state, request, output, input, jobId) {
         previousId: input.priorInterviews.at(-1)?.id || '', changeExplanation: output.changeExplanation,
         significance: request.significance, evidenceRefs: request.evidenceRefs,
     }, { asOf: input.asOf, origin: 'generated_interview' });
-    record.provenance = input.provenance;
+    // Interviews come only from the owner's saved memories, so in a group they go to whoever may read all of those.
+    const horizon = state.locator?.group ? memoryHorizon(state, [input.asOf], dependencies) : null;
+    const floor = state.locator?.group ? memoryFloor(state, [], dependencies) : null;
+    const provenance = state.locator?.group ? { ...input.provenance, audience: memoryAudience(state, dependencies),
+        ...(horizon !== null ? { horizon } : {}), ...(floor !== null ? { floor } : {}) } : input.provenance;
+    record.provenance = provenance;
     record.evidenceKey = evidenceKey;
     const saved = putRecord(state, record, { automatic: true });
     if (saved.authorOverride) return;
     if (!recordEligible(state, saved, { asOf: input.asOf })) fail('The new Pawspective interview could not be saved because something it relies on changed. These messages will be tried again.', 409);
     const overviews = list(output.overviews, 'Subject overviews', request.subjectIds.length);
-    if (overviews.length !== request.subjectIds.length || new Set(overviews.map(item => item.subjectId)).size !== request.subjectIds.length) {
+    if (overviews.length !== request.subjectIds.length
+        || new Set(overviews.map(item => object(item, 'Subject overview').subjectId)).size !== request.subjectIds.length) {
         fail('The reply must include one short summary for each person or thing the interview is about.');
     }
     for (const overview of overviews) {
@@ -356,9 +409,32 @@ export function applyInterview(state, request, output, input, jobId) {
             dependencies: [{ id: saved.id, version: saved.version }],
             significance: request.significance, evidenceRefs: request.evidenceRefs,
         }, { asOf: input.asOf, origin: 'generated_overview' });
-        current.provenance = input.provenance;
+        current.provenance = structuredClone(provenance);
         putRecord(state, current, { automatic: true });
     }
+}
+
+function indexMetadata(index) {
+    const descriptors = Object.getOwnPropertyDescriptors(index);
+    delete descriptors.vectors;
+    return Object.defineProperties({}, descriptors);
+}
+
+/** Keep the admitted evidence while releasing its untouched vector graphs before model requests. */
+function processingWorkingState(state) {
+    const index = indexMetadata(state.index);
+    if (state.index.build) index.build = indexMetadata(state.index.build);
+    return { ...state, index };
+}
+
+/**
+ * Applying a reply only needs the wording of the sources this batch sent (quotes are checked against it);
+ * every other source is read for its flags, sequence and hash. Dropping the rest of the chat's text lets
+ * it go while the model request is out, which can take minutes.
+ */
+function dropUnsentText(state, sentIds) {
+    state.sources = Object.fromEntries(Object.entries(state.sources).map(([id, source]) => [id, sentIds.has(id) ? source
+        : { ...source, revisions: source.revisions.map(({ text, storyText, trackerOutputs, ...kept }) => kept) }]));
 }
 
 async function runBatch(directories, locator, options, call) {
@@ -376,7 +452,7 @@ async function runBatch(directories, locator, options, call) {
             || ['pending', 'failed'].includes(current.visibilityRestore?.status)) fail('Mewmory was switched off while memories were updating.', 409);
         options.signal?.throwIfAborted();
     };
-    const refs = pendingSources(state, config, options).slice(0, config.batchMessages);
+    const refs = sameAudience(state, pendingSources(state, config, options).slice(0, config.batchMessages));
     if (!refs.length) return state;
     const asOf = Math.max(...refs.map(ref => sourceAt(state, ref).sequence));
     const snapshot = sourceFingerprint(state);
@@ -388,6 +464,7 @@ async function runBatch(directories, locator, options, call) {
         current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
             from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
     }, state.revision);
+    state = processingWorkingState(state);
     // Loading and saving a large story is synchronous; let waiting page requests run before building the request.
     await new Promise(resolve => setImmediate(resolve));
     // Extraction reads only up to its newest message, so later replies (and agents rewriting them) cannot make it stale.
@@ -405,7 +482,9 @@ async function runBatch(directories, locator, options, call) {
         snapshotRead = readFingerprint(state, sourceCount, contextIds);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
         const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
+        dropUnsentText(state, new Set(input.sources.map(source => source.id)));
         assertEnabled();
+        testHooks.beforeModelRequest?.(state);
         const extraction = await call(directories, config, 'extractor', extractionContract(config), input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
@@ -530,7 +609,9 @@ export async function processBatch(directories, locator, options = {}, call = ca
     running.set(key, job);
     const endWork = beginServerWork();
     try {
-        return await job;
+        const result = await job;
+        testHooks.afterBatch?.(result);
+        return result;
     } finally {
         running.delete(key);
         endWork();

@@ -71,6 +71,8 @@ export const getSuite = (...args) => read('getSuite', args);
 export const listSuites = (...args) => read('listSuites', args);
 export const getRun = (...args) => read('getRun', args);
 export const listRuns = (...args) => read('listRuns', args);
+export const countRuns = (...args) => read('countRuns', args);
+export const getInventory = (...args) => read('getInventory', args);
 export const getLatestRun = (...args) => read('getLatestRun', args);
 export const saveDraft = (...args) => write('saveDraft', args);
 export const deleteDraft = (...args) => write('deleteDraft', args);

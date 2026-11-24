@@ -130,6 +130,17 @@ describe('connection manager profile save wiring', () => {
         expect(connectionManagerSource).toContain('\'custom-endpoint-profile\': \'Custom Endpoint Profile\',');
     });
 
+    test('records the hide-unsupported-levels switch in Chat Completion profiles, never as an empty value', () => {
+        const ccCommandsStart = connectionManagerSource.indexOf('const CC_COMMANDS = [');
+        const tcCommandsStart = connectionManagerSource.indexOf('const TC_COMMANDS = [');
+        const ccCommandsSource = connectionManagerSource.slice(ccCommandsStart, tcCommandsStart);
+        const allowEmptyStart = connectionManagerSource.indexOf('const ALLOW_EMPTY = [');
+        const allowEmptySource = connectionManagerSource.slice(allowEmptyStart, connectionManagerSource.indexOf('];', allowEmptyStart));
+        expect(ccCommandsSource).toContain('\'custom-reasoning-documented-levels\',');
+        expect(allowEmptySource).not.toContain('custom-reasoning-documented-levels');
+        expect(connectionManagerSource).toContain('\'custom-reasoning-documented-levels\': \'Custom Hide Unsupported Reasoning Levels\',');
+    });
+
     test('records Custom endpoint additional parameters, including empty values, in Chat Completion profiles', () => {
         const ccCommandsStart = connectionManagerSource.indexOf('const CC_COMMANDS = [');
         const tcCommandsStart = connectionManagerSource.indexOf('const TC_COMMANDS = [');

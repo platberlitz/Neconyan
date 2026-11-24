@@ -26,6 +26,7 @@ import {
     getExtensionManagerGroup,
     syncExtensionToggleState,
 } from './extensions-manager.js';
+import { setExtensionLoadErrors } from './app-evidence-log.js';
 
 export {
     SimpleMutex as ModuleWorkerWrapper,
@@ -1035,6 +1036,7 @@ async function activateExtensions() {
     const extensions = sortExtensionBootEntries(Object.entries(manifests));
     const extensionNames = extensions.map(x => x[0]);
     const promises = [];
+    const activationPromises = new Map();
 
     for (let entry of extensions) {
         const name = entry[0];
@@ -1093,16 +1095,23 @@ async function activateExtensions() {
             };
 
             if (activationState.shouldWaitForDependencyActivations) {
-                await Promise.allSettled(promises);
-                try {
-                    await activateExtension();
-                } catch (error) {
+                // Wait only for the extensions this manifest names. Waiting for every
+                // earlier extension made one dependency hold up all later activation.
+                const dependencies = Array.isArray(manifest.dependencies) ? manifest.dependencies : [];
+                await Promise.allSettled(dependencies
+                    .map(dependency => activationPromises.get(dependency))
+                    .filter(Boolean));
+                const pending = activateExtension().catch(error => {
                     console.error('Could not activate extension', name, error);
-                }
+                });
+                promises.push(pending);
+                activationPromises.set(name, pending);
             } else {
-                promises.push(activateExtension().catch(error => {
+                const pending = activateExtension().catch(error => {
                     console.error('Could not activate extension', name, error);
-                }));
+                });
+                promises.push(pending);
+                activationPromises.set(name, pending);
             }
         } else if (activationState.action === EXTENSION_BOOT_ACTIVATION_ACTION.DISABLED_DEPENDENCIES) {
             console.warn(t`Extension "${name}" did not load. Required extensions exist but are disabled: "${activationState.disabledDependencies.join(', ')}". Enable them first, then reload.`);
@@ -1118,6 +1127,7 @@ async function activateExtensions() {
 
     await Promise.allSettled(promises);
     $('#extensions_details').toggleClass('warning', extensionLoadErrors.size > 0);
+    setExtensionLoadErrors(extensionLoadErrors);
 }
 
 async function addExtensionsButtonAndMenu() {

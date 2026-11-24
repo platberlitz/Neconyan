@@ -30,15 +30,20 @@ import {
     getAutomaticCompanionAgents,
     getCompanionCoveredMessageIndices,
     getCompanionResults,
+    getDisplayedCompanionResults,
     getLatestAssistantCompanionMessageIndex,
     getLatestCompanionResultsMessageIndex,
     getLatestValidCompanionMessageIndex,
     getRetryableCompanionAgents,
+    isCompanionRunStoppable,
+    isServerReplyCompanionStopping,
     retryFailedCompanionsOnMessage,
     runAutomaticCompanionsOnMessage,
     runCompanionAgentOnMessage,
     runPlotCompassBeforeConversation,
     runCompanionsOnMessage,
+    stopCompanionRun,
+    stopServerReplyCompanion,
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion-quick-controls.js';
@@ -53,6 +58,7 @@ import {
     insertChoiceIntoMessageInput,
     isSuppressedCompanionResult,
     refreshCompanionCards,
+    togglePlotCompassChoice,
 } from './companion-ui.js';
 import {
     CHAT_ONLY_INPUT_MAX_CHARS,
@@ -571,7 +577,7 @@ export function collectPanelAgentStates() {
             continue;
         }
 
-        for (const [agentId, result] of Object.entries(getCompanionResults(message))) {
+        for (const [agentId, result] of Object.entries(getDisplayedCompanionResults(message))) {
             if (!result || typeof result !== 'object') {
                 continue;
             }
@@ -761,6 +767,23 @@ function buildAbsorbedPillHtml(entry) {
         : '';
 }
 
+function getLivePreviewJobId() {
+    return livePreview?.element.isConnected ? String(livePreview.jobId ?? livePreview.element.dataset?.roleplayJob ?? '') : '';
+}
+
+function isPanelEntryStoppable(agentId, entry) {
+    if (entry?.preview) {
+        const jobId = getLivePreviewJobId();
+        return Boolean(jobId) && !isServerReplyCompanionStopping(jobId, agentId);
+    }
+    const message = chat[entry?.messageIndex];
+    return Boolean(message) && isCompanionRunStoppable(message, agentId);
+}
+
+function buildPanelStopButton(stoppable) {
+    return `<button type="button" class="ica--cdash-action ica--tpanel-stop" data-action="panel-stop" title="Stop this companion" aria-label="Stop this companion"${stoppable ? '' : ' disabled'}><i class="fa-solid fa-stop"></i></button>`;
+}
+
 function buildPanelAgentSection(state) {
     const agentId = state.agentId ?? state.agent?.id ?? '';
     const latest = state.latest;
@@ -769,24 +792,30 @@ function buildPanelAgentSection(state) {
     const icon = getStateIcon(state);
     const isHidden = isAgentHidden(agentId);
     const canSendToLorebook = isLorebookAgent(state.agent);
-    const runDisabled = !areAgentsGloballyEnabled() || latest?.result?.status === 'pending' ? ' disabled' : '';
+    const pending = latest?.result?.status === 'pending';
+    // While a note is being written (or the reply it belongs to is still live) every control
+    // stays in place but greyed out, so only Stop can be pressed.
+    const locked = pending || Boolean(latest?.preview);
+    const lockedAttribute = locked ? ' disabled' : '';
+    const runDisabled = !areAgentsGloballyEnabled() || locked || livePreview?.element.isConnected ? ' disabled' : '';
+    const stopButton = pending ? buildPanelStopButton(isPanelEntryStoppable(agentId, latest)) : '';
 
     const settingsButton = state.agent
-        ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s full editor" aria-label="Open full editor"><i class="fa-solid fa-gear"></i></button>'
+        ? `<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion's full editor" aria-label="Open full editor"${lockedAttribute}><i class="fa-solid fa-gear"></i></button>`
         : '';
     const windowButton = state.agent
-        ? '<button type="button" class="ica--cdash-action" data-action="panel-open-window" title="Open a floating window that stays beside the chat" aria-label="Open floating window"><i class="fa-solid fa-window-restore"></i></button>'
+        ? `<button type="button" class="ica--cdash-action" data-action="panel-open-window" title="Open a floating window that stays beside the chat" aria-label="Open floating window"${lockedAttribute}><i class="fa-solid fa-window-restore"></i></button>`
         : '';
-    const runLatestButton = state.agent && !livePreview?.element.isConnected
+    const runLatestButton = state.agent
         ? `<button type="button" class="ica--cdash-action" data-action="panel-run-latest" title="Run this companion on the latest assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play"></i></button>`
         : '';
     const hiddenTitle = isHidden ? 'Unhide this companion' : 'Hide this companion (skipped on auto-trigger)';
     const hiddenLabel = isHidden ? 'Unhide companion' : 'Hide companion';
     const hiddenIcon = isHidden ? 'fa-eye-slash' : 'fa-eye';
-    const hiddenButton = `<button type="button" class="ica--cdash-action" data-action="panel-hide" title="${hiddenTitle}" aria-label="${hiddenLabel}"><i class="fa-solid ${hiddenIcon}"></i></button>`;
+    const hiddenButton = `<button type="button" class="ica--cdash-action" data-action="panel-hide" title="${hiddenTitle}" aria-label="${hiddenLabel}"${lockedAttribute}><i class="fa-solid ${hiddenIcon}"></i></button>`;
     // Orphaned results have no agent to persist an order onto, so they get no drag handle.
     const dragHandleButton = state.agent
-        ? '<button type="button" class="ica--cdash-action ica--tpanel-drag-handle" title="Drag to reorder (arrow keys nudge)" aria-label="Reorder companion"><i class="fa-solid fa-grip-vertical"></i></button>'
+        ? `<button type="button" class="ica--cdash-action ica--tpanel-drag-handle" title="Drag to reorder (arrow keys nudge)" aria-label="Reorder companion"${lockedAttribute}><i class="fa-solid fa-grip-vertical"></i></button>`
         : '';
 
     if (state.agent && isDiceRollerAgent(state.agent)) {
@@ -846,7 +875,7 @@ function buildPanelAgentSection(state) {
 
     // A hidden host cannot be re-run: runSingleCompanionAgent rejects system messages, so the
     // rerun controls would silently do nothing. Editing the stored text and jumping still work.
-    const rerunButtons = latest.preview || latest.opening || latest.hostHidden || !state.agent
+    const rerunButtons = latest.opening || latest.hostHidden || !state.agent
         ? ''
         : `
                     <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Write this note again from the message it came from" aria-label="Write note again"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
@@ -861,14 +890,15 @@ function buildPanelAgentSection(state) {
                 ${buildModelPillHtml(latest.result)}
                 ${buildCompanionTokenUsagePillsHtml(latest.result)}
                 <span class="ica--tpanel-agent-actions">
+                    ${stopButton}
                     ${dragHandleButton}
                     ${hiddenButton}
                     ${runLatestButton}${rerunButtons}
-                    ${!latest.preview && canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                    ${latest.preview || latest.opening ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>'}
+                    ${canSendToLorebook && ['done', 'pending'].includes(String(latest.result?.status ?? 'done')) ? `<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"${lockedAttribute}><i class="fa-solid fa-book-medical"></i></button>` : ''}
+                    ${latest.opening ? '' : `<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"${lockedAttribute}><i class="fa-solid fa-pen-to-square"></i></button>`}
                     ${windowButton}
                     ${settingsButton}
-                    ${latest.preview || latest.opening ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>'}
+                    ${latest.opening ? '' : `<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"${lockedAttribute}><i class="fa-solid fa-comment-dots"></i></button>`}
                 </span>
             </div>
             <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, latest)}</div>
@@ -905,9 +935,16 @@ function buildPanelRunButtonHtml({ action, icon, label, title, count = 0, disabl
     return `<button type="button" class="menu_button menu_button_icon ica--tpanel-run-btn${extraClass}" data-action="${action}" title="${escapeHtml(title)}"${disabled ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span>${countHtml}</button>`;
 }
 
-function buildPanelRunButtonsHtml() {
-    if (livePreview?.element.isConnected) return '';
+function buildPanelRunButtonsHtml(states = []) {
     const runAllTitle = 'Run every switched-on companion on the latest reply, including those set to run only when you ask';
+    // Keep the bar in place while a reply or a note is being written, greyed out, so nothing
+    // can start a second run underneath the one in progress.
+    if (livePreview?.element.isConnected || states.some(state => state.latest?.result?.status === 'pending')) {
+        return `<div class="ica--tpanel-run" role="group" aria-label="Run companions">
+            ${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: 'Companions are writing; wait or stop them first', disabled: true })}
+            ${buildPanelRunButtonHtml({ action: 'panel-run-auto', icon: 'fa-bolt', label: 'Run automatic', title: 'Companions are writing; wait or stop them first', disabled: true })}
+        </div>`;
+    }
     if (!areAgentsGloballyEnabled()) {
         return `<div class="ica--tpanel-run" role="group" aria-label="Run companions">${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: 'Switch Agents on to run companions', disabled: true })}</div>`;
     }
@@ -952,7 +989,7 @@ export function buildPanelHtml() {
             </div>
             <small data-role="panel-search-status" role="status" aria-live="polite"></small>
         </div>
-        ${buildPanelRunButtonsHtml()}
+        ${buildPanelRunButtonsHtml(states)}
         <div class="ica--tpanel-body" id="ica--tpanel-results">${body}</div>
         <div class="ica--cdash-empty" data-role="panel-search-empty" hidden>${t`No companions match. Try another name or clear the search.`}</div>
         <div class="ica--tpanel-jump" data-role="panel-jump" role="group" aria-label="${escapeHtml(t`Jump through the panel`)}" hidden>
@@ -1137,7 +1174,7 @@ function setupPanelSortable() {
         // gate runs; its default (`input, textarea, button, select, option`) would swallow every
         // drag that starts on the grip because the grip is a <button>. Cancel the section's other
         // controls but leave the drag handle draggable.
-        cancel: 'input, textarea, .menu_button, .neco-dice, .ica--cdash-action:not(.ica--tpanel-drag-handle)',
+        cancel: 'input, textarea, .menu_button, .neco-dice, .ica--cdash-action:not(.ica--tpanel-drag-handle), .ica--tpanel-drag-handle:disabled',
         tolerance: 'pointer',
         distance: 5,
         placeholder: 'ica--tpanel-agent-placeholder',
@@ -1413,6 +1450,15 @@ async function handlePanelAction(event) {
 
     const section = button.closest('.ica--tpanel-agent');
     const agentId = section.attr('data-agent-id') || '';
+
+    if (action === 'panel-stop') {
+        const stopped = section.attr('data-roleplay-draft') === 'true'
+            ? await stopServerReplyCompanion(getLivePreviewJobId(), agentId)
+            : await stopCompanionRun(Number(section.attr('data-message-index')), agentId);
+        if (!stopped) toastr.info('This companion cannot be stopped yet. Try again in a moment.');
+        if (panelOpen) renderPanel();
+        return;
+    }
 
     if (action === 'panel-open-window') {
         if (!agentId) {
@@ -1810,6 +1856,10 @@ export function initCompanionPanel() {
     $('#ica--tracker-panel').on('click', '.ica--tpanel-agent-body .ica--choice-line', function (event) {
         event.preventDefault();
         event.stopPropagation();
+        if (this.classList?.contains('ica--plot-choice')) {
+            void togglePlotCompassChoice(this);
+            return;
+        }
         const inserted = insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
         if (inserted && !panelLocked) {
             closeCompanionPanel();
@@ -1848,11 +1898,19 @@ export function initCompanionPanel() {
 
     // Tapping anywhere outside the panel closes it unless the user locks it open.
     // The grace window keeps the click that opened the panel from immediately closing it.
+    // Keep the panel open while a popup dialog or fullscreen textarea overlay is active,
+    // or when the clicked control belonged to a popup or was detached by its own handler.
     $(document).on('click', event => {
         if (!panelOpen || panelLocked || Date.now() - panelOpenedAt < 250) {
             return;
         }
-        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #ica--cwin-layer, .ica--cwin, #${TOPBAR_LAUNCHER_ID}`)) {
+        if (document?.querySelector?.('dialog.popup[open], .ica--textarea-fullscreen-overlay')) {
+            return;
+        }
+        if (event.target?.isConnected === false) {
+            return;
+        }
+        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #ica--cwin-layer, .ica--cwin, dialog.popup, .popup, .ica--textarea-fullscreen-overlay, #${TOPBAR_LAUNCHER_ID}`)) {
             return;
         }
         closeCompanionPanel();

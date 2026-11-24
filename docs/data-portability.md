@@ -6,7 +6,7 @@ I want a stopped copy of your data folder to open without asking you to repair u
 
 Run one Neconyan server and open it in each device's browser. Both screens use the same data, so there's nothing to synchronise. The server must stay awake and reachable. The [phone setup instructions](../README.md#opening-it-on-your-phone) cover your home network; away from home, use an authenticated HTTPS connection or a private network.
 
-The Android APK's server only accepts connections from its own phone. It can't currently be the shared server for your desktop. A normal installation, including one in Termux, can accept network connections when configured for them.
+The Android APK defaults to phone-only access. To deliberately share its server, set `listenAddress.ipv4` to `0.0.0.0` in the private server config editor and use Save & Restart. That supported setting survives reopening. On another device, browse to the phone's reachable network IP and displayed port, not `0.0.0.0`. The whitelist and network routing still apply. Sign in as `neconyan` with the generated password in the private config editor; see [Android server configuration](../android/README.md#server-configuration) for the launcher-managed requirements. A normal installation, including one in Termux, can also accept network connections when configured for them.
 
 ## Taking a stopped folder elsewhere
 

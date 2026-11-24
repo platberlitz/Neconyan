@@ -38,7 +38,7 @@ describe('mobile character drawer top row css', () => {
     test('uses full touch target controls in editor mode', () => {
         const editorRowRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #CharListButtonAndHotSwaps');
         const editorWrapperRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #CharListButtonAndHotSwaps > .flexFlowColumn.flex-container');
-        const editorHotswapRule = getRuleBody(mobileShellCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #HotSwapWrapper');
+        const editorHotswapRule = getRuleBody(mobileShellCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"], [data-menu-type="group_edit"], [data-menu-type="group_create"]) #HotSwapWrapper');
         const backRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb-character-back-to-list');
         const closeRule = getRuleBody(mobileStylesCss, '#right-nav-panel:is([data-menu-type="character_edit"], [data-menu-type="create"]) #sb-character-mobile-close');
 
@@ -88,21 +88,21 @@ describe('mobile character drawer entity row css', () => {
     });
 });
 
-describe('mobile embedded lorebook css', () => {
-    test('lets the character drawer own scrolling after narrower container rules', () => {
+describe('embedded lorebook css', () => {
+    test('lets the desktop sheet scroll the full list', () => {
+        const rules = getRuleBodies(worldInfoCss, '#WorldInfo.sb-shell-embedded-content #world_popup_entries_list');
+        expect(rules.some(rule => rule.includes('max-height: none;') && rule.includes('overflow: visible;'))).toBe(true);
+        expect(rules.join('\n')).not.toMatch(/max-height:\s*(?!none\b)\S/);
+    });
+
+    test('keeps the mobile drawer full-width and lets it own scrolling', () => {
         const selector = '#WorldInfo.sb-shell-embedded-content :is(#world_popup, #world_popup_entries_list)';
         const rule = getRuleBody(worldInfoCss, selector);
-        const listHeightCap = worldInfoCss.indexOf('max-height: clamp(280px, 40vh, 420px);');
-        const mobileBreakpoint = worldInfoCss.indexOf('@media screen and (max-width: 960px)', listHeightCap);
-        const mobileReset = worldInfoCss.indexOf(selector);
 
         expect(rule).toContain('width: 100%;');
         expect(rule).toContain('height: auto;');
         expect(rule).toContain('max-width: 100%;');
         expect(rule).toContain('max-height: none;');
         expect(rule).toContain('overflow: visible;');
-        expect(listHeightCap).toBeGreaterThan(-1);
-        expect(mobileBreakpoint).toBeGreaterThan(listHeightCap);
-        expect(mobileReset).toBeGreaterThan(mobileBreakpoint);
     });
 });

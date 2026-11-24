@@ -82,6 +82,7 @@ const mappedRequestFieldNames = [
     'custom_reasoning_param_name',
     'custom_reasoning_enabled_value',
     'custom_reasoning_disabled_value',
+    'custom_reasoning_documented_levels',
     'custom_include_body',
     'custom_exclude_body',
     'custom_include_headers',
@@ -107,6 +108,7 @@ function createReasoningProfile(overrides = {}) {
         'custom-reasoning-param-name': 'thinking',
         'custom-reasoning-enabled-value': 'enabled',
         'custom-reasoning-disabled-value': 'disabled',
+        'custom-reasoning-documented-levels': 'true',
         'custom-include-body': '  top_k: 20\n  min_p: 0.05',
         'custom-exclude-body': '- frequency_penalty',
         'custom-include-headers': '',
@@ -134,6 +136,15 @@ test('service tiers stay scoped to the profile or its bound preset, including ex
 });
 
 describe('Connection Profile chat-completion request field mapping', () => {
+    test.each([['true', true], ['false', false]])('maps the Custom toggle %s for a bracket-prefixed profile', (stored, expected) => {
+        const profile = { ...createReasoningProfile(), api: 'custom', model: '[kimi]/kimi-k3', 'custom-reasoning-documented-levels': stored };
+        const key = 'custom_reasoning_documented_levels';
+        const result = getChatCompletionProfileRequestOverrides(profile, {});
+        expect(result.overrides[key]).toBe(expected);
+        expect(result.profileFieldNames).toContain(key);
+        expect(getChatCompletionProfileRequestOverrides(profile, { [key]: !expected }).overrides).not.toHaveProperty(key);
+    });
+
     test('leaves existing profiles without reasoning request keys unchanged', () => {
         const legacyProfile = {
             id: 'profile-legacy',
@@ -176,12 +187,19 @@ describe('Connection Profile chat-completion request field mapping', () => {
                 custom_reasoning_param_name: 'thinking',
                 custom_reasoning_enabled_value: 'enabled',
                 custom_reasoning_disabled_value: 'disabled',
+                custom_reasoning_documented_levels: true,
                 custom_include_body: '  top_k: 20\n  min_p: 0.05',
                 custom_exclude_body: '- frequency_penalty',
                 custom_include_headers: '',
             },
             profileFieldNames: mappedRequestFieldNames,
         });
+    });
+
+    test('coerces the hide-unsupported-levels profile value to a boolean', () => {
+        const read = value => getChatCompletionProfileRequestOverrides(createReasoningProfile({ 'custom-reasoning-documented-levels': value }), {}).overrides.custom_reasoning_documented_levels;
+        expect(read('true')).toBe(true);
+        expect(read('false')).toBe(false);
     });
 
     test('lets explicit caller overrides beat profile values', () => {
@@ -202,6 +220,7 @@ describe('Connection Profile chat-completion request field mapping', () => {
             custom_reasoning_param_format: 'thinking_object',
             custom_reasoning_enabled_value: 'enabled',
             custom_reasoning_disabled_value: 'disabled',
+            custom_reasoning_documented_levels: true,
             custom_include_body: '  top_k: 20\n  min_p: 0.05',
             custom_exclude_body: '- frequency_penalty',
             custom_include_headers: '',

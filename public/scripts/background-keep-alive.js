@@ -15,7 +15,8 @@ const TONE_AMPLITUDE = 60;
 
 export function isBackgroundKeepAliveDevice(navigatorRef = globalThis.navigator, host = globalThis) {
     if (!navigatorRef) return false;
-    // The Android app keeps its own server and page alive with a foreground notification.
+    // Android's foreground service keeps the server alive. Android can still suspend
+    // the page when it is hidden; durable work continues on the server instead.
     if (host?.NeconyanAndroid || host?.NeconyanExport) return false;
     const userAgent = String(navigatorRef.userAgent || '');
     const platform = String(navigatorRef.platform || '');
@@ -69,6 +70,10 @@ export function createQuietToneWav() {
     return buffer;
 }
 
+// A second try is only worth making when the sound element itself failed.
+const INTERRUPTION_RETRY_MS = 2000;
+const RETRY_EVENTS = ['error', 'stalled', 'ended'];
+
 /**
  * @param {object} [options]
  * @param {Document} [options.documentRef]
@@ -77,6 +82,10 @@ export function createQuietToneWav() {
  * @param {() => HTMLAudioElement} [options.createAudio]
  * @param {(blob: Blob) => string} [options.createObjectUrl]
  * @param {(status: object) => void} [options.onStatus]
+ * @param {(state: object) => void} [options.onActivity] Receives every state change for the crash diagnostics.
+ * @param {typeof setTimeout} [options.setTimer]
+ * @param {typeof clearTimeout} [options.clearTimer]
+ * @param {() => number} [options.now]
  */
 export function createBackgroundKeepAlive({
     documentRef = globalThis.document,
@@ -85,16 +94,61 @@ export function createBackgroundKeepAlive({
     createAudio = () => new globalThis.Audio(),
     createObjectUrl = blob => globalThis.URL.createObjectURL(blob),
     onStatus = () => {},
+    onActivity = state => globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ keepAlive: state }),
+    setTimer = globalThis.setTimeout.bind(globalThis),
+    clearTimer = globalThis.clearTimeout.bind(globalThis),
+    now = () => Date.now(),
 } = {}) {
     let enabled = readBackgroundKeepAliveEnabled(storage);
     let audio = null;
     let sourceUrl = '';
+    let detachAudio = null;
+    // Asked to play since the page was hidden, until it comes back.
+    let active = false;
+    // The audio element has reported real playback, and has not stopped since.
     let playing = false;
+    let playingSince = 0;
     let dismissed = false;
+    let unsupported = false;
     let lastError = '';
     let attempts = 0;
+    let retried = false;
+    let retryTimer = null;
+    let interruptions = 0;
+    let lastEvent = '';
+    let playedSeconds = null;
+    let publishedState = '';
+    let publishedSince = now();
+    let publishedText = '';
 
-    const report = () => onStatus({ enabled, playing, lastError });
+    const report = () => {
+        onStatus({ enabled, playing, lastError });
+        publish();
+    };
+
+    function currentState() {
+        if (!enabled) return 'off';
+        if (unsupported) return 'unsupported';
+        if (playing) return 'playing';
+        if (lastError === 'blocked' || lastError === 'failed' || lastError === 'interrupted') return lastError;
+        return dismissed ? 'dismissed' : 'armed';
+    }
+
+    // Sends the state to the crash diagnostics, so a page that is later lost can say what the sound was doing.
+    function publish() {
+        const state = currentState();
+        if (state !== publishedState) {
+            publishedState = state;
+            publishedSince = now();
+        }
+        const snapshot = { enabled, state, since: publishedSince, interruptions };
+        if (playedSeconds !== null) snapshot.playedSeconds = playedSeconds;
+        if (lastEvent) snapshot.lastEvent = lastEvent;
+        const text = JSON.stringify(snapshot);
+        if (text === publishedText) return;
+        publishedText = text;
+        try { onActivity(snapshot); } catch { /* Diagnostics are optional. */ }
+    }
 
     function setMediaSession(active) {
         const session = navigatorRef?.mediaSession;
@@ -114,36 +168,121 @@ export function createBackgroundKeepAlive({
         }
     }
 
+    function clearRetry() {
+        if (retryTimer !== null) clearTimer(retryTimer);
+        retryTimer = null;
+    }
+
+    function markPlaying() {
+        if (!active || playing) return;
+        playing = true;
+        playingSince = now();
+        lastError = '';
+        clearRetry();
+        setMediaSession(true);
+        report();
+    }
+
+    // The sound stopped while the page was hidden and the page did not stop it. Pressing pause in the
+    // media notification goes through the media session handler instead and is not counted here.
+    function interrupt(event) {
+        if (!active || !playing) return;
+        playing = false;
+        interruptions++;
+        lastEvent = event;
+        playedSeconds = Math.max(0, Math.round((now() - playingSince) / 1000));
+        lastError = 'interrupted';
+        setMediaSession(false);
+        // A plain pause is not retried: it normally means another app took over audio (music or a call),
+        // and playing again would cut that off. Only a fault in the element itself gets one more try.
+        if (!retried && RETRY_EVENTS.includes(event)) scheduleRetry();
+        report();
+    }
+
+    function scheduleRetry() {
+        retried = true;
+        const attempt = attempts;
+        clearRetry();
+        retryTimer = setTimer(() => {
+            retryTimer = null;
+            if (!active || playing || attempt !== attempts || documentRef?.visibilityState !== 'hidden') return;
+            void play(true);
+        }, INTERRUPTION_RETRY_MS);
+    }
+
+    function listen(element) {
+        if (typeof element.addEventListener !== 'function') return null;
+        const handlers = {
+            playing: markPlaying,
+            pause: () => interrupt('pause'),
+            ended: () => interrupt('ended'),
+            error: () => interrupt('error'),
+            emptied: () => interrupt('emptied'),
+            // A source that is already loaded can report 'stalled' while it plays on.
+            stalled: () => { if (element.paused === false && element.readyState >= 3) return; interrupt('stalled'); },
+        };
+        for (const [type, handler] of Object.entries(handlers)) element.addEventListener(type, handler);
+        return () => {
+            for (const [type, handler] of Object.entries(handlers)) element.removeEventListener?.(type, handler);
+        };
+    }
+
+    async function play(isRetry = false) {
+        const attempt = ++attempts;
+        try {
+            await audio.play();
+        } catch (error) {
+            if (attempt !== attempts || !active) return;
+            active = false;
+            playing = false;
+            detachAudio?.();
+            detachAudio = null;
+            unsupported = unsupported || error?.name === 'NotSupportedError';
+            // A refused second try leaves the interruption as the thing to report, unless the browser now refuses sound outright.
+            if (!isRetry || error?.name === 'NotAllowedError') lastError = error?.name === 'NotAllowedError' ? 'blocked' : 'failed';
+            report();
+            return;
+        }
+        if (attempt !== attempts || !active) return;
+        // Browsers report real playback with a 'playing' event; an element without events is trusted once play() succeeds.
+        // A second try on an element that never actually stopped starts nothing, so no event follows: read its own state.
+        if (!detachAudio || (isRetry && audio.paused === false)) markPlaying();
+    }
+
     async function start() {
-        if (!enabled || dismissed || playing || documentRef?.visibilityState !== 'hidden') return;
+        if (!enabled || dismissed || active || documentRef?.visibilityState !== 'hidden') return;
         try {
             if (!sourceUrl) sourceUrl = createObjectUrl(new Blob([createQuietToneWav()], { type: 'audio/wav' }));
             audio = audio || createAudio();
             audio.loop = true;
             audio.preload = 'auto';
             audio.src = sourceUrl;
-            playing = true;
-            const attempt = ++attempts;
-            try {
-                await audio.play();
-            } catch (error) {
-                if (attempt !== attempts || !playing) return;
-                throw error;
-            }
-            if (attempt !== attempts || !playing) return;
-            lastError = '';
-            setMediaSession(true);
-        } catch (error) {
+            active = true;
+            retried = false;
+            lastEvent = '';
+            playedSeconds = null;
+            detachAudio?.();
+            detachAudio = listen(audio);
+        } catch {
+            active = false;
             playing = false;
-            lastError = error?.name === 'NotAllowedError' ? 'blocked' : 'failed';
+            unsupported = true;
+            lastError = 'failed';
+            report();
+            return;
         }
-        report();
+        await play();
     }
 
     function stop() {
         const wasPlaying = playing;
+        active = false;
         playing = false;
+        retried = false;
         attempts++;
+        clearRetry();
+        detachAudio?.();
+        detachAudio = null;
         if (audio) {
             try { audio.pause(); } catch { /* Already stopped. */ }
             // Without a source the browser drops the media notification instead of showing it paused.
@@ -152,6 +291,7 @@ export function createBackgroundKeepAlive({
         }
         setMediaSession(false);
         if (wasPlaying) report();
+        else publish();
     }
 
     function handleVisibilityChange() {
@@ -159,12 +299,16 @@ export function createBackgroundKeepAlive({
             void start();
         } else {
             // Returning to the page re-arms a keep-alive the user paused from the notification.
+            // An interruption stays on record until the next time away, so the status can still say so.
             dismissed = false;
             stop();
         }
     }
 
     documentRef?.addEventListener?.('visibilitychange', handleVisibilityChange);
+    publish();
+    // A page that loads while already hidden never sees the change that would start the sound.
+    if (documentRef?.visibilityState === 'hidden') void start();
 
     return {
         isEnabled: () => enabled,
@@ -175,6 +319,9 @@ export function createBackgroundKeepAlive({
             writeBackgroundKeepAliveEnabled(storage, enabled);
             if (!enabled) stop();
             lastError = '';
+            unsupported = false;
+            lastEvent = '';
+            playedSeconds = null;
             report();
         },
         destroy() {

@@ -8,8 +8,9 @@ import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capa
 import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
 import { formatRoleplayTextExamples } from '../../public/scripts/roleplay-text-format.js';
 import { formatPromptReasoning } from '../../public/scripts/reasoning-prompt-format.js';
-import { composeAuthorsNote, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
+import { composeAuthorsNote, isAuthorsNoteActive, isValidNotePosition } from '../../public/scripts/authors-note-profiles.js';
 import { applyAgentHistoryRegex, prepareCompanionPromptHistory } from './agent-history.js';
+import { blankUnheardGroupRecords } from './roleplay-group-scene.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -25,17 +26,18 @@ export function roleplayEffectTrigger(effect) {
     throw roleplayError('ROLEPLAY_INVALID', 'Unknown Roleplay generation effect.', 409);
 }
 
-/** A saved edit target changes the prompt view; its old text remains on disk until completion. */
-export function selectRoleplayPromptRecords(records, source, effect) {
+/**
+ * A saved edit target changes the prompt view; its old text remains on disk until completion.
+ * In a group, `viewer` is the speaker (with the chat index of a missed line they answer), and lines they did not hear are blanked in place.
+ */
+export function selectRoleplayPromptRecords(records, source, effect, viewer = null) {
     const anchor = effect === 'replace' ? source.range?.start : source.message?.index;
-    if (effect === 'append' || anchor === undefined) return records;
+    if (effect === 'append' || anchor === undefined) return blankUnheardGroupRecords(records, source, viewer);
     if (!Number.isSafeInteger(anchor) || anchor < 0 || anchor >= records.length - 1) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved prompt target is outside its protected history.', 409);
     }
-    // An alternative rewrite of the anchored message writes a further swipe, so
-    // the model never reads the text it is about to replace.
-    if (effect === 'alternative') return records.slice(0, anchor);
-    return records.slice(0, anchor + (effect === 'continue' ? 2 : 1));
+    // Account for the header: swipes and alternatives read all messages before their target.
+    return blankUnheardGroupRecords(records.slice(0, anchor + (effect === 'continue' ? 2 : 1)), source, viewer);
 }
 
 /** Apply saved prompt-only transformations before both lore scanning and memory budgeting. */
@@ -186,6 +188,8 @@ export function savedRoleplayMacroSnapshot(snapshot, records) {
             mesExamplesRaw: snapshot.characterExamples, charDepthPrompt: snapshot.global.characterDepthPrompt,
             creatorNotes: snapshot.global.creatorNotes },
         variables: snapshot.promptVariables,
+        ...(snapshot.groupHistoryRestricted ? { hiddenVariablePrefix: 'agent_' } : {}),
+        ...(snapshot.groupMembers ? { groupMembers: snapshot.groupMembers } : {}),
         extra: { chat: records.slice(1), chatMetadata: snapshot.metadata, powerUser: snapshot.promptSettings },
     };
 }
@@ -210,8 +214,7 @@ export function roleplayMacroCapabilities(snapshot, material, maxTokens, maxCont
     };
 }
 
-export const isWorldInfoAuthorNoteActive = note => note?.interval === 1
-    || note?.interval > 1 && note.userMessages > 0 && note.userMessages % note.interval === 0;
+export const isWorldInfoAuthorNoteActive = note => isAuthorsNoteActive(note?.interval, note?.userMessages);
 
 /** Resolve the saved note once for both World Info scanning and prompt placement. */
 export function activeRoleplayAuthorNote(note) {

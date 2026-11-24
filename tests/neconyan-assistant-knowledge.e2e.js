@@ -244,10 +244,12 @@ for (const phone of [false, true]) {
 
     test(`refreshed help loads for all assistants on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(240000);
-        const account = await app.account({ phone });
+        const account = await app.account({ phone, seedConversation: false });
+        const consoleErrors = [];
+        account.context.on('console', message => { if (message.type() === 'error') consoleErrors.push(`${message.location().url}: ${message.text()}`); });
         const page = await account.open({ workspace: false });
         const references = await page.evaluate(async cases => {
-            const { buildAssistantKnowledge } = await import('/scripts/neconyan-assistant-knowledge.js');
+            const { buildAssistantKnowledge, estimateKnowledgeTokens } = await import('/scripts/neconyan-assistant-knowledge.js');
             const { KNOWLEDGE_REVISION } = await import('/scripts/neconyan-assistant-knowledge/index.js');
             const results = [];
             for (const name of ['miso', 'taro', 'nori']) {
@@ -270,15 +272,18 @@ for (const phone of [false, true]) {
                     ]) {
                         const id = `${name}-${variant}`;
                         const reference = await buildAssistantKnowledge({ character: { name: 'Renamed older copy', extensions: { neconyan_assistant: { id, version: 0 } } }, messages: [{ role: 'user', mes: question }] });
-                        results.push({ id, question, found: reference.text.includes(fact) });
+                        results.push({ id, question, found: reference.text.includes(fact), tokens: estimateKnowledgeTokens(reference.text) });
                     }
                 }
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(128);
+        expect(references.revision).toBe(163);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
+        expect(references.results.filter(result => result.tokens > 2048)).toEqual([]);
+        expect(consoleErrors).toEqual([]);
+        expect(app.navigationErrors).toEqual([]);
     });
 
     test(`documented Relationship Tracker activation works on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {

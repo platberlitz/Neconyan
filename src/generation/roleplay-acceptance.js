@@ -17,7 +17,7 @@ import sanitize from 'sanitize-filename';
 import { normalizeLocator, readJson } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { getJob, releaseJob } from '../jobs/store.js';
-import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked } from './roleplay-source.js';
+import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobPublicationForOwner, readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
@@ -26,6 +26,7 @@ import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation
 import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
+import { groupSceneTurnNeedsPage } from '../../public/scripts/group-chat-visibility.js';
 import { readRoleplayKeptReply, reconcileRoleplayKeptReplyFamily, roleplayKeptReplyPending, ROLEPLAY_REPLY_CAPABILITY } from './roleplay-kept-reply.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -332,6 +333,17 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
 }
 
 /**
+ * Server group replies follow the saved scene, whispers and the line each
+ * speaker answers, but a chosen speaker who is away stays in the page.
+ */
+function assertGroupSceneOpen(lease, records, groupId, speakers) {
+    const group = readRoleplayEntityLocked(lease, 'group', groupId).data;
+    if (groupSceneTurnNeedsPage(records[0]?.chat_metadata, group.members ?? [], speakers)) {
+        throw changed('This group scene turn has to be written in the browser.', 'roleplay_group_scene');
+    }
+}
+
+/**
  * Accept one whole group turn. The saved chat must still have the messages the page
  * saw, so a chat that moved on is refused rather than answered by the wrong speakers.
  */
@@ -344,6 +356,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
         if (saved.records.length - 1 !== submission.messageCount) {
             throw changed('The saved group chat moved on after this turn was captured.', 'roleplay_workflow_anchor');
         }
+        assertGroupSceneOpen(lease, saved.records, submission.groupId, submission.forcedAvatars);
         const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator: submission.locator, groupId: submission.groupId });
         if (saved.changed || captured.changed) saveRoleplayAccount(lease);
         return captured.source;
@@ -442,9 +455,9 @@ export function readRoleplayWorkflowReceipt(request, key) {
     const { base } = submissionScope(request);
     const operationKey = typeof key === 'string' ? key.trim() : '';
     if (!operationKey || operationKey.length > MAX_KEY_LENGTH) throw invalid('Invalid workflow key.');
-    let receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+    let receipt = readNativeMediaJobResultForOwner(base, { operationKey, allowUnsettled: true });
     if (receipt?.state === 'accepted' && closeUnstartedRoleplayWorkflow({ ...base, job: getJob(base.directories, receipt.jobId) })) {
-        receipt = readNativeMediaJobResultForOwner(base, { operationKey });
+        receipt = readNativeMediaJobResultForOwner(base, { operationKey, allowUnsettled: true });
     }
     if (receipt?.jobId && roleplayKeptReplyPending({ directories: base.directories, jobId: receipt.jobId })) {
         try { reconcileRoleplayKeptReplyFamily({ directories: base.directories, owner: base.owner, jobId: receipt.jobId }); } catch { /* Readback still reports pending. */ }

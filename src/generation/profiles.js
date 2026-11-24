@@ -181,7 +181,9 @@ function readChatProfile(directories, profile, settings, source, activeBinding =
 function readActiveConnection(directories) {
     const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     const selection = settings.active_generation;
-    if (!selection || selection.api !== settings.main_api) fail('Save the active connection settings before generating a reply.', 409);
+    if (!selection || selection.api !== settings.main_api) {
+        throw Object.assign(new Error('Save the active connection settings before generating a reply.'), { status: 409, code: 'active_settings_ack_required' });
+    }
     if (['kobold', 'novel', 'koboldhorde'].includes(settings.main_api)) {
         const api = settings.main_api;
         const controls = api === 'novel' ? settings.nai_settings : settings.kai_settings;
@@ -219,7 +221,9 @@ function readActiveConnection(directories) {
     if (!text && settings.main_api !== 'openai') fail('This active connection cannot run on the server. Choose a saved Chat or Text Completion connection.', 409);
     const controls = text ? settings.textgenerationwebui_settings : settings.oai_settings;
     const source = text ? controls?.type : controls?.chat_completion_source;
-    if (selection.source !== source) fail('Save the current active provider before generating a reply.', 409);
+    if (selection.source !== source) {
+        throw Object.assign(new Error('Save the current active provider before generating a reply.'), { status: 409, code: 'active_settings_ack_required' });
+    }
     const keyType = source === 'openai_responses' ? SECRET_KEYS.OPENAI
         : source === 'vertexai' && controls?.vertexai_auth_mode === 'full' ? SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT : SECRET_KEYS[source?.toUpperCase()];
     const secretId = !text && source === 'custom' && settings.selected_custom_endpoint_preset?.secretId
@@ -257,7 +261,7 @@ export function captureGenerationBinding(directories, selection, acknowledgement
     if (selection?.kind !== 'active') fail('Choose a saved profile or the acknowledged active connection.', 400);
     const material = readActiveConnection(directories);
     if (!Number.isSafeInteger(acknowledgement?.settingsRevision) || acknowledgement.settingsRevision !== material.settingsRevision) {
-        fail('The active connection settings are not acknowledged. Save them before generating a reply.', 409);
+        throw Object.assign(new Error('The active connection settings are not acknowledged. Save them before generating a reply.'), { status: 409, code: 'active_settings_ack_required' });
     }
     return { kind: 'active', backend: material.backend || 'chat', fingerprint: material.fingerprint };
 }
@@ -330,6 +334,7 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
         const model = modelOverride.trim() || profile.model;
         const settings = { ...active, openai_max_tokens: rawOptions.preserveReasoningBudget ? active.openai_max_tokens : maxTokens };
         if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
+        if (typeof rawOptions.reasoningEffort === 'string') settings.reasoning_effort = rawOptions.reasoningEffort;
         const { generate_data: generated } = await generate(settings, model, 'quiet', messages);
         const payload = createChatRequestData({ ...generated, ...overridePayload,
             stream: false, messages, model, chat_completion_source: source, secret_id: profile['secret-id'], active_connection: true, ...proxy });

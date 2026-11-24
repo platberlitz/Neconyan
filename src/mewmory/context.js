@@ -1,4 +1,4 @@
-import { currentRecords, eligibleRecords, fail, hash, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint } from './core.js';
+import { currentRecords, eligibilityLookups, eligibleRecords, fail, hash, recordEligible, recordEligibleIn, recordRevision, recordRevisionIn, refKey, sourceAt, sourceEligible, sourceFingerprint } from './core.js';
 import { recordBody } from './search.js';
 import { PLAYER_REFERENCE_GUIDANCE } from './contracts.js';
 
@@ -58,27 +58,28 @@ export function playerReferences(state, asOf = Infinity) {
     };
 }
 
-export function expandBundle(state, document, asOf = Infinity) {
+/** `lookups` (from eligibilityLookups) is for a caller that expands many documents of one unedited state. */
+export function expandBundle(state, document, asOf = Infinity, lookups = null) {
     if (!document.recordId) return {
         records: [],
         sources: document.refs.every(ref => sourceEligible(state, ref, asOf))
             && sourceAt(state, document.refs[0])?.text.includes(document.text) ? [document] : [],
     };
-    const record = recordRevision(state, document.recordId, document.version);
-    if (!recordEligible(state, record, { asOf })) return { records: [], sources: [] };
+    const record = lookups ? recordRevisionIn(state, lookups, document.recordId, document.version) : recordRevision(state, document.recordId, document.version);
+    if (!(lookups ? recordEligibleIn(state, lookups, record, { asOf }) : recordEligible(state, record, { asOf }))) return { records: [], sources: [] };
     const records = new Map([[record.id, record]]);
     if (['interview', 'overview'].includes(record.kind)) {
         for (const overview of currentOverviews(state, asOf).filter(item => item.ownerId === record.ownerId
             && item.subjectIds.some(subject => record.subjectIds.includes(subject)))) {
             records.set(overview.id, overview);
             for (const dependency of overview.dependencies) {
-                const interview = recordRevision(state, dependency.id, dependency.version);
-                if (interview?.kind === 'interview' && recordEligible(state, interview, { asOf })) records.set(interview.id, interview);
+                const interview = lookups ? recordRevisionIn(state, lookups, dependency.id, dependency.version) : recordRevision(state, dependency.id, dependency.version);
+                if (interview?.kind === 'interview' && (lookups ? recordEligibleIn(state, lookups, interview, { asOf }) : recordEligible(state, interview, { asOf }))) records.set(interview.id, interview);
             }
         }
         if (record.previousId) {
             const previous = eligibleRecords(state, { asOf }).find(item => item.id === record.previousId);
-            if (recordEligible(state, previous, { asOf })) records.set(previous.id, previous);
+            if (lookups ? recordEligibleIn(state, lookups, previous, { asOf }) : recordEligible(state, previous, { asOf })) records.set(previous.id, previous);
         }
     }
     return { records: [...records.values()], sources: [] };
@@ -111,6 +112,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
     const current = currentOverviews(state, asOf);
     const names = new Map(currentRecords(eligibleRecords(state, { asOf }).filter(record => record.kind === 'entity'), record => record.entityId)
         .map(record => [record.entityId, record.name]));
+    // One set of lookups serves every document expanded below.
+    const lookups = eligibilityLookups(state);
     const included = new Set();
     const includedRanges = new Map();
     const selected = [];
@@ -125,7 +128,7 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
             selected.push(document.id);
             continue;
         }
-        const bundle = expandBundle(state, document, asOf);
+        const bundle = expandBundle(state, document, asOf, lookups);
         const unique = bundle.records.filter(record => !included.has(record.id));
         const passages = bundle.sources.filter(source => !included.has(source.id)).flatMap(source => {
             const original = sourceAt(state, source.refs[0]);

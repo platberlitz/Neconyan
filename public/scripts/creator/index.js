@@ -19,6 +19,7 @@ import { creatorUsesServer, continueCreatorServerWriting, renderCreatorServerReq
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
+const MACRO_TEXT_FIELDS = new Set(['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'system_prompt', 'post_history_instructions']);
 let app;
 
 export async function mountCreator(host, { avatar = null, draftId = null } = {}) {
@@ -275,7 +276,7 @@ class CreatorWorkspace {
         const draft = this.session.draft;
         const node = textField(labels[field] || field, draft.card.data[field], value => field === 'creator'
             ? this.editGlobal(next => { next.card.data.creator = value; })
-            : this.change(current => setCreatorField(current, field, value)), { name: field === 'name', rows: field === 'creator' || field === 'character_version' ? 1 : 4, hint: field === 'creator' ? 'Shared across Catelier drafts on your account. Saved library cards change only after Review & save.' : field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
+            : this.change(current => setCreatorField(current, field, value)), { name: field === 'name', rows: field === 'creator' || field === 'character_version' ? 1 : 4, macros: MACRO_TEXT_FIELDS.has(field), hint: field === 'creator' ? 'Shared across Catelier drafts on your account. Saved library cards change only after Review & save.' : field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
         if (field === 'creator') return node;
         if (field !== 'name') {
             const locked = draft.locks.includes(field);
@@ -367,7 +368,7 @@ class CreatorWorkspace {
         } else if (section === 'prompts') {
             main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
             const depth = draft.card.data.extensions?.depth_prompt ?? { prompt: '', depth: 4, role: 'system' };
-            main.append(attachCreatorGenerator(this, textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })), 'depth_prompt'));
+            main.append(attachCreatorGenerator(this, textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; }), { macros: true }), 'depth_prompt'));
             this.jsonField(main, 'Depth and role', { depth: depth.depth, role: depth.role }, value => {
                 if (!Number.isInteger(value.depth) || value.depth < 0 || !['system', 'user', 'assistant'].includes(value.role)) throw new Error('Use a non-negative depth and system, user or assistant role.');
                 this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, ...value }; });
@@ -512,7 +513,7 @@ class CreatorWorkspace {
         );
         main.append(sectionHeader);
         list.forEach((text, index) => {
-            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3, className: field === 'alternate_greetings' ? 'creator-greeting-field' : '' });
+            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3, className: field === 'alternate_greetings' ? 'creator-greeting-field' : '', macros: field !== 'tags' });
             const removeBtn = button('Remove', () => this.edit(next => { next.card.data[field].splice(index, 1); }, true), false, 'creator-chip-btn creator-danger-outline');
             row.querySelector('.creator-field-heading').append(removeBtn);
             main.append(attachCreatorGenerator(this, row, `${field}:${index}`));

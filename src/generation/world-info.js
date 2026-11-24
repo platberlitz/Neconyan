@@ -7,6 +7,7 @@ import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-reques
 import { resolveGenerationProfile } from './profiles.js';
 import { imageSize } from 'image-size';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { readJsonShared } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
@@ -19,7 +20,7 @@ import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { captureEnhancedMacros } from '../macros/enhanced.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
-import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
+import { captureScopedAuthorsNotes, findCharacterNoteEntry, findGroupCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
 import { captureWorldInfoHookPolicy, worldInfoActivationActions } from './world-info-hook-policy.js';
 import { capturePathfinderSource } from './world-info-pathfinder.js';
 import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } from './roleplay-translation.js';
@@ -31,6 +32,8 @@ import { captureCompanionCapacity } from './companion-capacity.js';
 import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { evaluateCharacterPurrks } from '../purrks.js';
+import { blankUnheardGroupRecords, groupViewerMissedLines } from './roleplay-group-scene.js';
+import { groupSceneCardMembers } from '../../public/scripts/group-chat-visibility.js';
 
 /**
  * Adds active Purrk text after a card field. Without Purrks the field stays exactly as saved,
@@ -170,29 +173,40 @@ export function captureSavedRoleplayImages(directories, records, display, captio
     });
 }
 
-function books(directories, names) {
+/** The account's saved World Info scan settings, with the same defaults the Roleplay capture uses. */
+export function readWorldInfoScanSettings(directories) {
+    const savedSettings = readJsonShared(path.join(directories.root, 'settings.json'), {});
+    const settings = { ...savedSettings, ...savedSettings.world_info_settings };
+    return Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]]));
+}
+
+export function readAvailableBooks(directories, names) {
     const result = Object.create(null);
     let totalBytes = 0;
     for (const name of new Set(names.flat())) {
         if (typeof name !== 'string' || !name || name.length > 234) throw roleplayError('ROLEPLAY_INVALID', 'Invalid World Info book name.', 400);
-        let book, file;
+        let file;
         try {
-            const filename = getExistingWorldInfoFilename(directories, name);
+            const filename = getExistingWorldInfoFilename(directories, name, { followSymlinks: false });
             file = filename && readRoleplayFile(path.join(directories.worlds, filename), 8 * 1024 * 1024);
-            if (file && (totalBytes += file.bytes.length) <= 16 * 1024 * 1024) {
-                book = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
-            }
         } catch {
             throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', `A saved World Info book is unreadable: ${name}.`, 409);
         }
-        if (!isValidWorldInfoData(book)) throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'A saved World Info book is missing or damaged.', 409);
+        if (!file) continue;
+        if ((totalBytes += file.bytes.length) > 16 * 1024 * 1024) {
+            throw roleplayError('ROLEPLAY_INVALID', 'The saved World Info books exceed their combined size limit.', 409);
+        }
+        // Optional lore must not block a reply. Skip unusable content, not protected read failures.
+        let book;
+        try { book = parseSavedWorldInfo(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes)); } catch { continue; }
+        if (!isValidWorldInfoData(book)) continue;
         result[name] = { data: book, hash: roleplayHash(book), rawHash: file.rawHash, physical: file.physical };
     }
     return result;
 }
 
 function boundBooks(directories, snapshot) {
-    const current = books(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? []), ...(snapshot.tools?.pathfinder?.books ?? [])]);
+    const current = readAvailableBooks(directories, [...Object.values(snapshot.names).flat(), ...(snapshot.pathfinder?.books ?? []), ...(snapshot.tools?.pathfinder?.books ?? [])]);
     for (const [name, hash] of Object.entries(snapshot.bookHashes)) {
         if (current[name]?.hash !== hash
             || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
@@ -315,17 +329,22 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
     agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null,
-    bundledMacros = null, browserMacros = null }) {
+    bundledMacros = null, browserMacros = null, groupHears = null }) {
     if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', uiText('The page and the server are running different versions. Reload the page, then try again.'), 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
+        || groupHears !== null && (!Number.isSafeInteger(groupHears) || groupHears < 0)
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
         || promptEffect !== null && !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(promptEffect)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The World Info generation trigger is invalid.', 400);
     }
     return withRoleplayAccount(base, account, lease => {
         const saved = assertRoleplaySourceLocked(lease, source);
-        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source,
-            promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger]) : saved.records;
+        const effect = promptEffect ?? { normal: 'append', regenerate: 'replace', swipe: 'swipe', continue: 'continue' }[trigger];
+        // A first speaker answering a line they missed hears it now, as in the page.
+        const viewer = groupHears !== null ? { avatar, hears: groupHears } : avatar;
+        const promptRecords = serverPrompt ? selectRoleplayPromptRecords(saved.records, source, effect, viewer) : saved.records;
+        // A group speaker who missed a line cannot read Agent variables, which hold no record of who heard them.
+        const groupHistoryRestricted = serverPrompt && groupViewerMissedLines(selectRoleplayPromptRecords(saved.records, source, effect), source, viewer);
         if (!source.dependencies?.some(dependency => dependency.kind === 'character' && dependency.locator.avatar === avatar)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must use a character in the accepted Roleplay source.', 409);
         }
@@ -350,6 +369,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const group = source.locator.group ? readRoleplayEntityLocked(lease, 'group', source.groupId).data : null;
         const members = group ? group.members.map(member => ({ avatar: member,
             card: member === avatar ? character.data : readRoleplayEntityLocked(lease, 'character', member).data })) : [];
+        const cardMembers = group ? groupSceneCardMembers(saved.records[0].chat_metadata, group.members, [avatar]) : [];
         const memberName = member => member.card?.data?.name ?? member.card?.name;
         const names = selectedBooks(settings, saved, character, avatar, persona.lorebook);
         const hookPolicy = captureWorldInfoHookPolicy(base.directories, savedSettings,
@@ -370,7 +390,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             source, { agentContext, trigger, hiddenIds: agents.hiddenIds }) : null;
         const tools = nativeBindingVersion && serverPrompt && !agentContext
             ? captureRoleplayToolBindings(lease, source, avatar, character.data, agents, savedSettings) : null;
-        const selected = books(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
+        const selected = readAvailableBooks(base.directories, [...Object.values(names).flat(), ...(pathfinder?.books ?? []), ...(tools?.pathfinder?.books ?? [])]);
+        const available = list => list.filter(name => Object.hasOwn(selected, name));
+        for (const scope of Object.keys(names)) names[scope] = available(names[scope]);
+        if (pathfinder) pathfinder.books = available(pathfinder.books);
+        if (tools?.pathfinder) tools.pathfinder.books = available(tools.pathfinder.books);
         const characterTags = savedSettings.tag_map?.[avatar] ?? [];
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
         const extensions = savedSettings.extension_settings ?? {};
@@ -389,7 +413,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             throw roleplayError('ROLEPLAY_INVALID', 'Saved Author\'s Note settings are invalid.', 409);
         }
         const personaAvatar = persona.evidence?.avatar ?? settings.user_avatar ?? '';
-        const scopedNotes = captureScopedAuthorsNotes(saved.locator.group ? saved.records[0].chat_metadata?.note_chara
+        const scopedNotes = captureScopedAuthorsNotes(saved.locator.group
+            ? findGroupCharacterNoteEntry(note.chara, source.groupId, [avatar, ...members.map(member => member.avatar)], saved.records[0].chat_metadata?.note_chara)
             : findCharacterNoteEntry(note.chara, avatar), getPersonaNoteEntry(note.persona, personaAvatar), personaAvatar);
         const attachments = agentContext ? [] : savedAttachments(base.directories, promptRecords);
         const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption, mediaPolicy);
@@ -439,12 +464,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             if (saved.locator.group) {
                 const group = readRoleplayEntityLocked(lease, 'group', source.groupId).data;
                 if (group.generation_mode !== 0) {
-                    depthPrompts = group.members.filter(member => member === avatar || !group.disabled_members?.includes(member))
+                    depthPrompts = cardMembers.filter(member => member === avatar || !group.disabled_members?.includes(member))
                         .map(member => {
                             const card = member === avatar ? character : readRoleplayEntityLocked(lease, 'character', member);
                             const memberPurrks = evaluateCharacterPurrks(card.data?.data ?? card.data, {
                                 chatMetadata: saved.records[0].chat_metadata,
-                                messages: promptRecords.slice(1),
+                                messages: blankUnheardGroupRecords(promptRecords, source, member).slice(1),
                                 characterKey: member,
                             });
                             const memberBaseDepth = card.data?.data?.extensions?.depth_prompt?.prompt
@@ -502,6 +527,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 user: persona.name || (saved.records[0].user_name !== 'unused' && saved.records[0].user_name) || 'User' },
             groupNames: members.map(memberName),
             unmutedGroupNames: members.filter(member => !group.disabled_members?.includes(member.avatar)).map(memberName),
+            ...(group ? { groupMembers: members.map(member => ({ avatar: member.avatar, name: memberName(member) ?? member.avatar })) } : {}),
             pinExamples: Boolean(settings.power_user?.pin_examples),
             alwaysForceName: Boolean(settings.power_user?.always_force_name2),
             contextRetention: { html: settings.power_user?.html_context_depth ?? -1, ooc: settings.power_user?.ooc_context_depth ?? -1 },
@@ -512,10 +538,10 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             promptSettings: Object.fromEntries(['instruct', 'context', 'sysprompt', 'collapse_newlines', 'strip_examples', 'token_padding', 'user_prompt_bias']
                 .filter(key => settings.power_user?.[key] !== undefined).map(key => [key, structuredClone(settings.power_user[key])])),
             groupPrompt: group?.generation_mode ? { mode: group.generation_mode, prefix: group.generation_mode_join_prefix ?? '',
-                suffix: group.generation_mode_join_suffix ?? '', members: members.map(member => {
+                suffix: group.generation_mode_join_suffix ?? '', members: members.filter(member => cardMembers.includes(member.avatar)).map(member => {
                     const memberPurrks = evaluateCharacterPurrks(member.card.data ?? member.card, {
                         chatMetadata: saved.records[0].chat_metadata,
-                        messages: promptRecords.slice(1),
+                        messages: blankUnheardGroupRecords(promptRecords, source, member.avatar).slice(1),
                         characterKey: member.avatar,
                     });
                     const baseDesc = member.card.data?.description ?? member.card.description ?? '';
@@ -550,6 +576,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             storyPosition: settings.power_user?.context?.story_string_position ?? 0,
             personaPosition: persona.position, personaDepth: persona.depth, personaRole: persona.role, personaEvidence: persona.evidence,
             promptVariables: { local: saved.records[0].chat_metadata?.variables ?? {}, global: extensions.variables?.global ?? {} },
+            ...(groupHistoryRestricted ? { groupHistoryRestricted: true } : {}),
+            ...(groupHears !== null ? { groupHears } : {}),
             experimentalMacroEngine: Boolean(settings.power_user?.experimental_macro_engine),
             depthPrompt: { prompt: depthPrompt,
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
@@ -604,6 +632,22 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
     });
 }
 
+/** Rescan for Agents and Companions with their own budget, not a new selection of native lore. */
+export function captureRoleplayWorldInfoForAgentScan(base, snapshot) {
+    const captured = captureRoleplayWorldInfo(base, snapshot.account, snapshot.source, {
+        avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
+        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
+    });
+    const names = new Set(Object.values(snapshot.names).flat());
+    if (roleplayHash(captured.names) !== roleplayHash(snapshot.names) || [...names].some(name =>
+        captured.bookHashes[name] !== snapshot.bookHashes[name]
+        || roleplayHash(captured.bookEvidence[name] ?? null) !== roleplayHash(snapshot.bookEvidence?.[name] ?? null))) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection no longer matches your account data.');
+    }
+    return captured;
+}
+
 /** Verify named books, scan them with local token counts, and return an immutable result for a job artifact. */
 export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     if (!snapshot?.account || !snapshot.source || !snapshot.character || !snapshot.names || !snapshot.bookHashes) {
@@ -623,10 +667,13 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         browserMacros: snapshot.browserMacros ?? null,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
         mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
+        groupHears: snapshot.groupHears ?? null,
     });
     // Previously accepted jobs retain their original snapshot shape and write
     // policy; adding the boundary must not invalidate paid work after an update.
     if (!Object.hasOwn(snapshot, 'macroEnhanced')) delete captured.macroEnhanced;
+    if (!Object.hasOwn(snapshot, 'groupMembers')) delete captured.groupMembers;
+    if (!Object.hasOwn(snapshot, 'groupHistoryRestricted')) delete captured.groupHistoryRestricted;
     if (!Object.hasOwn(snapshot, 'macroPolicyVersion')) {
         delete captured.macroPolicyVersion;
         delete captured.browserMacros;

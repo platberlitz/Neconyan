@@ -77,6 +77,10 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
     // A clip on #chat makes it the backdrop root, so the rows' blur would stop seeing the wallpaper.
     // While message blur is on (Settings > Appearance > Panels), rows meet the bar with a straight cut.
     const isMessageBlurOn = () => (documentRef.documentElement.dataset.sbPanelBlur || '').split(' ').includes('message');
+    // With a mobile viewport, reading innerWidth flushes style and layout, and the observer below
+    // asks on every chat mutation. The media query answers from the viewport alone.
+    const phoneWidth = windowRef.matchMedia?.('(max-width: 768px)');
+    const isPhoneWidth = () => (phoneWidth ? phoneWidth.matches : windowRef.innerWidth <= 768);
     const resize = new windowRef.ResizeObserver(queue);
     for (const element of [chat, toolbar, chat.parentElement, documentRef.getElementById('send_form')]) {
         if (element) resize.observe(element);
@@ -112,7 +116,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const echo = body.classList?.contains('echostyle') === true;
         const tide = !echo && body.classList?.contains('tidestyle') === true;
         const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
-        if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
+        if (isPhoneWidth() || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
             || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on'
             || isMessageBlurOn()
             || windowRef.getComputedStyle(chat).clipPath !== 'none') {
@@ -215,7 +219,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const echo = body.classList?.contains('echostyle') === true;
         const tide = !echo && body.classList?.contains('tidestyle') === true;
         const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
-        if (windowRef.innerWidth <= 768 || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on' || isMessageBlurOn()) {
+        if (isPhoneWidth() || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on' || isMessageBlurOn()) {
             return false;
         }
         return body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)');

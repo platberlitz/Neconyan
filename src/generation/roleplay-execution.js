@@ -26,7 +26,7 @@ import { startProcessing } from '../mewmory/worker.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from '../../public/scripts/mewmory/catch-up.js';
 import { recallInBackground } from '../mewmory/retrieval.js';
 import { loadCurrentStateSync } from '../mewmory/sources.js';
-import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
+import { memoryEnabled, mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
 import { generationFingerprint } from '../mewmory/context.js';
 import { readConfig } from '../mewmory/models.js';
 import { prepareAutomaticHiding } from '../mewmory/hiding.js';
@@ -60,10 +60,18 @@ import { isLikelyMainReplyRefusal } from '../../public/scripts/extensions/in-cha
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
+import { groupViewerMissedLines, roleplayGroupViewer } from './roleplay-group-scene.js';
+import { sameGroupViewers } from '../../public/scripts/group-chat-visibility.js';
+import { lastPromptRecorder, roleplayPromptKeys } from '../scratchpad/last-prompts.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
     'presence_penalty', 'repetition_penalty', 'stop', 'stopping_strings']);
+
+/** Server Agents write for the speaker, so memories recalled for one speaker's view reach them only for that speaker, as in the page. */
+function agentMewmory(memory, speaker) {
+    return memory && (!memory.viewers || sameGroupViewers(memory.viewers, [speaker])) ? memory : null;
+}
 
 function requestOverrides(request) {
     const overrides = request.overridePayload ?? {};
@@ -150,6 +158,12 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         signal.throwIfAborted();
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
+    const readProviderResult = step => {
+        const saved = step && readArtifact(directories, job.id, step);
+        // Horde saves the task id before polling and stores its answer separately.
+        return request.binding?.backend === 'horde' && saved?.id
+            ? readArtifact(directories, job.id, 'horde-result:' + step.slice('provider:'.length)) : saved;
+    };
     const finish = async (result, selection) => {
         // The saved provider result, before any thinking recovery, is what a workflow candidate is checked against.
         const providerSource = result;
@@ -157,7 +171,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         if (blocked && !result?.text?.trim()) throw providerBlockedError(blocked);
         const saveCandidate = (kind, contents) => {
             const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
-            const providerResult = reference?.step && readArtifact(directories, job.id, reference.step);
+            const providerResult = readProviderResult(reference?.step);
             if (!providerResult || roleplayHash(providerResult) !== roleplayHash(providerSource)) {
                 throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The candidate needs its saved provider result.', 503);
             }
@@ -188,10 +202,10 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         const readAgentMewmory = () => request.serverPrompt ? withRoleplayAccount(base, account, () => {
             const saved = readArtifact(directories, job.id, 'roleplay-mewmory');
             const presentation = readArtifact(directories, job.id, 'roleplay-prompt')?.memoryPresentation;
-            return saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
+            return agentMewmory(saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
                 ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
                     interviewText: presentation.interviewText, presentationChoice: presentation.choice }
-                : saved ?? null;
+                : saved, request.worldInfo?.avatar);
         }) : null;
         let thinkingOnly = reasoningOnlyResult(result);
         let thinkingRecovery = null;
@@ -228,10 +242,10 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             publishRoleplayPreview(context, { stage: 'agents', text: '', reasoning: thinkingOnly.reasoning, reasoning_finished: true,
                 generation: result.generation });
             const recovery = await runRoleplayThinkingRecovery(context, { base, snapshot: request.worldInfo,
-                records: selectRoleplayPromptRecords(current.records, source, effect), metadataRecords: current.records,
+                records: selectRoleplayPromptRecords(current.records, source, effect, roleplayGroupViewer(request.worldInfo)), metadataRecords: current.records,
                 reasoning: thinkingOnly.reasoning, generationType: request.worldInfo.global.trigger, binding: request.binding,
                 continuation, continuationPrefix, toolResults: formatToolResults(readRoleplayPromptContributions({ directories, job }).history),
-                macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect)),
+                macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect, roleplayGroupViewer(request.worldInfo))),
                 activeLore: roleplayAgentLoreText(selection), mewmory: readAgentMewmory(), assistantName: request.characterName,
                 assertCurrent: sourceChanged
                     ? () => { signal.throwIfAborted(); }
@@ -385,7 +399,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             };
             const runAgents = async (republish = false, announce = true, cache = agentCache) => {
                 const current = assertSource();
-                let records = selectRoleplayPromptRecords(current.records, source, effect);
+                let records = selectRoleplayPromptRecords(current.records, source, effect, roleplayGroupViewer(request.worldInfo));
                 if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
                 if (output.inputTranslation) {
                     records = structuredClone(records);
@@ -461,7 +475,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 // came out of the post-reply Agent phase and can be retried once.
                 if (signal.aborted) throw error;
                 console.warn('[Agents] Post-reply Agents failed; retrying once.', error?.message ?? error);
-                updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                updateJob(directories, job.id, current => ({ ...explicitRetryRecovery(current), resume: 'roleplay-post-main' }));
                 rememberAcceptedAgents();
                 agentCache.clear();
                 try {
@@ -470,7 +484,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     if (signal.aborted) throw retryError;
                     console.warn('[Agents] Post-reply Agents failed twice; saving the reply without the remaining Agent changes.', retryError?.message ?? retryError);
                     markRoleplayAgentsFailed(context);
-                    updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                    updateJob(directories, job.id, current => ({ ...explicitRetryRecovery(current), resume: 'roleplay-post-main' }));
                     // This pass only saves the reply with whatever Agent work was
                     // already paid for. Clear the unfinished cards without
                     // announcing them again; the final Companion notification
@@ -521,7 +535,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
                 const narration = await withRoleplayAgentStop(context, scoped => generateSavedSpeech(scoped, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
                     text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
-                    snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
+                    snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect, roleplayGroupViewer(request.worldInfo))) },
                     assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
                 }, speechDependencies), { ownerOnly: true });
                 if (narration) message.extra = { ...message.extra, server_narration: narration };
@@ -570,9 +584,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             || !/^provider:[a-f0-9]{64}$/.test(providerReference.step)) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay provider reference needs recovery.', 503);
         }
-        const completed = readArtifact(directories, job.id, providerReference.step);
-        const result = request.binding?.backend === 'horde' && completed?.id
-            ? readArtifact(directories, job.id, 'horde-result:' + providerReference.step.slice(9)) : completed;
+        const result = readProviderResult(providerReference.step);
         if (result !== undefined && typeof result?.text === 'string') {
             const prompt = request.serverPrompt && readArtifact(directories, job.id, 'roleplay-prompt');
             const selection = request.worldInfo && readArtifact(directories, job.id, 'roleplay-world-info');
@@ -607,7 +619,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             }
             return finish(result, selection);
         }
-        if (completed === undefined && getJob(directories, job.id)?.resume === providerReference.step) {
+        if (result === undefined && getJob(directories, job.id)?.resume === providerReference.step
+            && readArtifact(directories, job.id, providerReference.step) === undefined) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The previous provider outcome is unknown. It cannot be repeated automatically.', 503);
         }
     }
@@ -623,7 +636,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     const overridePayload = requestOverrides(request);
     publishRoleplayPreview(context, { text: '', reasoning: '', stage: 'preparing' });
     const initialSource = assertSource();
-    let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect) : initialSource.records;
+    let initialRecords = request.serverPrompt ? selectRoleplayPromptRecords(initialSource.records, source, effect, roleplayGroupViewer(request.worldInfo)) : initialSource.records;
     let captions;
     let inputTranslation;
     let agentPre;
@@ -928,7 +941,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         return operation();
     });
     let memory;
-    let promptRecords = promptSource ? (captions || inputTranslation || vectors ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect)) : null;
+    let promptRecords = promptSource ? (captions || inputTranslation || vectors ? structuredClone(initialRecords) : selectRoleplayPromptRecords(promptSource.records, source, effect, roleplayGroupViewer(request.worldInfo))) : null;
     if (request.serverPrompt) {
         const locator = promptSource.locator;
         const normalised = normalizeLocator(locator);
@@ -938,6 +951,9 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         }
         memory = readArtifact(directories, job.id, 'roleplay-mewmory');
         if (memory === undefined) {
+            // A speaker who missed a line recalls only what they heard, as in the page.
+            const viewers = groupViewerMissedLines(selectRoleplayPromptRecords(promptSource.records, source, effect), source, roleplayGroupViewer(request.worldInfo))
+                ? [request.worldInfo.avatar] : null;
             const memoryHistory = promptRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index)
                 || record.is_system && !record.extra?.tool_invocations
                 ? [] : [{ index, text: `${record.name || ''}: ${preparedHistory?.content[index] ?? record.mes ?? ''}` }]);
@@ -950,9 +966,11 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
             const memoryInput = { locator,
                 tokenizer: (countChat ?? countText).tokenizer,
                 history: memoryHistory,
+                ...(viewers ? { viewers } : {}),
                 ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
             };
             const memoryOptions = {
+                isEnabled: (directories, locator) => memoryAccess(() => memoryEnabled(directories, locator)),
                 loadState: (directories, locator) => memoryAccess(() => loadCurrentStateSync(directories, locator)),
                 mutate: (directories, locator, operation) => memoryAccess(() => mutateState(directories, locator, operation)),
                 readSource: (directories, locator) => memoryAccess(() => readChat(directories, locator)),
@@ -985,9 +1003,11 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 });
             }
             memory.presentationVersion = 1;
+            if (viewers) memory.viewers = viewers;
             writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
             // The reply uses the last picked memories; the Recall selector refreshes them alongside it.
-            if (memory.enabled) {
+            // One speaker's view never refreshes the chat-wide pick, as in recall.
+            if (memory.enabled && !viewers) {
                 const state = memoryAccess(() => loadCurrentStateSync(directories, locator));
                 const offset = state.inheritedTimeline?.length || 0;
                 const excluded = new Set(memory.excludedIndices);
@@ -1017,7 +1037,9 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         historyOptions.preparedContent = historyOptions.preparedContent.filter((_value, index) => retainedIndices.has(index));
     }
     const assertMemory = () => {
-        if (!request.serverPrompt) return;
+        // Replies prepared before speakers had their own recall saved a blank restricted context.
+        if (!request.serverPrompt || memory.restricted === true) return;
+        if (!memory.enabled && !memoryAccess(() => memoryEnabled(directories, promptSource.locator))) return;
         const current = memoryAccess(() => loadCurrentStateSync(directories, promptSource.locator));
         if (current.enabled !== memory.enabled || memory.enabled
             && generationFingerprint(current, readConfig(directories)) !== memory.validationFingerprint) {
@@ -1103,6 +1125,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 ...(preparedHistory.depthPrompts ? { depthPrompts: preparedHistory.depthPrompts } : {}) }, chatBackend, worldInfo, {
                 userName, characterName: request.characterName, groupNames, effect, substitute, substituteHistory, memory, exampleLimit,
                 contributions: promptExtensions, records: initialRecords,
+                continueIndex: history.findLastIndex(message => !contributedMessages.has(message)),
             });
             exampleCount = assembled.exampleCount;
             presetPrompts = assembled.presetPrompts;
@@ -1266,7 +1289,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     };
     if (request.worldInfo?.agents) {
         const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, records: initialRecords, binding: request.binding,
-            mewmory: memoryFinal ?? null, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
+            mewmory: agentMewmory(memoryFinal, request.worldInfo?.avatar), macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
             assertCurrent: beforeDispatch, generate: generateAgent, timing: 'pre-generation', format: countText ? 'text' : 'chat',
             value: countText ? preparedText : messages });
         if (countText) preparedText = intercepted.value;
@@ -1298,6 +1321,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     const preview = createRoleplayStreamPreview(context, countPreview);
     const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages, parseInlineReasoning: true,
         onStream: preview.publish,
+        onPromptReady: lastPromptRecorder(directories, roleplayPromptKeys(source), { mode: 'roleplay',
+            speaker: request.characterName, generationType: request.serverPrompt ? request.worldInfo?.global?.trigger : '' }),
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
         lastAssistant: request.serverPrompt ? initialRecords.findLast(record => !record.is_user && !record.is_system && typeof record.mes === 'string')?.mes ?? null : null,

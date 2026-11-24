@@ -426,6 +426,7 @@ describe('mobile shell lifecycle wiring', () => {
             ['#right-nav-panel', '#HotSwapWrapper .hotswap'],
             ['#right-nav-panel', '#right-nav-panel .rm_tag_controls'],
             ['#right-nav-panel', '#right-nav-panel .neconyan-character-library-footer'],
+            ['#right-nav-panel', '#right-nav-panel .neconyan-folder-tabs-rail'],
             ['#left-nav-panel', '#completion_prompt_manager .completion_prompt_manager_prompt > span:nth-child(3)'],
             ['.popup', '.popup.horizontal_scrolling_dialogue_popup .popup-content'],
             ['#chat', '.mes_text pre code'],
@@ -916,7 +917,13 @@ describe('mobile shell lifecycle wiring', () => {
 
         expect(tabsSource).toContain('function focusUniversalSearchInput(');
         expect(tabsSource).toContain('function bindSearchShortcutPreFocus(');
-        expect(tabsSource).toContain('nnSearchShortcutPreFocusAt = performance.now();');
+        const bindSearchShortcutPreFocusSource = getFunctionSource('bindSearchShortcutPreFocus');
+        const activateShortcutTargetSource = getFunctionSource('activateShortcutTarget');
+        expect(bindSearchShortcutPreFocusSource).toContain('nnSearchShortcutPreFocusPending = true;');
+        expect(bindSearchShortcutPreFocusSource).toContain('button.addEventListener(\'pointercancel\', cancelPreFocus');
+        expect(activateShortcutTargetSource).toContain('if (nnSearchShortcutPreFocusPending) {');
+        expect(activateShortcutTargetSource).not.toContain('nnSearchShortcutPreFocusAt');
+        expect(setUniversalSearchOpenStateSource).toContain('nnSearchShortcutPreFocusPending = false;');
         expect(tabsSource).toContain('bindSearchShortcutPreFocus(leftShortcut, () => getShortcutTarget(\'left\'));');
         expect(tabsSource).toContain('bindSearchShortcutPreFocus(rightShortcut, () => getShortcutTarget(\'right\'));');
         expect(setUniversalSearchOpenStateSource).toContain('focusUniversalSearchInput(input);');

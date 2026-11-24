@@ -191,6 +191,13 @@ function renderChatroomOutput(source) {
     });
 }
 
+function renderPlotCompassOutput(source) {
+    const plotCompass = readTemplate('plot-compass-companion.json');
+    return applyRegexScriptList(source, plotCompass.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+        isMarkdown: true,
+    });
+}
+
 const updatingExistingStatsSection = '## Updating Existing Stats\n\nIf an existing [USER_STATS] block is provided, update it instead of generating a new one.\n\nWhen applying a [LEVEL_UP]:\n- Increase Level by 1.\n- Apply skill increases.\n- Add earned perk, if any.\n- Preserve existing traits, perks, weaknesses, and notes unless changed.\n- Keep stats consistent and setting-specific.\n[/USER_STATS]';
 
 function expectLevelUpStatsDefaults(levelUp, stats) {
@@ -257,23 +264,26 @@ describe('in-chat agent bundled templates', () => {
 
     test('an incomplete template asset load can retry without publishing unformatted templates', async () => {
         const source = fs.readFileSync(indexSourceUrl, 'utf8');
-        const fn = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'loadTemplates');
+        const loaders = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
+            .filter(node => node.type === 'FunctionDeclaration' && ['loadTemplates', 'fetchTemplates'].includes(node.id.name));
         for (const failedAsset of ['index.json', 'regex-bundles.json', 'groups.json']) {
             let fail = true;
             const assets = { 'index.json': [{ id: 'tpl-example' }], 'regex-bundles.json': { 'tpl-example': [{ id: 'rule' }] }, 'groups.json': [] };
-            const runtime = { templates: [], templateRegexBundles: {}, templateLoadError: null, console: { warn: jest.fn() },
+            const runtime = { templates: [], templateRegexBundles: {}, templateLoad: null, templateLoadError: null, console: { warn: jest.fn() },
                 REMOVED_BUNDLED_TEMPLATE_IDS: new Set(), REMOVED_BUNDLED_GROUP_IDS: new Set(),
                 getTemplateAssetUrl: name => name, loadBuiltinGroups: jest.fn(),
                 fetch: jest.fn(async name => ({ ok: !fail || name !== failedAsset, json: async () => assets[name] })),
             };
             runtime.mergeTemplateDefaults = template => ({ ...template, regexScripts: runtime.templateRegexBundles[template.id] });
             vm.createContext(runtime);
-            vm.runInContext(source.slice(fn.start, fn.end), runtime);
-            await runtime.loadTemplates();
+            vm.runInContext(loaders.map(fn => source.slice(fn.start, fn.end)).join('\n'), runtime);
+            await Promise.all([runtime.loadTemplates(), runtime.loadTemplates()]);
+            expect(runtime.fetch).toHaveBeenCalledTimes(3);
             expect(runtime.templates).toEqual([]);
             expect(runtime.templateLoadError).not.toBeNull();
             fail = false;
             await runtime.loadTemplates();
+            expect(runtime.fetch).toHaveBeenCalledTimes(6);
             expect(runtime.templates[0].regexScripts).toEqual([{ id: 'rule' }]);
             expect(runtime.templateLoadError).toBeNull();
         }
@@ -513,7 +523,7 @@ describe('in-chat agent bundled templates', () => {
     test('keeps template update versions in sync with their catalogue', () => {
         const catalog = readTemplate('index.json');
         expect(catalog.every(template => Number.isInteger(template.version) && template.version > 0)).toBe(true);
-        for (const filename of fs.readdirSync(templateDir).filter(name => name.endsWith('.json') && !['index.json', 'groups.json', 'regex-bundles.json'].includes(name))) {
+        for (const filename of fs.readdirSync(templateDir).filter(name => name.endsWith('.json') && !['index.json', 'groups.json', 'regex-bundles.json', 'revision.json'].includes(name))) {
             const template = readTemplate(filename);
             expect(catalog.find(item => item.id === template.id).version).toBe(template.version);
         }
@@ -661,9 +671,16 @@ describe('in-chat agent bundled templates', () => {
             includeAllChatHistory: true,
             keepInChatHistoryWhenHostHidden: true,
         }));
+        expect(memoryShard.version).toBeGreaterThanOrEqual(3);
         expect(memoryShard.prompt).toContain('# MEMORY SHARD: [ID]-[NEXT NUM]');
         expect(memoryShard.prompt).toContain('# CONSOLIDATED MEMORY SHARD: [ID]-MASTER');
-        expect(memoryShard.prompt).toContain('## Shard Reference Key');
+        expect(memoryShard.prompt).toContain('## Current Snapshot');
+        expect(memoryShard.prompt).toContain('## Story Events');
+        expect(memoryShard.prompt).toContain('## Callbacks & Loose Threads');
+        expect(memoryShard.prompt).not.toContain('## Shard Reference Key');
+        expect(Array.isArray(memoryShard.regexScripts)).toBe(true);
+        expect(memoryShard.regexScripts.length).toBeGreaterThanOrEqual(15);
+        expect(memoryShard.regexScripts.every(script => script.markdownOnly === true && script.promptOnly === false && script.runOnEdit === true)).toBe(true);
         // Mewmory is optional: the sections are empty when it is off, and the chat stays the source.
         expect(memoryShard.prompt).toContain('<story_memory>\n{{mewmory-facts}}\n</story_memory>');
         expect(memoryShard.prompt).toContain('<character_views>\n{{mewmory-interview}}\n</character_views>');
@@ -856,6 +873,7 @@ describe('in-chat agent bundled templates', () => {
         expect(companionGroup.agentTemplateIds).toContain('tpl-visual-map-companion');
 
         const plotCompass = findCatalogTemplate(catalog, 'tpl-plot-compass-companion');
+        expect(plotCompass).toEqual(readTemplate('plot-compass-companion.json'));
         expect(plotCompass).toEqual(expect.objectContaining({
             version: 2,
             category: 'companion',
@@ -866,6 +884,7 @@ describe('in-chat agent bundled templates', () => {
         expect(plotCompass.companion).toEqual(expect.objectContaining({
             trigger: 'auto',
             displayMode: 'panel',
+            format: 'markdown',
             rawPrompt: true,
             includeHistory: true,
             historyDepth: 1,
@@ -874,6 +893,8 @@ describe('in-chat agent bundled templates', () => {
         }));
         expect(plotCompass.prompt).toContain('[Plot Compass Objective]');
         expect(plotCompass.prompt).not.toContain('first line of [Your previous notes]');
+        expect(plotCompass.regexScripts).toHaveLength(10);
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('PLOT_COMPASS_TEMPLATE_ID');
 
         const { isCompanionAgent, normalizeAgent } = await importAgentStore();
         const saved = normalizeAgent({
@@ -979,6 +1000,80 @@ describe('in-chat agent bundled templates', () => {
         expect(places[1]).not.toContain('Mara');
         expect(html).toContain('>Position map</div>');
         expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+    });
+
+    test('renders Plot Compass notes as a styled folio card while tolerating formatting variations', () => {
+        const standard = renderPlotCompassOutput([
+            '**Direction:** Keep the pressure mounting without tipping the secret too early.',
+            '**Where we are:** Rain hammers the harbour warehouse while Mira guards the ledger.',
+            '**Possible developments:**',
+            '1. Mira bribes the watchman to buy ten minutes.',
+            '2. A courier knocks with a sealed letter from the magistrate.',
+            '3. A patrol lantern sweeps across the pier.',
+            '**Next move:** 2. Bring the courier in before the tension settles.',
+        ].join('\n'));
+
+        expect(standard).toContain('data-pc-card="1"');
+        expect(standard).toContain('<svg ');
+        expect(standard).toContain('class="pc-sec pc-dir"');
+        expect(standard).toContain('class="pc-sec pc-now"');
+        expect(standard).toContain('class="pc-sec pc-dev"');
+        expect(standard).toContain('data-pc-opts="1"');
+        expect(standard).toContain('class="pc-sec pc-foot"');
+        expect(standard.match(/class="pura-choice pc-opt"/g)).toHaveLength(3);
+        expect(standard).not.toContain('\n');
+        expect(standard.match(/<div\b/g).length).toBe(standard.match(/<\/div>/g).length);
+
+        const styleMatch = standard.match(/<style>([\s\S]*?)<\/style>/);
+        expect(styleMatch).not.toBeNull();
+        expect(styleMatch[1]).not.toMatch(/:\/\/|\/\/|\$\d|\$<|\{\{|!important/);
+        expect(() => css.parse(styleMatch[1])).not.toThrow();
+
+        const varied = renderPlotCompassOutput([
+            '```markdown',
+            '### Direction:',
+            'Push the **bargain** into the open before *dawn*.',
+            '',
+            '**Where we are**:',
+            'Both crews are stalled at the customs gate.',
+            'No one has drawn steel yet.',
+            '',
+            'Possible developments:',
+            '1) Offer the **forged manifest** first.',
+            '(2) Slip past the sentry by the *west winch*.',
+            '- **3.** Signal the tugboat to cut its lines.',
+            '4: Wait out the watch rotation.',
+            '',
+            'Next move: 1. Test whether the clerk blinks first.',
+            '```',
+        ].join('\n'));
+
+        expect(varied).toContain('data-pc-card="1"');
+        expect(varied).toContain('<strong>bargain</strong>');
+        expect(varied).toContain('<em>dawn</em>');
+        expect(varied).toContain('<strong>forged manifest</strong>');
+        expect(varied).toContain('<em>west winch</em>');
+        expect(varied.match(/class="pura-choice pc-opt"/g)).toHaveLength(4);
+        expect(varied).not.toContain('```');
+        expect(varied).not.toContain('###');
+        expect(varied).not.toContain('\n');
+        expect(varied.match(/<div\b/g).length).toBe(varied.match(/<\/div>/g).length);
+
+        const partial = renderPlotCompassOutput('Direction: Hold the beat.\nNext move: Let the silence linger.');
+        expect(partial).toContain('data-pc-card="1"');
+        expect(partial).toContain('class="pc-sec pc-dir"');
+        expect(partial).toContain('class="pc-sec pc-foot"');
+        expect(partial.match(/<div\b/g).length).toBe(partial.match(/<\/div>/g).length);
+    });
+
+    test('leaves plain or unstructured Plot Compass replies untouched', () => {
+        for (const fallback of [
+            'Bring a sealed letter into the scene.',
+            'Direction: Go north.',
+            '1. Just a numbered line without plot sections.',
+        ]) {
+            expect(renderPlotCompassOutput(fallback)).toBe(fallback);
+        }
     });
 
     test('seeds Vitals by default, switched off, as a Flash-sized companion that feeds the main reply', () => {
@@ -1406,5 +1501,28 @@ describe('in-chat agent bundled templates', () => {
         const orderSource = readIndexFunctionBody('getTemplateBrowserCategoryOrder');
         expect(orderSource).not.toContain('category !== \'custom\'');
         expect(orderSource).toContain('AGENT_CATEGORIES');
+    });
+});
+
+
+describe('bundled catalogue revision', () => {
+    test('revision.json matches the three library files', async () => {
+        const { createHash } = await import('node:crypto');
+        const hash = createHash('sha256');
+        for (const name of ['index.json', 'regex-bundles.json', 'groups.json']) {
+            hash.update(fs.readFileSync(new URL(name, templateDir)));
+        }
+        const revision = JSON.parse(fs.readFileSync(new URL('revision.json', templateDir), 'utf8'));
+        expect(revision.revision).toBe(hash.digest('hex'));
+    });
+
+    test('startup skips the library only when the saved revision matches', () => {
+        const source = fs.readFileSync(indexSourceUrl, 'utf8');
+        expect(source).toContain('fetch(getTemplateAssetUrl(\'revision.json\'))');
+        expect(source).toContain('const BUNDLED_CATALOGUE_REVISION_KEY = \'ica--catalogue-revision\';');
+        expect(source).toContain('accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision');
+        expect(source).toContain('catalogueReady ? Promise.resolve() : loadTemplates()');
+        expect(source).toContain('accountStorage.setItem(BUNDLED_CATALOGUE_REVISION_KEY, catalogueRevision);');
+        expect(source).toContain('saveSettingsDebounced();');
     });
 });

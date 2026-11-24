@@ -15,7 +15,8 @@ import { sanitizeConversationUnreadCounts, updateConversationNotificationIndicat
 import { getConversationRailItems } from './pals-rail.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { closeConversationSettings } from './settings-panel.js';
-import { hasAnyConversationModeUsage } from './settings-store.js';
+import { getSettings, hasAnyConversationModeUsage } from './settings-store.js';
+import { setConversationLorebookReader } from '../lorebook-links.js';
 import { ensureConversationAutomationOwnership, initConversationStoreSync } from './store-sync.js';
 import { conversationState, setExternalConversationGenerationActive } from './state.js';
 
@@ -81,6 +82,16 @@ export function init() {
     }
 
     conversationState.initialized = true;
+    setConversationLorebookReader(() => {
+        const avatar = conversationState.conversationSelectedAvatar;
+        if (!conversationState.conversationWorkspaceOpen || !avatar) return null;
+        const groupId = conversationState.conversationSelectedGroupId || null;
+        const members = groupId ? getConversationGroupById(groupId)?.members ?? [] : [avatar];
+        return {
+            key: groupId ? `conversation:group:${groupId}` : `conversation:${avatar}`,
+            overrides: members.map(member => getSettings(member, { groupId }).lorebook_override),
+        };
+    });
     // Warm the stylesheet at boot so the first open cannot paint the unstyled workspace,
     // where card art rendered at its natural resolution for a frame.
     ensureConversationStylesheet();

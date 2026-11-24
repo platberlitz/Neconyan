@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
+import { recordRequestFailure, requestText, watchTextBackend } from '../public/scripts/text-backend-failures.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from '../public/scripts/group-chat-speakers.js';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
@@ -209,6 +210,10 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     for (const name of ['shouldReduceStreamingDomWork', 'shouldGuardMobileChatScroll', 'shouldPinMobileChatToBottom', 'isAndroidStreamingPlatform', 'shouldUsePlainTextStreamingPreview', 'isChatRenderLifecycleRolloutEnabled', 'isHiddenReasoningModel']) {
         context[name] = () => false;
     }
+    context.recordProviderFailure = jest.fn();
+    context.watchTextBackend = watchTextBackend;
+    context.recordRequestFailure = recordRequestFailure;
+    context.requestText = requestText;
     context.activateSendButtons = jest.fn(() => { context.is_send_press = false; });
     context.textgenerationwebui_settings = context.textgen_settings;
     context.deactivateSendButtons = jest.fn(() => { context.is_send_press = true; });
@@ -229,8 +234,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     // The completion-marker helpers are the real declarations from their own modules, loaded like the rest of the host code.
     load(context, 'scripts/stream-completion.js', ['completedMessages', 'markStreamCompleted', 'unmarkStreamCompleted', 'isStreamCompleted', 'setContinuationEmptyMarker', 'setGenerationToolTurnMarker', 'setFreshReasoningMarker']);
     load(context, 'scripts/reasoning.js', ['setReasoningUnclosedMarker']);
-    load(context, 'script.js', ['setGenerationFinishMarker']);
-    load(context, 'script.js', ['Generate', 'buildRecoveryContext', 'StreamingProcessor', 'sendGenerationRequest', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
+    load(context, 'script.js', ['setGenerationFinishMarker', 'hasReplacementReply']);
+    load(context, 'script.js', ['Generate', 'buildRecoveryContext', 'StreamingProcessor', 'sendGenerationRequest', 'requestBackendJson', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
     context.removeReasoningFromString = text => context.parseReasoningFromString(text)?.content ?? text;
 
     const requests = [];
@@ -334,6 +339,8 @@ describe('request-local output controls', () => {
         { model: 'openai/o3', max_completion_tokens: 8192 },
         { model: 'gpt-5.1', reasoning_effort: 'high' },
         { model: 'gpt-6-astra' },
+        { model: '[openai]o3' },
+        { model: '[openai]gpt-5.4', reasoning_effort: 'high' },
         { model: 'deepseek-reasoner', reasoning_effort: 'none' },
         { model: 'deepseek-ai/DeepSeek-R1' },
         { model: 'moonshot/kimi-k3' },
@@ -348,6 +355,10 @@ describe('request-local output controls', () => {
         expect(requestUsesReasoning(preset)).toBe(true);
         expect(applyGenerationRequestControls(preset, { maxOutputTokens: 160 })).toBe(preset);
         expect(applyGenerationRequestControls(preset, { responseLength: 64, preserveReasoningBudget: true })).toBe(preset);
+    });
+
+    test.each(['[o3]gpt-4o', '[route/o3:fast]gpt-4o', '[gpt-5.4]gpt-4o'])('does not read reasoning models from tags in %s', model => {
+        expect(requestUsesReasoning({ model })).toBe(false);
     });
 
     describe('native DeepSeek v4-pro explicit None', () => {
@@ -1008,7 +1019,7 @@ describe('owned host generation flow', () => {
         expect(finalise).toHaveBeenCalledTimes(buffer ? 0 : 1);
         expect(intercepted).toEqual(buffer ? ['Existing prose. abcdefgh'] : []);
         expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
-        expect(context.saveChatConditional).toHaveBeenNthCalledWith(1, { throwOnError: true });
+        expect(context.saveChatConditional).toHaveBeenNthCalledWith(1, { throwOnError: true, skipUnchanged: true });
         expect(context.getTokenCount).not.toHaveBeenCalled();
         expect(eventSource.emit.mock.calls.some(([name]) => name === event_types.GENERATION_STOPPED)).toBe(false);
         expect(context.streamingProcessor).toBeNull();
@@ -1090,10 +1101,11 @@ describe('owned host generation flow', () => {
         expect(processor.isStopped).toBe(true);
         expect(processor.abortController.signal.aborted).toBe(true);
         expect(processor.requestAbortController.signal.aborted).toBe(true);
-        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
-        expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
+        expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true, skipUnchanged: true });
+        expect(context.saveChatConditional).toHaveBeenCalledWith({ skipUnchanged: true });
         expect(received).not.toHaveBeenCalled();
-        expect(context.chat[0].mes).toBe(buffer ? 'Existing prose. ' : 'Existing prose. abcd');
+        expect(context.chat[0].mes).toBe('Existing prose. abcd');
     });
 });
 

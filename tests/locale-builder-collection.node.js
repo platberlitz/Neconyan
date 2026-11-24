@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { load } from 'cheerio';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -32,6 +33,30 @@ function checkAdjacentKeys(keys, allowed) {
 }
 
 const allowList = JSON.parse(readFileSync(new URL('./fixtures/adjacent-placeholder-keys.json', import.meta.url), 'utf8'));
+
+test('the checkpoint tooltip is collected under its full multiline key', () => {
+    const key = 'Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one';
+    const $ = load(readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'));
+    assert.equal($('#message_template .mes_bookmark').attr('data-tooltip'), key);
+    const keys = collectedKeys();
+    assert.ok(keys.includes(key));
+    assert.ok(!keys.includes(`[data-tooltip]${key}`));
+});
+
+test('the Structured Prefill slot hint is collected as a complete paragraph', () => {
+    const key = 'Use [[keep]] to keep the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.';
+    const oldKey = '] keeps the following text visible. [[end]] ends the reply at that point. [[pg]] inserts text from the starter model below.';
+    const $ = load(readFileSync(new URL('../public/index.html', import.meta.url), 'utf8'));
+    const hint = $('#structured-prefill-settings summary[data-i18n="Template slots"]').parent().find('p[data-i18n]');
+    assert.equal(hint.text(), key);
+    assert.equal(hint.attr('data-i18n'), key);
+    const keys = collectedKeys();
+    assert.ok(keys.includes(key));
+    assert.deepEqual(keys.filter(entry => entry.startsWith(']')), []);
+    const english = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+    assert.equal(english[key], key);
+    assert.ok(!Object.hasOwn(english, oldKey));
+});
 
 test('the catalogue does not collect HTTP header names', () => {
     const keys = new Set(collectedKeys());

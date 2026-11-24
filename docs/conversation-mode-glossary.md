@@ -21,7 +21,7 @@ The Conversation header shows the current character or group, participant avatar
 | Control        | What it does                                                                                                        |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **Pals**       | Opens the Pals panel containing solo DMs, group DMs, unread indicators, personas, and Conversation status controls. |
-| **Add Member** | Adds another eligible character to the current group Conversation. It appears when group membership can be edited.  |
+| **Edit Members** | In a group DM, changes who is in the group without losing its history: untick a pal to remove them, tick one to add them, then **Save members**. **Start a new group instead** makes a separate group with no messages. In a solo DM the button is **Add Member** and starts a new group. |
 | **New Chat**   | Creates and selects a new branch for the current Conversation. It does not delete the previous branch.              |
 | **Settings**   | Opens the DM or Group controls drawer.                                                                              |
 
@@ -41,7 +41,7 @@ The Pals panel is the Conversation contact and thread list. It contains solo DMs
 
 Selecting a Pal opens that specific solo or group thread. Conversation entries may also appear among recent chats on the Neconyan welcome screen.
 
-Deleting a solo DM through its Pals controls resets its Conversation branches and disables that character’s solo Conversation. Deleting a group DM history resets the corresponding group Conversation history. These actions are different from **New Chat**, which preserves older branches.
+Deleting a solo DM with its Pals bin button removes its messages, branches, memory summary and settings, including Manual Scheduling, and the character stops messaging you there. Their group DMs and their Character Schedule are kept. Deleting a group DM removes the group, its settings, and every member’s messages and memory summaries in it; for a Roleplay group’s Conversation history, only that history goes. On Home, **Delete** on a DM’s only recent chat deletes the whole DM in the same way. These actions are different from **New Chat**, which preserves older branches.
 
 ## Persona and User Status Controls
 
@@ -288,7 +288,7 @@ Automatic memory generation begins after enough non-system messages exist. Later
 | **Clear memory**   | Removes the stored summary.                                                |
 | **Summarize**      | Quick-tool form of refreshing Conversation memory.                         |
 
-Memory is persistent and is not automatically removed when a branch or visible DM history is deleted. Use **Clear memory** when you also want the saved long-term context removed.
+Memory is persistent: it survives new chats and deleted branches. Deleting the DM itself, from Pals or with Home’s **Delete** on its only chat, removes its memory summary. Use **Clear memory** when you want the saved long-term context removed but the DM kept.
 
 The internal **Copy memory to new branch** behavior is enabled by default. New branches can therefore retain the source Conversation’s summarized continuity.
 
@@ -358,9 +358,17 @@ When enabled, Conversation Mode can occasionally create a DM aside based on a ne
 
 ### Lorebook Override
 
-**Lorebook Override** selects a specific World Info book for the Conversation. Leaving it on **Character default (no override)** uses normal character-linked behavior.
+**Lorebook Override** selects one World Info book for the Conversation, or leaves the choice to the character.
 
-When an override is selected, the system prompt tells the model to prefer that lore focus over normal roleplay-scene continuity.
+On **Character default (no override)** the replying character's own linked lorebooks are loaded: its main lorebook and any extra lorebooks linked to the card, in that order, each read once. Their entries are scanned together against the Conversation's recent messages by the books' own rules (keys, constant entries, selective logic, probability, scan depth, character filters and the World Info budget), and the entries that activate are added to the system prompt under 'Lorebook entries from <books>', naming only the books that gave an entry. There is no focus line. In a group DM each member that replies loads only its own lorebooks. A card with no linked lorebook loads nothing, and its prompt is unchanged. A linked book that cannot be found or read is skipped, and the card's other linked books still load.
+
+When a book is selected, its entries are scanned the same way, and the entries that activate are added to the system prompt right after the line 'Conversation lorebook focus: <book>'. Only the selected book is read; the card's own lorebooks stay out while an override is set.
+
+Chat lorebooks, persona lorebooks and the global lorebooks never reach Conversation, whichever option is chosen. Both options apply to every reply: solo and group DMs, ordinary replies, Regenerate, and automatic or idle replies.
+
+If the selected book cannot be found, nothing is loaded, the card's own lorebooks are not used in its place and the focus line is left out. The **Missing lorebook links** notice reports the missing book.
+
+Deleting or renaming a lorebook in World Info keeps the override honest. A rename moves the override of every Conversation (each DM and each member of a group) to the new name. A delete sets it back to **Character default (no override)**. An override for any other book, including one whose name only looks similar, stays as it was. A book removed outside the app is not seen, so its override stays and the notice reports it.
 
 ### Connection Profile
 

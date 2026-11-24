@@ -27,6 +27,28 @@ export const IPHONE_SAFARI_CONTEXT = Object.freeze({
     userAgent: IPHONE_SAFARI_USER_AGENT,
 });
 
+/** The standalone iPhone app's WKWebView: no Version or Safari token, and the CPU OS token stops at 18. */
+export const IPHONE_APP_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+
+export const IPHONE_APP_CONTEXT = Object.freeze({
+    ...IPHONE_SAFARI_CONTEXT,
+    userAgent: IPHONE_APP_USER_AGENT,
+});
+
+/**
+ * Adds what the iPhone app's web view sets before the page runs, on top of installIPhoneSafari.
+ * @param {import('playwright').BrowserContext} context
+ * @param {{ osMajor?: number, device?: 'iphone' | 'ipad' }} [options]
+ */
+export async function installIPhoneApp(context, { osMajor = 26, device = 'iphone' } = {}) {
+    await installIPhoneSafari(context, { standalone: false });
+    await context.addInitScript(({ osMajor, device }) => {
+        Object.defineProperty(window, 'neconyanNativeDevice', {
+            value: Object.freeze({ platform: 'ios', device, osMajor, memoryBytes: 6 * 1024 ** 3 }),
+        });
+    }, { osMajor, device });
+}
+
 export const IOS_ONLY_SUPPORTS_PATTERN = /-webkit-touch-callout|-webkit-overflow-scrolling/;
 
 /**

@@ -294,13 +294,20 @@ export function normalizeEditedSchedule(edited, generatedAt = Date.now()) {
 }
 
 export function parseScheduleTimeRange(range) {
-    const match = String(range || '').match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    const match = String(range || '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?\s*(?:[-–—]|to)\s*(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
     if (!match) {
         return null;
     }
 
-    const startMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-    const endMinutes = parseInt(match[3], 10) * 60 + parseInt(match[4], 10);
+    const toMinutes = (hour, minute, period) => {
+        const h = Number(hour);
+        const m = Number(minute);
+        if (m > 59 || (period ? h < 1 || h > 12 : h > 24 || (h === 24 && m !== 0))) return NaN;
+        return (period ? h % 12 + (period.toLowerCase() === 'pm' ? 12 : 0) : h) * 60 + m;
+    };
+    const startMinutes = toMinutes(match[1], match[2], match[3]);
+    const endMinutes = toMinutes(match[4], match[5], match[6]);
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) return null;
     return { startMinutes, endMinutes };
 }
 
@@ -323,6 +330,13 @@ export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new 
     const day = parts ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday) : now.getDay();
     const nowMinutes = parts ? Number(parts.hour) * 60 + Number(parts.minute) : now.getHours() * 60 + now.getMinutes();
     const blocks = Array.isArray(schedule.days[day]) ? schedule.days[day] : [];
+    const yesterday = schedule.days[(day + 6) % 7];
+    for (const block of Array.isArray(yesterday) ? yesterday : []) {
+        const range = parseScheduleTimeRange(block.time);
+        if (range && range.startMinutes > range.endMinutes && nowMinutes < range.endMinutes) {
+            return { status: block.status, activity: block.activity, source: 'schedule' };
+        }
+    }
 
     for (const block of blocks) {
         const range = parseScheduleTimeRange(block.time);
@@ -333,7 +347,7 @@ export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new 
         const { startMinutes, endMinutes } = range;
         const inRange = startMinutes <= endMinutes
             ? nowMinutes >= startMinutes && nowMinutes < endMinutes
-            : nowMinutes >= startMinutes || nowMinutes < endMinutes;
+            : nowMinutes >= startMinutes;
         if (inRange) {
             return { status: block.status, activity: block.activity, source: 'schedule' };
         }
@@ -343,11 +357,8 @@ export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new 
 }
 
 export function parseDurationToMs(text) {
-    const match = String(text || '').match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
-    if (!match) {
-        return 0;
-    }
-    const hours = parseInt(match[1] || '0', 10);
-    const minutes = parseInt(match[2] || '0', 10);
-    return (hours * 60 + minutes) * 60 * 1000;
+    const matches = String(text || '').matchAll(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|h|m)(?![a-z])/gi);
+    let minutes = 0;
+    for (const [, amount, unit] of matches) minutes += Number(amount) * (unit.toLowerCase()[0] === 'h' ? 60 : 1);
+    return Number.isFinite(minutes * 60000) ? minutes * 60000 : 0;
 }

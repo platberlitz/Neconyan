@@ -40,6 +40,11 @@ export async function deliverConversationReply(rawText, settings, {
 }) {
     const result = { text: [], posted: false };
     const referenced = new Set();
+    const pendingCommands = [];
+    const commitAfterPost = async () => {
+        if (!result.posted) return;
+        for (const { commands, avatar, chunk } of pendingCommands.splice(0)) await commitCommands(commands, avatar, { chunk });
+    };
     const chunks = splitReply(rawText, groupId ? getSpeakers() : [], groupId, splitEveryLine);
     for (let chunk = 0; chunk < chunks.length; chunk++) {
         if (!validateTarget()) return result;
@@ -47,9 +52,13 @@ export async function deliverConversationReply(rawText, settings, {
         const speaker = match?.speaker || fallbackSpeaker;
         // Command arguments still need their quotes when the command parser reads them.
         const text = match ? match.text : stripSpeakerPrefixText(chunks[chunk], speaker.name || fallbackSpeaker.name || 'Character');
-        const commands = extractCharacterReplyCommandParts(text, settings);
+        const commands = extractCharacterReplyCommandParts(text, settings, { preserveCommandOnlyText: false });
         const messages = splitChatroomMessages(commands.text).map(normalizeConversationOutputText).filter(Boolean);
         const speakerAvatar = speaker.avatar || fallbackSpeaker.avatar;
+        if (!messages.length && (commands.scheduleUpdates.length || commands.reminders.length)) {
+            pendingCommands.push({ commands, avatar: speakerAvatar, chunk });
+            await commitAfterPost();
+        }
         for (let bubble = 0; bubble < messages.length; bubble++) {
             const attachReplyReference = !referenced.has(speakerAvatar);
             const saved = await append(messages[bubble], speaker, {
@@ -59,6 +68,7 @@ export async function deliverConversationReply(rawText, settings, {
             if (attachReplyReference) referenced.add(speakerAvatar);
             result.text.push(messages[bubble]);
             result.posted = true;
+            await commitAfterPost();
             if (bubble === 0 && (commands.scheduleUpdates.length || commands.reminders.length)) {
                 await commitCommands(commands, speakerAvatar, { chunk });
             }
@@ -68,6 +78,7 @@ export async function deliverConversationReply(rawText, settings, {
             const saved = await generateImage(commands.selfieRequests[image], speaker, { chunk, image, attachReplyReference, extra });
             if (saved && attachReplyReference) referenced.add(speakerAvatar);
             result.posted = result.posted || saved;
+            await commitAfterPost();
         }
     }
     return result;

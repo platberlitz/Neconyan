@@ -166,6 +166,30 @@ function cropControl(image, box) {
     return PNG.sync.write(crop);
 }
 
+async function revealSwipeArrows(page, left, right) {
+    await expect.poll(async () => {
+        // Scroll the chat itself, not the document. The usable area stops at the
+        // fixed toolbar even when the scroll container extends behind it.
+        await right.evaluate(arrow => {
+            const chat = arrow.closest('#chat');
+            const { top, bottom } = chat.getBoundingClientRect();
+            const bar = document.querySelector('#sb-bottom-chat-bar').getBoundingClientRect();
+            const usableBottom = Math.min(bottom, window.innerHeight, bar.height ? bar.top : bottom);
+            const box = arrow.getBoundingClientRect();
+            chat.scrollBy({ top: (box.top + box.bottom - Math.max(0, top) - usableBottom) / 2, behavior: 'instant' });
+        });
+        await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+        return Promise.all([left, right].map(arrow => arrow.evaluate(el => {
+            const { x, y, width, height } = el.getBoundingClientRect();
+            const hit = document.elementFromPoint(x + width / 2, y + height / 2);
+            if (el.contains(hit)) return null;
+            const chat = el.closest('#chat');
+            return { x, y, hit: hit?.closest('[id]')?.id || hit?.tagName || 'outside the viewport',
+                scrollTop: chat.scrollTop, maxScrollTop: chat.scrollHeight - chat.clientHeight };
+        })));
+    }, { message: 'Both swipe arrows are reachable inside the chat' }).toEqual([null, null]);
+}
+
 for (const width of [393, 769, 900, 1000, 1001, 1280]) {
     const phone = width === 393;
     test(`Whisper ${phone ? 'phone' : 'tablet and desktop'} at ${width}px swipe ink, counters and saved alternatives stay aligned`, async ({ app }, info) => {
@@ -198,10 +222,12 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                     for (const id of ids) {
                         const row = page.locator(`#chat > .mes[mesid="${id}"]`);
                         await expect(row.locator('.nn-response-controls')).toHaveCount(width > 1000 ? 1 : 0);
+                        // The footer moves on the next animation frame after the placement changes.
+                        if (placement === 'below') await expect(row).toHaveClass(/\bnn-response-controls-below\b/);
+                        if (placement === 'inside') await expect(row).not.toHaveClass(/\bnn-response-controls-below\b/);
                         const left = row.locator('.fa-chevron-left').filter({ visible: true }), right = row.locator('.fa-chevron-right').filter({ visible: true });
                         await expect(left).toHaveCount(1); await expect(right).toHaveCount(1);
-                        await right.scrollIntoViewIfNeeded();
-                        await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
+                        await revealSwipeArrows(page, left, right);
                         const measures = await row.evaluate(el => {
                             const box = n => n.getBoundingClientRect().toJSON(), row = box(el), style = getComputedStyle(el);
                             const visible = n => { const s = getComputedStyle(n), r = n.getBoundingClientRect(); return s.display !== 'none' && s.visibility === 'visible' && Number(s.opacity) > 0 && r.width && r.height; };
@@ -221,10 +247,16 @@ for (const width of [393, 769, 900, 1000, 1001, 1280]) {
                             expect(measures.translate).toBe('0px -4px');
                             if (placement === 'below') widths.push(measures.footer.width);
                         } else for (const arrow of arrows) expect(measures.row.bottom - arrow.bottom).toBeCloseTo(13, 0);
-                        // One frame keeps both arrows at the same scroll position; unrelated
-                        // startup notifications must not become part of their measured ink.
+                        // Keep both glyphs in the same frame and measure them on a solid
+                        // backing. A translucent control can show wallpaper pixels through it.
                         const frame = PNG.sync.read(await page.screenshot({ animations: 'disabled', scale: 'css',
-                            style: '#toast-container { visibility: hidden !important; }' }));
+                            style: `#toast-container { visibility: hidden !important; }
+                                #chat .mes :is(.fa-chevron-left, .fa-chevron-right) {
+                                    background: #292524 !important;
+                                    border-radius: 0 !important;
+                                    box-shadow: none !important;
+                                }`,
+                        }));
                         const leftImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-left')));
                         const rightImage = cropControl(frame, arrows.find(c => c.classes.includes('chevron-right')));
                         const leftInk = iconInkCentre(leftImage), rightInk = iconInkCentre(rightImage);

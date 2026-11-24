@@ -42,6 +42,9 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
     let envelopePromise, settings;
     const state = { saves: 0, reads: 0, lastSaved: null, failSaves: false };
     await page.route('**/api/settings/get', async route => {
+        const request = route.request().postDataJSON();
+        // The Agent library is separate from the bootstrap settings mocked here.
+        if (request?.sections?.includes('agents')) return route.fallback();
         state.reads++;
         const envelope = await (envelopePromise ??= route.fetch().then(response => response.json()));
         if (!settings) {
@@ -419,7 +422,7 @@ test('Built-in Extensions links bundled tools to their own settings pages', asyn
         window.NeconyanNativeTools.openSettings(definition);
     });
     await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
-    await expect(page.locator('.neconyan-included-tool-content .extension_container, .neconyan-included-tool-content > *').first()).toBeVisible();
+    await expect(page.locator('.neconyan-included-tool-content #pf--settings')).toBeVisible();
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
     await page.evaluate(() => window.NeconyanExtensions.focusUnit('Dialogue Colors'));
     await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');

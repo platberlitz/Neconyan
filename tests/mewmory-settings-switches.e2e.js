@@ -12,13 +12,25 @@ const HIDE_THRESHOLD = 'Hide older messages at this chat size, tokens';
 
 async function load(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready')
+        && window.SillyTavern?.getContext?.().accountStorage?.isReady);
+    const shouldSkipTour = await page.evaluate(() => {
+        const storage = window.SillyTavern.getContext().accountStorage;
+        const status = storage.getItem('NeconyanTutorialStatus.v1');
+        return status !== null && !['completed', 'skipped'].includes(status)
+            && storage.getItem('NeconyanTutorialHidden.v1') !== 'true';
+    });
+    if (shouldSkipTour) {
+        // The tour opens on APP_READY, after the rail is ready. Dismiss it before
+        // opening Mewmory: pressing the tour also closes an open drawer.
+        const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+        await skip.click();
+        await expect(skip).toBeHidden();
+    }
 }
 
 async function openSettings(page) {
     await load(page);
-    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
-    if (await skip.isVisible()) await skip.click();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
     const workspace = page.locator('#mewmory-workspace');
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
@@ -416,6 +428,12 @@ async function jevPresetsAndQuickControlsSave({ page }) {
     await load(page);
     const original = await resetSettings(page);
     try {
+        // Presets preserve a custom endpoint. This case starts without one, independently
+        // of any earlier test using this disposable account's selector.
+        await saveConfig(page, { ...original, roles: { ...original.roles, selector: { ...original.roles.selector,
+            enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', clearKey: true,
+        } } });
+        await load(page);
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         const workspace = page.locator('#mewmory-workspace');
         await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
@@ -441,6 +459,7 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await expect(quick.getByLabel('Selector model', { exact: true })).toHaveValue('jev-latest');
 
         await quick.getByLabel('Selector API key', { exact: true }).fill('test-old-endpoint-key');
+        await quick.getByLabel('Selector API key', { exact: true }).press('Tab');
         await expect.poll(async () => (await readConfig(page)).config.roles.selector.hasKey, { timeout: 15000 }).toBe(true);
         await quick.getByLabel('Recall decision model', { exact: true }).selectOption('open-jev-9b');
         await expect.poll(async () => {
@@ -448,6 +467,8 @@ async function jevPresetsAndQuickControlsSave({ page }) {
             return [selector.endpoint, selector.hasKey];
         }, { timeout: 15000 }).toEqual(['http://127.0.0.1:8000/v1/systemone', false]);
         await expect(quick.getByLabel('Selector API key', { exact: true })).toHaveValue('');
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-latest');
+        await expect.poll(async () => (await readConfig(page)).config.roles.selector.hasKey, { timeout: 15000 }).toBe(true);
         await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-1.14');
         await expect.poll(async () => (await readConfig(page)).config.roles.selector.model, { timeout: 15000 }).toBe('typesafe/jev-1.14');
 
@@ -495,7 +516,9 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await expect(workspace.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.1');
     } finally {
         const { config } = await readConfig(page);
-        await saveConfig(page, { ...original, revision: config.revision });
+        await saveConfig(page, { ...original, revision: config.revision, roles: { ...original.roles,
+            selector: { ...original.roles.selector, clearKey: true },
+        } });
         await resetSettings(page);
     }
 }

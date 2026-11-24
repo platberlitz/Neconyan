@@ -1,5 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
-import { getPlotCompassObjective, getPlotCompassScopeKey, getPlotCompassPrompt, isPlotCompassObjectiveEnabled, PLOT_COMPASS_SCOPES, setPlotCompassObjective, setPlotCompassObjectives } from '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getPlotCompassObjective, getPlotCompassScopeKey, getPlotCompassPrompt, isPlotCompassObjectiveEnabled, PLOT_COMPASS_CHOICES_INSTRUCTION, PLOT_COMPASS_SCOPES, setPlotCompassObjective, setPlotCompassObjectives } from '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTemplateSettings } from '../public/scripts/extensions/in-chat-agents/companion/companion-prompts.js';
 
 describe('Plot Compass objective scopes', () => {
@@ -81,7 +81,7 @@ describe('Plot Compass objective scopes', () => {
         expect(getPlotCompassPrompt(settings, group)).toContain('[This group objective]\nGroup plan');
         expect(getPlotCompassPrompt(settings, group)).toContain('Group chat plan');
         expect(getPlotCompassPrompt(settings, group)).not.toContain('Private card plan');
-        expect(getPlotCompassPrompt(settings, { ...group, groupId: 'group-2' })).toBe('[Plot Compass Objective]\n[Global objective]\nGlobal plan');
+        expect(getPlotCompassPrompt(settings, { ...group, groupId: 'group-2' })).toBe(`[Plot Compass Objective]\n[Global objective]\nGlobal plan\n\n${PLOT_COMPASS_CHOICES_INSTRUCTION}`);
     });
 
     test('expands macros per layer without truncating the combined objectives', () => {

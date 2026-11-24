@@ -54,6 +54,9 @@ async function post(path, body, { signal } = {}) {
 
 export const readBucket = (source, options) => post('/bucket', { source }, options);
 export const readNotebookContext = (source, sessionId) => post('/notes/context', { source, sessionId });
+export const readAppEvidence = () => post('/evidence', {});
+export const readAdminAppEvidence = () => post('/evidence/admin', {});
+export const readLastPrompt = source => post('/last-prompt', { source });
 export const readMewmoryContext = (source, sessionId) => post('/mewmory/context', { source, sessionId });
 export const readMewmoryRecord = (source, sessionId, recordId) => post('/mewmory/record', { source, sessionId, recordId });
 export const correctMewmoryRecord = (source, sessionId, recordId, correction) => post('/mewmory/correct', { source, sessionId, recordId, correction });
@@ -85,9 +88,18 @@ export const updateMessage = (source, sessionId, messageId, text) => post('/mess
 export const swipeMessage = (source, sessionId, messageId, index) => post('/message/swipe', { source, sessionId, messageId, index });
 export const deleteMessage = (source, sessionId, messageId) => post('/message/delete', { source, sessionId, messageId });
 export const markProposal = (source, sessionId, messageId, index, state) => post('/proposal/mark', { source, sessionId, messageId, index, state });
+
+function isConfirmedFailure(error) {
+    // An unstructured 5xx may be from a proxy after the job was accepted.
+    return error.status >= 400 && (error.status < 500 || (error.code?.startsWith?.('SCRATCHPAD_') && error.code !== 'SCRATCHPAD_FAILED'));
+}
+
 /** Retry an uncertain acceptance with its original identity and context. */
 export async function sendReply(body) {
-    const key = JSON.stringify([getCurrentUserHandle(), body.source?.kind, body.source?.key, body.sessionId, body.regenerate || '', body.text || '', body.attachments ?? [], body.replyTo || '']);
+    const source = body.source;
+    const generalContext = source?.kind === 'general' ? [source.avatar || '', source.contextMode || '', source.personaId || ''] : [];
+    const key = JSON.stringify([getCurrentUserHandle(), source?.kind, source?.key, generalContext, body.sessionId,
+        body.regenerate || '', body.text || '', body.attachments ?? [], body.replyTo || '', body.discuss === true, body.rehearsal === true]);
     let request = unconfirmedSends.get(key);
     if (!request) {
         if (unconfirmedSends.size >= MAX_UNCONFIRMED_SENDS) {
@@ -107,7 +119,7 @@ export async function sendReply(body) {
         forget();
         return result;
     } catch (error) {
-        if (error.status >= 400 && error.status < 500) forget();
+        if (isConfirmedFailure(error)) forget();
         throw error;
     }
 }
@@ -121,13 +133,16 @@ export async function generateImage(body) {
     const request = unconfirmedImages.get(key) ?? structuredClone(body);
     if (!unconfirmedImages.has(key) && unconfirmedImages.size >= MAX_UNCONFIRMED_SENDS) throw new ScratchpadRequestError('Check the earlier image jobs before submitting more images.');
     unconfirmedImages.set(key, request);
+    const forget = () => {
+        if (unconfirmedImages.get(key) === request) unconfirmedImages.delete(key);
+    };
     try {
         const result = await post('/images/generate', request);
         if (!result?.job?.id || !result?.bucket) throw new ScratchpadRequestError('The image acceptance could not be confirmed. Retry to check the original request.', { network: true });
-        unconfirmedImages.delete(key);
+        forget();
         return result;
     } catch (error) {
-        if (error.status >= 400 && error.status < 500) unconfirmedImages.delete(key);
+        if (isConfirmedFailure(error)) forget();
         throw error;
     }
 }

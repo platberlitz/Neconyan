@@ -36,7 +36,7 @@ function saveContext() {
     const timers = new Map();
     let timerId = 0;
     const context = vm.createContext({
-        HTMLElement, document: { getElementById: () => status },
+        HTMLElement, document: { getElementById: () => status }, startupCharacterListPromise: null,
         $: () => ({ attr: () => 'editcharacter' }),
         console: { warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
@@ -331,6 +331,7 @@ describe('Neconyan save behaviour', () => {
             ensureGroupEditorLayout() {}, setMenuType() {}, getGroupAvatar() {}, applyTagsOnGroupSelect() {},
             printGroupCandidates() {}, printGroupMembers() {}, toggleHiddenControls() {}, isValidImageUrl() {},
             isExternalMediaAllowed() {}, updateFavButtonState() {}, updateGroupSpeakerControls() {},
+            isHearReplyTargetEnabled: group => group?.hear_reply_target !== false,
             CSS: { supports: () => true }, eventSource: { emit() {} }, t: strings => strings.join(''),
         });
         loadFunctions(context, groups, ['select_group_chats']);
@@ -365,6 +366,7 @@ describe('Neconyan save behaviour', () => {
             },
             newGroupMembers: ['mira.png'], characters: [{ avatar: 'mira.png', name: 'Mira' }], onlyUnique: () => true,
             findGroupByMembers: () => null, isValidImageUrl: () => false, default_avatar: 'default.png',
+            getGroupDirectorTimeoutSeconds: () => 30,
             getGroupTalkBurstCount: () => 3,
             group_activation_strategy: { NATURAL: 0 }, group_generation_mode: { SWAP: 0 }, hideMutedSprites: false,
             GROUP_MEMBER_MODELS_KEY: 'member_models', fav_grp_checked: false, getRequestHeaders: () => ({}), fetch: request,

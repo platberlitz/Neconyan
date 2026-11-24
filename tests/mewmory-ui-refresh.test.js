@@ -1,3 +1,4 @@
+/* global document */
 import { readFile } from 'node:fs/promises';
 import { beforeEach, expect, jest, test } from '@jest/globals';
 
@@ -47,13 +48,15 @@ jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () 
 jest.unstable_mockModule('../public/scripts/mewmory/rag-settings.js', () => ({
     PREFIX_PRESETS: {}, RAG_DEFAULTS: {},
 }));
+const on = jest.fn();
 jest.unstable_mockModule('../public/scripts/events.js', () => ({
     event_types: new Proxy({}, { get: (_, name) => name }),
-    eventSource: { on: jest.fn() },
+    eventSource: { on },
 }));
 
 const { act, manualHideDisabled } = await import('../public/scripts/mewmory/ui.js');
-const { initMewmory, MEWMORY_CONFIG_CHANGED_KEY, mewmory, refreshMewmory } = await import('../public/scripts/mewmory/index.js');
+const { getMewmoryScope, initMewmory, MEWMORY_CONFIG_CHANGED_KEY, mewmory, prepareMewmoryGeneration,
+    refreshMewmory, validateMewmoryGeneration } = await import('../public/scripts/mewmory/index.js');
 const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config-autosave.js');
 
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
@@ -66,6 +69,7 @@ let gate;
 let inspects;
 beforeEach(() => {
     generation++;
+    document.visibilityState = 'visible';
     Object.keys(chatMetadata).forEach(key => delete chatMetadata[key]);
     chat.splice(0);
     retryJob.mockClear();
@@ -122,6 +126,47 @@ test('an older server error is shown with the current field label', async () => 
     }));
     await expect(mewmoryConfigAutosave.options.save({}, { account: null }))
         .rejects.toThrow('Hide older messages at this chat size, tokens must be between 1024 and 2000000.');
+});
+
+test('a failed preparation cannot stamp a new reply with the previous recall', async () => {
+    initMewmory();
+    global.fetch = jest.fn(async url => {
+        if (url.endsWith('/tokens')) return response({ counts: [1] });
+        if (url.endsWith('/prepare')) return { ok: false, status: 409, json: async () => ({ error: 'The archive changed.' }) };
+        return response({});
+    });
+    const record = { id: 'entry', recordId: 'entry', kind: 'event', text: 'Saved event' };
+    await validateMewmoryGeneration({ enabled: true, scope: getMewmoryScope(), inspection: {
+        selections: [{ recordId: 'entry' }], candidates: [record], retrieval: { selected: [record] },
+    } }, '', 20);
+    await expect(prepareMewmoryGeneration([])).rejects.toThrow('The archive changed.');
+    const reply = { mes: 'New reply' };
+    chat.push(reply);
+    on.mock.calls.find(([event]) => event === 'MESSAGE_RECEIVED')[1](0);
+    expect(reply.extra?.mewmoryRecall).toBeUndefined();
+});
+
+test('waiting polls back off, restart on activity and stop following a replaced chat', async () => {
+    initMewmory();
+    const tick = () => global.window.setTimeout.mock.lastCall[0]();
+    const delay = () => global.window.setTimeout.mock.lastCall[1];
+    const schedule = on.mock.calls.filter(([event]) => event === 'MESSAGE_EDITED').at(-1)[1];
+    const activeConfig = { ...config, autoUpdate: true, roles: { extractor: { enabled: true } } };
+    global.fetch = jest.fn(async (url, { body } = {}) => url.endsWith('config/get')
+        ? response({ config: activeConfig, stories: [] })
+        : response({ locator: JSON.parse(body).locator, enabled: true, health: { pending: 1 }, operations: [] }));
+    schedule();
+    expect(delay()).toBe(1500);
+    for (const seconds of [15, 30, 60, 120, 120]) {
+        await tick();
+        expect(delay()).toBe(seconds * 1000);
+    }
+    schedule();
+    expect(delay()).toBe(1500);
+    const inspectCount = fetch.mock.calls.length;
+    generation++;
+    await tick();
+    expect(fetch.mock.calls).toHaveLength(inspectCount);
 });
 
 test('manual hiding stays available during a memory update and off remains disabled', async () => {
@@ -188,6 +233,58 @@ test('the update estimate says what will be read and warns about the daily limit
     expect(later[1]).toMatch(/^Expected use: about .*earlier updates in this chat\.$/);
     expect(later).toContain('This would go past your daily token limit. Updates you start yourself still run.');
     expect(later.some(line => line.startsWith('Facts and events is switched off'))).toBe(true);
+});
+
+test('a refresh of the chat already on screen does not flash the loading state', async () => {
+    initMewmory();
+    gate.resolve();
+    await refreshMewmory();
+    expect(mewmory.view.revision).toBe(1);
+
+    const loadingStates = [];
+    const record = () => loadingStates.push(mewmory.loading);
+    global.window.addEventListener('mewmory:updated', record);
+    try {
+        await refreshMewmory();
+    } finally {
+        global.window.removeEventListener('mewmory:updated', record);
+    }
+    expect(loadingStates).not.toContain(true);
+    expect(mewmory.loading).toBe(false);
+    expect(mewmory.view.revision).toBe(2);
+});
+
+test('the config and the chat inspection are requested together', async () => {
+    initMewmory();
+    const configGate = Promise.withResolvers();
+    const requested = [];
+    global.fetch = jest.fn(async (url, { body } = {}) => {
+        const route = url.endsWith('config/get') ? 'config/get' : url.split('/').at(-1);
+        requested.push(route);
+        if (route === 'config/get') {
+            await configGate.promise;
+            return response({ config, stories: [] });
+        }
+        return response({ locator: JSON.parse(body).locator, enabled: true, revision: 5, health: { pending: 0 }, operations: [] });
+    });
+    const refresh = refreshMewmory();
+    await settle();
+    expect(requested).toEqual(['config/get', 'inspect']);
+    configGate.resolve();
+    await refresh;
+});
+
+test('a waiting poll stops while the page is hidden and resumes when shown', async () => {
+    initMewmory();
+    const schedule = on.mock.calls.filter(([event]) => event === 'MESSAGE_EDITED').at(-1)[1];
+    schedule();
+    document.visibilityState = 'hidden';
+    const callsBefore = fetch.mock.calls.length;
+    await global.window.setTimeout.mock.lastCall[0]();
+    expect(fetch.mock.calls).toHaveLength(callsBefore);
+    document.visibilityState = 'visible';
+    global.window.dispatchEvent(new Event('visibilitychange'));
+    expect(global.window.setTimeout).toHaveBeenCalled();
 });
 
 test('a file with every chat restores only the memories that belong to this chat', async () => {

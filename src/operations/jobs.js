@@ -1,8 +1,9 @@
-import { validateOwner, getJob, updateJob } from '../jobs/store.js';
+import { explicitRetryRecovery, validateOwner, getJob, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
-import { admitOperation, finalizeOperation, finishOperation, operationError, readOperation, listOperations, withOperation } from './store.js';
+import { admitOperation, finalizeOperation, finishOperation, operationError, readOperation,
+    listOperations, reserveOperationLocked, withOperation } from './store.js';
 
 const definitions = new Map();
 function localPublication(base, key) {
@@ -24,13 +25,33 @@ export function listApplicationRecovery(base) {
 export function recoverApplicationPublication(base, key) {
     const job = localPublication(base, key);
     if (!job) throw operationError('No interrupted local publication with saved evidence was found.');
-    updateJob(base.directories, job.id, current => {
-        if (!['cancelled', 'failed', 'interrupted'].includes(current.state)) throw operationError('This operation is already active.');
-        return { ...current, state: 'queued', finishedAt: null, error: null, dismissed: false,
-            cancellation: { requested: false, requestedAt: null, reason: null } };
+    withOperation({ ...base, job }, ({ lease, value }) => {
+        reserveOperationLocked(lease, value.applyTarget ?? null, value.kind, { excludeKey: value.key });
+        updateJob(base.directories, job.id, current => {
+            if (!['cancelled', 'failed', 'interrupted'].includes(current.state)) throw operationError('This operation is already active.');
+            return { ...current, state: 'queued', finishedAt: null, error: null, dismissed: false,
+                cancellation: { requested: false, requestedAt: null, reason: null } };
+        });
     });
     noteOwner(base.owner);
     return readOperation(base, key);
+}
+
+/** Explicit job retry re-acquires the operation's storage reservation under the account lock before queueing. */
+export function retryApplicationJob(base, job) {
+    return withOperation({ ...base, job }, ({ lease, value }) => {
+        if (['completed', 'refused'].includes(value.state)) {
+            throw operationError('This operation is already finished and cannot be tried again.', 409);
+        }
+        reserveOperationLocked(lease, value.applyTarget ?? null, value.kind, { excludeKey: value.key });
+        return updateJob(base.directories, job.id, current => {
+            if (!['failed', 'interrupted'].includes(current.state)) {
+                throw operationError('Only jobs that failed or were interrupted can be tried again.', 409);
+            }
+            return { state: 'queued', finishedAt: null, error: null, dismissed: false, dismissedReason: undefined,
+                ...explicitRetryRecovery(current) };
+        }).job;
+    });
 }
 
 export function registerOperation(kind, definition) {

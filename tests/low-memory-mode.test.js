@@ -7,6 +7,7 @@ import {
     RECOGNISED_BROWSER_MEMORY_BUCKETS,
     classifyDeviceMemory,
     createLowMemoryRuntime,
+    iosMemoryProfile,
     normalizeBrowserDeviceMemory,
     normalizeLowMemoryMode,
     validateAndroidMemoryProfile,
@@ -303,6 +304,30 @@ describe('low-memory mode classification and runtime', () => {
         expect(updatedState.classification.source).toBe('native');
         expect(updatedState.active).toBe(true);
         expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    test('uses the memory the iPhone app reports, since WebKit has no deviceMemory', () => {
+        const runtimeFor = memoryBytes => createLowMemoryRuntime({
+            navigatorRef: {},
+            storageRef: { getItem: () => null, setItem: () => {} },
+            windowRef: new EventTarget(),
+            globalRef: { neconyanNativeDevice: { platform: 'ios', device: 'iphone', osMajor: 26, memoryBytes } },
+        });
+
+        const small = runtimeFor(3 * 1024 ** 3).getLowMemoryState();
+        expect(small.nativeProfileStatus).toBe('received');
+        expect(small.classification).toMatchObject({ source: 'native', totalMemoryMiB: 3072, lowMemory: true });
+        expect(small.active).toBe(true);
+
+        const large = runtimeFor(8 * 1024 ** 3).getLowMemoryState();
+        expect(large.classification).toMatchObject({ source: 'native', totalMemoryMiB: 8192, lowMemory: false });
+        expect(large.active).toBe(false);
+
+        expect(iosMemoryProfile({ platform: 'ios', memoryBytes: Number.NaN })).toBeNull();
+        expect(iosMemoryProfile({ platform: 'android', memoryBytes: 1024 ** 3 })).toBeNull();
+        const unknown = runtimeFor('lots').getLowMemoryState();
+        expect(unknown.classification.source).toBe('unknown');
+        expect(unknown.nativeProfileStatus).toBe('pending');
     });
 
     test('falls back to browser classification when old 2-argument bridge install passes no profile', () => {

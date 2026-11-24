@@ -99,6 +99,19 @@ function assertCapabilities(context) {
     }
 }
 
+function scheduleHistoryPreparation() {
+    // Preset snapshots are a background safety net, not something the first
+    // screen needs. Waiting for idle keeps their reads and hashes out of start-up.
+    const run = () => {
+        if (active) prepareHistory();
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, { timeout: 4000 });
+    } else {
+        setTimeout(run, 1500);
+    }
+}
+
 function prepareHistory() {
     if (prepared || preparing) {
         return;
@@ -137,7 +150,7 @@ function removeUi() {
 function setupUi() {
     ensureMenuItem();
     ensureDrawer();
-    prepareHistory();
+    scheduleHistoryPreparation();
 }
 
 function reportActivationFailure(error) {
@@ -289,7 +302,7 @@ function init() {
         ensureDrawer();
         active = true;
         lifecycle++;
-        prepareHistory();
+        scheduleHistoryPreparation();
     } catch (error) {
         active = false;
         unsubscribeAll();

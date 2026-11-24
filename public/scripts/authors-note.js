@@ -6,7 +6,7 @@ import {
     event_types,
     extension_prompt_roles,
     extension_prompt_types,
-    getThumbnailUrl,
+    getThumbnailUrlForViewport,
     saveSettingsDebounced,
     this_chid,
 } from '../script.js';
@@ -840,7 +840,7 @@ function renderNoteTargetsAndSummary() {
     const context = getContext();
     const personaAvatar = getPersonaAvatar();
     const personaName = personaAvatar ? power_user.personas?.[personaAvatar] || personaAvatar : '';
-    const personaThumb = personaAvatar ? getThumbnailUrl('persona', personaAvatar) : '';
+    const personaThumb = personaAvatar ? getThumbnailUrlForViewport('persona', personaAvatar) : '';
 
     $('#an_persona_title').text(personaName || t`Persona Author's Note (Private)`);
     $('#an_persona_avatar').attr('src', personaThumb).attr('alt', personaName).prop('hidden', !personaThumb);
@@ -850,7 +850,7 @@ function renderNoteTargetsAndSummary() {
     const charName = groupRecord?.name
         || (context.characterId !== undefined ? context.characters?.[context.characterId]?.name : '')
         || '';
-    const charThumb = !context.groupId && charAvatar ? getThumbnailUrl('avatar', charAvatar) : '';
+    const charThumb = !context.groupId && charAvatar ? getThumbnailUrlForViewport('avatar', charAvatar) : '';
     $('#an_chara_name').text(charName || t`Character Author's Note (Private)`);
     $('#an_chara_avatar').attr('src', charThumb).attr('alt', charName).prop('hidden', !charThumb);
 
@@ -1292,6 +1292,9 @@ function onAllowWIScanCheckboxChanged() {
  */
 // Inserts the extension first since it's statically imported
 export function initAuthorsNote() {
+    const scenarioExample = t`Example:\n[Scenario: wacky adventures; Genre: romantic comedy; Style: verbose, creative]`;
+    $('#extension_floating_chara, #extension_floating_default').attr('placeholder', scenarioExample);
+    $('#extension_floating_persona').attr('placeholder', t`Example:\n[{{user}} speaks formally and never swears.]`);
     $('#extension_floating_prompt').on('input', onExtensionFloatingPromptInput);
     $('#extension_floating_interval').on('input', onExtensionFloatingIntervalInput);
     $('#extension_floating_depth').on('input', onExtensionFloatingDepthInput);

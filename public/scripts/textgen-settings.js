@@ -41,6 +41,7 @@ import { AbortReason } from './util/AbortReason.js';
 import { getSortableDelay, onlyUnique } from './utils.js';
 import { textgen_types, APHRODITE_DEFAULT_ORDER, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from './text-provider-parameters.js';
 import { setting_names, TEXT_PROVIDER_URLS } from './text-preset-request.js';
+import { readableBackendError, watchTextBackend } from './text-backend-failures.js';
 export { textgen_types, APHRODITE_DEFAULT_ORDER };
 export { setting_names } from './text-preset-request.js';
 
@@ -1290,21 +1291,29 @@ function setSettingByName(setting, value, trigger) {
 export async function generateTextGenWithStreaming(generate_data, signal) {
     generate_data.stream = true;
 
-    const response = await fetchResumable('/api/backends/text-completions/generate', {
-        headers: {
-            ...getRequestHeaders(),
-        },
-        body: JSON.stringify(generate_data),
-        method: 'POST',
-        signal: signal,
+    const watch = watchTextBackend({ kind: 'text', type: generate_data.api_type ?? textgenerationwebui_settings.type, model: generate_data.model, data: generate_data, signal });
+    return watch.run(async () => {
+        const response = await fetchResumable('/api/backends/text-completions/generate', {
+            headers: {
+                ...getRequestHeaders(),
+            },
+            body: JSON.stringify(generate_data),
+            method: 'POST',
+            signal: signal,
+        });
+
+        if (!response.ok) {
+            const body = await response.text();
+            watch.rejected(response, body);
+            tryParseStreamingError(response, body);
+            // Reached only when the body held no error message, such as the bare 'Bad Request' of a missing server address.
+            const said = body.trim() ? readableBackendError(body).slice(0, 300) : response.statusText;
+            toastr.error(said ? `HTTP ${response.status}: ${said}` : `HTTP ${response.status}`, 'Text Completion API');
+            throw new Error(`Got response status ${response.status}`);
+        }
+
+        return readTextGenerationStream(response);
     });
-
-    if (!response.ok) {
-        tryParseStreamingError(response, await response.text());
-        throw new Error(`Got response status ${response.status}`);
-    }
-
-    return readTextGenerationStream(response);
 }
 
 /** @param {Response} response Live or retained provider response */
@@ -1448,7 +1457,9 @@ function tryParseStreamingError(response, decoded) {
         // No JSON. Do nothing.
     }
 
-    const message = data?.error?.message || data?.error || data?.message || data?.detail;
+    let message = data?.error?.message || data?.error || data?.message || data?.detail;
+    // The app server sends { error: true, status, response }, which is not a message the toast can show.
+    if (message && typeof message !== 'string') message = readableBackendError(data);
 
     if (message) {
         toastr.error(message, 'Text Completion API');

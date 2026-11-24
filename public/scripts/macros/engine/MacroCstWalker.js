@@ -383,6 +383,11 @@ class MacroCstWalker {
         const flagSymbols = flagTokens.map(token => token.image);
         const flags = flagSymbols.length > 0 ? parseFlags(flagSymbols) : createEmptyFlags();
 
+        // A closing `{{///}}` that found no opener is a comment on its own and hides itself.
+        if (flags.closingBlock && !scopedContent && name === '//') {
+            return '';
+        }
+
         const range = this.#getMacroRange(macroNode);
         const startToken = /** @type {IToken?} */ ((children['Macro.Start'] || [])[0]);
         const endToken = /** @type {IToken?} */ ((children['Macro.End'] || [])[0]);
@@ -1196,6 +1201,10 @@ class MacroCstWalker {
 
             // Check if the macro can accept scoped content (arity validation)
             if (!this.#canAcceptScopedContent(openInfo.item.node, openInfo.name)) {
+                // An inline comment `{{// text}}` has its own text, so a later `{{///}}` is not its closer.
+                // The same goes for the alias: `{{comment text}}` stays hidden when a `{{/comment}}` follows.
+                if (this.#isCommentMacro(openInfo.name)) continue;
+
                 // Macro cannot accept scoped content - mark both as keepRaw
                 openInfo.item.keepRaw = true;
                 macroInfos[closingIdx].item.keepRaw = true;
@@ -1223,9 +1232,10 @@ class MacroCstWalker {
             }
         }
 
-        // Mark unmatched closing macros as keepRaw so they stay as raw text
+        // Mark unmatched closing macros as keepRaw so they stay as raw text.
+        // A lone `{{///}}` is the exception: it has always evaluated to nothing, as a comment.
         for (const info of macroInfos) {
-            if (info.isClosing && !info.matched) {
+            if (info.isClosing && !info.matched && info.name !== '//') {
                 info.item.keepRaw = true;
             }
         }
@@ -1325,9 +1335,10 @@ class MacroCstWalker {
         const argumentNodes = /** @type {CstNode[]} */ (argumentsNode?.children?.argument || []);
         const currentArgCount = argumentNodes.length;
 
-        // List-arg macros don't support scoped content - they accept arbitrary inline args instead
+        // List-arg macros don't support scoped content - they accept arbitrary inline args instead.
+        // The comment macro is the exception while it has no inline text: `{{//}}text{{///}}` hides its text.
         if (def.list) {
-            return false;
+            return currentArgCount === 0 && this.#isCommentMacro(macroName);
         }
 
         // Check if adding 1 more argument (scoped content) would be valid
@@ -1335,6 +1346,16 @@ class MacroCstWalker {
 
         // Without list: newArgCount must be between minArgs and maxArgs
         return newArgCount >= def.minArgs && newArgCount <= def.maxArgs;
+    }
+
+    /**
+     * Checks if a macro name resolves to the comment macro (`//`, or its alias `comment`).
+     *
+     * @param {string} macroName
+     * @returns {boolean}
+     */
+    #isCommentMacro(macroName) {
+        return MacroRegistry.getPrimaryMacro(macroName)?.name === '//';
     }
 
     /**

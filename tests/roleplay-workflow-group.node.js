@@ -12,10 +12,12 @@ const { runPathfinderToolJob } = await import('../src/generation/pathfinder-tool
 const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWorkflowJob,
     recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
 const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updateJob } = await import('../src/jobs/store.js');
-const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
+const { readArtifact, providerStep, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { markRoleplayAgentsFailed, markRoleplayAgentsRefused, requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { enableMewmoryHiding, rememberSavedChat } = await import('./mewmory-hiding-fixture.js');
+const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
+const { mutateState } = await import('../src/mewmory/store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -23,7 +25,7 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
     autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
-    description = null, history = 0 } = {}) {
+    description = null, history = 0, scene = null, generationMode = 0, promptControls = controls, agents = [], groupSettings = {} } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     if (description !== null) {
@@ -37,12 +39,13 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
         })));
     }
     f.records.push({ name: 'User', is_user: true, mes: text, extra: {} });
+    scene?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(dirs.characters, 'Other.png'), writeCard(png,
         JSON.stringify({ name: 'Other', description: 'Second member', data: { name: 'Other', description: 'Second member' } })));
     fs.writeFileSync(path.join(dirs.groups, 'group.json'), JSON.stringify({ id: 'group', members: ['Nova.png', 'Other.png'],
-        disabled_members: disabled, chats: ['Source', 'New'], activation_strategy: strategy, generation_mode: 0,
-        member_models: { 'Other.png': 'fixture-override' } }));
+        disabled_members: disabled, chats: ['Source', 'New'], activation_strategy: strategy, generation_mode: generationMode,
+        member_models: { 'Other.png': 'fixture-override' }, ...groupSettings }));
     if (pathfinder) {
         dirs.worlds = path.join(dirs.root, 'worlds');
         dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
@@ -55,6 +58,13 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
             name: 'Pathfinder', category: 'tool', enabled: true, sourceTemplateId: 'tpl-pathfinder',
             settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false } }));
     }
+    if (agents.length) {
+        dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
+        fs.mkdirSync(dirs.inChatAgents, { recursive: true });
+        for (const agent of agents) fs.writeFileSync(path.join(dirs.inChatAgents, `${agent.id}.json`), JSON.stringify({
+            name: agent.id, enabled: true, category: 'custom', ...agent,
+        }));
+    }
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
     fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
@@ -66,7 +76,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
             'api-url': 'http://127.0.0.1:18000/v1' }] },
-        ...(pathfinder ? { inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: true } } } : {}) },
+        ...(pathfinder || agents.length ? { inChatAgents: { globalSettings: { enabled: true, ...(pathfinder ? { pathfinderEnabled: true } : {}) } } } : {}) },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, groupId: 'group' });
@@ -85,12 +95,20 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
             setJobState(dirs, child.id, 'running');
             await runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
                 signal: new AbortController().signal }, { contextLimit: () => 4096,
-                promptBackend: () => ({ backend: 'chat', active: { ...controls, function_calling: true },
+                promptBackend: () => ({ backend: 'chat', active: { ...promptControls, function_calling: true },
                     profile: { model: 'fixture' }, source: 'custom' }),
                 ...(pathfinder ? { generatePathfinder: async options => {
                     const step = roleplayHash(['group-sidecar', child.id]);
                     options.onProviderStep(`provider:${step}`);
                     return providerStep(options.jobContext, step, async () => { options.beforeDispatch(); return { text: '' }; });
+                } } : {}),
+                ...(expected.generateAgent ? { generateAgent: async options => {
+                    const step = roleplayHash(['group-agent', child.id, options.stepNamespace ?? '', options.messages]);
+                    options.onProviderStep?.(`provider:${step}`);
+                    return providerStep(options.jobContext, step, async () => {
+                        await options.beforeDispatch?.();
+                        return { text: await expected.generateAgent(options) };
+                    });
                 } } : {}),
                 generate: async options => {
                     count.value++;
@@ -137,6 +155,256 @@ test('saved whole-group turn completes speakers in order and retains each protec
     assert.equal(f.records()[2].mes, 'Answer');
     assert.equal(count.value, 2);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+});
+
+test('server group replies leave out lines a speaker did not hear and record who heard each reply', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [] } };
+        records[1].mes = 'Only Nova heard the marigold code.';
+        records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.audience), [
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+    ]);
+    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => assert.match(promptOf(options), /marigold/) }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => {
+            const prompt = promptOf(options);
+            assert.doesNotMatch(prompt, /marigold/);
+            assert.match(prompt, /Nova replies\./);
+        } }, count);
+    const completed = await runRoleplayWorkflowJob(f.context());
+    assert.equal(completed.result.status, 'completed');
+    const saved = f.records();
+    assert.equal(saved[1].mes, 'Only Nova heard the marigold code.');
+    assert.deepEqual(saved.slice(4).map(record => record.extra.group_scene), [
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+        { present: ['Nova.png', 'Other.png'], whisper_to: [] },
+    ]);
+});
+
+function sceneMemories(t, options = {}) {
+    const f = prepared(t, { ...options, scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: 'The archive', whisper_to: [] } };
+        records[1].extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+    } });
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHide: false });
+    const remember = (state, id, ref, text, present) => {
+        const record = validateRecord(state, { id, kind: 'event', text, refs: [ref], subjectIds: ['archive'], evidenceStatus: 'established' },
+            { asOf: state.timeline.indexOf(ref), origin: 'objective_extractor' });
+        record.provenance = { policy: 'test', jobId: 'job', audience: { present, whisper_to: [] } };
+        putRecord(state, record, { automatic: true });
+    };
+    mutateState(f.dirs, f.f.locator, state => {
+        remember(state, 'event:secret', state.timeline[0], 'Nova overheard the secret plan.', ['Nova.png']);
+        remember(state, 'event:archive', state.timeline[1], 'Everyone gathered in the archive.', ['Nova.png', 'Other.png']);
+    });
+    return f;
+}
+
+const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+const childOf = (f, turn) => readArtifact(f.dirs, f.jobId, turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child').jobId;
+
+test('server group replies carry the scene line and recall only the memories each speaker heard', async t => {
+    const f = sceneMemories(t);
+    const line = '[Scene: Location: The archive. Present: Nova, Other.]';
+    assert.ok(f.request.group.speakers.every(speaker => speaker.contextPrompt.endsWith(`\n${line}`)));
+    const memoryOf = turn => readArtifact(f.dirs, childOf(f, turn), 'roleplay-mewmory');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    let novaPrompt = '';
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => { novaPrompt = promptOf(options); } }, count);
+    assert.ok(novaPrompt.includes(line));
+    assert.ok(novaPrompt.includes('Nova overheard the secret plan.'));
+    assert.ok(novaPrompt.includes('Everyone gathered in the archive.'));
+    assert.equal(memoryOf(0).viewers, undefined);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    let otherPrompt = '';
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.ok(otherPrompt.includes(line));
+    assert.ok(otherPrompt.includes('Everyone gathered in the archive.'), 'Other should recall the memory of a line they heard');
+    assert.ok(!otherPrompt.includes('Nova overheard the secret plan.'), 'Other should not recall a line they missed');
+    assert.ok(!otherPrompt.includes('Original'), 'the line Other missed should stay out of their history');
+    assert.equal(memoryOf(1).enabled, true);
+    assert.deepEqual(memoryOf(1).viewers, ['Other.png']);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+});
+
+test('a server group reply prepared before speakers had their own recall still finishes without memories', async t => {
+    const f = sceneMemories(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.' }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    writeArtifact(f.dirs, childOf(f, 1), 'roleplay-mewmory', { enabled: false, restricted: true, npcText: '', memoryText: '',
+        interviewText: '', factsText: '', excludedIndices: [], presentationVersion: 1 });
+    let otherPrompt = '';
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.ok(!otherPrompt.includes('Everyone gathered in the archive.'));
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.deepEqual(f.records().slice(4).map(record => record.mes), ['Nova replies.', 'Other replies.']);
+});
+
+test('a server group Agent reads the memories its speaker heard', async t => {
+    const f = sceneMemories(t, { agents: [{ id: 'reader', phase: 'pre', prompt: 'READ {{full-mewmory}}',
+        preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', wrapPrefix: '<agent>', wrapSuffix: '</agent>', maxTokens: 64 } }] });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    const read = {};
+    const reader = name => options => {
+        read[name] = String(options.messages[0].content);
+        return `${name} notes`;
+    };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.', generateAgent: reader('Nova') }, count);
+    assert.ok(read.Nova.includes('Nova overheard the secret plan.'));
+    assert.ok(read.Nova.includes('Everyone gathered in the archive.'));
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        generateAgent: reader('Other') }, count);
+    assert.ok(read.Other.includes('Everyone gathered in the archive.'), 'the Agent should read what Other heard');
+    assert.ok(!read.Other.includes('Nova overheard the secret plan.'), 'the Agent should not read what Other missed');
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+});
+
+test('server group replies leave out every line before the chat\'s memory starting point, and what was remembered from them', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [], heard_from: 2 } };
+    } });
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHide: false });
+    mutateState(f.dirs, f.f.locator, state => {
+        const record = validateRecord(state, { id: 'event:archive', kind: 'event', text: 'Everyone gathered in the archive.', refs: [state.timeline[1]],
+            subjectIds: ['archive'], evidenceStatus: 'established' }, { asOf: 1, origin: 'objective_extractor' });
+        record.provenance = { policy: 'test', jobId: 'job', audience: { present: ['Nova.png', 'Other.png'], whisper_to: [] } };
+        putRecord(state, record, { automatic: true });
+    });
+    const memoryOf = turn => readArtifact(f.dirs, childOf(f, turn), 'roleplay-mewmory');
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    const prompts = [];
+    for (const [turn, avatar, name, modelOverride] of [[0, 'Nova.png', 'Nova', ''], [1, 'Other.png', 'Other', 'fixture-override']]) {
+        await f.completeCandidate(turn, { avatar, name, modelOverride, reply: `${name} replies.`,
+            check: options => { prompts.push(promptOf(options)); } }, count);
+        assert.deepEqual(memoryOf(turn).viewers, [avatar]);
+        await runRoleplayWorkflowJob(f.context());
+    }
+    for (const prompt of prompts) {
+        assert.match(prompt, /Everyone, please answer\./);
+        assert.doesNotMatch(prompt, /Original|\bAnswer\b/, 'lines before the starting point stay out of the history');
+        assert.ok(!prompt.includes('Everyone gathered in the archive.'), 'and so do memories of them');
+    }
+    assert.match(prompts[1], /Nova replies\./);
+    assert.deepEqual(f.records().slice(1, 3).map(record => record.mes), ['Original', 'Answer']);
+});
+
+test('a server speaker who remembers only with the group leaves out lines nobody now in the scene heard with them', async t => {
+    const f = prepared(t, { scene: records => {
+        records[0].chat_metadata = { group_scene: { away: ['Nova.png'], location: '', whisper_to: [], with_group: ['Other.png'] } };
+        records[1].mes = 'They both heard the marigold code.';
+        records[1].extra = { group_scene: { present: ['Nova.png', 'Other.png'], whisper_to: [] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.avatar), ['Other.png']);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.completeCandidate(0, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => {
+            const prompt = promptOf(options);
+            assert.doesNotMatch(prompt, /marigold/, 'Nova heard it with them, but Nova is away');
+            assert.match(prompt, /Everyone, please answer\./);
+        } }, { value: 0 });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.equal(f.records()[1].mes, 'They both heard the marigold code.');
+});
+
+test('members marked away in the saved scene are not picked for a server group reply', async t => {
+    const away = records => {
+        records[0].chat_metadata = { group_scene: { away: ['Other.png'], location: '', whisper_to: [] } };
+    };
+    const f = prepared(t, { scene: away });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.avatar), ['Nova.png']);
+    assert.deepEqual(f.request.group.speakers[0].audience, { present: ['Nova.png'], whisper_to: [] });
+    assert.throws(() => prepared(t, { scene: away, forcedAvatars: ['Nova.png', 'Other.png'] }),
+        /not distinct enabled members/);
+});
+
+test('a whispered server group turn is answered by the members it is for, privately', async t => {
+    const f = prepared(t, { text: 'Psst, a word in private.', scene: records => {
+        records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: ['Nova.png'] } };
+        records.at(-1).extra = { group_scene: { present: ['Nova.png', 'Other.png'], whisper_to: ['Nova.png'] } };
+    } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => [speaker.avatar, speaker.whisper]), [['Nova.png', ['Nova']]]);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    let prompt = '';
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova whispers back.',
+        check: options => { prompt = promptOf(options); } }, { value: 0 });
+    assert.match(prompt, /\[Private whisper between User and Nova\. Other members cannot hear or react to it\. Keep the reply private\.\]/);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    const reply = f.records().at(-1);
+    assert.equal(reply.mes, 'Nova whispers back.');
+    assert.deepEqual(reply.extra.group_scene, { present: ['Nova.png', 'Other.png'], whisper_to: ['Nova.png'] });
+});
+
+for (const hearReplyTarget of [true, false]) test(`a first server speaker who missed the line they answer ${hearReplyTarget ? 'hears it' : 'stays out of it when the group says so'}`, async t => {
+    const f = prepared(t, { forcedAvatars: ['Other.png', 'Nova.png'], groupSettings: hearReplyTarget ? {} : { hear_reply_target: false },
+        scene: records => {
+            records[0].chat_metadata = { group_scene: { away: [], location: '', whisper_to: [] } };
+            records.at(-1).extra = { group_scene: { present: ['Nova.png'], whisper_to: [] } };
+        } });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.hears ?? null), [hearReplyTarget ? 2 : null, null]);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    let otherPrompt = '';
+    await f.completeCandidate(0, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override', reply: 'Other replies.',
+        check: options => { otherPrompt = promptOf(options); } }, count);
+    assert.equal(otherPrompt.includes('Everyone, please answer.'), hearReplyTarget);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(f.records().at(-1).mes, 'Other replies.');
+    assert.deepEqual(f.records()[3].extra.group_scene.present, hearReplyTarget ? ['Nova.png', 'Other.png'] : ['Nova.png']);
+    await f.completeCandidate(1, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+        check: options => assert.match(promptOf(options), /Other replies\./) }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    const saved = f.records();
+    assert.deepEqual(saved.slice(4).map(record => record.mes), ['Other replies.', 'Nova replies.']);
+    assert.deepEqual(saved[3].extra.group_scene.present, hearReplyTarget ? ['Nova.png', 'Other.png'] : ['Nova.png']);
+});
+
+for (const generationMode of [1, 2]) test(`joined-cards mode ${generationMode} leaves an away member's card out of a server group reply`, async t => {
+    const cards = { prompts: [...controls.prompts, { identifier: 'charDescription', marker: true, system_prompt: true }],
+        prompt_order: [{ character_id: 100001, order: [...controls.prompt_order[0].order, { identifier: 'charDescription', enabled: true }] }] };
+    const promptOf = options => options.messages.map(message => String(message.content)).join('\n');
+    const replyPrompt = async away => {
+        const f = prepared(t, { generationMode, promptControls: cards, description: 'Nova card', disabled: generationMode === 2 ? ['Other.png'] : [],
+            forcedAvatars: ['Nova.png'], scene: records => {
+                records[0].chat_metadata = { group_scene: { away, location: '', whisper_to: [] } };
+            } });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        let prompt = '';
+        await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.',
+            check: options => { prompt = promptOf(options); } }, { value: 0 });
+        return prompt;
+    };
+    const together = await replyPrompt([]);
+    assert.ok(together.includes('Nova card'));
+    assert.ok(together.includes('Second member'), 'the joined card should be present while Other is in the scene');
+    const apart = await replyPrompt(['Other.png']);
+    assert.ok(apart.includes('Nova card'));
+    assert.ok(!apart.includes('Second member'), 'an away member\'s card should stay out of the joined prompt');
 });
 
 test('group speakers keep their owned identities while clearing older history between speakers', async t => {

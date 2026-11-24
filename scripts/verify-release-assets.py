@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -122,7 +123,7 @@ def verify_signer(text, name):
     require([cert.lower() for cert in certs] == [CERTIFICATE], f'{name}: expected exactly the official Android signer')
 
 
-def verify_build(directory, commit, version, apksigner):
+def verify_build(directory, commit, version, apksigner, aapt2):
     apks, source, ipa, layouts = asset_names(version)
     files = {}
     for platform, (manifest, names) in layouts.items():
@@ -138,7 +139,8 @@ def verify_build(directory, commit, version, apksigner):
         verify_apk_offsets(apk)
 
     android = json.loads(output(sys.executable, '-E', str(ROOT / 'scripts/verify-android-release.py'),
-                                '--commit', commit, '--version', version, *(str(files[name]) for name in apks.values())))
+                                '--commit', commit, '--version', version, '--aapt2', aapt2,
+                                *(str(files[name]) for name in apks.values())))
     require({record['abi']: record['apk'] for record in android} == apks, 'APK filenames do not match their ABIs')
     supplied = json.loads(files['provenance.json'].read_text())
     require(sorted(android, key=lambda record: record['apk']) == sorted(supplied, key=lambda record: record['apk']),
@@ -200,6 +202,7 @@ def main():
         sub.add_argument('--commit', required=True, help='full release commit SHA')
         sub.add_argument('--directory', type=Path, required=True, help='new directory for build, same directory for published')
         sub.add_argument('--apksigner', default='apksigner', help='path to Android SDK apksigner, if not on PATH')
+        sub.add_argument('--aapt2', help='path to Android SDK aapt2 (defaults to the tool beside apksigner, then PATH)')
         if action == 'build':
             sub.add_argument('--android-run', type=int, required=True)
             sub.add_argument('--ios-run', type=int, required=True)
@@ -211,6 +214,8 @@ def main():
     require(re.fullmatch(r'\d+\.\d+\.\d+(?:\.\d+)?', version), 'Expected a numbered Neconyan release version')
     directory = args.directory.resolve()
     apksigner = str(Path(args.apksigner).resolve()) if os.path.dirname(args.apksigner) else args.apksigner
+    sibling = Path(shutil.which(apksigner) or apksigner).with_name('aapt2')
+    aapt2 = args.aapt2 or (str(sibling.resolve()) if sibling.is_file() else 'aapt2')
     if args.command == 'build':
         for platform, run_id in [('android', args.android_run), ('ios', args.ios_run)]:
             check_build_run(run_id, platform, commit)
@@ -218,11 +223,11 @@ def main():
         for platform, run_id in [('android', args.android_run), ('ios', args.ios_run)]:
             subprocess.run(['gh', 'run', 'download', str(run_id), '--repo', REPO,
                             '--name', f'{platform}-release-{commit}', '--dir', str(directory / platform)], check=True)
-        verify_build(directory, commit, version, apksigner)
+        verify_build(directory, commit, version, apksigner, aapt2)
     else:
         tag = f'v{version}'
         assets = published_assets(tag, commit)
-        build = verify_build(directory, commit, version, apksigner)
+        build = verify_build(directory, commit, version, apksigner, aapt2)
         # Use a fresh directory on every check; no cached or manually supplied public files.
         with tempfile.TemporaryDirectory(prefix='published-check-', dir=directory) as temp:
             subprocess.run(['gh', 'release', 'download', tag, '--repo', REPO, '--pattern', '*', '--dir', temp], check=True)

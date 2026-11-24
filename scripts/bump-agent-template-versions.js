@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -12,7 +13,22 @@ const templatesDir = path.join(repoRoot, 'public/scripts/extensions/in-chat-agen
 const templatesDirRel = 'public/scripts/extensions/in-chat-agents/templates';
 const indexPath = path.join(templatesDir, 'index.json');
 const indexRel = `${templatesDirRel}/index.json`;
-const skippedTemplateFiles = new Set(['groups.json', 'index.json', 'regex-bundles.json']);
+const skippedTemplateFiles = new Set(['groups.json', 'index.json', 'regex-bundles.json', 'revision.json']);
+const revisionSourceFiles = ['index.json', 'regex-bundles.json', 'groups.json'];
+
+function writeCatalogueRevision(dryRun) {
+    const hash = crypto.createHash('sha256');
+    for (const name of revisionSourceFiles) {
+        hash.update(fs.readFileSync(path.join(templatesDir, name)));
+    }
+    if (dryRun) {
+        console.log('Would refresh templates/revision.json.');
+        return;
+    }
+    const contents = JSON.stringify({ revision: hash.digest('hex') }, null, 2) + '\n';
+    fs.writeFileSync(path.join(templatesDir, 'revision.json'), contents);
+    console.log('Refreshed templates/revision.json.');
+}
 
 function printHelp() {
     console.log(`Usage: node scripts/bump-agent-template-versions.js [--dry-run] [--file <path>]...
@@ -346,6 +362,7 @@ function main() {
     }
 
     applyVersions(versionTargets, options.dryRun);
+    writeCatalogueRevision(options.dryRun);
 }
 
 try {

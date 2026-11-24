@@ -9,6 +9,8 @@ import { getStringHash } from '../../macro-primitives.js';
 import { getPlotCompassIdentity } from './companion/plot-compass-context.js';
 import { setPlotCompassObjectives } from './companion/companion-shared.js';
 import { buildPlotCompassControls, readPlotCompassControls } from './companion/plot-compass-controls.js';
+import { planMissingPlotCompassScripts } from './companion/plot-compass-regex-migration.js';
+import { composeCatalogueRevision, markAgentLibraryStartupSettled } from './library-startup.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
@@ -148,8 +150,11 @@ import { renderTemplateAsync } from '../../templates.js';
 import { registerStartupTask } from '../../startup-readiness.js';
 import { registerSettingsSetupTask } from '../../settings-setup.js';
 import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
+import { registerMacroFieldDialect } from '../../macro-field-warnings.js';
+import { agentPromptMacroNames } from './agent-context-macros.js';
 
 const MODULE_NAME = 'in-chat-agents';
+registerMacroFieldDialect('agent', agentPromptMacroNames);
 const renderAgentListDebounced = debounce(renderAgentList, debounce_timeout.short);
 let agentListSearchRenderPending = false;
 
@@ -568,6 +573,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(latestBundledAgentMigration.removedCount, 'duplicate built-in agent removed', 'duplicate built-in agents removed');
 
     await migrateBundledRegexScriptsToSavedAgents();
+    noteUpdate(await migratePlotCompassRegexScriptsToSavedAgents(), 'Plot Compass agent had its card scripts restored', 'Plot Compass agents had their card scripts restored');
     noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
     noteUpdate(await migrateRetiredRegexFindPatternsToSavedAgents(), 'agent regex rule updated to read more replies', 'agent regex rules updated to read more replies');
     noteUpdate(await migrateRetiredBundledPromptsToSavedAgents(), 'built-in agent prompt updated', 'built-in agent prompts updated');
@@ -587,7 +593,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(await migrateTrackerCompanionsToAutoLoop(), 'tracker companion now runs automatically and shows in the Companion panel', 'tracker companions now run automatically and show in the Companion panel');
     startupCounts.forEach(({ count, plural }, singular) => startupUpdates.push(`${count} ${count === 1 ? singular : plural}`));
     if (startupUpdates.length) {
-        toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated');
+        toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated', { escapeHtml: false });
     }
 
     await migrateLevelUpStatsContextLinks();
@@ -758,6 +764,9 @@ function isBundledAgentName(agent) {
 }
 let templateLoadError = null;
 let templateRegexBundles = {};
+let templateLoad = null;
+
+const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';
 let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
@@ -894,11 +903,13 @@ const DIRECTOR_COMMENTARY_VOICE_VALUES = Object.freeze([
 const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set([
     CHATROOM_TEMPLATE_ID,
     MESSAGE_INBOX_TEMPLATE_ID,
+    MEMORY_SHARD_TEMPLATE_ID,
     POSITION_TRACKER_TEMPLATE_ID,
     CLOTHING_TRACKER_TEMPLATE_ID,
     VISUAL_MAP_TEMPLATE_ID,
     VITALS_TEMPLATE_ID,
     DICE_ROLLER_TEMPLATE_ID,
+    PLOT_COMPASS_TEMPLATE_ID,
 ]);
 const BUNDLED_PROMPT_TRANSFORM_IMPERSONATE_TEMPLATE_IDS = new Set([
     'tpl-prose-polisher',
@@ -2495,6 +2506,25 @@ async function migrateBundledRegexScriptsToSavedAgents() {
     }
 }
 
+async function migratePlotCompassRegexScriptsToSavedAgents() {
+    let migratedCount = 0;
+
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const template = findTemplateForAgent(agent);
+        const missing = planMissingPlotCompassScripts(agent, template);
+        if (missing.length === 0) {
+            continue;
+        }
+
+        agent.regexScripts = [...getAgentRegexScripts(agent), ...missing];
+        agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+        await saveAgent(agent);
+        migratedCount++;
+    }
+
+    return migratedCount;
+}
+
 function hasCyoaChoiceEmptyRowCleanup(agent) {
     return getAgentRegexScripts(agent).some(script =>
         script.id === CYOA_CHOICES_EMPTY_ROW_CLEANUP_SCRIPT_ID
@@ -3675,6 +3705,7 @@ function renderAgentList() {
     cancelDebounce(renderAgentListDebounced);
     agentListSearchRenderPending = false;
     agentListRenderPending = false;
+    updateUpdateAllButtonVisibility();
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
     // Record the filter this render used, so a pending 200 ms redraw is distinguishable
@@ -4025,7 +4056,6 @@ function renderAgentList() {
     restoreAgentListScrollState(scrollState);
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
-    updateUpdateAllButtonVisibility();
     updateCompanionButtonVisibility();
     updateCompanionPanelHandleVisibility();
 }
@@ -4180,14 +4210,15 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         return;
     }
 
+    // Reference labels and suggested regex scripts need the bundled catalogue.
+    const [html] = await Promise.all([renderExtensionTemplateAsync(MODULE_NAME, 'editor'), loadTemplates()]);
+    if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Open the editor again.');
     let regexScripts = getAgentRegexScripts(agent).map(script => structuredClone(script));
     const template = findTemplateForAgent(agent);
     const bundledRegexScripts = Array.isArray(template?.regexScripts)
         ? template.regexScripts.map(script => structuredClone(script))
         : [];
 
-    const html = await renderExtensionTemplateAsync(MODULE_NAME, 'editor');
-    if (!savedAgentIsCurrent()) throw new Error('The agent or account changed. Open the editor again.');
     if (!html) {
         toastr.error('Could not load the agent editor. Please refresh the page and try again.');
         return;
@@ -5319,14 +5350,28 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
 
 // ===================== Template Browser =====================
 
+/** Reads the small revision file so an unchanged bundled library can be skipped. */
+async function readBundledCatalogueRevision() {
+    try {
+        const response = await fetch(getTemplateAssetUrl('revision.json'));
+        if (!response.ok) return '';
+        const data = await response.json();
+        return typeof data?.revision === 'string' ? data.revision.trim() : '';
+    } catch {
+        return '';
+    }
+}
+
 /**
  * Loads built-in template agents from the templates directory.
  */
 async function loadTemplates() {
-    if (templates.length > 0) {
-        return;
-    }
+    if (templates.length > 0) return;
+    templateLoad ??= fetchTemplates().finally(() => { templateLoad = null; });
+    await templateLoad;
+}
 
+async function fetchTemplates() {
     templateLoadError = null;
     try {
         const [templateResponse, regexBundleResponse, groupResponse] = await Promise.all([
@@ -6783,7 +6828,7 @@ function refreshConnectionProfileUi() {
 
 let agentListObserver = null;
 let agentListObserved = null;
-let agentListShown = true;
+let agentListShown = false;
 let agentListRenderPending = false;
 
 // Rebuilding every agent card takes about 100 ms, and a chat or connection change asks for it
@@ -6816,6 +6861,8 @@ function renderAgentListWhenShown() {
         return;
     }
     agentListRenderPending = true;
+    // The workspace banner is above the list and is visible independently of it.
+    updateUpdateAllButtonVisibility();
     updateCancelGenerationButton();
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
@@ -7146,12 +7193,14 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
     const settingsHtml = await renderAgentSettingsTemplate();
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
+        markAgentLibraryStartupSettled();
         return;
     }
     // The stylesheet started downloading alongside this script, so this wait rarely adds time.
     const [container] = await Promise.all([waitForAgentPanelContainer(), waitForAgentStylesheet()]);
     if (!container) {
         console.warn('[InChatAgents] The Agents panel container never appeared.');
+        markAgentLibraryStartupSettled();
         return;
     }
 
@@ -7246,6 +7295,14 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
     }
     resolveAgentPanelMounted();
 
+    // An unchanged catalogue is skipped at startup, but Manage still needs it
+    // to compare the installed versions and show available updates.
+    document.addEventListener('sb:shell-tab-activated', async event => {
+        if (event.detail?.tabId !== 'agents' || templates.length) return;
+        await loadTemplates();
+        if (templates.length) renderAgentListWhenShown();
+    });
+
     const savedState = extension_settings.inChatAgents;
     let removedAutoSeededTemplateIds = false;
     if (savedState && typeof savedState === 'object') {
@@ -7260,8 +7317,11 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
 
     const storageAccount = getCurrentUserHandle();
     bindAgentStorageAccount(storageAccount, () => storageAccount === getCurrentUserHandle());
+    const catalogueRevision = composeCatalogueRevision(await readBundledCatalogueRevision());
+    const catalogueReady = Boolean(catalogueRevision)
+        && accountStorage.getItem(BUNDLED_CATALOGUE_REVISION_KEY) === catalogueRevision;
     const initResults = await Promise.allSettled([
-        loadTemplates(),
+        catalogueReady ? Promise.resolve() : loadTemplates(),
         loadCustomGroupsFromServer(),
         refreshAgentSetupList(),
         fetchAgentLibrary(),
@@ -7280,13 +7340,25 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
 
     try {
         if (!areAgentsLoaded()) throw new Error('The agent library could not be loaded. Try again.');
-        await finishAgentLibraryInitialization();
+        if (catalogueReady) {
+            if (getAgentLibraryErrors().length || hasPendingAgentRecovery()) {
+                throw new Error('The agent library needs repair before it can finish loading.');
+            }
+            agentLibraryReady = true;
+        } else {
+            await finishAgentLibraryInitialization();
+            if (catalogueRevision) {
+                accountStorage.setItem(BUNDLED_CATALOGUE_REVISION_KEY, catalogueRevision);
+                saveSettingsDebounced();
+            }
+        }
     } catch (error) {
         setAgentSetupStatus(error.message || 'The agent library could not be prepared. Try again.', 'error');
         console.warn('[InChatAgents] Agent library initialization failed:', error);
     } finally {
         agentLibraryLoading = false;
         renderAgentSetupControls();
+        markAgentLibraryStartupSettled();
         notifyTaroGuide();
     }
 
@@ -7313,8 +7385,8 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
         console.warn('[InChatAgents] Tool agent sync failed:', err);
     }
 
-    // Render the panel
-    renderAgentList();
+    // Render the panel once it is on screen; a closed page keeps it pending.
+    renderAgentListWhenShown();
     initCompanionCardUi();
     configureCompanionDashboard({
         openEditor: agentId => openEditor(agentId),

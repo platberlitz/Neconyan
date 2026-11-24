@@ -1,5 +1,176 @@
 # Changelog
 
+## v1.6.0
+
+### Merged Staging PRs
+- PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
+- PR #778 (2026-11-20) `fix(deps): upgrade simple-git to patch security advisories`
+- PR #779 (2026-11-20) `fix(ci): let the pr manager write pull request labels`
+- PR #781 (2026-11-20) `fix(persona): keep the bottom bar picker from jumping`
+- PR #783 (2026-11-20) `fix(replies): preserve replies through stops and failures`
+- PR #784 (2026-11-20) `fix: stabilise nightly browser checks`
+- PR #785 (2026-11-20) `fix(mewmory): protect archive, recall and model settings`
+- PR #786 (2026-11-20) `fix(scratchpad): preserve sessions and recover interrupted replies`
+- PR #787 (2026-11-21) `fix(mobile): improve app startup, updates and device usability`
+- PR #788 (2026-11-21) `fix(scratchpad): use short references for scenario note edits`
+- PR #789 (2026-11-21) `fix(mobile): restore the compact composer layout`
+- PR #790 (2026-11-21) `fix(conversation): make deleting a DM or group DM stick`
+- PR #791 (2026-11-21) `feat(conversation): edit group DM members in place`
+- PR #792 (2026-11-21) `fix(android): honour supported server config edits on restart`
+- PR #793 (2026-11-21) `fix(agents): strip echoed line-format companion trackers`
+- PR #794 (2026-11-21) `perf(rendering): stop redundant page-wide and per-token work`
+- PR #795 (2026-11-21) `perf(chat): stop the send path waiting on counts and layout`
+- PR #796 (2026-11-21) `perf(settings): coalesce rapid style previews`
+- PR #797 (2026-11-21) `perf(chat): key editing styles off message classes`
+- PR #798 (2026-11-21) `perf(chat): stop rebuilding chat lists on every event`
+- PR #799 (2026-11-21) `perf(world-info): stop rebuilding scan text and key patterns`
+- PR #800 (2026-11-21) `perf(dialogue-colors): reuse normalised settings and trim rules`
+- PR #801 (2026-11-21) `perf(expressions): refresh on events instead of an idle poll`
+- PR #802 (2026-11-21) `perf(prompting-lab): read the inventory in one request`
+- PR #803 (2026-11-21) `perf(mewmory): refresh quietly in the background`
+- PR #804 (2026-11-21) `perf(conversation): paint streamed previews in place`
+- PR #805 (2026-11-21) `perf(chat): cut observer work on every streamed write`
+- PR #806 (2026-11-21) `perf(settings): skip unchanged saves before serialising`
+- PR #807 (2026-11-21) `perf(streaming): patch streamed text instead of replacing it`
+- PR #808 (2026-11-21) `perf(shell): skip unchanged message action scans`
+- PR #809 (2026-11-21) `perf(mewmory): skip prompt history while memory is off`
+- PR #813 (2026-11-21) `perf(server): keep the settings parse after a save`
+- PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
+- PR #815 (2026-11-21) `perf(jobs): select from the shared job ledger`
+- PR #816 (2026-11-21) `perf(chat): count saved chat rows once`
+- PR #817 (2026-11-21) `test(thumbnails): give the large portrait check time`
+- PR #818 (2026-11-21) `perf(server): leave the agent library out of startup`
+- PR #819 (2026-11-21) `perf(sw): skip rewriting unchanged cache entries`
+- PR #820 (2026-11-21) `perf(thumbnails): request phone-sized images in lists`
+- PR #821 (2026-11-21) `perf(ios): keep a node compile cache between launches`
+- PR #822 (2026-11-21) `perf(start): bound the update fetch`
+- PR #823 (2026-11-21) `perf(extensions): wait only for named dependencies`
+- PR #824 (2026-11-21) `perf(home): open Home before other startup listeners`
+- PR #825 (2026-11-21) `perf(streaming): stop repeated netstat checks`
+- PR #826 (2026-11-21) `perf(i18n): load only the English strings that differ`
+- PR #827 (2026-11-21) `perf(agents): build the agent list when shown`
+- PR #828 (2026-11-21) `perf(chats): stat recent chats in short batches`
+- PR #829 (2026-11-21) `perf(sw): serve labelled styles and libraries from cache`
+- PR #830 (2026-11-21) `fix(groups): close scene visibility gaps`
+- PR #831 (2026-11-21) `perf(startup): fetch characters while extensions load`
+- PR #832 (2026-11-21) `perf(time-machine): capture presets while idle`
+- PR #833 (2026-11-21) `perf(startup): fetch groups while extensions load`
+- PR #834 (2026-11-21) `test(thumbnails): retry a reset request in the cached check`
+- PR #835 (2026-11-21) `perf(startup): fetch avatars while extensions load`
+- PR #836 (2026-11-21) `perf(chat): hide the chat without restyling every row`
+- PR #837 (2026-11-21) `perf(startup): cache modules under one import map`
+- PR #838 (2026-11-21) `feat(plot-compass): let me pick the next direction from the note`
+- PR #839 (2026-11-21) `perf(startup): cache stylesheets under their own labels`
+- PR #840 (2026-11-21) `perf(agents): skip the bundled library when unchanged`
+- PR #841 (2026-11-21) `perf(startup): stamp assets without a production build`
+- PR #842 (2026-11-21) `test(e2e): stop waiting on transitions in a hidden chat`
+- PR #843 (2026-11-21) `feat(groups): add scene memory rules`
+- PR #844 (2026-11-21) `perf(mobile): skip swipe rail measuring during start-up`
+- PR #845 (2026-11-21) `perf(chat): ask a media query for phone width in the bubble boundary`
+- PR #846 (2026-11-21) `perf(models): skip scroll work while the model list is hidden`
+- PR #847 (2026-11-21) `feat(groups): show and edit who heard a message`
+- PR #848 (2026-11-21) `feat(groups): add scene commands, macros and SillyTavern import`
+- PR #849 (2026-11-21) `fix(settings): move the cat picker under interface`
+- PR #850 (2026-11-21) `feat(server): apply scene rules to server group replies`
+- PR #851 (2026-11-22) `fix(browser): repair the nightly staging checks`
+- PR #852 (2026-11-22) `feat(server): send scene lines and open server replies for scene chats`
+- PR #853 (2026-11-22) `feat(mewmory): recall per group speaker`
+- PR #854 (2026-11-22) `feat(mewmory): write group memories per audience`
+- PR #855 (2026-11-22) `feat(mewmory): keep group secrets out of hiding, sharing and lorebooks`
+- PR #856 (2026-11-22) `fix(groups): leave away members' cards out of joined-cards prompts`
+- PR #857 (2026-11-22) `fix(server): recall Mewmory per speaker on server group replies`
+- PR #858 (2026-11-22) `fix(agents): give Agent Mewmory macros the speaker's memories`
+- PR #859 (2026-11-22) `feat(server): write whispers and reply-to hearing on the server`
+- PR #860 (2026-11-22) `feat(characters): add folder tabs and auto-sort`
+- PR #861 (2026-11-22) `feat(mewmory): give interviews and overviews an audience`
+- PR #862 (2026-11-22) `feat(mewmory): reopen memories after a catch-up`
+- PR #863 (2026-11-22) `feat(groups): add 'Everyone hears this' lines`
+- PR #864 (2026-11-22) `fix(roleplay): skip unavailable lorebooks in server replies`
+- PR #865 (2026-11-22) `feat(groups): add a memory starting point per chat`
+- PR #866 (2026-11-22) `feat(groups): add 'Only with the group' memory mode`
+- PR #867 (2026-11-22) `fix(conversation): let Roleplay group asides follow the scene`
+- PR #868 (2026-11-22) `perf(mewmory): release unused archive data during extraction`
+- PR #869 (2026-11-22) `chore(release): start staging at 1.6.0`
+- PR #870 (2026-11-22) `fix(lorebook): show full pages and surface damaged entries`
+- PR #871 (2026-11-22) `feat(mewmory): read inline float32 embeddings`
+- PR #872 (2026-11-22) `fix(lorebooks): load saved entry lists and align entry tools`
+- PR #873 (2026-11-22) `perf(mewmory): store embeddings as compact float32 values`
+- PR #874 (2026-11-22) `feat(scratchpad): check cards, presets and lorebooks for problems`
+- PR #875 (2026-11-22) `perf(characters): limit cards processed at once on a cold list`
+- PR #876 (2026-11-22) `fix(plot-compass): honour selected directions`
+- PR #877 (2026-11-22) `feat(scratchpad): edit lorebook activation settings and trace misses`
+- PR #878 (2026-11-22) `fix(macros): hide text inside scoped comments`
+- PR #879 (2026-11-22) `feat(scratchpad): add App diagnostics so assistants see Neconyan's own errors`
+- PR #880 (2026-11-22) `feat(scratchpad): add /check and /why shortcuts for diagnoses`
+- PR #881 (2026-11-23) `feat(lorebooks): warn when a linked lorebook no longer exists`
+- PR #882 (2026-11-22) `test(mobile-layout): declare requestAnimationFrame for lint`
+- PR #883 (2026-11-23) `fix(browser): clear the latest nightly staging failures`
+- PR #884 (2026-11-23) `test(android): report a missing JDK before checking headers`
+- PR #885 (2026-11-23) `fix(i18n): localise author’s note examples`
+- PR #886 (2026-11-23) `fix(i18n): collect multiline attribute captions correctly`
+- PR #887 (2026-11-23) `test: fix remaining tests-folder lint errors`
+- PR #888 (2026-11-23) `refactor(i18n): remove the retired select2 name selector`
+- PR #889 (2026-11-23) `fix(lorebooks): preserve names in the additional lorebooks picker`
+- PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
+- PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
+- PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
+- PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
+- PR #896 (2026-11-23) `fix(i18n): match the English checkpoint tooltip to its translation key`
+- PR #897 (2026-11-23) `perf(chats): hold fewer copies of a chat while saving and loading`
+- PR #899 (2026-11-23) `fix(i18n): preserve names in the primary lorebook picker`
+- PR #900 (2026-11-23) `fix(i18n): make the structured prefill slot hint translatable`
+- PR #901 (2026-11-23) `test(chat): verify the intended Tide message reaches the lower edge`
+- PR #902 (2026-11-23) `perf(mewmory): stop redoing whole-archive work on every status check`
+- PR #903 (2026-11-23) `feat(scratchpad): record failed text completion requests in app evidence`
+- PR #904 (2026-11-23) `fix(creator): start the macro preview time limit when the worker is ready`
+- PR #905 (2026-11-23) `fix(server): count logged strings towards the log buffer cut limit`
+- PR #906 (2026-11-23) `feat(shell): tell people once when the page reloaded itself for an update`
+- PR #907 (2026-11-23) `fix(crash-diagnostics): record the stopped server build`
+- PR #908 (2026-11-23) `feat(reasoning): let custom endpoints hide unsupported reasoning levels`
+- PR #909 (2026-11-23) `feat(conversation): load the Lorebook Override book into replies`
+- PR #910 (2026-11-23) `perf(server): cut memory pressure and chat-save buffers`
+- PR #911 (2026-11-23) `fix(generation): let background jobs pass the character regex check`
+- PR #912 (2026-11-23) `fix(folders): fix Sort with AI settings sync and large libraries`
+- PR #913 (2026-11-23) `fix(companions): include composed Author's Notes for Companions`
+- PR #914 (2026-11-23) `fix(reasoning): recognise prefixed custom models`
+- PR #915 (2026-11-23) `fix(folders): make Sort with AI work with thinking models and stale settings`
+- PR #916 (2026-11-23) `fix(lorebooks): clear every link when a lorebook is deleted or renamed`
+- PR #917 (2026-11-23) `perf(chats): patch large chat saves instead of sending whole chat`
+- PR #918 (2026-11-23) `fix(conversation): load the card's linked lorebooks on character default`
+- PR #919 (2026-11-23) `fix(folders): unblock AI sorting after background jobs end`
+- PR #920 (2026-11-23) `feat(groups): refresh group chats and configure director timeout`
+- PR #921 (2026-11-23) `feat(slash-commands): restyle autocomplete and command help`
+- PR #922 (2026-11-23) `perf(chats): avoid repeated reads and checksums during saves`
+- PR #923 (2026-11-23) `fix(lorebooks): clean persona and Notebook links on delete and rename`
+- PR #924 (2026-11-23) `fix(character-folders): stop Sort with AI replaying a lost request`
+- PR #925 (2026-11-24) `fix(companions): wrap long Memory Shard lines in the panel`
+- PR #926 (2026-11-24) `fix(topbar): stop slow taps closing the search they just opened`
+- PR #927 (2026-11-24) `feat(characters): make folders and folder tabs opt-in`
+- PR #928 (2026-11-24) `feat(macros): warn under text fields about unknown or broken macros`
+- PR #929 (2026-11-24) `fix: clear the nightly browser check failures`
+- PR #930 (2026-11-24) `feat(companions): add Stop to each writing companion`
+- PR #931 (2026-11-24) `fix(groups): wrap group editor title and label action buttons`
+- PR #932 (2026-11-24) `feat(companions): make Memory Shard human-editable with HTML display`
+- PR #933 (2026-11-24) `feat(server): add a Node.js heap cap setting to the Server panel`
+- PR #934 (2026-11-24) `feat(authors-note): add full screen note editor button`
+- PR #936 (2026-11-24) `feat(plot-compass): add styled HTML card and Regex Agent Themes support`
+- PR #937 (2026-11-24) `feat(scratchpad): share the last prompt sent when asked`
+- PR #938 (2026-11-24) `feat(botsearcher): show the security check notice for JanitorAI`
+- PR #939 (2026-11-24) `fix(in-chat-agents): restore Plot Compass tracker scripts on saved agents`
+- PR #940 (2026-11-24) `fix(dialogue-colors): paint new NPC gradients when the reply lands`
+- PR #941 (2026-11-24) `fix(in-chat-agents): restore Plot Compass card scripts on every account`
+- PR #942 (2026-11-24) `feat(quick-image-gen): prefill save with the selected configuration name`
+
+### Local Commits
+- `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
+- `28806f7 fix(mobile): stop iPhone zooming in on focused fields`
+- `5a020e2 revert(mobile): remove the Reload Neconyan sidebar buttons`
+- `5c50b6e revert(mobile): restore the touch layout from before #787`
+- `3ed35ab revert(composer): send with Enter on touch devices again`
+- `1a6ed8e fix(composer): bring back new lines on Enter for touch screens`
+- `c4d4408 fix(mobile): bring back the Reload Neconyan sidebar buttons`
+- `1f34701 fix(themes): give Cozy Warm's phone text box its full width`
+
 ## v1.5.7
 
 ### Highlights

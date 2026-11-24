@@ -37,6 +37,7 @@ function account(t, group = false) {
     const run = operation => store.withScratchpad(base, operation);
     const context = (settings = { include: { mewmory: true } }, from = source) => run(lease => bridge.mewmoryContextLocked(lease, from, settings));
     const archive = core.newState(f.locator);
+    archive.enabled = true;
     const sync = () => core.syncSources(archive, f.records.slice(1), readContextSourcesSync(directories, f.locator, archive));
     sync();
     const filename = memoryStore.statePath(directories, f.locator);
@@ -60,10 +61,29 @@ test('off and non-Roleplay contexts read nothing, and an empty archive is never 
         assert.equal(context.text, '');
     }
     const first = a.context();
-    assert.equal(first.enabled, true);
+    assert.equal(first.enabled, false);
     assert.equal(first.count, 0);
     assert.equal(first.fingerprint, a.context().fingerprint);
     assert.equal(fs.existsSync(a.filename), false);
+});
+
+test('Scratchpad respects Mewmory being off or restoring and ignores bookkeeping in the prompt fingerprint', t => {
+    const a = account(t);
+    a.add('private', 'Private saved memory');
+    a.save();
+    const before = a.context();
+    assert.equal(before.count, 1);
+    a.archive.revision++;
+    a.save();
+    assert.equal(a.context().fingerprint, before.fingerprint);
+    a.archive.enabled = false;
+    a.save();
+    assert.equal(a.context().text, '');
+    a.archive.enabled = true;
+    a.archive.visibilityRestore = { status: 'pending', operationKey: 'restoring', branchId: a.archive.branchId,
+        account: { accountId: 'fixture', dataEpoch: 1 }, instanceId: 'fixture' };
+    a.save();
+    assert.equal(a.context().text, '');
 });
 
 test('server context excludes stale and hidden evidence without mutating the shared archive', t => {

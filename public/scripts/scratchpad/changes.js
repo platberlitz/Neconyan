@@ -27,7 +27,13 @@ import { appendManualSwipe, selectManualSwipe } from '../manual-swipe.js';
 import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
+import { syncLorebookOriginalEntry } from '../neconyan-lorebook-tools-core.js';
 import { isCurrentSource, sourceCharacters, wireSource } from './context.js';
+import {
+    applyLorebookActivationFields,
+    describeLorebookSettingChanges,
+    snapshotLorebookEntry,
+} from './lorebook-fields.js';
 import { DIALOGUE_COLOR, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
 import { characterField, characterFieldPatch, readCharacterField } from './character-fields.js';
 
@@ -70,43 +76,98 @@ async function saveBook(book, data, source) {
     if (!saved) fail('The lorebook change was not saved. Review it again before retrying.');
 }
 
-async function lorebookPlan(change, source) {
+function requireDisabledEntryAllowed(entry, change, disabledEntriesListed) {
+    if (!entry.disable) return;
+    if (!disabledEntriesListed) {
+        fail('This entry is disabled and was not shared with the assistant. Turn on Problem checks with Lorebooks shared before changing it.');
+    }
+    if (Object.hasOwn(change, 'content')) {
+        fail('Disabled lorebook entries do not share their content, so Scratchpad will not edit their text while disabled. Enable the entry first.');
+    }
+    if (change.disable !== false) {
+        fail('Disabled lorebook entries can only be enabled from Scratchpad; set disable to false first.');
+    }
+}
+
+async function lorebookPlan(change, source, { disabledEntriesListed = false, lorebookGuard } = {}) {
     const data = await readBook(change.book);
     requireSource(source);
+    lorebookGuard?.();
     if (change.action === 'add') {
         const after = { title: change.title, keys: change.keys, content: change.content, constant: change.constant };
+        const settings = describeLorebookSettingChanges(null, change, { isAdd: true });
         return {
             target: change.book,
             field: 'New entry',
             before: '',
             after: formatEntry(after),
+            settings,
             editable: true,
             async commit(edited) {
-                const fresh = await readBook(change.book);
+                const validated = normaliseChange(change);
+                lorebookGuard?.();
+                const fresh = await readBook(validated.book);
                 requireSource(source);
-                const entry = createWorldInfoEntry(change.book, fresh);
+                const entry = createWorldInfoEntry(validated.book, fresh);
                 if (!entry) fail('A new entry could not be added to this lorebook.');
+                applyLorebookActivationFields(entry, validated);
                 const value = parseEntry(edited, after);
                 Object.assign(entry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
-                await saveBook(change.book, fresh, source);
+                if (value.constant) entry.vectorized = false;
+                syncLorebookOriginalEntry(fresh, entry.uid);
+                await saveBook(validated.book, fresh, source);
             },
         };
     }
-    const current = entryView(readEntry(data, change));
+    const entry = readEntry(data, change);
+    const current = entryView(entry);
     const before = formatEntry(current);
+    const beforeSnapshot = snapshotLorebookEntry(entry);
     if (change.action === 'delete') {
         return {
             target: `${change.book}, entry ${change.uid}`,
             field: 'Whole entry',
             before,
             after: '',
+            snapshot: beforeSnapshot,
             editable: false,
             async commit() {
-                const fresh = await readBook(change.book);
+                const validated = normaliseChange(change);
+                lorebookGuard?.();
+                const fresh = await readBook(validated.book);
                 requireSource(source);
-                if (formatEntry(entryView(readEntry(fresh, change))) !== before) conflict();
-                await deleteWorldInfoEntry(fresh, change.uid, { silent: true });
-                await saveBook(change.book, fresh, source);
+                if (snapshotLorebookEntry(readEntry(fresh, validated)) !== beforeSnapshot) conflict();
+                await deleteWorldInfoEntry(fresh, validated.uid, { silent: true });
+                await saveBook(validated.book, fresh, source);
+            },
+        };
+    }
+    requireDisabledEntryAllowed(entry, change, disabledEntriesListed);
+    const hasTextEdit = !entry.disable && (Object.hasOwn(change, 'title') || Object.hasOwn(change, 'content'));
+    if (!hasTextEdit) {
+        const settings = describeLorebookSettingChanges(entry, change, { includeTitle: Boolean(entry.disable) });
+        if (!settings.length) fail('That lorebook entry already has those settings.');
+        return {
+            target: `${change.book}, entry ${change.uid}`,
+            field: 'Activation settings',
+            before: settings.map(row => `${row.label}: ${row.before}`).join('\n'),
+            after: settings.map(row => `${row.label}: ${row.after}`).join('\n'),
+            snapshot: beforeSnapshot,
+            settings,
+            hideTextDiff: true,
+            editable: false,
+            async commit() {
+                const validated = normaliseChange(change);
+                lorebookGuard?.();
+                const fresh = await readBook(validated.book);
+                requireSource(source);
+                const freshEntry = readEntry(fresh, validated);
+                requireDisabledEntryAllowed(freshEntry, validated, disabledEntriesListed);
+                if (snapshotLorebookEntry(freshEntry) !== beforeSnapshot) conflict();
+                if (Object.hasOwn(validated, 'title')) freshEntry.comment = validated.title;
+                applyLorebookActivationFields(freshEntry, validated);
+                syncLorebookOriginalEntry(fresh, freshEntry.uid);
+                await saveBook(validated.book, fresh, source);
             },
         };
     }
@@ -116,20 +177,29 @@ async function lorebookPlan(change, source) {
         content: change.content ?? current.content,
         constant: change.constant ?? current.constant,
     };
+    const settings = describeLorebookSettingChanges(entry, change);
     return {
         target: `${change.book}, entry ${change.uid}`,
         field: 'Entry',
         before,
         after: formatEntry(proposed),
+        snapshot: beforeSnapshot,
+        settings,
         editable: true,
         async commit(edited) {
-            const fresh = await readBook(change.book);
+            const validated = normaliseChange(change);
+            lorebookGuard?.();
+            const fresh = await readBook(validated.book);
             requireSource(source);
-            const entry = readEntry(fresh, change);
-            if (formatEntry(entryView(entry)) !== before) conflict();
+            const freshEntry = readEntry(fresh, validated);
+            requireDisabledEntryAllowed(freshEntry, validated, disabledEntriesListed);
+            if (snapshotLorebookEntry(freshEntry) !== beforeSnapshot) conflict();
+            applyLorebookActivationFields(freshEntry, validated);
             const value = parseEntry(edited, proposed);
-            Object.assign(entry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
-            await saveBook(change.book, fresh, source);
+            Object.assign(freshEntry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
+            if (value.constant) freshEntry.vectorized = false;
+            syncLorebookOriginalEntry(fresh, freshEntry.uid);
+            await saveBook(validated.book, fresh, source);
         },
     };
 }
@@ -554,7 +624,7 @@ export async function addReplyVersion(source, target, text) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', disabledEntriesListed = false, lorebookGuard } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'preset') {
@@ -648,7 +718,7 @@ export async function prepareChange(change, source, { sharedAvatar = '', sharedP
     }
     if (change.type === 'lorebook') {
         if (source.kind === 'general' && (!sharedLorebook || change.book !== sharedLorebook)) fail(t`Share that lorebook under Context before saving a change to it.`);
-        return lorebookPlan(change, source);
+        return lorebookPlan(change, source, { disabledEntriesListed, lorebookGuard });
     }
     if (change.type === 'character') {
         if (source.kind === 'general' && (!source.avatar || sharedAvatar !== source.avatar)) fail(t`Share the selected character card before requesting a change.`);

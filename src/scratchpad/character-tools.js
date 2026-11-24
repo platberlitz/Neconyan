@@ -6,6 +6,7 @@ import { supportsChatTools } from '../../public/scripts/chat-input-capabilities.
 import { prepareRoleplayCapabilities } from '../generation/roleplay-capabilities.js';
 import { resolveGenerationProfile } from '../generation/profiles.js';
 import { fetchChatProfileModels } from '../generation/service.js';
+import { MAX_CHANGES, splitReply } from '../../public/scripts/scratchpad/proposals.js';
 
 const NAME = 'Neconyan_Assistant_CreateCharacter';
 const CATALOGUE_TTL = 10 * 60 * 1000;
@@ -15,7 +16,8 @@ const catalogues = new Map();
 function cachedCatalogue(fetchModels) {
     return async options => {
         const { context, material } = options;
-        const key = JSON.stringify([context.owner, material.source, material.profile?.['secret-id'] ?? '']);
+        const key = JSON.stringify([context.owner, material.source, material.profile?.id, material.profile?.['secret-id'],
+            material.profile?.['api-url'], material.proxy?.reverse_proxy, material.active?.custom_url, material.active?.azure_base_url]);
         const saved = catalogues.get(key);
         if (saved && Date.now() - saved.at < CATALOGUE_TTL) return saved.models;
         const models = await fetchModels(options);
@@ -69,18 +71,22 @@ export function characterToolReply(response, tools) {
     const calls = normaliseRoleplayToolCalls(response, tools.map(tool => tool.function.name));
     if (!calls.length) return { text: String(response?.text ?? '').trim(), hasTools: false };
     const text = String(response?.text ?? '').trim();
-    const existingChanges = [...text.matchAll(/```scratchpad-change[^\n]*\n[\s\S]*?```/g)].length;
-    if (calls.length + existingChanges > 24) throw new Error('Scratchpad can review up to 24 changes per reply.');
+    const existingChanges = splitReply(text).filter(part => part.type === 'change').length;
+    let remaining = MAX_CHANGES - existingChanges;
+    let omitted = 0;
     const drafts = calls.map(call => {
+        if (!remaining) { omitted++; return ''; }
         let draft;
         // One unusable draft should not throw away the reply text or the other drafts.
         try { draft = normaliseCharacterDraft(call.arguments); } catch (error) {
             return `A character draft could not be used: ${String(error?.message || 'it was not valid.').slice(0, 300)}`;
         }
         const change = { type: 'character', action: 'create', ...draft };
+        remaining--;
         // Markdown inside character fields must not close the surrounding change block.
         const json = JSON.stringify(change).replaceAll('`', '\\u0060');
         return '```scratchpad-change\n' + json + '\n```';
     });
+    if (omitted) drafts.push(`Character drafts left out: ${omitted}. Scratchpad can review up to ${MAX_CHANGES} changes per reply.`);
     return { text: [text, ...drafts].filter(Boolean).join('\n\n'), hasTools: true };
 }

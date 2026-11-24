@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, normalizeWorldInfoPosition, serializeCharacterBookKeys, serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
+import { convertCharacterBookEntry } from '../public/scripts/world-info-character-book-entry.js';
 
 const positions = {
     before: 0,
@@ -364,14 +365,13 @@ describe('convertCharacterBook', () => {
     const worldInfoSource = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
     const charactersSource = readFileSync(new URL('../src/endpoints/characters.js', import.meta.url), 'utf8');
     const functions = [
-        'convertCharacterBook', 'getFreeWorldEntryUid', 'parseRegexFromString', 'convertWorldInfoToCharacterBook',
+        'convertCharacterBook', 'getFreeWorldEntryUid', 'convertWorldInfoToCharacterBook',
         'getWIOriginalDataIndex', 'syncWIOriginalDataEntry', 'appendWIOriginalDataEntry', 'createWorldInfoEntry', 'duplicateWorldInfoEntry',
     ];
     const context = vm.createContext({
-        structuredClone, escapeCharacterBookRegex, normalizeCharacterBookPosition, serializeWorldInfoEntry, getFreeCharacterBookEntryId,
+        structuredClone, convertCharacterBookEntry, serializeWorldInfoEntry, getFreeCharacterBookEntryId,
         worldInfoDataSnapshots: new WeakMap(), worldInfoCache: new Map(),
         newWorldInfoEntryTemplate: {}, world_info_position: positions,
-        world_info_logic: { AND_ANY: 0 }, extension_prompt_roles: { SYSTEM: 0 }, DEFAULT_DEPTH: 4, DEFAULT_WEIGHT: 100,
     });
     for (const name of functions) {
         const source = name === 'convertWorldInfoToCharacterBook' ? charactersSource : worldInfoSource;

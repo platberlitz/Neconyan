@@ -46,6 +46,10 @@ export function showAndroidCrashReports() {
     return invoke('NeconyanExport', 'showCrashReports');
 }
 
+export function requestAndroidDataBackup() {
+    return invoke('NeconyanExport', 'saveDataBackup');
+}
+
 export function androidNotificationState() {
     const result = invoke('NeconyanExport', 'notificationState');
     try { return result ? JSON.parse(result) : null; } catch { return null; }
@@ -82,7 +86,8 @@ export async function saveAndroidBlob(url, name) {
     try {
         if (!isMainPage() || !token) return false;
         const blob = await (await globalThis.fetch(url)).blob();
-        if (invoke('NeconyanExport', 'beginExport', [name || 'Neconyan-export', blob.size], token) !== true) throw new Error(t`Another export is open, the page changed, or the file exceeds 1 GiB.`);
+        if (blob.size > 1024 ** 3) throw new Error(t`This browser-generated export exceeds 1 GiB. For a full data backup, use Save a backup of my data in Server.`);
+        if (invoke('NeconyanExport', 'beginExport', [name || 'Neconyan-export', blob.size], token) !== true) throw new Error(t`Finish the current export or check available storage before trying again.`);
         opened = true;
         for (let at = 0; at < blob.size; at += 49152) {
             const bytes = new Uint8Array(await blob.slice(at, at + 49152).arrayBuffer());

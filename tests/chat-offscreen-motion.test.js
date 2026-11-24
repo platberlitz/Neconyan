@@ -9,7 +9,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDir, '..');
 const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
-function createMessage(className = 'mes') {
+function createMessage(className = 'mes', animations = [{}]) {
     const attributes = new Set();
     const writes = [];
     return {
@@ -17,11 +17,16 @@ function createMessage(className = 'mes') {
         writes,
         classList: { contains: name => className.split(' ').includes(name) },
         hasAttribute: name => attributes.has(name),
+        setAttribute(name) {
+            writes.push(true);
+            attributes.add(name);
+        },
         toggleAttribute(name, force) {
             writes.push(force);
             if (force) attributes.add(name);
             else attributes.delete(name);
         },
+        getAnimations: () => animations,
         removeAttribute: name => attributes.delete(name),
     };
 }
@@ -72,6 +77,16 @@ describe('off-screen chat motion', () => {
         state.intersect([{ target: message, isIntersecting: false }]);
 
         expect(message.writes).toEqual([true]);
+    });
+
+    it('leaves off-screen messages without animations unmarked', () => {
+        const message = createMessage('mes', []);
+        const { state } = createHarness([message]);
+
+        state.intersect([{ target: message, isIntersecting: false }]);
+
+        expect(message.hasAttribute(OFFSCREEN_ATTRIBUTE)).toBe(false);
+        expect(message.writes).toEqual([]);
     });
 
     it('watches message rows only, including ones added later, and drops removed ones', () => {

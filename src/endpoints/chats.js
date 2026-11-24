@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import readline from 'node:readline';
 import process from 'node:process';
+import { isUtf8 } from 'node:buffer';
 import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 
 import express from 'express';
@@ -10,6 +11,8 @@ import sanitize from 'sanitize-filename';
 import _ from 'lodash';
 
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
+import { PATCH_BASE_ERROR, canonicalText, chatContentHash, chatPatchIndex, chatPatchMismatch, composePatchedChat, parseBaseMessages, parseChatHeaderBytes, patchedBytesMatch, rememberChatPatchIndex } from '../chat-patch.js';
+import { digestKeptFingerprints } from '../../public/scripts/chat-patch-fingerprint.js';
 import { cachedFilePath, createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
 import { collectRecentChatFiles, selectRecentChatFiles } from '../chat-library-inventory.js';
 import { createChatSearchMatcher } from '../chat-search-matcher.js';
@@ -17,13 +20,18 @@ import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
 import { applyOverflowHiding, prepareAutomaticHiding, prepareMessageHidingPolicy } from '../mewmory/hiding.js';
-import { confirmRoleplayAccount, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { confirmRoleplayAccount, inspectRoleplayFile, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayFilePhysical, roleplayHash, roleplayLease, roleplayPathKey,
+    sameRoleplayFile, sameRoleplayFileStat, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { registerMemoryReclaimer } from '../memory-pressure.js';
+import { createUtf8Validator, invalidUtf8Error } from '../utf8-validation.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
+    chatJsonlEqualsRecords,
     clearChatRecoveryState,
     createCharacterChatTarget,
     createGroupChatTarget,
+    detachChatHeader,
     getChatRecoveryPaths,
     isRecognizedChatHeader,
     loadActiveChatWithRecovery,
@@ -104,7 +112,7 @@ function logBackupEvent(action, details = {}) {
 }
 
 function getSerializedBackupSizeDetails(data) {
-    const sizeBytes = Buffer.byteLength(String(data ?? ''), 'utf8');
+    const sizeBytes = Buffer.isBuffer(data) ? data.byteLength : Buffer.byteLength(String(data ?? ''), 'utf8');
     return {
         bytes: sizeBytes,
         size: formatBytes(sizeBytes),
@@ -123,31 +131,56 @@ function getChatBackupType(backupPrefix) {
     return 'regular';
 }
 
-function normalizeSerializedChatForBackupComparison(data) {
-    const serialized = String(data ?? '');
-    const lines = serialized.split('\n');
-
-    if (!lines[0]) {
-        return serialized;
+// Only the first line changes when a chat is normalised for backup comparison (the integrity slug
+// leaves its metadata), so the rest is compared where it is instead of splitting and re-joining it.
+function normalizeFirstLineForBackupComparison(firstLine) {
+    if (!firstLine) {
+        return firstLine;
     }
 
     try {
-        const header = JSON.parse(lines[0]);
+        const header = JSON.parse(firstLine);
         if (!isPlainObject(header?.chat_metadata)) {
-            return serialized;
+            return firstLine;
         }
 
         const chatMetadata = { ...header.chat_metadata };
         delete chatMetadata.integrity;
-        lines[0] = JSON.stringify({ ...header, chat_metadata: chatMetadata });
-        return lines.join('\n');
+        return JSON.stringify({ ...header, chat_metadata: chatMetadata });
     } catch {
-        return serialized;
+        return firstLine;
     }
 }
 
+function splitSerializedChatForBackupComparison(data) {
+    const serialized = String(data ?? '');
+    const newline = serialized.indexOf('\n');
+    const firstLine = newline === -1 ? serialized : serialized.slice(0, newline);
+    const rest = newline === -1 ? '' : serialized.slice(newline);
+
+    return { firstLine: normalizeFirstLineForBackupComparison(firstLine), rest };
+}
+
+function isSameSerializedChatForBackup(left, right) {
+    const leftParts = splitSerializedChatForBackupComparison(left);
+    const rightParts = splitSerializedChatForBackupComparison(right);
+    return leftParts.firstLine === rightParts.firstLine && leftParts.rest === rightParts.rest;
+}
+
+function firstNonBlankChatLine(bytes) {
+    for (let start = 0; start <= bytes.length;) {
+        const end = bytes.indexOf(0x0a, start);
+        const line = bytes.toString('utf8', start, end === -1 ? bytes.length : end);
+        if (line.trim() || end === -1) {
+            return line.trim() ? line : undefined;
+        }
+        start = end + 1;
+    }
+    return undefined;
+}
+
 function getSerializedChatIntegrity(serializedChat) {
-    const headerLine = String(serializedChat ?? '').split('\n').find(line => line.trim());
+    const headerLine = Buffer.isBuffer(serializedChat) ? firstNonBlankChatLine(serializedChat) : String(serializedChat ?? '').split('\n').find(line => line.trim());
     if (!headerLine) {
         return '';
     }
@@ -265,7 +298,9 @@ function normalizeChatMessageForComparison(message, chatMetadata, messageCount) 
     return normalized;
 }
 
-function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true, ignoreRoleplayMarker = false } = {}) {
+// A parsed chat ready to compare: the header is normalised here and each message is normalised
+// only when it is compared, so two whole normalised copies of a chat never exist together.
+function getChatSaveComparisonSide(data, options = {}) {
     const parsedChat = Array.isArray(data)
         ? { status: isValidChatSavePayload(data) ? 'ok' : 'invalid', records: data }
         : parseChatJsonl(String(data ?? ''));
@@ -274,6 +309,11 @@ function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true, igno
     }
 
     const [header, ...messages] = parsedChat.records;
+    return { ...getChatSaveComparisonHeader(header, options), messages };
+}
+
+// What is compared of a header: its metadata less the integrity slug, and less what is derived and rebuilt on load.
+function getChatSaveComparisonHeader(header, { ignoreDerivedMetadata = true, ignoreRoleplayMarker = false } = {}) {
     const chatMetadata = { ...header.chat_metadata };
     delete chatMetadata.integrity;
     if (ignoreRoleplayMarker) delete chatMetadata.neconyan_roleplay;
@@ -285,32 +325,34 @@ function getChatSaveComparisonRecords(data, { ignoreDerivedMetadata = true, igno
     }
 
     // Neconyan: chat loads retain chat_metadata but discard and recreate the outer header envelope.
-    return [
-        { chat_metadata: chatMetadata },
-        ...messages.map(message => normalizeChatMessageForComparison(message, chatMetadata, messages.length)),
-    ];
+    return { header: { chat_metadata: chatMetadata }, chatMetadata };
+}
+
+function getComparableChatMessage(side, index) {
+    return normalizeChatMessageForComparison(side.messages[index], side.chatMetadata, side.messages.length);
 }
 
 function isSameChatSaveContent(left, right, options = {}) {
-    const leftRecords = getChatSaveComparisonRecords(left, options);
-    const rightRecords = getChatSaveComparisonRecords(right, options);
-    return leftRecords !== null && rightRecords !== null && isDeepStrictEqual(leftRecords, rightRecords);
+    const leftSide = getChatSaveComparisonSide(left, options);
+    const rightSide = getChatSaveComparisonSide(right, options);
+    // Both sides have the same header and message count here, so a message is normalised the same way on
+    // each side: two messages that are already identical need no normalising to be found identical.
+    return leftSide !== null && rightSide !== null
+        && isDeepStrictEqual(leftSide.header, rightSide.header)
+        && leftSide.messages.length === rightSide.messages.length
+        && leftSide.messages.every((message, index) => isDeepStrictEqual(message, rightSide.messages[index])
+            || isDeepStrictEqual(getComparableChatMessage(leftSide, index), getComparableChatMessage(rightSide, index)));
 }
 
 // Neconyan: true when the incoming save keeps the existing metadata and every message unchanged
 // and in order, so it can only append without rolling back another client's metadata changes.
 function isChatSaveExtension(newSerializedChat, existingSerializedChat, options = {}) {
-    const incomingRecords = getChatSaveComparisonRecords(newSerializedChat, options);
-    const existingRecords = getChatSaveComparisonRecords(existingSerializedChat, options);
-    if (incomingRecords === null || existingRecords === null) {
-        return false;
-    }
-
-    const [incomingHeader, ...incomingMessages] = incomingRecords;
-    const [existingHeader, ...existingMessages] = existingRecords;
-    return isDeepStrictEqual(incomingHeader, existingHeader)
-        && incomingMessages.length >= existingMessages.length
-        && isDeepStrictEqual(incomingMessages.slice(0, existingMessages.length), existingMessages);
+    const incoming = getChatSaveComparisonSide(newSerializedChat, options);
+    const existing = getChatSaveComparisonSide(existingSerializedChat, options);
+    return incoming !== null && existing !== null
+        && isDeepStrictEqual(incoming.header, existing.header)
+        && incoming.messages.length >= existing.messages.length
+        && existing.messages.every((_, index) => isDeepStrictEqual(getComparableChatMessage(incoming, index), getComparableChatMessage(existing, index)));
 }
 
 function getLatestBackupFilePath(directory, prefix) {
@@ -327,27 +369,186 @@ function getLatestBackupFilePath(directory, prefix) {
     return backupFiles[0]?.filePath ?? null;
 }
 
-function isDuplicateRegularChatBackup(directory, backupPrefix, data) {
-    const latestBackupFile = getLatestBackupFilePath(directory, backupPrefix);
-    if (!latestBackupFile) {
+// The same answer as isSameSerializedChatForBackup on the backup read as text, streamed in small
+// chunks so a large backup neither loads a whole-file Buffer nor builds a second UTF-8 Buffer for
+// the chat. A file that is not valid UTF-8 falls back to reading as text exactly as it used to be.
+function isDuplicateOfBackupFile(backupFile, data) {
+    if (!fs.existsSync(backupFile)) {
         return false;
     }
 
-    const latestBackupData = tryReadFileSync(latestBackupFile);
-    return Boolean(latestBackupData)
-        && normalizeSerializedChatForBackupComparison(latestBackupData) === normalizeSerializedChatForBackupComparison(data);
+    const isBufferData = Buffer.isBuffer(data);
+    let dataFirstLine = '';
+    let dataRestText = '';
+    let dataRestBytes = null;
+    if (isBufferData) {
+        const newlineByteIndex = data.indexOf(0x0a);
+        const rawFirstLine = newlineByteIndex === -1
+            ? data.toString('utf8')
+            : data.subarray(0, newlineByteIndex).toString('utf8');
+        dataFirstLine = splitSerializedChatForBackupComparison(rawFirstLine).firstLine;
+        dataRestBytes = newlineByteIndex === -1 ? Buffer.alloc(0) : data.subarray(newlineByteIndex);
+    } else {
+        const dataParts = splitSerializedChatForBackupComparison(data);
+        dataFirstLine = dataParts.firstLine;
+        dataRestText = dataParts.rest;
+    }
+
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let firstLine = '';
+    let sawNewline = false;
+    let sawAnyBytes = false;
+    let restCursor = 0;
+    let fd = null;
+
+    const verifyTrailingUtf8 = () => {
+        const probe = Buffer.allocUnsafe(4);
+        const probeBytes = fs.readSync(fd, probe, 0, probe.length, null);
+        if (probeBytes > 0) {
+            decoder.decode(probe.subarray(0, probeBytes), { stream: true });
+        } else {
+            decoder.decode();
+        }
+    };
+
+    const consumeRestBytes = (slice) => {
+        if (!slice.length) {
+            return true;
+        }
+        if (restCursor + slice.length > dataRestBytes.length) {
+            verifyTrailingUtf8();
+            return false;
+        }
+        if (!slice.equals(dataRestBytes.subarray(restCursor, restCursor + slice.length))) {
+            verifyTrailingUtf8();
+            return false;
+        }
+        restCursor += slice.length;
+        return true;
+    };
+
+    const consumeText = (text) => {
+        if (!text) {
+            return true;
+        }
+        if (!sawNewline) {
+            const newlineIndex = text.indexOf('\n');
+            if (newlineIndex === -1) {
+                firstLine += text;
+                return true;
+            }
+            firstLine += text.slice(0, newlineIndex);
+            sawNewline = true;
+            if (splitSerializedChatForBackupComparison(firstLine).firstLine !== dataFirstLine) {
+                return false;
+            }
+            const remainder = text.slice(newlineIndex);
+            if (!dataRestText.startsWith(remainder, restCursor)) {
+                return false;
+            }
+            restCursor += remainder.length;
+            return true;
+        }
+        if (!dataRestText.startsWith(text, restCursor)) {
+            return false;
+        }
+        restCursor += text.length;
+        return true;
+    };
+
+    try {
+        fd = fs.openSync(backupFile, 'r');
+        while (true) {
+            const bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null);
+            if (bytesRead === 0) {
+                break;
+            }
+            sawAnyBytes = true;
+            const slice = chunk.subarray(0, bytesRead);
+            if (isBufferData) {
+                if (!sawNewline) {
+                    const newlineByteIndex = slice.indexOf(0x0a);
+                    if (newlineByteIndex === -1) {
+                        firstLine += decoder.decode(slice, { stream: true });
+                        continue;
+                    }
+                    firstLine += decoder.decode(slice.subarray(0, newlineByteIndex), { stream: false });
+                    sawNewline = true;
+                    if (splitSerializedChatForBackupComparison(firstLine).firstLine !== dataFirstLine) {
+                        return false;
+                    }
+                    const restSlice = slice.subarray(newlineByteIndex);
+                    decoder.decode(restSlice, { stream: true });
+                    if (!consumeRestBytes(restSlice)) {
+                        return false;
+                    }
+                } else {
+                    decoder.decode(slice, { stream: true });
+                    if (!consumeRestBytes(slice)) {
+                        return false;
+                    }
+                }
+            } else {
+                const decoded = decoder.decode(slice, { stream: true });
+                if (!consumeText(decoded)) {
+                    return false;
+                }
+            }
+        }
+        if (!sawAnyBytes) {
+            return false;
+        }
+        const tail = decoder.decode();
+        if (isBufferData) {
+            if (!sawNewline) {
+                firstLine += tail;
+            }
+        } else if (!consumeText(tail)) {
+            return false;
+        }
+    } catch (error) {
+        if (fd !== null) {
+            try { fs.closeSync(fd); } catch { /* ignore */ }
+            fd = null;
+        }
+        if (error instanceof TypeError) {
+            try {
+                const bytes = fs.readFileSync(backupFile);
+                if (!bytes?.length) {
+                    return false;
+                }
+                const expectedText = isBufferData ? data.toString('utf8') : data;
+                return isSameSerializedChatForBackup(bytes.toString('utf8'), expectedText);
+            } catch (readError) {
+                console.error(`Error reading ${backupFile}: ${readError.message}`);
+                return false;
+            }
+        }
+        console.error(`Error reading ${backupFile}: ${error.message}`);
+        return false;
+    } finally {
+        if (fd !== null) {
+            fs.closeSync(fd);
+        }
+    }
+
+    if (!sawNewline) {
+        const restEmpty = isBufferData ? dataRestBytes.length === 0 : dataRestText === '';
+        return restEmpty && splitSerializedChatForBackupComparison(firstLine).firstLine === dataFirstLine;
+    }
+    return isBufferData ? restCursor === dataRestBytes.length : restCursor === dataRestText.length;
+}
+
+function isDuplicateRegularChatBackup(directory, backupPrefix, data) {
+    const latestBackupFile = getLatestBackupFilePath(directory, backupPrefix);
+    return Boolean(latestBackupFile) && isDuplicateOfBackupFile(latestBackupFile, data);
 }
 
 function isDuplicatePreWriteBackup(directory, backupPrefix, data) {
     const prefix = `${backupPrefix}`;
     const latestBackupFile = getLatestBackupFilePath(directory, prefix);
-    if (!latestBackupFile) {
-        return false;
-    }
-
-    const latestBackupData = tryReadFileSync(latestBackupFile);
-    return Boolean(latestBackupData)
-        && normalizeSerializedChatForBackupComparison(latestBackupData) === normalizeSerializedChatForBackupComparison(data);
+    return Boolean(latestBackupFile) && isDuplicateOfBackupFile(latestBackupFile, data);
 }
 
 function getChatBackupName(name) {
@@ -475,15 +676,6 @@ function countSerializedChatLines(serializedChat) {
     return String(serializedChat).split('\n').filter(line => line.trim()).length;
 }
 
-function isSuspiciousChatShrink(newData, existingSerializedChat) {
-    const existingLines = countSerializedChatLines(existingSerializedChat);
-    if (existingLines <= 5) {
-        return false;
-    }
-
-    return Array.isArray(newData) && newData.length < existingLines * 0.5;
-}
-
 /**
  * Classifies a save that would replace an existing chat with substantially less content.
  * A chat payload carries one metadata header, so a length below two rows has no messages at all.
@@ -491,17 +683,33 @@ function isSuspiciousChatShrink(newData, existingSerializedChat) {
  * @param {string} existingSerializedChat Current serialized chat on disk.
  * @returns {''|'emptied'|'shrink'} Reason the save is destructive, or an empty string.
  */
-function getDestructiveChatSaveReason(newData, existingSerializedChat) {
-    const existingLines = countSerializedChatLines(existingSerializedChat);
+function getDestructiveChatSaveReason(newData, existingSerializedChat, existingLines = countSerializedChatLines(existingSerializedChat)) {
     if (existingLines < 2 || !Array.isArray(newData)) {
         return '';
     }
 
-    if (newData.length < 2) {
+    return getDestructiveChatSaveReasonForCounts(newData.length, existingLines);
+}
+
+function isSuspiciousChatShrink(newRows, existingLines) {
+    if (existingLines <= 5) {
+        return false;
+    }
+
+    return newRows < existingLines * 0.5;
+}
+
+/** The same rule from counts alone: rows to be written, header included, and the non-blank rows already saved. */
+function getDestructiveChatSaveReasonForCounts(newRows, existingLines) {
+    if (existingLines < 2) {
+        return '';
+    }
+
+    if (newRows < 2) {
         return 'emptied';
     }
 
-    return isSuspiciousChatShrink(newData, existingSerializedChat) ? 'shrink' : '';
+    return isSuspiciousChatShrink(newRows, existingLines) ? 'shrink' : '';
 }
 
 /**
@@ -890,7 +1098,23 @@ function assertNativeChatPath(filePath) {
     }
 }
 
-function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_SAFE_INTEGER } = {}) {
+// A caller that only needs the file's identity and hash passes keepData: false. A strict read still
+// refuses invalid UTF-8, checked in slices so the whole text is never built.
+function decodeChatFileSnapshot(data, { strict, keepData }) {
+    if (keepData === true) {
+        return strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data) : data.toString('utf8');
+    }
+    // Valid UTF-8 is what the strict decoder accepts; invalid bytes are refused in its own words.
+    if (strict && !isUtf8(data)) throw invalidUtf8Error();
+    // keepData 'bytes' hands back the bytes themselves, checked as strictly, for a caller that never needs the text.
+    return keepData === 'bytes' ? data : null;
+}
+
+/**
+ * Reads the file once, refusing it if it changes meanwhile. Missing files return null; with `expectedHash`, so do
+ * other bytes, before their encoding is judged, so a changed file is told as changed and not as invalid text.
+ */
+function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_SAFE_INTEGER, keepData = true, expectedHash = null } = {}) {
     let initialPathStats;
     try {
         initialPathStats = fs.lstatSync(filePath, { bigint: true });
@@ -913,12 +1137,34 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
         if (!initialDescriptorStats.isFile() || initialDescriptorStats.size > BigInt(maxBytes)) {
             throw Object.assign(new Error(`Chat file cannot be read safely: ${filePath}`), { code: 'EINVAL' });
         }
-        const data = Buffer.alloc(Number(initialDescriptorStats.size));
+        const expectedSize = Number(initialDescriptorStats.size);
+        let data = null;
         let offset = 0;
-        while (offset < data.byteLength) {
-            const bytesRead = fs.readSync(fileDescriptor, data, offset, data.byteLength - offset, offset);
-            if (bytesRead === 0) break;
-            offset += bytesRead;
+        let hash = '';
+        let decoded = null;
+        let validator = null;
+        let hasher = null;
+
+        if (keepData) {
+            // Every byte is read below, or the read is refused as changed; nothing needs clearing first.
+            data = Buffer.allocUnsafe(expectedSize);
+            while (offset < expectedSize) {
+                const bytesRead = fs.readSync(fileDescriptor, data, offset, expectedSize - offset, offset);
+                if (bytesRead === 0) break;
+                offset += bytesRead;
+            }
+        } else {
+            const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expectedSize)));
+            hasher = crypto.createHash('sha256');
+            validator = strict ? createUtf8Validator() : null;
+            while (offset < expectedSize) {
+                const bytesRead = fs.readSync(fileDescriptor, chunk, 0, Math.min(chunk.length, expectedSize - offset), offset);
+                if (bytesRead === 0) break;
+                const slice = chunk.subarray(0, bytesRead);
+                hasher.update(slice);
+                validator?.update(slice);
+                offset += bytesRead;
+            }
         }
 
         const finalDescriptorStats = fs.fstatSync(fileDescriptor, { bigint: true });
@@ -931,14 +1177,22 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
             || finalDescriptorStats.ctimeNs !== initialDescriptorStats.ctimeNs;
         const regularPathChangedTarget = initialPathStats.isFile()
             && (initialDescriptorStats.dev !== initialPathStats.dev || initialDescriptorStats.ino !== initialPathStats.ino);
-        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== data.byteLength
+        if (pathChanged || descriptorChanged || regularPathChangedTarget || offset !== expectedSize
             || (strict && finalDescriptorStats.nlink !== 1n)) {
             throw Object.assign(new Error(`Chat file changed while it was being read: ${filePath}`), { code: 'ESTALE' });
         }
 
+        hash = keepData ? crypto.createHash('sha256').update(data).digest('hex') : hasher.digest('hex');
+        if (expectedHash !== null && hash !== expectedHash) return null;
+        if (keepData) {
+            decoded = decodeChatFileSnapshot(data, { strict, keepData });
+        } else if (validator && !validator.end()) {
+            throw invalidUtf8Error();
+        }
+
         return {
-            data: strict ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data) : data.toString('utf8'),
-            hash: crypto.createHash('sha256').update(data).digest('hex'),
+            data: decoded,
+            hash,
             pathStats: initialPathStats,
             descriptorStats: initialDescriptorStats,
         };
@@ -948,7 +1202,7 @@ function readChatFileSnapshot(filePath, { strict = false, maxBytes = Number.MAX_
 }
 
 function assertChatFileSnapshotCurrent(filePath, expectedSnapshot, options) {
-    const currentSnapshot = readChatFileSnapshot(filePath, options);
+    const currentSnapshot = readChatFileSnapshot(filePath, { ...options, keepData: false });
     if (!currentSnapshot
         || currentSnapshot.pathStats.dev !== expectedSnapshot.pathStats.dev
         || currentSnapshot.pathStats.ino !== expectedSnapshot.pathStats.ino
@@ -989,6 +1243,9 @@ const CHAT_INFO_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 const CHAT_INFO_CACHE_MAX_ENTRIES = 32768;
 const CHAT_INFO_PARSE_CONCURRENCY = 8;
 const chatInfoCache = createFileSummaryCache({ maxBytes: CHAT_INFO_CACHE_MAX_BYTES, maxEntries: CHAT_INFO_CACHE_MAX_ENTRIES });
+registerMemoryReclaimer(() => {
+    chatInfoCache.clear();
+});
 const chatInfoParseLimit = createLimiter(CHAT_INFO_PARSE_CONCURRENCY);
 
 /** @type {Map<string, Promise<{kind: 'empty' | 'valid' | 'corrupt', parsed?: object}>>} */
@@ -1436,8 +1693,14 @@ function loadProtectedChat(request, group) {
     });
 }
 
-async function saveProtectedChat(request, group) {
+async function saveProtectedChat(request, group, patched = false) {
     const { base, locator, block, account } = roleplayRequest(request, group, true);
+    if (patched) {
+        // A patch continues an exact saved version. Creating a chat, hiding messages and overwriting after a conflict are whole saves.
+        if (!block.source) throw chatPatchMismatch('create');
+        if (request.body.force === true || request.body.mewmoryHidePolicy !== undefined) throw chatPatchMismatch('unsupported');
+        assertChatPatchShape(request.body.patch);
+    }
     const hideRequested = request.body.mewmoryHidePolicy;
     // Tokenizer resolution may load asynchronously. Its guard is checked again
     // within the protected first admission; retries use the staged native write.
@@ -1464,7 +1727,8 @@ async function saveProtectedChat(request, group) {
                 operationKey: block.operationKey, sourceKind: 'storage', mode: block.source ? 'update' : 'create',
                 ...(block.source ? { source: { kind: 'storage', ...currentAccount, ...block.source, locator, dependencies: [] } }
                     : { destination: locator, expectedVacancy: block.vacancy }),
-                records: request.body.chat, force: request.body.force === true, allowShrink: request.body.allowShrink === true,
+                ...(patched ? { patch: request.body.patch } : { records: request.body.chat }),
+                force: request.body.force === true, allowShrink: request.body.allowShrink === true,
                 ...(hideRequested ? { mewmoryHidePolicy: hideRequested } : {}),
                 backup: { deferBackup: request.body.deferBackup === true,
                     ...(request.body.deferSequenceId !== undefined ? { deferSequenceId: request.body.deferSequenceId } : {}) },
@@ -1474,7 +1738,7 @@ async function saveProtectedChat(request, group) {
         } catch (error) {
             // A failed lease is never reused. This reference only classifies the response to an admitted write.
             if (state.pending?.operationKeyHash === roleplayHash([state.accountId, 'chat-write', block.operationKey])
-                && error.code !== 'ROLEPLAY_INTENT_CONFLICT') error.roleplayWritePending = true;
+                && error.code !== 'ROLEPLAY_INTENT_CONFLICT' && error.code !== PATCH_BASE_ERROR) error.roleplayWritePending = true;
             if (Object.hasOwn(error, 'current')) error.roleplay = { account: currentAccount,
                 ...(error.current?.instanceId ? { source: error.current } : error.current ?? { source: null }) };
             throw error;
@@ -1490,6 +1754,7 @@ function sendRoleplayError(response, error) {
         || code === 'ROLEPLAY_RECOVERY_REQUIRED' || code?.startsWith('ROLEPLAY_STORE_') || code === 'ROLEPLAY_ACCOUNT_UNAVAILABLE') {
         return response.status(503).send({ error: 'roleplay_recovery_required', code: code || 'ROLEPLAY_WRITE_UNCERTAIN' });
     }
+    if (code === PATCH_BASE_ERROR) return response.status(409).send({ error: 'patch_base_mismatch', reason: error.reason });
     if (code === 'ROLEPLAY_ACCOUNT_CHANGED') return response.status(409).send({ error: 'account_changed', code });
     if (code === 'ROLEPLAY_SOURCE_MISSING') return response.status(404).send({ error: 'missing', code });
     if (code === 'ROLEPLAY_SOURCE_DAMAGED') return response.status(422).send({ error: 'corrupt', code });
@@ -1512,8 +1777,8 @@ function sendProtectedChatLoad(request, response, group) {
     } catch (error) { return sendRoleplayError(response, error); }
 }
 
-async function sendProtectedChatSave(request, response, group) {
-    try { return response.set('Cache-Control', 'no-store').send(await saveProtectedChat(request, group)); } catch (error) { return sendRoleplayError(response, error); }
+async function sendProtectedChatSave(request, response, group, patched = false) {
+    try { return response.set('Cache-Control', 'no-store').send(await saveProtectedChat(request, group, patched)); } catch (error) { return sendRoleplayError(response, error); }
 }
 
 /**
@@ -1593,11 +1858,8 @@ export function mutateChat({ filePath, expectedHash, handle, cardName, backupDir
             throw new TypeError('Native chat mutation callbacks must be synchronous.');
         }
         if (!isValidChatSavePayload(changed)) throw new InvalidChatDataError('Invalid native chat mutation records.');
-        const detached = parseChatJsonl(changed.map(record => JSON.stringify(record)).join('\n'));
-        if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, changed)) {
-            throw new InvalidChatDataError('Native chat mutation records must contain only JSON values.');
-        }
-        result = trySaveChatLocked(detached.records, filePath, false, handle, cardName, backupDirectory,
+        if (!hasOnlyJsonValues(changed)) throw new InvalidChatDataError('Native chat mutation records must contain only JSON values.');
+        result = trySaveChatLocked(changed, filePath, false, handle, cardName, backupDirectory,
             { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot });
         try {
             if (mewmory) captureBranchMemory(mewmory.directories, mewmory.locator,
@@ -1624,21 +1886,60 @@ export function mutateChat({ filePath, expectedHash, handle, cardName, backupDir
     return result;
 }
 
+// The text `records.map(row => JSON.stringify(row)).join('\n')` gives. Each row is encoded as it is made,
+// so the rows and the joined text are never both held as strings.
+function serializeChatRecords(records) {
+    const chunks = [];
+    for (let index = 0; index < records.length; index++) {
+        chunks.push(Buffer.from((index > 0 ? '\n' : '') + (JSON.stringify(records[index]) ?? ''), 'utf8'));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+}
+
 function prepareChatSave(chatData, integrity = uuidv4()) {
     const records = chatData.map((message, index) => index === 0
         ? { ...message, chat_metadata: { ...message.chat_metadata, integrity } }
         : message);
-    return { records, serialized: records.map(message => JSON.stringify(message)).join('\n'), integrity };
+    return { records, serialized: serializeChatRecords(records), integrity };
 }
 
-/** Prepare once; the private lifecycle coordinator durably stages these exact bytes before publication. */
-export function prepareNativeChatWrite(records, { beforeBytes = null, marker, force = false, allowShrink = false } = {}) {
+/**
+ * Whether the records survive a JSON round trip unchanged. Each record is stringified, parsed and
+ * compared on its own, so the chat is never held as one text or as a second copy of itself.
+ */
+function hasOnlyJsonValues(records) {
+    let clean = Object.getPrototypeOf(records) === Array.prototype && Object.keys(records).length === records.length
+        && !Object.getOwnPropertySymbols(records).some(symbol => Object.prototype.propertyIsEnumerable.call(records, symbol));
+    for (const record of records) {
+        // Every record is stringified even after a mismatch, so one that cannot be serialised at all fails as it always has.
+        const text = JSON.stringify(record);
+        if (clean && (typeof text !== 'string' || !isDeepStrictEqual(JSON.parse(text), record))) clean = false;
+    }
+    return clean;
+}
+
+function assertPreparedChatRecords(records) {
     if (!isValidChatSavePayload(records)) throw new InvalidChatDataError('Invalid prepared chat records.');
-    const detached = parseChatJsonl(records.map(record => JSON.stringify(record)).join('\n'));
-    if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
-    const inputRecords = detached.records;
+    if (!hasOnlyJsonValues(records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
+}
+
+function parsePreparedChatSource(beforeBytes) {
     const before = beforeBytes === null ? null : parseChatJsonl(beforeBytes);
     if (before && before.status !== 'ok') throw new InvalidChatDataError('Invalid prepared chat source.');
+    return before;
+}
+
+// Reads the source and compares it with `records`. Returns the finished no-op, or the adjusted input for
+// a changed write. This frame ends before the new chat is serialised, so the parsed source is collectable by then.
+// The messages of `records` are shared with the output and never changed here; only the header is copied.
+function planChatWrite(records, beforeBytes, { displayEquivalentIsNoOp }) {
+    assertPreparedChatRecords(records);
+    const before = parsePreparedChatSource(beforeBytes);
+    if (displayEquivalentIsNoOp && before && isSameChatSaveContent(records, before.records, { ignoreRoleplayMarker: true })) {
+        return { prepared: { changed: false, inputRecords: detachChatHeader(before.records), records: before.records,
+            serialized: beforeBytes.toString('utf8'), integrity: before.records[0].chat_metadata.integrity ?? '' } };
+    }
+    const inputRecords = detachChatHeader(records);
     // Incoming metadata never grants native authority, including on imported copies.
     delete inputRecords[0].chat_metadata.neconyan_roleplay;
     delete inputRecords[0].chat_metadata.integrity;
@@ -1648,93 +1949,230 @@ export function prepareNativeChatWrite(records, { beforeBytes = null, marker, fo
         }
     }
     if (before && isDeepStrictEqual(inputRecords, before.records)) {
-        return { changed: false, inputRecords, records: before.records,
-            serialized: Buffer.isBuffer(beforeBytes) ? beforeBytes.toString('utf8') : beforeBytes,
-            integrity: before.records[0].chat_metadata.integrity ?? '' };
+        return { prepared: { changed: false, inputRecords, records: before.records,
+            serialized: Buffer.isBuffer(before.data) ? before.data.toString('utf8') : before.data,
+            integrity: before.records[0].chat_metadata.integrity ?? '' } };
     }
+    // A source that parsed has exactly one record per non-blank line, which is what the destructive rule counts.
+    return { inputRecords, existingLines: before ? before.records.length : null };
+}
+
+function assertWriteMarker(marker) {
     if (!marker || marker.schema !== 1 || !Number.isSafeInteger(marker.revision) || marker.revision < 1
         || ![marker.instanceId, marker.writeId].every(value => typeof value === 'string' && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value))) {
         throw new TypeError('A prepared native write needs its server-assigned commit marker.');
     }
-    const output = structuredClone(inputRecords);
+}
+
+function finishChatWrite({ inputRecords, existingLines }, { marker, force, allowShrink }) {
+    assertWriteMarker(marker);
+    const output = detachChatHeader(inputRecords);
     output[0].chat_metadata.neconyan_roleplay = structuredClone(marker);
     const prepared = { changed: true, inputRecords, ...prepareChatSave(output) };
     // Publication enforces the same rule; refusing here keeps a destructive write from ever becoming pending.
-    const reason = before && getDestructiveChatSaveReason(prepared.records, beforeBytes.toString('utf8'));
+    const reason = existingLines !== null && getDestructiveChatSaveReason(prepared.records, null, existingLines);
     if (reason && !force && !allowShrink) throw new DestructiveChatSaveError(reason, 'The save would remove existing chat messages.');
     return prepared;
 }
 
+/** Prepare once; the private lifecycle coordinator durably stages these exact bytes before publication. */
+export function prepareNativeChatWrite(records, { beforeBytes = null, marker, force = false, allowShrink = false } = {}) {
+    const plan = planChatWrite(records, beforeBytes, { displayEquivalentIsNoOp: false });
+    return plan.prepared ?? finishChatWrite(plan, { marker, force, allowShrink });
+}
+
 /** Preserve the browser's existing display-equivalent no-op and reject policy errors before admission. */
 export function prepareBrowserChatWrite(records, { beforeBytes = null, marker, force = false, allowShrink = false } = {}) {
-    if (!isValidChatSavePayload(records)) throw new InvalidChatDataError('Invalid prepared chat records.');
-    const detached = parseChatJsonl(records.map(record => JSON.stringify(record)).join('\n'));
-    if (detached.status !== 'ok' || !isDeepStrictEqual(detached.records, records)) throw new InvalidChatDataError('Prepared chat records must contain only JSON values.');
-    const before = beforeBytes === null ? null : parseChatJsonl(beforeBytes);
-    if (before && before.status !== 'ok') throw new InvalidChatDataError('Invalid prepared chat source.');
-    if (before && isSameChatSaveContent(detached.records, before.records, { ignoreRoleplayMarker: true })) {
-        return { changed: false, inputRecords: structuredClone(before.records), records: before.records,
-            serialized: beforeBytes.toString('utf8'), integrity: before.records[0].chat_metadata.integrity ?? '' };
+    const plan = planChatWrite(records, beforeBytes, { displayEquivalentIsNoOp: true });
+    return plan.prepared ?? finishChatWrite(plan, { marker, force, allowShrink });
+}
+
+const PATCH_KEYS = ['header', 'messages', 'prefix', 'suffix', 'baseCount', 'count', 'kept'];
+
+/** The shape of a patch request. A patch that is not shaped like one is never guessed at: the page sends the whole chat. */
+export function assertChatPatchShape(patch) {
+    const count = value => Number.isSafeInteger(value) && value >= 0;
+    if (!isPlainObject(patch) || Object.keys(patch).length !== PATCH_KEYS.length || !PATCH_KEYS.every(key => Object.hasOwn(patch, key))
+        || !isPlainObject(patch.header) || !Array.isArray(patch.messages) || ![patch.prefix, patch.suffix, patch.baseCount, patch.count].every(count)
+        || patch.prefix + patch.suffix > Math.min(patch.baseCount, patch.count) || patch.messages.length !== patch.count - patch.prefix - patch.suffix
+        || typeof patch.kept !== 'string' || !/^[a-f0-9]{32}$/.test(patch.kept)) throw chatPatchMismatch('shape');
+}
+
+/**
+ * A save of the chat the saved file holds, with only the messages between the first `prefix` and the last `suffix`
+ * sent. Writes exactly the file, the hashes and the answers `prepareBrowserChatWrite` gives for the whole chat
+ * (the same header rules, the same display-equivalent no-op, the same refusals), but reads, parses and hashes only
+ * the header and the sent messages: every other line is the saved file's own bytes, whose fingerprints and
+ * canonical text the server remembers by the file's hash. A saved file or a claim that is not exactly what the
+ * page described is refused before anything is prepared (`chatPatchMismatch`).
+ * @param {object} patch The request's patch
+ * @param {object} options
+ * @param {Buffer} options.beforeBytes Exact bytes of the saved file
+ * @param {string} options.beforeRawHash Their SHA-256
+ * @param {string} options.beforeContentHash The recorded content hash of those bytes
+ */
+export function prepareBrowserChatPatch(patch, { beforeBytes = null, beforeRawHash = null, beforeContentHash = null, marker, force = false, allowShrink = false } = {}) {
+    assertChatPatchShape(patch);
+    if (force) throw chatPatchMismatch('forced');
+    // Only the records that came with the patch are checked here; the rest were checked when they were written.
+    assertPreparedChatRecords([patch.header, ...patch.messages]);
+    if (!Buffer.isBuffer(beforeBytes) || typeof beforeRawHash !== 'string' || typeof beforeContentHash !== 'string') throw chatPatchMismatch('base');
+    const base = chatPatchIndex(beforeBytes, beforeRawHash);
+    if (!base) throw chatPatchMismatch('format');
+    if (base.count !== patch.baseCount) throw chatPatchMismatch('count');
+    if (digestKeptFingerprints(base.fingerprints, base.count, patch.prefix, patch.suffix) !== patch.kept) throw chatPatchMismatch('kept');
+    const { prefix, suffix, count } = patch;
+    const beforeHeader = parseChatHeaderBytes(beforeBytes, base.ends[0]);
+    if (!beforeHeader) throw chatPatchMismatch('header');
+    // The saved messages these ones replace; the kept ones are the same text on both sides.
+    const replaced = count === base.count ? parseBaseMessages(beforeBytes, base, prefix, base.count - suffix) : null;
+    const noOp = () => ({ changed: false, bytes: beforeBytes, contentHash: beforeContentHash, integrity: beforeHeader.chat_metadata.integrity ?? '',
+        recordCount: base.count + 1, header: beforeHeader, inputRecords: detachChatHeader([beforeHeader]),
+        patch: { baseCount: base.count, trustedLines: [[1, base.count + 1]], matches: bytes => bytes.equals(beforeBytes), commit() {},
+            materializeMessages: () => parseBaseMessages(beforeBytes, base, 0, base.count) } });
+    // The display-equivalent no-op of the whole-chat save: the same header and messages once derived data is set aside.
+    const options = { ignoreRoleplayMarker: true };
+    const incoming = getChatSaveComparisonHeader(patch.header, options);
+    const saved = getChatSaveComparisonHeader(beforeHeader, options);
+    if (count === base.count && isDeepStrictEqual(incoming.header, saved.header)
+        && patch.messages.every((message, index) => isDeepStrictEqual(message, replaced[index])
+            || isDeepStrictEqual(normalizeChatMessageForComparison(message, incoming.chatMetadata, count), normalizeChatMessageForComparison(replaced[index], saved.chatMetadata, count)))) return noOp();
+    const inputHeader = detachChatHeader([patch.header])[0];
+    // Incoming metadata never grants native authority, including on imported copies.
+    delete inputHeader.chat_metadata.neconyan_roleplay;
+    delete inputHeader.chat_metadata.integrity;
+    for (const key of ['neconyan_roleplay', 'integrity']) {
+        if (Object.hasOwn(beforeHeader.chat_metadata, key)) inputHeader.chat_metadata[key] = structuredClone(beforeHeader.chat_metadata[key]);
     }
-    return prepareNativeChatWrite(detached.records, { beforeBytes, marker, force, allowShrink });
+    if (count === base.count && isDeepStrictEqual(inputHeader, beforeHeader)
+        && patch.messages.every((message, index) => isDeepStrictEqual(message, replaced[index]))) return noOp();
+    assertWriteMarker(marker);
+    const output = detachChatHeader([inputHeader])[0];
+    output.chat_metadata.neconyan_roleplay = structuredClone(marker);
+    const { records: [header], serialized: headerText, integrity } = prepareChatSave([output]);
+    // Publication enforces the same rule; refusing here keeps a destructive write from ever becoming pending.
+    const reason = getDestructiveChatSaveReasonForCounts(count + 1, base.count + 1);
+    if (reason && !force && !allowShrink) throw new DestructiveChatSaveError(reason, 'The save would remove existing chat messages.');
+    const hashed = { ...header, chat_metadata: { ...header.chat_metadata } };
+    delete hashed.chat_metadata.integrity;
+    const headerCanonical = canonicalText(hashed);
+    const middleCanonical = patch.messages.map(canonicalText);
+    if (headerCanonical === null || middleCanonical.includes(null)) throw chatPatchMismatch('hash');
+    const middleTexts = patch.messages.map(message => JSON.stringify(message) ?? '');
+    const { bytes, index } = composePatchedChat(base, beforeBytes, { prefix, suffix, headerText, middleTexts, middleCanonical });
+    return { changed: true, bytes, contentHash: chatContentHash(headerCanonical, index.canonical), integrity, recordCount: count + 1, header, inputRecords: [inputHeader],
+        patch: { baseCount: base.count, trustedLines: [[1, prefix + 1], [count - suffix + 1, count + 1]],
+            matches: written => patchedBytesMatch(written, { count, prefix, suffix, header, messages: patch.messages, baseBytes: beforeBytes, base }),
+            commit: rawHash => rememberChatPatchIndex(rawHash, index),
+            materializeMessages: () => parseChatJsonl(bytes).records.slice(1) } };
 }
 
 // Startup reconciliation uses this host too, so lifecycle replays keep recovery sidecars and deferred backups consistent.
 export const roleplayNativeHost = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite,
     backups: isBackupEnabled, clearDeferred: clearDeferredPreWriteBackupSequence };
-export const roleplayBrowserHost = { prepare: prepareBrowserChatWrite, publish: publishNativeChatWrite };
+export const roleplayBrowserHost = { prepare: prepareBrowserChatWrite, preparePatch: prepareBrowserChatPatch, publish: publishNativeChatWrite };
 
-/** Private managed publication: no automatic recovery, memory capture or generation work. */
-export function publishNativeChatWrite({ filePath, before, payloadPath, payloadHash, prepared,
+// In its own frame: a prepared write may read its text from its bytes on every access, and that text must not
+// stay referenced by the publication that only compares it.
+function preparedTextMatchesBytes(prepared, bytes) {
+    if (Buffer.isBuffer(prepared.bytes)) {
+        return prepared.bytes.equals(bytes);
+    }
+    const text = prepared.serialized;
+    return typeof text === 'string' && Buffer.from(text, 'utf8').equals(bytes);
+}
+
+function getPreparedChatSizeDetails(prepared, payloadBytesLength = null) {
+    if (Number.isInteger(payloadBytesLength) && payloadBytesLength >= 0) {
+        return {
+            bytes: payloadBytesLength,
+            size: formatBytes(payloadBytesLength),
+        };
+    }
+    return getSerializedBackupSizeDetails(prepared.patch ? prepared.bytes : prepared.serialized);
+}
+
+// A patched write is checked from its pieces; every other prepared write by its text and its records.
+function preparedMatchesBytes(prepared, bytes) {
+    return prepared.patch ? prepared.patch.matches(bytes) : preparedTextMatchesBytes(prepared, bytes) && chatJsonlEqualsRecords(bytes, prepared.records);
+}
+
+/**
+ * Private managed publication: no automatic recovery, memory capture or generation work. `payloadFile` may be the
+ * lifecycle's own flushed, hashed read of the payload, used while its path still names that very file unchanged.
+ */
+export function publishNativeChatWrite({ filePath, before, payloadPath, payloadFile = null, payloadHash, prepared,
     handle, cardName, backupDirectory, recoveryTarget = null, force = false, allowShrink = false, deferBackup = false, deferSequenceId, expectedJournal = null }) {
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath)
         || (payloadPath === null ? !before || prepared?.changed !== false
             : typeof payloadPath !== 'string' || !path.isAbsolute(payloadPath) || filePath === payloadPath)
         || typeof backupDirectory !== 'string' || !path.isAbsolute(backupDirectory)
         || typeof handle !== 'string' || typeof cardName !== 'string' || typeof prepared?.changed !== 'boolean'
-        || !isValidChatSavePayload(prepared.inputRecords) || !isValidChatSavePayload(prepared.records)
+        || !isValidChatSavePayload(prepared.inputRecords)
+        || !(prepared.patch ? Buffer.isBuffer(prepared.bytes) && isPlainObject(prepared.header) && Number.isSafeInteger(prepared.recordCount) : isValidChatSavePayload(prepared.records))
         || (recoveryTarget && path.resolve(recoveryTarget.activePath) !== path.resolve(filePath))) throw new TypeError('Invalid managed chat publication.');
     if (recoveryTarget) {
         recoveryTarget = normalizeChatRecoveryTarget({ ...recoveryTarget, maxRecoveryStates: maxTotalChatBackups });
         if (path.resolve(recoveryTarget.activePath) !== path.resolve(filePath)) throw new TypeError('Invalid managed recovery target.');
     }
+    const limit = 64 * 1024 * 1024;
     // Proven output can finish the existing no-op backup path without its temporary after-image.
-    const payload = readRoleplayFile(payloadPath ?? filePath, 64 * 1024 * 1024, { flush: true });
-    if (!payload || payload.rawHash !== payloadHash || payload.bytes.toString('utf8') !== prepared.serialized
-        || !isDeepStrictEqual(parseChatJsonl(payload.bytes).records, prepared.records)) throw new InvalidChatDataError('Prepared chat payload changed.');
-    const inspect = () => {
-        const file = readRoleplayFile(filePath, 64 * 1024 * 1024);
-        if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) {
-            throw Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
-        }
-        // Never let legacy undo recovery precede the protected transaction's own classification.
+    const payloadSource = payloadPath ?? filePath;
+    const payload = payloadFile?.rawHash === payloadHash && sameRoleplayFile(payloadSource, payloadFile, limit) ? payloadFile
+        : readRoleplayFile(payloadSource, limit, { flush: true });
+    // The bytes must be the prepared text and parse to the prepared records. Comparing bytes and
+    // checking the records row by row proves the same without a second text or a second parse of the chat.
+    if (!payload || payload.rawHash !== payloadHash || !preparedMatchesBytes(prepared, payload.bytes)) throw new InvalidChatDataError('Prepared chat payload changed.');
+    const sourceChanged = () => Object.assign(new IntegrityMismatchError('Managed chat source changed.'), { code: 'ESTALE' });
+    const recordedIdentity = stat => (before === null ? stat === null : Boolean(stat) && isDeepStrictEqual(roleplayFilePhysical(stat), before.physical));
+    // Never let legacy undo recovery precede the protected transaction's own classification.
+    const assertJournal = () => {
         try {
             const journal = readRoleplayWriteJournal(filePath);
             if (expectedJournal === null ? journal !== null : !journal || journal.rawHash !== expectedJournal.rawHash
                 || !isDeepStrictEqual(journal.physical, expectedJournal.physical)) throw new Error('Recovery journal changed.');
         } catch (cause) { throw new InvalidChatDataError('An earlier chat write needs explicit reconciliation.', { cause }); }
-        return file;
     };
-    inspect(); // Includes safe, existing parent validation before the lock helper can create directories.
+    // The safe path, the recorded identity and the journal. `identityOnly` skips reading the bytes, for a caller
+    // whose very next step hashes them anyway; otherwise only the file's hash is compared, so it is read in small pieces.
+    const inspect = ({ identityOnly = false } = {}) => {
+        if (identityOnly) {
+            if (!recordedIdentity(inspectRoleplayFileStat(filePath, limit))) throw sourceChanged();
+        } else {
+            const file = inspectRoleplayFile(filePath, limit);
+            if (before === null ? file !== null : !file || file.rawHash !== before.rawHash || !isDeepStrictEqual(file.physical, before.physical)) throw sourceChanged();
+        }
+        assertJournal();
+    };
+    // Includes safe, existing parent validation before the lock helper can create directories. The bytes are
+    // checked once the lock is held.
+    inspect({ identityOnly: true });
     const release = acquireChatFileLock(filePath);
     let result;
     try {
-        inspect();
-        const snapshot = before === null ? null : readChatFileSnapshot(filePath, { strict: true, maxBytes: 64 * 1024 * 1024 });
-        if (before && (!snapshot || snapshot.hash !== before.rawHash
-            || String(snapshot.pathStats.dev) !== before.physical.dev || String(snapshot.pathStats.ino) !== before.physical.ino
-            || String(snapshot.pathStats.birthtimeNs) !== before.physical.birthtimeNs)) {
-            throw Object.assign(new IntegrityMismatchError('Managed chat source changed before publication.'), { code: 'ESTALE' });
+        // One locked read is both checks: the protected file the transaction recorded, and the strict snapshot
+        // the writer compares and backs up. Its path is checked as safe and unchanged before and after the read.
+        let snapshot = null;
+        if (before === null) {
+            inspect();
+        } else {
+            const stat = inspectRoleplayFileStat(filePath, limit);
+            if (!recordedIdentity(stat)) throw sourceChanged();
+            snapshot = readChatFileSnapshot(filePath, { strict: true, maxBytes: limit, keepData: prepared.patch ? 'bytes' : true, expectedHash: before.rawHash });
+            if (!snapshot || !sameRoleplayFileStat(stat, snapshot.descriptorStats)
+                || !sameRoleplayFileStat(inspectRoleplayFileStat(filePath, limit), snapshot.descriptorStats)) throw sourceChanged();
+            assertJournal();
         }
         if (prepared.changed === false && (before === null || payload.rawHash !== before.rawHash)) throw new InvalidChatDataError('Invalid managed no-op.');
         result = trySaveChatLocked(prepared.inputRecords, filePath, force, handle, cardName, backupDirectory,
-            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, nativePrepared: prepared,
-                createOnly: before === null, validateNativeSource: inspect });
-        const saved = readRoleplayFile(filePath, 64 * 1024 * 1024, { flush: true });
+            { recoveryTarget, allowShrink, deferBackup, deferSequenceId, expectedSnapshot: snapshot, lockedSnapshot: snapshot, nativePrepared: prepared,
+                payloadBytes: payload.bytes, createOnly: before === null, validateNativeSource: inspect });
+        // The written file is flushed and hashed in pieces; its bytes are the payload's, which have that same hash.
+        const saved = inspectRoleplayFile(filePath, limit, { flush: true });
         if (!saved || saved.rawHash !== payloadHash || (before && !isDeepStrictEqual(saved.physical, before.physical))) {
             throw new IntegrityMismatchError('Managed chat output changed during publication.');
         }
-        result = { ...result, file: saved };
+        result = { ...result, file: { bytes: payload.bytes, rawHash: saved.rawHash, physical: saved.physical } };
     } catch (failure) {
         try { release(); } catch (cause) { console.warn('Managed chat lock cleanup also failed:', cause?.code || cause?.name); }
         throw Object.assign(failure, { chatWriteUncertain: true, integrity: prepared.integrity });
@@ -1746,20 +2184,26 @@ export function publishNativeChatWrite({ filePath, before, payloadPath, payloadH
     return result;
 }
 
-function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, nativePrepared = null, createOnly = false, validateNativeSource = null } = {}) {
+function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handle, cardName, backupDirectory, { deferBackup = false, deferSequenceId = undefined, recoveryTarget = null, allowShrink = false, persistDerivedMetadata = false, expectedSnapshot = null, lockedSnapshot = null, nativePrepared = null, payloadBytes = null, createOnly = false, validateNativeSource = null } = {}) {
     const doIntegrityCheck = (checkIntegrity && !skipIntegrityCheck);
     const incomingIntegrity = chatData?.[0]?.chat_metadata?.integrity;
     const chatIntegritySlug = doIntegrityCheck && typeof incomingIntegrity === 'string' ? incomingIntegrity : '';
 
     const prepared = nativePrepared || prepareChatSave(chatData);
     const nextIntegrity = prepared.integrity;
-    const savedChatData = prepared.records;
-    const jsonlData = prepared.serialized;
-    const savedChatSizeDetails = getSerializedBackupSizeDetails(jsonlData);
+    // A patched write holds its chat as bytes and counts: its saved file and its new one are never parsed or turned into text here.
+    const patched = Boolean(nativePrepared?.patch);
+    const savedChatData = patched ? null : prepared.records;
+    const savedRowCount = patched ? prepared.recordCount : savedChatData.length;
+    // A managed write reads its text from its payload bytes when it is first needed, so the text is not held
+    // while the existing file is read, compared and backed up.
+    let jsonlData = nativePrepared ? null : prepared.serialized;
+    const getJsonlData = () => jsonlData ??= patched ? prepared.bytes : prepared.serialized;
+    const savedChatSizeDetails = getPreparedChatSizeDetails(prepared, Buffer.isBuffer(payloadBytes) ? payloadBytes.byteLength : null);
     logBackupEvent('chat-save', {
         handle,
         chat: cardName,
-        rows: Array.isArray(savedChatData) ? savedChatData.length : undefined,
+        rows: savedRowCount,
         force: Boolean(skipIntegrityCheck),
         deferBackup: Boolean(deferBackup),
         ...savedChatSizeDetails,
@@ -1776,6 +2220,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
     let expectedFileIdentity;
     let expectedFileHash;
     let currentSnapshot = null;
+    let currentChatData = null;
     let existingFile = false;
 
     if (expectedSnapshot) assertNativeChatPath(filePath);
@@ -1784,7 +2229,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         existingFile = fs.existsSync(filePath);
         if (createOnly && existingFile) throw Object.assign(new Error('The managed create destination already exists.'), { code: 'ESTALE' });
         if (existingFile) {
-            currentSnapshot = readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot), maxBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER });
+            // A managed write hands over the snapshot it has just read and checked as its source under this lock.
+            currentSnapshot = lockedSnapshot ?? readChatFileSnapshot(filePath, { strict: Boolean(expectedSnapshot), maxBytes: nativePrepared ? 64 * 1024 * 1024 : Number.MAX_SAFE_INTEGER, keepData: patched ? 'bytes' : true });
         }
     } catch (error) {
         if (error?.code === 'ESTALE') {
@@ -1804,7 +2250,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         || currentSnapshot.pathStats.birthtimeNs !== expectedSnapshot.pathStats.birthtimeNs)) {
         throw Object.assign(new IntegrityMismatchError('Native chat source changed during mutation.'), { code: 'ESTALE' });
     }
-    validateNativeSource?.();
+    if (!lockedSnapshot) validateNativeSource?.();
 
     if (existingFile) {
         if (currentSnapshot) {
@@ -1813,7 +2259,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 && currentSnapshot.descriptorStats.ino === activeFileStats.ino;
             preserveFileIdentity = activeFileStats.isFile() && activeFileStats.nlink === 1n && descriptorMatchesPath;
             replaceFileOnly = !preserveFileIdentity;
-            expectedFileIdentity = { dev: activeFileStats.dev, ino: activeFileStats.ino };
+            // A native source is the file with this creation time too, as its snapshot was compared.
+            expectedFileIdentity = { dev: activeFileStats.dev, ino: activeFileStats.ino, ...(expectedSnapshot ? { birthtimeNs: activeFileStats.birthtimeNs } : {}) };
             expectedFileHash = currentSnapshot.hash;
         } else {
             const activeFileStats = fs.lstatSync(filePath, { bigint: true });
@@ -1826,9 +2273,13 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             throw new DestructiveChatSaveError('unreadable', `Refused a chat save for "${cardName}": the existing chat file could not be read, so it cannot be backed up before being replaced.`);
         }
 
-        const currentChatData = currentSnapshot?.data ?? null;
+        currentChatData = currentSnapshot?.data ?? null;
         const existingIntegrity = currentChatData === null ? '' : getSerializedChatIntegrity(currentChatData);
-        const destructiveReason = currentChatData ? getDestructiveChatSaveReason(savedChatData, currentChatData) : '';
+        // Count the saved rows once: the destructive check and the backup decision below both need it.
+        // A patch was built on exactly these bytes (their hash was checked), whose rows were counted when it was.
+        const existingChatLines = currentChatData ? patched ? nativePrepared.patch.baseCount + 1 : countSerializedChatLines(currentChatData) : 0;
+        const destructiveReason = currentChatData
+            ? patched ? getDestructiveChatSaveReasonForCounts(savedRowCount, existingChatLines) : getDestructiveChatSaveReason(savedChatData, currentChatData, existingChatLines) : '';
 
         // Neconyan: classify a history-destroying save before the integrity check, so the client is
         // told what is actually wrong with it. A client that lost its slug and a client sending an
@@ -1838,21 +2289,20 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         // Reject before the pre-write ring runs, so a rejected save cannot evict the last good state.
         // Deliberate message deletion sets allowShrink, which is not the same confirmation as an integrity overwrite.
         if (destructiveReason && !skipIntegrityCheck && !allowShrink) {
-            throw new DestructiveChatSaveError(destructiveReason, `Refused a destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${countSerializedChatLines(currentChatData)} rows.`);
+            throw new DestructiveChatSaveError(destructiveReason, `Refused a destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedRowCount} JSONL rows, existing file has ${existingChatLines} rows.`);
         }
 
         // Neconyan: the slug rotates on every save and only reaches the client in the response
         // body, so a dropped response leaves a remote client holding the previous slug forever.
         // Accept that retry when it merely appends to what is on disk, because a superset save
         // cannot lose history; a genuinely divergent save still fails the check.
+        // A patch is never taken for a stale append: it is built on exactly the bytes that are there.
         if (doIntegrityCheck && existingIntegrity && existingIntegrity !== chatIntegritySlug
-            && !isChatSaveExtension(jsonlData, currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata })) {
+            && (patched || !isChatSaveExtension(getJsonlData(), currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata }))) {
             throw new IntegrityMismatchError(`Chat integrity check failed for "${filePath}". The expected integrity slug was "${chatIntegritySlug}".`);
         }
 
         if (currentChatData) {
-            const existingLines = countSerializedChatLines(currentChatData);
-
             // Neconyan: compare parsed records because loading canonicalizes legacy JSONL formatting.
             // Replacing equivalent content through atomic temp-and-rename would swap the file identity
             // for no gain. Legacy chats remain slugless until their first genuine content change.
@@ -1863,8 +2313,8 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             });
 
             const unchanged = nativePrepared ? !nativePrepared.changed : expectedSnapshot
-                ? isDeepStrictEqual(chatData, parseChatJsonl(currentChatData).records)
-                : isSameChatSaveContent(jsonlData, currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata });
+                ? chatJsonlEqualsRecords(currentChatData, chatData)
+                : isSameChatSaveContent(getJsonlData(), currentChatData, { ignoreDerivedMetadata: !persistDerivedMetadata });
             if (unchanged) {
                 unchangedChatData = currentChatData;
                 unchangedIntegrity = existingIntegrity;
@@ -1881,7 +2331,7 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
                 }
 
                 if (destructiveReason) {
-                    console.warn(`Forced destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedChatData.length} JSONL rows, existing file has ${existingLines} rows.`);
+                    console.warn(`Forced destructive chat save for "${cardName}" (${destructiveReason}): incoming payload has ${savedRowCount} JSONL rows, existing file has ${existingChatLines} rows.`);
                 }
 
                 if (skipIntegrityCheck) {
@@ -1891,24 +2341,35 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         }
     }
 
+    // The previous text has served its checks and backups; only an unchanged save goes on to persist it.
+    // Dropping it here keeps it from sitting beside the backup, snapshot and write work below.
+    if (unchangedChatData === null) {
+        currentChatData = null;
+        if (currentSnapshot) currentSnapshot.data = null;
+    }
+
     // Neconyan: the regular backup still runs for an unchanged save. An agent run defers every
     // backup and closes with one non-deferred save, which can land unchanged; skipping it there would
     // leave the whole run without a backup. isDuplicateRegularChatBackup collapses the steady state.
-    const persistedChatData = unchangedChatData ?? jsonlData;
+    const persistedChatData = unchangedChatData ?? (Buffer.isBuffer(payloadBytes) ? payloadBytes : getJsonlData());
     let hasRecoverySnapshot = false;
 
     if (isBackupEnabled && recoveryTarget) {
         // Neconyan: exact snapshots are immediate and are not subject to history backup throttling.
         // Destructive payloads are rejected above, so this cannot mirror a chat-destroying write.
         try {
-            const snapshot = writeLatestChatSnapshot(recoveryTarget, persistedChatData);
+            // The lines a patch took from the saved file were checked when they were first written; only the new ones are read again.
+            const snapshot = patched
+                ? writeLatestChatSnapshot(recoveryTarget, persistedChatData, { trustedLines: nativePrepared.patch.trustedLines })
+                : writeLatestChatSnapshot(recoveryTarget, persistedChatData);
             hasRecoverySnapshot = snapshot.stored === true;
         } catch (error) {
             // Recovery storage is supplementary and must not prevent the authoritative chat write.
             console.warn('Failed to write the exact chat recovery snapshot; continuing with the active chat save.', error);
         }
     }
-    if (unchangedChatData !== null && currentSnapshot) {
+    // A managed source check below reads and hashes the file against the same source, so it covers this one.
+    if (unchangedChatData !== null && currentSnapshot && !validateNativeSource) {
         try {
             assertChatFileSnapshotCurrent(filePath, currentSnapshot, nativePrepared ? { strict: true, maxBytes: 64 * 1024 * 1024 } : undefined);
         } catch (error) {
@@ -1918,11 +2379,13 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
             throw new IntegrityMismatchError(`Chat changed after it was checked: "${filePath}".`, { cause: error });
         }
     }
-    // Backup I/O must not silently invalidate the recorded source or journal handoff.
-    validateNativeSource?.();
+    // Backup I/O must not silently invalidate the recorded source or journal handoff. An in-place write first hashes
+    // the very file it has opened against expectedFileHash, at this identity, so the identity is all it needs here.
+    validateNativeSource?.({ identityOnly: unchangedChatData === null && preserveFileIdentity
+        && typeof expectedFileHash === 'string' && expectedFileIdentity?.birthtimeNs !== undefined });
     if (unchangedChatData === null) {
         try {
-            tryWriteFileSync(filePath, jsonlData, 'utf8', {
+            tryWriteFileSync(filePath, persistedChatData, 'utf8', {
                 preserveFileIdentity,
                 expectedFileIdentity,
                 expectedFileHash,
@@ -1966,10 +2429,17 @@ function trySaveChatLocked(chatData, filePath, skipIntegrityCheck = false, handl
         logBackupEvent('chat-backup-skipped', { type: 'regular', handle, chat: cardName, reason: 'deferred', ...savedChatSizeDetails });
     }
     return { integrity: unchangedIntegrity ?? nextIntegrity,
-        ...(expectedSnapshot || nativePrepared ? { records: parseChatJsonl(persistedChatData).records } : {}) };
+        // A managed write returns the prepared records: publication has just proved the bytes it
+        // persisted (or kept) parse to exactly these, so parsing them again would only copy the chat.
+        // A patched one has no whole set of records and its callers only need the file it wrote.
+        ...(patched ? {} : nativePrepared ? { records: nativePrepared.records }
+            : expectedSnapshot ? { records: parseChatJsonl(persistedChatData).records } : {}) };
 }
 
 router.post('/save', validateAvatarUrlMiddleware, (request, response) => sendProtectedChatSave(request, response, false));
+
+// A save that sends only the messages that changed since the version the page last saw or loaded. See prepareBrowserChatPatch.
+router.post('/patch', validateAvatarUrlMiddleware, (request, response) => sendProtectedChatSave(request, response, false, true));
 
 /**
  * Gets the chat as an object.
@@ -2430,6 +2900,8 @@ router.post('/group/delete', (request, response) => {
 });
 
 router.post('/group/save', (request, response) => sendProtectedChatSave(request, response, true));
+
+router.post('/group/patch', (request, response) => sendProtectedChatSave(request, response, true, true));
 
 router.post('/search', validateAvatarUrlMiddleware, async function (request, response) {
     try {

@@ -1,5 +1,5 @@
 import process from 'node:process';
-import { formatWithOptions } from 'node:util';
+import { formatWithOptions, inspect, types } from 'node:util';
 
 const MAX_SERVER_LOG_ENTRIES = 1500;
 const MAX_SERVER_LOG_MESSAGE_LENGTH = 12000;
@@ -86,8 +86,17 @@ function truncateMessage(value) {
     return `${value.slice(0, MAX_SERVER_LOG_MESSAGE_LENGTH - 1).trimEnd()}…`;
 }
 
+/**
+ * A kept line must own its characters. The pieces a long output is split into, and a truncated line, are
+ * views onto the whole parent string, so keeping one of them keeps the whole output alive. Appending a
+ * character forces a flat copy of just this text, and slicing that off leaves a view onto the copy.
+ */
+function detachedText(value) {
+    return value.length < 13 ? value : `${value}\0`.slice(0, -1);
+}
+
 function appendLogEntry(stream, message) {
-    const normalizedMessage = truncateMessage(String(message ?? ''));
+    const normalizedMessage = detachedText(truncateMessage(String(message ?? '')));
     if (!normalizedMessage) {
         return;
     }
@@ -115,7 +124,7 @@ function flushPendingStream(stream) {
     state.pending[stream] = '';
 }
 
-function consumeNormalizedOutput(stream, chunk, encoding, { flushTrailing = false } = {}) {
+function consumeNormalizedOutput(stream, chunk, encoding, { flushTrailing = false, maxLines = Infinity } = {}) {
     const normalizedChunk = stripAnsiFormatting(
         normalizeChunk(chunk, encoding)
             .replace(/\r\n/g, '\n')
@@ -133,28 +142,173 @@ function consumeNormalizedOutput(stream, chunk, encoding, { flushTrailing = fals
     const lines = combined.split('\n');
     state.pending[stream] = lines.pop() ?? '';
 
-    for (const line of lines) {
-        appendLogEntry(stream, line);
+    if (flushTrailing) {
+        lines.push(state.pending[stream]);
+        state.pending[stream] = '';
     }
 
-    if (flushTrailing) {
-        flushPendingStream(stream);
+    for (const line of Number.isFinite(maxLines) ? boundedLines(lines, maxLines) : lines) {
+        appendLogEntry(stream, line);
     }
 }
 
+// Raw writes are stored whole, without the per-call bound: a pipe hands one message over as writes split at any byte
+// (a 5,000-line write in a child process reached this hook as ten writes, nine ending mid-line), so a write is not a
+// message. The one exception is a write made inside console.dir, which is that call's output.
 function consumeStreamChunk(stream, chunk, encoding) {
-    consumeNormalizedOutput(stream, chunk, encoding);
+    consumeNormalizedOutput(stream, chunk, encoding, { maxLines: state.consoleDirDepth ? CUT_CALL_LINES : Infinity });
+}
+
+// What util.inspect prints is bounded by its depth and by these defaults for arrays and strings, but not by how
+// many properties an object has, so a logged object with a million keys is formatted line by line however little
+// of it the buffer keeps.
+const FORMAT_DEPTH = 10;
+const INSPECT_ARRAY_ITEMS = 100;
+const INSPECT_STRING_CHARACTERS = 10000;
+// An argument that would print more than this many values, or this much text, is cut before it is formatted, so
+// that formatting a huge value stays cheap. Every value counts as one, a string and an empty string too, because
+// each prints at least one line; a string also counts its characters (at most the 10,000 that util.inspect prints).
+// An argument within these limits is formatted exactly as util.format does, and the call is then held to
+// CUT_CALL_LINES below, so these limits only decide how much work is done, never how much is stored.
+const FORMAT_VALUE_LIMIT = 5000;
+const FORMAT_CHARACTER_LIMIT = 1_000_000;
+// One console call stores at most this many lines (under 7% of the buffer), however it was formatted: a call that
+// prints this many or fewer is stored exactly as util.format printed it, and a longer one as its first lines and a
+// marker line. An argument cut before formatting takes a share of these lines (shared by its cut arguments, at
+// least five each), from a copy of at most CUT_COPY_VALUES values whose arrays show 20 items and whose strings
+// 1,000 characters.
+const CUT_CALL_LINES = 100;
+const CUT_COPY_VALUES = 40;
+const CUT_ARRAY_ITEMS = 20;
+const CUT_STRING_CHARACTERS = 1000;
+
+/** Objects whose own data properties are read to size or copy them: plain objects, arrays, maps and sets. */
+function isReadable(value) {
+    if (types.isProxy(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null || Array.isArray(value) || types.isMap(value) || types.isSet(value);
+}
+
+/**
+ * The values util.inspect would print for an object, without running a getter or a proxy trap (an accessor
+ * is printed as [Getter], so it counts as one value and is not read). Returns null for what is not read.
+ */
+function* shownValues(value) {
+    if (types.isMap(value) || types.isSet(value)) {
+        let shown = 0;
+        for (const entry of types.isMap(value) ? Map.prototype.entries.call(value) : Set.prototype.values.call(value)) {
+            if (shown++ >= INSPECT_ARRAY_ITEMS) return;
+            yield* types.isMap(value) ? entry : [entry];
+        }
+        return;
+    }
+    const keys = Array.isArray(value) ? Array.from({ length: Math.min(value.length, INSPECT_ARRAY_ITEMS) }, (_, index) => String(index)) : Object.keys(value);
+    for (const key of keys) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        yield descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+    }
+}
+
+/** Whether an argument would print more than the limits above: more values (strings included), or more text. Shared references count each time they print; a reference back to an object being printed prints once as [Circular]. */
+function exceedsFormatLimit(root) {
+    const left = { values: FORMAT_VALUE_LIMIT, characters: FORMAT_CHARACTER_LIMIT };
+    const ancestors = new Set();
+    const exceeds = (value, depth) => {
+        if (--left.values < 0) return true;
+        if (typeof value === 'string') return (left.characters -= Math.min(value.length, INSPECT_STRING_CHARACTERS)) < 0;
+        // An object deeper than the print depth prints as [Object]; an ancestor prints as [Circular].
+        if (!value || typeof value !== 'object' || depth > FORMAT_DEPTH || ancestors.has(value) || !isReadable(value)) return false;
+        ancestors.add(value);
+        try {
+            for (const child of shownValues(value)) if (exceeds(child, depth + 1)) return true;
+            return false;
+        } finally {
+            ancestors.delete(value);
+        }
+    };
+    return exceeds(root, 0);
+}
+
+/** A copy of at most CUT_COPY_VALUES values of an argument, keeping shared and circular references and never running a getter. */
+function cutCopy(root) {
+    const left = { values: CUT_COPY_VALUES };
+    const copies = new Map();
+    const copy = (value, depth) => {
+        if (!value || typeof value !== 'object') return value;
+        if (copies.has(value)) return copies.get(value);
+        if (!isReadable(value)) return `[${types.isProxy(value) ? 'Proxy' : Object.getPrototypeOf(value)?.constructor?.name ?? 'Object'}]`;
+        if (depth > FORMAT_DEPTH) return Array.isArray(value) ? ['…'] : { '…': 'deeper' };
+        const array = Array.isArray(value);
+        const result = array ? [] : types.isMap(value) ? new Map() : types.isSet(value) ? new Set() : Object.getPrototypeOf(value) === null ? Object.create(null) : {};
+        copies.set(value, result);
+        const mark = () => { if (array) result.push('…'); else if (types.isMap(value)) result.set('…', 'more'); else if (types.isSet(value)) result.add('…'); else result['…'] = 'more'; };
+        if (types.isMap(value) || types.isSet(value)) {
+            for (const entry of types.isMap(value) ? Map.prototype.entries.call(value) : Set.prototype.values.call(value)) {
+                if (--left.values < 0 || result.size >= CUT_ARRAY_ITEMS) { mark(); break; }
+                if (types.isMap(value)) result.set(copy(entry[0], depth + 1), copy(entry[1], depth + 1)); else result.add(copy(entry, depth + 1));
+            }
+            return result;
+        }
+        const keys = array ? Array.from({ length: Math.min(value.length, CUT_ARRAY_ITEMS) }, (_, index) => String(index)) : Object.keys(value);
+        for (const key of keys) {
+            if (--left.values < 0) { mark(); break; }
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (descriptor && !Object.hasOwn(descriptor, 'value')) {
+                // Printed as [Getter], [Setter] or [Getter/Setter] without being run.
+                Object.defineProperty(result, key, { enumerable: true, get: descriptor.get && (() => undefined), set: descriptor.set && (() => {}) });
+            } else result[key] = copy(descriptor?.value, depth + 1);
+        }
+        if (array && value.length > keys.length) mark();
+        return result;
+    };
+    return copy(root, 0);
+}
+
+function cutText(argument, lines, options) {
+    const text = inspect(cutCopy(argument), { ...options, maxArrayLength: CUT_ARRAY_ITEMS, maxStringLength: CUT_STRING_CHARACTERS }).split('\n');
+    return [...text.slice(0, lines - 1), '… (a value too large to keep in the log; only its start is kept)'].join('\n');
+}
+
+/** The lines of a call, or its first maxLines - 1 and a marker line when it printed more than maxLines. Empty lines are not stored, so they do not count. */
+function boundedLines(lines, maxLines) {
+    const kept = [];
+    for (const line of lines) {
+        if (!line) continue;
+        if (kept.length === maxLines) {
+            kept.length = maxLines - 1;
+            kept.push('… (a call too large to keep in the log; only its start is kept)');
+            break;
+        }
+        kept.push(line);
+    }
+    return kept;
+}
+
+/**
+ * What stands in for a cut argument. util.format prints it as the text however the format reads it: as an
+ * argument, through %s, %o or %O, and as a JSON string through %j. A plain string would be printed as itself by
+ * %s, but %o and %O would inspect it, quoting it as one line, and a string first argument would be read as a format.
+ */
+function cutArgument(text) {
+    return { [inspect.custom]: () => text, toString: () => text, toJSON: () => text };
 }
 
 function captureConsoleCall(stream, args) {
-    const formattedMessage = formatWithOptions({
+    const options = {
         colors: false,
-        depth: 10,
+        depth: FORMAT_DEPTH,
         breakLength: Infinity,
         compact: false,
-    }, ...args);
+    };
+    // Only an argument too large to be kept is formatted differently; the terminal always gets the original arguments.
+    const cut = args.map(argument => argument !== null && typeof argument === 'object' && exceedsFormatLimit(argument));
+    const cutCount = cut.filter(Boolean).length;
+    const lines = Math.max(5, Math.floor(CUT_CALL_LINES / Math.max(1, cutCount)));
+    const shown = args.map((argument, index) => cut[index] ? cutArgument(cutText(argument, lines, options)) : argument);
+    // A cut first argument is an object, so format does not read any % in its text as a format.
+    const formattedMessage = formatWithOptions(options, ...shown);
 
-    consumeNormalizedOutput(stream, formattedMessage, 'utf8', { flushTrailing: true });
+    consumeNormalizedOutput(stream, formattedMessage, 'utf8', { flushTrailing: true, maxLines: CUT_CALL_LINES });
 }
 
 function patchStream(streamName, stream) {
@@ -200,6 +354,25 @@ function patchConsoleMethod(methodName, streamName) {
     };
 }
 
+/** console.dir writes to the stream itself instead of through console.log, so it is bounded where that write is made. */
+function patchConsoleDir() {
+    const originalDir = console.dir;
+
+    if (typeof originalDir !== 'function') {
+        return;
+    }
+
+    console.dir = function patchedConsoleDir(...args) {
+        state.consoleDirDepth = (state.consoleDirDepth || 0) + 1;
+
+        try {
+            return originalDir.apply(this, args);
+        } finally {
+            state.consoleDirDepth = Math.max(0, (state.consoleDirDepth || 1) - 1);
+        }
+    };
+}
+
 export function initServerLogBuffer() {
     if (state.initialized) {
         return;
@@ -211,6 +384,8 @@ export function initServerLogBuffer() {
     for (const [methodName, streamName] of Object.entries(CONSOLE_METHOD_STREAMS)) {
         patchConsoleMethod(methodName, streamName);
     }
+
+    patchConsoleDir();
 
     state.captureStartedAt = getCurrentTimestamp();
     state.initialized = true;

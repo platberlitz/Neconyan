@@ -15,15 +15,18 @@ import { revealUi } from '../ui-motion.js';
 import { getCurrentUserHandle } from '../user.js';
 import { conversationImageOrigin } from '../prompt-media-policy.js';
 import { timestampToMoment } from '../utils.js';
-import { world_names } from '../world-info.js';
+import { world_info, world_names } from '../world-info.js';
+import { listLorebookLinks } from '../lorebook-links.js';
 import {
     CHROME_IDS,
     CONVERSATION_ATTACHMENT_ACCEPT,
     CONVERSATION_REACTION_LABELS,
     CONVERSATION_TIMELINE_CHANNELS,
     DEFAULT_AUTO_CHAT_COOLDOWN,
+    SAFE_TOAST_OPTIONS,
     SELFIE_COMMAND_RE,
 } from './constants.js';
+import { isConversationGroupSpeakerEligible } from './partners-utils.js';
 import { truncateConversationReplyPreview } from './preview-utils.js';
 import {
     createConversationBranch,
@@ -44,7 +47,7 @@ import { dressSleeper } from '../neconyan-sleeper-coats.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
 import { getConnectionProfiles } from './personas.js';
-import { buildConversationPromptMessages, buildConversationSystemPrompt, renderConversationAttachments } from './prompt.js';
+import { buildConversationPromptMessages, buildConversationSystemPrompt, fetchConversationLorebook, renderConversationAttachments } from './prompt.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, schedulePalsRailRender, scheduleTimelineRender } from './render-scheduler.js';
 import { escapeHtmlAttribute, escapeHtmlText, getConversationMessageExtraFingerprint, hashConversationRenderFingerprint } from './render-utils.js';
 import { getConversationReplyMaxTokens } from './schedule.js';
@@ -152,7 +155,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         windowDescriptor?.hasNewer ? '1' : '0',
     ].join(':');
 
-    return hashConversationRenderFingerprint([
+    const stableFingerprint = hashConversationRenderFingerprint([
         personaId || '',
         avatar || '',
         groupId || '',
@@ -166,10 +169,13 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         conversationState.imageGenerationActive ? '1' : '0',
         getConversationSeenAt(avatar, { groupId, personaId }),
         settingsPart,
-        typingPart,
         statusPart,
         messageParts.join('\u001e'),
     ].join('\u001d'));
+    // Streamed text is painted in place by syncTimelineTransientNodes, so it
+    // gets its own hash rather than forcing a full timeline rebuild.
+    const typingFingerprint = hashConversationRenderFingerprint([stableFingerprint, typingPart].join('\u001d'));
+    return { stableFingerprint, typingFingerprint };
 }
 
 function buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings }) {
@@ -1057,7 +1063,6 @@ export function renderConversationTimeline() {
     const previousScrollTop = timeline.scrollTop;
     const previousScrollBottom = timeline.scrollHeight - previousScrollTop - timeline.clientHeight;
     const previousThreadKey = conversationState.lastRenderedThreadKey || '';
-    const previousMessageCount = conversationState.lastRenderedMessageCount;
 
     if (!avatar) {
         const unavailableGroup = conversationState.conversationUnavailableGroupId
@@ -1070,6 +1075,7 @@ export function renderConversationTimeline() {
         }
 
         conversationState.lastTimelineFingerprint = fingerprint;
+        conversationState.lastTimelineTypingFingerprint = '';
         timeline.dataset.sbConversationFingerprint = fingerprint;
         timeline.innerHTML = `
             <div class="sb-conversation-thread-empty neconyan-cat-panel">
@@ -1121,10 +1127,9 @@ export function renderConversationTimeline() {
     conversationState.timelineWindowDescriptor = windowDescriptor;
 
     const contextChanged = previousThreadKey !== renderThreadKey;
-    const messagesAdded = allMessages.length > previousMessageCount;
     const isNearBottom = previousScrollBottom <= 150;
     const needsBottomScroll = Boolean(conversationState.timelineBottomScrollPending);
-    const fingerprint = buildTimelineFingerprint({
+    const { stableFingerprint, typingFingerprint } = buildTimelineFingerprint({
         avatar,
         groupId,
         branchId,
@@ -1134,7 +1139,28 @@ export function renderConversationTimeline() {
         messages: windowMessages,
         windowDescriptor,
     });
-    if (!contextChanged && fingerprint === conversationState.lastTimelineFingerprint && timeline.dataset.sbConversationFingerprint === fingerprint) {
+    const renderedFingerprintMatches = !contextChanged
+        && stableFingerprint === conversationState.lastTimelineFingerprint
+        && timeline.dataset.sbConversationFingerprint === stableFingerprint;
+    if (renderedFingerprintMatches && typingFingerprint !== conversationState.lastTimelineTypingFingerprint) {
+        const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
+        syncTimelineTransientNodes(timeline, typingParticipants, {
+            avatar, groupId, branchId, personaId, settings, followingLatest: windowDescriptor.followingLatest,
+        });
+        conversationState.lastTimelineTypingFingerprint = typingFingerprint;
+        updateConversationToolsState();
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        if (pagingAnchor) {
+            restoreTimelinePagingAnchor(timeline, pagingAnchor);
+        } else if (windowDescriptor.followingLatest && (isNearBottom || needsBottomScroll)) {
+            conversationState.timelineBottomScrollPending = false;
+            anchorConversationTimelineToBottom(timeline, renderThreadKey);
+        } else if (needsBottomScroll) {
+            conversationState.timelineBottomScrollPending = false;
+        }
+        return;
+    }
+    if (renderedFingerprintMatches && typingFingerprint === conversationState.lastTimelineTypingFingerprint) {
         updateConversationToolsState();
         syncConversationTimelineHistoryControlsDisabledState(timeline);
         if (pagingAnchor) {
@@ -1148,8 +1174,9 @@ export function renderConversationTimeline() {
         return;
     }
 
-    conversationState.lastTimelineFingerprint = fingerprint;
-    timeline.dataset.sbConversationFingerprint = fingerprint;
+    conversationState.lastTimelineFingerprint = stableFingerprint;
+    conversationState.lastTimelineTypingFingerprint = typingFingerprint;
+    timeline.dataset.sbConversationFingerprint = stableFingerprint;
     if (contextChanged) {
         timeline.textContent = '';
         revealUi(timeline);
@@ -1175,7 +1202,7 @@ export function renderConversationTimeline() {
         conversationState.lastRenderedMessageCount = allMessages.length;
         conversationState.timelineBottomScrollPending = false;
         updateConversationToolsState();
-        if (contextChanged || messagesAdded || isNearBottom || needsBottomScroll) {
+        if (contextChanged || isNearBottom || needsBottomScroll) {
             anchorConversationTimelineToBottom(timeline, renderThreadKey);
         } else {
             timeline.scrollTop = previousScrollTop;
@@ -1224,7 +1251,7 @@ export function renderConversationTimeline() {
         if (!restoreTimelinePagingAnchor(timeline, pagingAnchor)) {
             timeline.scrollTop = previousScrollTop;
         }
-    } else if (windowDescriptor.followingLatest && (contextChanged || messagesAdded || isNearBottom || needsBottomScroll)) {
+    } else if (windowDescriptor.followingLatest && (contextChanged || isNearBottom || needsBottomScroll)) {
         anchorConversationTimelineToBottom(timeline, renderThreadKey);
     } else {
         timeline.scrollTop = previousScrollTop;
@@ -1461,8 +1488,14 @@ export async function regenerateConversationMessage(messageId) {
     }
 
     const speakerAvatar = context.message.extra?.partner_avatar || context.avatar;
-    const settings = getSettings(speakerAvatar, { groupId: context.groupId, personaId: context.personaId });
     const speakerName = context.message.name || getCharacterForAvatar(speakerAvatar)?.name || getCurrentCharName();
+    // A pal who left the group does not answer again: say how to bring them back and send nothing.
+    const group = context.groupId ? getConversationGroupById(context.groupId, { personaId: context.personaId }) : null;
+    if (group?.is_conversation_group && !isConversationGroupSpeakerEligible(group, speakerAvatar)) {
+        globalThis.toastr?.info?.(t`This message cannot be regenerated because ${speakerName} is no longer in this group DM. Add them back with Edit members to regenerate it.`, '', SAFE_TOAST_OPTIONS);
+        return;
+    }
+    const settings = getSettings(speakerAvatar, { groupId: context.groupId, personaId: context.personaId });
     const operationKey = [context.personaId, context.avatar, context.groupId, context.branchId, messageId].join('\u001f');
     if (regenerationBusyKeys.has(operationKey)) {
         return;
@@ -1487,11 +1520,20 @@ export async function regenerateConversationMessage(messageId) {
             speakerName,
             { groupId: context.groupId, personaId: context.personaId },
         );
+        // Size the World Info budget from the speaker's real context window, as the server paths do.
+        const contextLimit = Number(bindingContext.bindingRequest?.contextLimits?.[speakerAvatar]) - getConversationReplyMaxTokens(settings);
+        const speakerCard = getCharacterForAvatar(speakerAvatar) ?? (speakerAvatar ? { avatar: speakerAvatar } : null);
+        const linkedBooks = speakerCard
+            ? listLorebookLinks({ cards: [speakerCard], charLore: world_info?.charLore ?? [] }).map(link => link.name)
+            : [];
+        const lorebook = await fetchConversationLorebook(settings, speakerAvatar, sourceMessages.slice(0, -1), {
+            personaId: context.personaId, account: getCurrentUserHandle(), maxContext: contextLimit > 0 ? contextLimit : undefined, linkedBooks });
         const systemPrompt = await buildConversationSystemPrompt(settings, speakerAvatar, {
             threadAvatar: context.avatar,
             branchId: context.branchId,
             groupId: context.groupId,
             personaId: context.personaId,
+            lorebook,
         });
         const outcome = await withTypingParticipant(
             { avatar: speakerAvatar, name: speakerName },
@@ -2018,7 +2060,7 @@ export function buildSettingsDrawerHtml() {
                 <div id="sb_conv_group_members_wrapper" class="sb-conversation-field-stack">
                     <div class="sb-conversation-field-stack" style="margin: 0; padding: 0;">
                         <label>Group DM Members</label>
-                        <p class="sb-conversation-field-hint">Selected characters are considered part of this Conversation thread. Type @Name, such as @Kaveh, to tag them. Autonomous character-to-character chat uses this same group list.</p>
+                        <p class="sb-conversation-field-hint" id="sb_conv_group_members_hint">Selected characters are considered part of this Conversation thread. Type @Name, such as @Kaveh, to tag them. Autonomous character-to-character chat uses this same group list.</p>
                         <input type="text" id="sb_conv_multi_char_search" class="text_pole textarea_compact wide100p" placeholder="Search group members..." style="margin-bottom: 8px;" />
                         <div class="sb-conversation-partner-list" id="sb_conv_chiming_partner_list">${buildChimingPartnerOptions(settings.multi_char_names)}</div>
                         <input id="sb_conv_multi_char_names" type="hidden" value="${escapeHtmlAttribute(settings.multi_char_names)}" />
@@ -2138,8 +2180,7 @@ export function ensureConversationChrome() {
             </div>
             <div class="sb-conversation-header-actions">
                 <button type="button" class="menu_button menu_button_icon sb-conversation-header-add-member" data-sb-conversation-action="open-add-member" title="Add member to Conversation" aria-label="Add member to Conversation" hidden>
-                    <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
-                    <span>Add member</span>
+                    <i class="fa-solid fa-user-plus" aria-hidden="true"></i><span data-sb-member-label="add">Add member</span><span data-sb-member-label="edit" hidden>Edit members</span>
                 </button>
                 <button type="button" class="menu_button menu_button_icon" data-sb-conversation-action="new-chat" title="New branch" aria-label="New branch">
                     <i class="fa-solid fa-code-branch" aria-hidden="true"></i>

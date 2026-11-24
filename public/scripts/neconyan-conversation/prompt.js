@@ -274,7 +274,27 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
     return false;
 }
 
-export function buildConversationSystemPrompt(settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId() } = {}) {
+/**
+ * Ask the server to scan the Lorebook Override book against these messages, or with no override the speaking
+ * card's linked lorebooks. `linkedBooks` lists the card's links; with no override and no links there is nothing
+ * to scan, so no request is made. A failed request returns null, which leaves the prompt with at most the focus
+ * sentence rather than blocking the reply.
+ */
+export async function fetchConversationLorebook(settings, avatar, messages, { personaId = getConversationPersonaId(), account, maxContext, linkedBooks = [] } = {}) {
+    const name = String(settings?.lorebook_override || '').trim();
+    if (!name && !(Array.isArray(linkedBooks) && linkedBooks.length && avatar)) return null;
+    try {
+        const { lorebook } = await requestConversationBinding('lorebook/scan', {
+            name, avatar, userName: getConversationPersonaName(personaId, 'User'), maxContext,
+            messages: (messages || []).map(message => ({ name: message.name, mes: message.mes })),
+        }, account);
+        return lorebook ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export function buildConversationSystemPrompt(settings, avatar = getCurrentCharAvatar(), { threadAvatar = avatar, branchId = '', groupId = getConversationGroupIdForAvatar(threadAvatar), personaId = getConversationPersonaId(), lorebook = null } = {}) {
     const character = getCharacterForAvatar(avatar);
     const charName = character?.name || getCurrentCharName();
     const userName = getConversationPersonaName(personaId, 'User');
@@ -298,7 +318,7 @@ export function buildConversationSystemPrompt(settings, avatar = getCurrentCharA
         lifeContext = `Current life context: It is ${timeLabel} for ${charName}, who is currently ${current.activity} (status: ${current.status}). Let this naturally color your availability, mood, and what you mention. Stay in this moment of your day.`;
     }
     const promptContext = {
-        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext,
+        settings, character, charName, userName, groupId, partnerNames, threadCharacter, personaContext, lifeContext, lorebook,
         timeContext: getConversationLocalTimeContext(now),
         authorNote: settings.authors_note || getCharacterAuthorNote(avatar),
         availability: getAvailabilityCopy(getUserStatus()).label.toLowerCase(),

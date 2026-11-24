@@ -31,7 +31,7 @@ const { readRoleplayChat } = await import('../src/generation/roleplay-source.js'
 const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { splitReply } = await import('../public/scripts/scratchpad/proposals.js');
-const { characterToolReply, scratchpadCharacterTools } = await import('../src/scratchpad/character-tools.js');
+const { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } = await import('../src/scratchpad/character-tools.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 const { replySwipes, appendReplySwipe, exportReply, MAX_REPLY_SWIPES } = await import('../public/scripts/scratchpad/swipes.js');
 const { scratchpadPrefill, joinScratchpadPrefill } = await import('../public/scripts/scratchpad/prefill.js');
@@ -86,6 +86,94 @@ test('CSS snippet changes are offered only when CSS Snippets are shared, and nev
         assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /"type":"css-snippet"/);
     }
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { cssSnippets: true } }).text, /"type":"css-snippet"/);
+});
+
+test('problem findings are offered only when the switch is on, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.problems, false);
+    assert.equal(store.normaliseSettings({ include: { problems: true } }).include.problems, true);
+    assert.equal(store.normaliseSettings({ include: { problems: 'yes' } }).include.problems, false);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ problems: true }, kind).problems, true);
+    assert.equal(normaliseCapabilities({ problems: true }, 'notebook').problems, undefined);
+    assert.equal(normaliseCapabilities({ problems: 'yes' }).problems, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        const shared = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { problems: true }, customPrompt }).text;
+        assert.match(shared, /Shared problem findings come from Neconyan's fixed checks, not guesses/);
+        assert.match(shared, /say which points are certain checker findings and which are your own judgement/);
+        assert.match(shared, /Treat a clean item as clean/);
+        assert.doesNotMatch(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text, /fixed checks, not guesses/);
+    }
+    assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { problems: true } }).text, /fixed checks, not guesses/);
+});
+
+test('app evidence instructions appear only when the section is shared, and never for a note', () => {
+    assert.equal(store.normaliseSettings({}).include.appEvidence, false);
+    assert.equal(store.normaliseSettings({ include: { appEvidence: true } }).include.appEvidence, true);
+    assert.equal(store.normaliseSettings({ include: { appEvidence: 'yes' } }).include.appEvidence, false);
+    for (const kind of ['roleplay', 'conversation', 'general']) assert.equal(normaliseCapabilities({ appEvidence: true }, kind).appEvidence, true);
+    assert.equal(normaliseCapabilities({ appEvidence: true }, 'notebook').appEvidence, undefined);
+    assert.equal(normaliseCapabilities({ appEvidence: 'yes' }).appEvidence, undefined);
+    for (const customPrompt of ['', 'Be helpful.']) {
+        for (const capabilities of [{}, { lore: true, problems: true }]) {
+            const off = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities, customPrompt }).text;
+            const explicitlyOff = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, appEvidence: false }, customPrompt }).text;
+            const on = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, appEvidence: true }, customPrompt }).text;
+            assert.equal(explicitlyOff, off, 'the switch off leaves the prompt byte for byte as it was');
+            assert.doesNotMatch(off, /App evidence/);
+            assert.match(on, /quote the evidence lines you rely on and keep what the evidence shows apart from what you are guessing/);
+            assert.match(on, /Say plainly when the evidence does not explain the problem/);
+            assert.match(on, /never claim that you changed, fixed, restarted or repaired anything/);
+            assert.ok(on.startsWith(off.slice(0, 200)) || customPrompt, 'the rest of the prompt is unchanged');
+            assert.equal(on.replace(/\n\nApp evidence for this message:[\s\S]*?repaired anything[^\n]*\n?/, '\n\n').replace(/\n{3,}/g, '\n\n').trim(), off.replace(/\n{3,}/g, '\n\n').trim());
+        }
+    }
+});
+
+test('lorebook activation field instructions stay brief when Problem checks are off and expand with trace guidance when on', () => {
+    for (const customPrompt of ['', 'Be terse.']) {
+        const brief = buildScratchpadSystemPrompt({
+            assistant: 'miso',
+            capabilities: { lore: true, problems: false },
+            customPrompt,
+        }).text;
+        if (customPrompt) {
+            // A custom session prompt in Roleplay gains no lorebook instructions unless Problem checks are on.
+            assert.equal(brief, buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: {}, customPrompt }).text);
+            assert.doesNotMatch(brief, /"type":"lorebook"/);
+        } else {
+            assert.match(brief, /optional activation settings/);
+        }
+        assert.doesNotMatch(brief, /Optional activation fields on add or edit/);
+        assert.doesNotMatch(brief, /Lorebook activation trace/);
+
+        const full = buildScratchpadSystemPrompt({
+            assistant: 'miso',
+            capabilities: { lore: true, problems: true },
+            customPrompt,
+        }).text;
+        assert.match(full, /When Lorebook activation trace is shared, use it to answer why an entry did not trigger/);
+        assert.match(full, /Optional activation fields on add or edit/);
+        assert.match(full, /selectiveLogic/);
+        assert.match(full, /delayUntilRecursion/);
+        assert.match(full, /useGroupScoring/);
+        assert.match(full, /disabled entry listed under Lorebook details/);
+    }
+
+    const generalFull = buildScratchpadSystemPrompt({
+        assistant: 'miso',
+        sourceKind: 'general',
+        capabilities: { lore: true, problems: true },
+        customPrompt: 'Be terse.',
+    }).text;
+    assert.match(generalFull, /Optional activation fields on add or edit/);
+    assert.match(generalFull, /When Lorebook activation trace is shared/);
+
+    const notePrompt = buildScratchpadSystemPrompt({
+        assistant: 'miso',
+        sourceKind: 'notebook',
+        capabilities: normaliseCapabilities({ lore: true, problems: true }, 'notebook'),
+    }).text;
+    assert.doesNotMatch(notePrompt, /Full optional activation fields/);
+    assert.doesNotMatch(notePrompt, /Lorebook activation trace/);
 });
 
 test('dialogue colour changes are offered only when Dialogue Colors are shared, and never for a note', () => {
@@ -149,6 +237,46 @@ function startSession(a, settings = {}) {
         assistant: 'taro', settings: { connection: { kind: 'profile', profileId: 'saved' }, ...settings },
     }));
 }
+
+test('damaged or newer saved lists are never mistaken for empty lists', t => {
+    const a = account(t);
+    const damaged = { ...SOURCE, key: 'Unreadable draft' };
+    a.mutate(damaged, bucket => store.createSession(bucket, { messages: [{ role: 'user', text: 'Keep this.' }] }));
+    const file = store.scratchpadFile(a.directories.root, damaged);
+    const original = fs.readFileSync(file, 'utf8');
+    for (const corrupt of [
+        bucket => { bucket.version++; },
+        bucket => { bucket.sessions.push(null); },
+        bucket => { bucket.sessions.push({}); },
+        bucket => { delete bucket.sessions[0].messages[0].id; },
+        bucket => { bucket.sessions[0].messages[0].text = null; },
+        bucket => { bucket.sessions[0].pinnedNote = { invalid: true }; },
+    ]) {
+        const bucket = JSON.parse(original);
+        corrupt(bucket);
+        const written = JSON.stringify(bucket);
+        fs.writeFileSync(file, written);
+        assert.throws(() => a.read(damaged), { code: 'SCRATCHPAD_DAMAGED' });
+        assert.throws(() => a.mutate(damaged, current => store.createSession(current, {})), { code: 'SCRATCHPAD_DAMAGED' });
+        assert.equal(fs.readFileSync(file, 'utf8'), written);
+    }
+    fs.writeFileSync(file, original);
+    assert.equal(a.read(damaged).sessions[0].messages[0].text, 'Keep this.');
+});
+
+test('a shared list without a readable identity keeps its original file', t => {
+    const a = account(t);
+    const scoped = { ...SOURCE, scope: { kind: 'character', id: 'Nova.png' } };
+    a.mutate(scoped, bucket => store.createSession(bucket, { name: 'Keep this' }));
+    const file = store.scratchpadFile(a.directories.root, { kind: 'roleplay', key: 'shared:character:Nova.png' });
+    const bucket = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete bucket.source;
+    const written = JSON.stringify(bucket);
+    fs.writeFileSync(file, written);
+    assert.throws(() => a.read(scoped), { code: 'SCRATCHPAD_DAMAGED' });
+    assert.throws(() => a.mutate(scoped, current => store.createSession(current, {})), { code: 'SCRATCHPAD_DAMAGED' });
+    assert.equal(fs.readFileSync(file, 'utf8'), written);
+});
 
 function sendBody(session, extra = {}) {
     return {
@@ -305,8 +433,10 @@ test('reply swipes retain edits, reasoning and proposal decisions across durable
         return a.read(SOURCE).sessions[0].messages.at(-1);
     };
     const original = await send({});
+    const edited = 'Edited original\n```scratchpad-change\n{"type":"character","action":"create","character":{"name":"Nova"}}\n```';
     a.mutate(SOURCE, bucket => {
-        store.updateMessage(bucket, session.id, original.id, 'Edited original');
+        store.updateMessage(bucket, session.id, original.id, edited);
+        assert.throws(() => store.markProposal(bucket, session.id, original.id, 1, 'rejected'), /change/i);
         store.markProposal(bucket, session.id, original.id, 0, 'rejected');
     });
     answer = 'Alternative answer';
@@ -314,7 +444,7 @@ test('reply swipes retain edits, reasoning and proposal decisions across durable
     assert.equal(next.swipeIndex, 1);
     assert.equal(next.swipes.length, 2);
     assert.equal(next.swipes[1], null);
-    assert.equal(next.swipes[0].text, 'Edited original');
+    assert.equal(next.swipes[0].text, edited);
     assert.equal(next.swipes[0].edited, true);
     assert.equal(next.swipes[0].reasoning, 'Original thinking');
     assert.equal(next.swipes[0].proposals[0], 'rejected');
@@ -323,7 +453,9 @@ test('reply swipes retain edits, reasoning and proposal decisions across durable
     assert.equal(selected.id, original.id);
     assert.equal(selected.swipes[0], null);
     assert.equal(selected.swipes[1].text, 'Alternative answer');
-    assert.deepEqual(jobs.historyFrom([{ role: 'user', text: 'Question' }, selected]).map(item => item.text), ['Question', 'Edited original']);
+    const history = jobs.historyFrom([{ role: 'user', text: 'Question' }, selected]);
+    assert.equal(history[0].text, 'Question');
+    assert.match(history[1].text, /^Edited original/);
     assert.throws(() => a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, next.id, 1)), error => error.code === 'SCRATCHPAD_MESSAGE_MISSING');
     assert.throws(() => a.mutate(SOURCE, bucket => store.swipeMessage(bucket, session.id, selected.id, 4)), /version/i);
     const imported = a.mutate(OTHER, bucket => store.createSession(bucket, { messages: [exportReply(selected)] }));
@@ -781,7 +913,7 @@ test('General with no card clamps a forged character capability and records no s
 });
 
 test('stored General origins refuse forged shared-avatar authority for another context card', () => {
-    const input = { role: 'assistant', text: 'A suggestion.', contextSource: { kind: 'general', key: 'general', avatar: 'Nova.png' }, sharedAvatar: 'Kit.png' };
+    const input = { id: 'msg-general', role: 'assistant', text: 'A suggestion.', contextSource: { kind: 'general', key: 'general', avatar: 'Nova.png' }, sharedAvatar: 'Kit.png' };
     assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: true }).sharedAvatar, undefined);
     assert.equal(store.testExports.normaliseMessage({ ...input, sharedAvatar: 'Nova.png' }, { allowInternalKeys: true }).sharedAvatar, 'Nova.png');
 });
@@ -1119,7 +1251,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
         name: '  Lean   read ',
         extra: 'dropped',
         settings: {
-            depth: 4, include: { card: false, preset: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
+            depth: 4, include: { card: false, preset: true, lastPrompt: true, unknown: true }, maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:',
             picked: ['m1'], loreOverrides: { 'Book:1': 'always' }, connection: { kind: 'profile', profileId: 'saved' }, roundTable: true, notes: [],
             feedbackTone: 'harsher', assistantTones: { taro: 'critical' },
         },
@@ -1127,7 +1259,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, lastPrompt: true },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
     }], 'the shared feedback tone travels, and per-assistant tones stay with their session');
@@ -1730,6 +1862,31 @@ for (const [label, options] of [
     });
 }
 
+test('character tool support uses the catalogue for each saved connection', async t => {
+    const a = account(t);
+    const body = sendBody(startSession(a));
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    const context = { owner: a.f.scope.owner, directories: a.directories, job: accepted.job };
+    const tools = scratchpadCharacterTools();
+    const model = 'fixture/model';
+    const lookups = [];
+    async function offered(id, endpoint, artifactName) {
+        return scratchpadToolsFor(context, { profileId: id }, tools, {
+            artifactName,
+            resolveProfile: () => ({ source: 'openrouter', backend: 'chat', active: { function_calling: true }, profile: { id, model, 'api-url': endpoint } }),
+            fetchModels: async ({ material }) => {
+                lookups.push([material.profile.id, material.profile['api-url']]);
+                return [{ id: model, supported_parameters: id === 'first' && !endpoint ? ['tools'] : [] }];
+            },
+        });
+    }
+    assert.deepEqual(await offered('first', '', 'first-catalogue'), tools);
+    assert.deepEqual(await offered('first', '', 'same-catalogue'), tools);
+    assert.deepEqual(await offered('second', '', 'second-catalogue'), []);
+    assert.deepEqual(await offered('first', 'https://fixture.invalid', 'updated-endpoint-catalogue'), []);
+    assert.deepEqual(lookups, [['first', ''], ['second', ''], ['first', 'https://fixture.invalid']]);
+});
+
 test('character tools normalise provider formats and reject unsupported or malformed calls', () => {
     const tools = scratchpadCharacterTools();
     const name = tools[0].function.name;
@@ -1749,7 +1906,10 @@ test('character tools normalise provider formats and reject unsupported or malfo
     assert.equal(splitReply(kept.text).some(part => part.change), false);
     assert.match(characterToolReply(response('{"character":{"name":"Nova","extensions":{}}}'), tools).text, /Invalid character field/);
     assert.deepEqual(characterToolReply({ text: 'Ordinary reply.' }, []), { text: 'Ordinary reply.', hasTools: false });
-    assert.throws(() => characterToolReply({ ...response(JSON.stringify(args)), text: '```scratchpad-change\n{}\n```\n'.repeat(24) }, tools), /24 changes/);
+    const atCapacity = characterToolReply({ ...response(JSON.stringify(args)), text: 'Draft notes.\n' + '```scratchpad-change\n{}\n```\n'.repeat(24) }, tools);
+    assert.equal(splitReply(atCapacity.text).filter(part => part.type === 'change').length, 24);
+    assert.match(atCapacity.text, /Character drafts left out: 1/);
+    assert.match(atCapacity.text, /^Draft notes\./);
 });
 
 test('Scratchpad native character replies recover only unambiguous creation aliases', () => {
@@ -2600,7 +2760,32 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal(bucket.sessions[0].assistant, 'nori');
     assert.equal(bucket.sessions[0].name, 'Nori\'s notes');
     const renamed = await post('/session/update', { source: SOURCE, sessionId: bucket.sessions[0].id, changes: { name: 'Plot holes' } });
-    assert.equal((await renamed.json()).bucket.sessions[0].name, 'Plot holes');
+    const plotHoles = active((await renamed.json()).bucket);
+    assert.equal(plotHoles.name, 'Plot holes');
+    const pinnedNote = await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinnedNote: 'Keep the ferry.', expectedPinnedNote: '' } });
+    const noted = active((await pinnedNote.json()).bucket);
+    assert.equal(noted.pinnedNote, 'Keep the ferry.');
+    const pinnedOnly = active((await (await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinned: true } })).json()).bucket);
+    assert.equal(pinnedOnly.pinned, true);
+    assert.equal(pinnedOnly.updated, noted.updated, 'pinning alone keeps the last edit time');
+    assert.deepEqual(pinnedOnly.settings, noted.settings, 'pinning alone leaves the saved settings untouched');
+    await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { pinned: false } });
+
+    const withSharing = { webSearch: true, readLinks: true, depth: 45, prefill: 'Private opening:', maxTokens: 2048 };
+    await post('/session/update', { source: SOURCE, sessionId: plotHoles.id, changes: { settings: withSharing } });
+    await post('/session/update', { source: OTHER, sessionId: fresh.id, changes: { settings: withSharing } });
+    const hits = (await (await post('/search', { query: 'Plot holes' })).json()).results;
+    const copied = active((await (await post('/search/copy', { source: OTHER, list: hits[0].list, sessionId: plotHoles.id })).json()).bucket);
+    assert.equal(copied.settings.maxTokens, 2048);
+    assert.equal(copied.pinnedNote, 'Keep the ferry.');
+    await post('/session/update', { source: OTHER, sessionId: copied.id, changes: { settings: withSharing } });
+    const importedPrivate = active((await (await post('/session/import', { source: OTHER, session: { name: 'Imported choices', settings: withSharing } })).json()).bucket);
+    for (const session of [copied, importedPrivate]) {
+        assert.equal(session.settings.webSearch, false);
+        assert.equal(session.settings.readLinks, false);
+        assert.equal(session.settings.depth, store.defaultSettings().depth);
+        assert.equal(session.settings.prefill, '');
+    }
     const cleaned = await post('/cleanup', { source: SOURCE, cleanup: { enabled: true, keep: 3 } });
     assert.deepEqual((await cleaned.json()).bucket.cleanup, { enabled: true, keep: 3 });
     assert.deepEqual((await (await post('/bucket', { source: OTHER })).json()).bucket.cleanup, { enabled: true, keep: 3 });

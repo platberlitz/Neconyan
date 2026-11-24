@@ -1,12 +1,14 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import v8 from 'node:v8';
 import { spawn } from 'node:child_process';
 
 import express from 'express';
 import yaml from 'yaml';
 import { sync as commandExistsSync } from 'command-exists';
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 
 import { APP_NAME, formatRuntimeLabel, isBunRuntime, isNativeTermuxEnvironment } from '../runtime.js';
 import {
@@ -22,7 +24,7 @@ import {
 import { getServerLogSnapshot } from '../server-log-buffer.js';
 import { getCrashReports, getCrashReportStatus } from '../crash-diagnostics.js';
 import { getLatestZipReleaseStatus, stageZipReleaseUpdate } from '../server-admin-zip-update.js';
-import { getLatestAndroidReleaseStatus } from '../server-admin-android-update.js';
+import { getLatestAndroidReleaseStatus, getLatestIosReleaseStatus } from '../server-admin-android-update.js';
 import {
     discardStagedServerPluginRelease,
     getServerPluginUpdateCapabilities,
@@ -30,6 +32,7 @@ import {
 } from '../server-plugin-manager.js';
 import {
     cancelServerPluginUpdateHandoff,
+    isServerPluginUpdateSupervised,
     prepareServerPluginUpdateHandoff,
 } from '../server-plugin-update-ipc.js';
 import { serverDirectory } from '../server-directory.js';
@@ -39,8 +42,13 @@ import { getThumbnailDimensions, getThumbnailMobileDimensions, setThumbnailDimen
 import { getThumbnailMobileRuntimeSettings, getThumbnailRuntimeSettings, setThumbnailMobileRuntimeSettings, setThumbnailRuntimeSettings } from './thumbnails.js';
 import { requestGracefulExit } from '../shutdown.js';
 import { getServerBootId } from '../server-boot-marker.js';
+import { validateAndroidConfigEdit } from '../android-config-policy.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import {
+    EXTERNAL_HEAP_OVERRIDE_ENV,
+    hasExternalHeapFlag,
     LAUNCHER_ENV as RESTART_LAUNCHER_ENV,
+    parseMaxOldSpaceSizeMb,
     RESTART_EXIT_CODE,
     SERVER_PLUGIN_PREPARE_LEASE_MS,
     SERVER_PLUGIN_UPDATE_EXIT_CODE,
@@ -59,6 +67,7 @@ const GIT_OPTIONS = Object.freeze({
 const RESTART_RESPONSE_DELAY_MS = 200;
 let zipUpdatePending = false;
 const refreshRepositoryRemote = createRemoteRefresh();
+let androidManagedConfig = null;
 const CHAT_COMPLETION_CONFIG_DEFAULTS = Object.freeze({
     claude: Object.freeze({
         enableSystemPromptCache: false,
@@ -118,6 +127,22 @@ export const router = express.Router();
 function getConfigFilePath() {
     const configPath = globalThis.COMMAND_LINE_ARGS?.configPath;
     return path.resolve(configPath || path.join(serverDirectory, 'config.yaml'));
+}
+
+function getAndroidManagedConfig() {
+    if (process.env.NECONYAN_ANDROID_APP !== '1') return null;
+    // Resolve on an actual save, so importing startup helpers needs no launcher
+    // globals. util's config was cached at startup, before any edited YAML was
+    // saved. Keep that authority even when a save omits the managed fields.
+    androidManagedConfig ??= Object.freeze({
+        dataRoot: globalThis.DATA_ROOT,
+        port: globalThis.COMMAND_LINE_ARGS.port,
+        basicAuthUser: Object.freeze({
+            username: getConfigValue('basicAuthUser.username'),
+            password: getConfigValue('basicAuthUser.password'),
+        }),
+    });
+    return androidManagedConfig;
 }
 
 function createHttpError(status, message) {
@@ -185,6 +210,7 @@ function readConfigDocument() {
     const document = yaml.parseDocument(content, { prettyErrors: true });
 
     if (document.errors.length > 0) {
+        if (process.env.NECONYAN_ANDROID_APP === '1') throw createHttpError(400, 'The Android configuration contains invalid YAML. Correct its syntax before saving.');
         throw createHttpError(400, document.errors.map(error => error.message).join('\n\n'));
     }
 
@@ -419,6 +445,109 @@ function getServerPluginUpdatePayload(stagedUpdate) {
 function isManagedRestart() {
     return process.env[RESTART_LAUNCHER_ENV] === '1'
         || process.env[RESTART_SUPERVISED_ENV] === '1';
+}
+
+function appHost() {
+    if (process.env.NECONYAN_IOS_APP === '1') return 'ios';
+    if (process.env.NECONYAN_ANDROID_APP === '1') return 'android';
+    return '';
+}
+
+/** The iPhone app runs Node inside the app process, so exiting to restart would close the whole app. */
+function canRestartItself() {
+    return appHost() !== 'ios';
+}
+
+const IOS_RESTART_MESSAGE = 'The iPhone app cannot restart its own server. Close Neconyan from the app switcher and open it again to apply changes.';
+
+function rejectInAppRestart(response) {
+    if (canRestartItself()) return false;
+    response.status(409).json({ error: IOS_RESTART_MESSAGE, code: 'restart_unavailable' });
+    return true;
+}
+
+export function isHeapSupervisorManaged({ env = process.env, send = process.send } = {}) {
+    return env[RESTART_SUPERVISED_ENV] === '1'
+        && typeof send === 'function'
+        && (env[EXTERNAL_HEAP_OVERRIDE_ENV] === '0' || env[EXTERNAL_HEAP_OVERRIDE_ENV] === '1');
+}
+
+export function isExternalHeapOverrideActive({ env = process.env, execArgv = process.execArgv, send = process.send } = {}) {
+    if (env[EXTERNAL_HEAP_OVERRIDE_ENV] === '1') {
+        return true;
+    }
+    if (isHeapSupervisorManaged({ env, send }) && env[EXTERNAL_HEAP_OVERRIDE_ENV] === '0') {
+        return false;
+    }
+    if (isServerPluginUpdateSupervised({ env, send })) {
+        return hasExternalHeapFlag({ execArgv: [], env });
+    }
+    return hasExternalHeapFlag({ execArgv, env });
+}
+
+function getMemoryPresetsMb(totalMemoryMb) {
+    const presets = [1536, 2048, 3072, 4096];
+    if (Number.isFinite(totalMemoryMb) && totalMemoryMb >= 8192) {
+        presets.push(6144);
+    }
+    if (Number.isFinite(totalMemoryMb) && totalMemoryMb >= 12288) {
+        presets.push(8192);
+    }
+    return presets;
+}
+
+function normalizeMemoryCapInput(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === '' || rawValue === 'auto') {
+        return null;
+    }
+    const parsed = typeof rawValue === 'number'
+        ? rawValue
+        : typeof rawValue === 'string' && rawValue.trim() !== ''
+            ? Number(rawValue.trim())
+            : Number.NaN;
+    if (parseMaxOldSpaceSizeMb(parsed) === null) {
+        throw createHttpError(400, uiText('Enter a whole number between 512 and 65536 MB, or choose Auto.'));
+    }
+    return parsed;
+}
+
+function applyServerMemoryConfigState(document, nextCap) {
+    const performanceNode = document.get('performance', true);
+    if (!yaml.isMap(performanceNode)) {
+        document.set('performance', document.createNode({ maxOldSpaceSizeMb: nextCap }));
+    } else {
+        document.setIn(['performance', 'maxOldSpaceSizeMb'], nextCap);
+    }
+}
+
+function getServerMemoryState(document) {
+    const supported = !isBunRuntime() && !appHost();
+    const configuredMb = parseMaxOldSpaceSizeMb(document.getIn(['performance', 'maxOldSpaceSizeMb']));
+    const rawTotalMemoryMb = Math.round(os.totalmem() / 1048576);
+    const totalMemoryMb = Number.isFinite(rawTotalMemoryMb) && rawTotalMemoryMb > 0 ? rawTotalMemoryMb : null;
+    let heapLimitMb = null;
+    if (supported) {
+        try {
+            // V8's heap_size_limit equals --max-old-space-size plus V8's young-generation allowance (~48-192 MB).
+            const rawHeapLimitMb = Math.round(v8.getHeapStatistics().heap_size_limit / 1048576);
+            if (Number.isFinite(rawHeapLimitMb) && rawHeapLimitMb > 0) {
+                heapLimitMb = rawHeapLimitMb;
+            }
+        } catch {
+            heapLimitMb = null;
+        }
+    }
+    return {
+        supported,
+        configuredMb,
+        heapLimitMb,
+        totalMemoryMb,
+        presetsMb: getMemoryPresetsMb(totalMemoryMb),
+        supervised: isHeapSupervisorManaged(),
+        externalOverride: isExternalHeapOverrideActive(),
+        canRestart: canRestartItself(),
+        host: appHost(),
+    };
 }
 
 function scheduleRestart(response, { reloadSupervisor = false } = {}) {
@@ -706,7 +835,8 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
         const autoStash = typeof request.body?.autoStash === 'boolean' ? request.body.autoStash : undefined;
         const repository = await getRepositoryStatus({ refresh: forceRefresh, autoStash });
         const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
-        const release = repository.isRepo || androidRelease || process.env.NECONYAN_IOS_APP === '1'
+        const iosRelease = await getLatestIosReleaseStatus(version.pkgVersion, { force: forceRefresh });
+        const release = repository.isRepo || androidRelease || iosRelease
             ? null : await getLatestZipReleaseStatus(version.pkgVersion, { force: forceRefresh });
         const userRoot = request.user?.directories?.root;
         response.json({
@@ -718,6 +848,9 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
             repository,
             release,
             androidRelease,
+            iosRelease,
+            host: appHost(),
+            canRestart: canRestartItself(),
         });
     } catch (error) {
         console.error('Failed to get server admin status.', error);
@@ -743,7 +876,7 @@ router.post('/config/get', requireAdminMiddleware, async (_request, response) =>
 router.post('/config/save', requireAdminMiddleware, async (request, response) => {
     try {
         const content = String(request.body?.content ?? '');
-        const restart = Boolean(request.body?.restart);
+        const restart = Boolean(request.body?.restart) && canRestartItself();
         const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
 
         if (!content.trim()) {
@@ -756,9 +889,12 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
         const parsed = yaml.parseDocument(content, { prettyErrors: true });
         if (parsed.errors.length > 0) {
             return response.status(400).json({
-                error: parsed.errors.map(error => error.message).join('\n\n'),
+                error: process.env.NECONYAN_ANDROID_APP === '1' ? 'The Android configuration contains invalid YAML. Correct its syntax before saving.' : parsed.errors.map(error => error.message).join('\n\n'),
             });
         }
+
+        const managedConfig = getAndroidManagedConfig();
+        if (managedConfig) validateAndroidConfigEdit(parsed.toJS(), managedConfig);
 
         const nextContent = content.endsWith('\n') ? content : `${content}\n`;
         tryWriteFileSync(configPath, nextContent);
@@ -780,7 +916,7 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
             restarting: false,
             path: configPath,
             lastModifiedMs: nextStat.mtimeMs,
-            message: 'Config saved. Restart the server to apply changes.',
+            message: canRestartItself() ? 'Config saved. Restart the server to apply changes.' : 'Config saved. Close Neconyan from the app switcher and open it again to apply changes.',
         });
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
@@ -805,7 +941,7 @@ router.post('/config/chat-completions/get', requireAdminMiddleware, async (_requ
 
 router.post('/config/chat-completions/save', requireAdminMiddleware, async (request, response) => {
     try {
-        const restart = Boolean(request.body?.restart);
+        const restart = Boolean(request.body?.restart) && canRestartItself();
         const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
         const normalizedSettings = normalizeChatCompletionConfigInput(request.body?.settings);
         const { configPath, stat, document } = readConfigDocument();
@@ -834,7 +970,9 @@ router.post('/config/chat-completions/save', requireAdminMiddleware, async (requ
             path: configPath,
             lastModifiedMs: nextStat.mtimeMs,
             settings: nextSettings,
-            message: 'Chat completion server config saved. Restart the server to apply changes.',
+            message: canRestartItself()
+                ? 'Chat completion server config saved. Restart the server to apply changes.'
+                : 'Chat completion server config saved. Close Neconyan from the app switcher and open it again to apply changes.',
         });
     } catch (error) {
         console.error('Failed to save chat completions config settings.', error);
@@ -908,6 +1046,67 @@ router.post('/config/thumbnail-settings/save', requireAdminMiddleware, async (re
     }
 });
 
+router.post('/config/memory/get', requireAdminMiddleware, async (_request, response) => {
+    try {
+        const { configPath, stat, document } = readConfigDocument();
+
+        response.json({
+            path: configPath,
+            lastModifiedMs: stat.mtimeMs,
+            ...getServerMemoryState(document),
+        });
+    } catch (error) {
+        console.error('Failed to read server memory config settings.', error);
+        response.status(error.status || 500).json({ error: error.message || uiText('Could not read server memory settings.') });
+    }
+});
+
+router.post('/config/memory/save', requireAdminMiddleware, async (request, response) => {
+    try {
+        if (isBunRuntime() || Boolean(appHost())) {
+            return response.status(400).json({ error: uiText('Server memory configuration is only supported on standalone Node.js installs.') });
+        }
+
+        const nextCap = normalizeMemoryCapInput(request.body?.maxOldSpaceSizeMb);
+        const restart = Boolean(request.body?.restart) && canRestartItself();
+        const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
+        const { configPath, stat, document } = readConfigDocument();
+
+        ensureExpectedConfigMtime(stat, expectedLastModifiedMs);
+        applyServerMemoryConfigState(document, nextCap);
+
+        const nextStat = writeConfigDocument(configPath, document);
+        const memoryState = getServerMemoryState(document);
+
+        if (restart) {
+            scheduleRestart(response);
+            return response.status(202).json({
+                ok: true,
+                restarting: true,
+                serverBootId: getServerBootId(),
+                path: configPath,
+                lastModifiedMs: nextStat.mtimeMs,
+                maxOldSpaceSizeMb: nextCap,
+                ...memoryState,
+                message: uiText('Server memory limit saved. Restarting Neconyan now.'),
+            });
+        }
+
+        return response.json({
+            ok: true,
+            restarting: false,
+            path: configPath,
+            lastModifiedMs: nextStat.mtimeMs,
+            maxOldSpaceSizeMb: nextCap,
+            ...memoryState,
+            message: uiText('Server memory limit saved. Restart the server to apply changes.'),
+        });
+    } catch (error) {
+        console.error('Failed to save server memory config settings.', error);
+        response.status(error.status || 500).json({ error: error.message || uiText('Could not save server memory settings.') });
+    }
+});
+
 router.post('/thumbnails/clear-cache', requireAdminMiddleware, async (request, response) => {
     try {
         const result = clearThumbnailCacheForUser(request.user.directories);
@@ -957,6 +1156,7 @@ router.get('/server-plugins/capabilities', requireAdminMiddleware, (_request, re
 });
 
 router.post('/server-plugins/apply-release', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     let stagedUpdate = null;
     let cancelHandoff = null;
 
@@ -1025,6 +1225,7 @@ router.post('/server-plugins/apply-release', requireAdminMiddleware, async (requ
 });
 
 router.post('/restart', requireAdminMiddleware, async (_request, response) => {
+    if (rejectInAppRestart(response)) return;
     try {
         scheduleRestart(response);
         response.status(202).json({
@@ -1111,6 +1312,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
 });
 
 router.post('/update', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     let git = null;
     let stashed = false;
     let restorePending = false;
@@ -1263,6 +1465,7 @@ router.post('/branches', requireAdminMiddleware, async (_request, response) => {
 });
 
 router.post('/switch-branch', requireAdminMiddleware, async (request, response) => {
+    if (rejectInAppRestart(response)) return;
     try {
         if (typeof request.body?.branch !== 'string') {
             return response.status(400).json({ error: 'Choose a branch first.' });

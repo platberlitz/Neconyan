@@ -86,6 +86,7 @@ function sharedMemoriesLocked(lease, source, settings) {
     const { scope } = roleplayLease(lease);
     const locator = scratchpadMewmoryLocator(lease, source);
     const archive = readStateShared(scope.directories, locator);
+    if (!archive.enabled || archive.visibilityRestore?.status === 'pending') return null;
     const projected = archive.records.length ? readableArchive(scope.directories, locator, archive) : null;
     const eligible = projected ? archive.records.filter(record => recordEligible(projected, record)) : [];
     eligible.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.asOf - a.asOf || b.createdAt - a.createdAt || a.id.localeCompare(b.id));
@@ -108,12 +109,12 @@ function sharedMemoriesLocked(lease, source, settings) {
 export function mewmoryContextLocked(lease, source, settings) {
     const memories = sharedMemoriesLocked(lease, source, settings);
     if (!memories) return { enabled: false, count: 0, omitted: 0, text: '', fingerprint: hash('off') };
-    const { locator, archive, eligible, items } = memories;
+    const { locator, eligible, items } = memories;
     const omitted = eligible.length - items.length;
     const text = encode({ notice: NOTICE, omitted, records: items });
     return { enabled: true, count: items.length, omitted, text,
         correctable: items.some(item => CORRECTABLE_KINDS.includes(item.kind)),
-        fingerprint: hash([locator, archive.revision, text]) };
+        fingerprint: hash([locator, text]) };
 }
 
 function correctionError(code, message, status = 409) {

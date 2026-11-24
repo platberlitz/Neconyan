@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import realGit, { CheckRepoActions } from 'simple-git';
+import { simpleGit as realGit, CheckRepoActions } from 'simple-git';
 
 let root;
 let extension;
@@ -14,7 +14,7 @@ let fetches;
 
 jest.unstable_mockModule('simple-git', () => ({
     CheckRepoActions,
-    default: options => {
+    simpleGit: options => {
         const git = realGit(options);
         const raw = git.raw.bind(git);
         const check = git.checkIsRepo.bind(git);

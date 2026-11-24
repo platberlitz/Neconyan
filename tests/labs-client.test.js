@@ -195,6 +195,58 @@ test('a durably rejected submission can be released before job acceptance', asyn
     expect(f.request).toHaveBeenCalledTimes(1);
 });
 
+test('a missing job whose saved record is refused releases the pending scope', async () => {
+    const f = fixture();
+    f.request.mockResolvedValueOnce({ record: f.accepted });
+    const done = f.client.run('raw-generation', {}).catch(error => error);
+    await observe(f);
+    f.request.mockResolvedValueOnce({ ...f.accepted, state: 'refused', error: 'Upstream overloaded' });
+    await f.observer.onStop('missing');
+    expect(await done).toMatchObject({ refused: true, message: 'Upstream overloaded' });
+    expect(f.entries.size).toBe(0);
+});
+
+test('a retained helper prompt whose job vanished asks the model again instead of replaying it', async () => {
+    const f = fixture();
+    const stale = { key: 'earlier', kind: 'raw-generation', state: 'accepted', jobId: 'pruned-job' };
+    f.entries.set('neconyan-labs:alice:raw', JSON.stringify({ key: 'earlier' }));
+    f.request.mockResolvedValueOnce(stale).mockResolvedValueOnce(stale);
+    const done = f.client.run('raw-generation', {}, { scope: 'raw', releaseFinished: true }).catch(error => error);
+    await observe(f);
+    const first = f.observer;
+    await first.onStop('missing');
+    for (let index = 0; index < 40 && f.observer === first; index++) await Promise.resolve();
+    expect(f.observer).not.toBe(first);
+    await f.observer.onSnapshot({ state: 'completed' });
+    f.observer.onDone({ state: 'completed' });
+    expect(await done).toEqual(f.completed);
+    expect(f.request.mock.calls.filter(([url]) => url.endsWith('/submit'))).toHaveLength(1);
+    expect(f.entries.size).toBe(0);
+});
+
+test.each(['failed', 'interrupted'])('a %s helper prompt releases its scope so the next click asks again', async state => {
+    const f = fixture();
+    const done = f.client.run('raw-generation', {}, { scope: 'raw', releaseFinished: true }).catch(error => error);
+    await observe(f);
+    f.observer.onDone({ state, error: { message: 'Chat completion request error: 502 Bad Gateway' } });
+    expect(await done).toMatchObject({ jobState: state, message: 'Chat completion request error: 502 Bad Gateway' });
+    expect(f.entries.size).toBe(0);
+    expect(f.request.mock.calls.filter(([url]) => url.endsWith('/submit'))).toHaveLength(1);
+});
+
+test('a vanished paid job stays retained unless the caller opts in', async () => {
+    const f = fixture();
+    const stale = { key: 'earlier', kind: 'raw-generation', state: 'accepted', jobId: 'pruned-job' };
+    f.entries.set('neconyan-labs:alice:raw', JSON.stringify({ key: 'earlier' }));
+    f.request.mockResolvedValueOnce(stale).mockResolvedValueOnce(stale);
+    const done = f.client.run('raw-generation', {}, { scope: 'raw' }).catch(error => error);
+    await observe(f);
+    await f.observer.onStop('missing');
+    expect(await done).toMatchObject({ jobState: 'missing' });
+    expect(f.entries.size).toBe(1);
+    expect(f.request.mock.calls.filter(([url]) => url.endsWith('/submit'))).toHaveLength(0);
+});
+
 test('pendingKey exposes only its account scope key and read forwards abort options', async () => {
     const f = fixture();
     f.entries.set('neconyan-labs:alice:distill', JSON.stringify({ key: 'retained-key', body: { kind: 'distill' } }));

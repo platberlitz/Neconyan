@@ -9,7 +9,7 @@ setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.ur
 const { roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { commitSingleChatWrite, reconcileSingleChatWrite, commitSingleGroupUpdate, reconcileSingleGroupUpdate,
     commitSingleChatImport, reconcilePendingChatWrite } = await import('../src/roleplay-lifecycle.js');
-const { prepareNativeChatWrite, publishNativeChatWrite, convertImportedChatFile } = await import('../src/endpoints/chats.js');
+const { prepareNativeChatWrite, publishNativeChatWrite, convertImportedChatFile, roleplayBrowserHost } = await import('../src/endpoints/chats.js');
 const { parseChatJsonl } = await import('../src/chat-recovery.js');
 const spec = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const root = roleplayStoreDirectory(spec.scope);
@@ -95,7 +95,8 @@ fs.unlinkSync = filename => {
     return result;
 };
 
-const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
+// A browser save, which is the only kind that can be a patch, uses the browser host; every other write uses the native one.
+const host = spec.browser ? roleplayBrowserHost : { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite };
 if (spec.chatImport) spec.input.bytes = Buffer.from(spec.input.bytes, 'base64');
 let result;
 if (spec.chatImport) result = spec.reconcile ? reconcilePendingChatWrite(spec.scope, host)

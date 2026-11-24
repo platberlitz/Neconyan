@@ -58,6 +58,22 @@
     const PHASES = ['idle', 'preparing', 'pre-agents', 'generating', 'post-agents', 'companions', 'rendering', 'saving', 'waiting-review', 'unknown'];
     const AGENT_PHASES = ['pre', 'post', 'companions', 'synthesis', 'repair', 'regex', 'unknown'];
     const EVENTS = ['page-start', 'app-ready', 'chat-open', 'generation-start', 'generation-end', 'generation-stop', 'agent-start', 'agent-end', 'agent-error', 'agent-cancel', 'swipe', 'visibility', 'pagehide', 'pageshow', 'memory-pressure'];
+    // The 'Stay open in the background' sound, as the page last saw it. The event is what the audio element reported, not a cause.
+    const KEEP_ALIVE_STATES = ['off', 'armed', 'playing', 'blocked', 'failed', 'interrupted', 'dismissed', 'unsupported'];
+    const KEEP_ALIVE_EVENTS = ['pause', 'ended', 'error', 'stalled', 'emptied'];
+    // Why Neconyan itself reloaded the page. Anything else is recorded as 'other'.
+    const RELOAD_REASONS = {
+        'served-code-changed': 'Neconyan reloaded this page to load an update',
+        'update-toast': 'Neconyan reloaded this page to load an update after the Update ready notice was tapped',
+        'cache-cleared-after-update': 'Neconyan cleared its cached files and reloaded this page after an update',
+        'cache-cleared': 'Neconyan reloaded this page after its cached files were cleared',
+        'server-restarted': 'Neconyan reloaded this page after the server restarted or updated',
+        'settings-conflict': 'Neconyan reloaded this page after newer settings were saved on another device',
+        'import-finished': 'Neconyan reloaded this page after an import finished',
+        'user-requested': 'Neconyan reloaded this page because it was asked to',
+        'data-protection': 'Neconyan reloaded this page to avoid saving over newer data',
+        other: 'Neconyan reloaded this page',
+    };
     // Read data properties only. Application objects and accessor side effects are not diagnostics.
     function own(object, key) {
         try { return Object.getOwnPropertyDescriptor(object, key)?.value; } catch { return undefined; }
@@ -65,8 +81,20 @@
     const counter = (value, maximum = 1000000) => Number.isSafeInteger(value) && value >= 0 ? Math.min(value, maximum) : null;
     const choice = (value, values, fallback = 'unknown') => values.includes(value) ? value : fallback;
     const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9:-]{1,100}$/.test(value) ? value : '';
+    // A commit hash or a release number, never free text.
+    const safeVersion = value => typeof value === 'string' && /^[0-9a-zA-Z][0-9a-zA-Z.+-]{0,39}$/.test(value) ? value : '';
     function safeAgentLabel(value) {
         return typeof value === 'string' && (Object.values(LABELS).includes(value) || value === 'Combined reply' || /^Custom agent [1-9][0-9]{0,3}$/.test(value)) ? value : 'Custom agent 1';
+    }
+    function validateKeepAlive(input) {
+        if (input === null || typeof input !== 'object') return undefined;
+        const state = own(input, 'state');
+        if (!KEEP_ALIVE_STATES.includes(state)) return undefined;
+        const result = { enabled: own(input, 'enabled') === true, state, since: counter(own(input, 'since'), Number.MAX_SAFE_INTEGER), interruptions: counter(own(input, 'interruptions'), 1000) ?? 0 };
+        const playedSeconds = counter(own(input, 'playedSeconds'), 2592000);
+        if (playedSeconds !== null) result.playedSeconds = playedSeconds;
+        if (KEEP_ALIVE_EVENTS.includes(own(input, 'lastEvent'))) result.lastEvent = own(input, 'lastEvent');
+        return result;
     }
     function validateActivity(input) {
         const result = { schema: 1, pageSessionId: safeId(own(input, 'pageSessionId')), at: counter(own(input, 'at'), Number.MAX_SAFE_INTEGER),
@@ -96,6 +124,9 @@
             result.agents.omittedRunningCount = Math.min(1000000, result.agents.omittedRunningCount + Math.max(0, length - 8));
         }
         result.extensions = { enabledCount: counter(own(own(input, 'extensions'), 'enabledCount')) };
+        // Optional and absent from older entries, so those validate exactly as before.
+        const keepAlive = validateKeepAlive(own(input, 'keepAlive'));
+        if (keepAlive) result.keepAlive = keepAlive;
         return result;
     }
     function validateEvents(input) {
@@ -128,23 +159,43 @@
         const count = unfinished ? Math.min(99, previousCount + 1) : previous ? 0 : previousCount;
         return { count, unfinished, safeStart: unfinished && count >= 2 };
     }
-    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null, isIOSWebKitBrowser, evaluateStartupGuard };
+    // Only the reloads Neconyan starts by itself for an update, with nobody asking, earn a notice.
+    const RELOAD_NOTICE_REASONS = ['served-code-changed', 'cache-cleared-after-update'];
+    const RELOAD_NOTICE_MAX_AGE_MS = 120000;
+    // Pure decision for the one-time 'Neconyan updated' notice. 'show' announces the newest reload note,
+    // 'suppress' marks it handled without showing it (a crash notice or the safe start has the screen), 'skip' leaves it alone.
+    function evaluateReloadNotice(input) {
+        const { reloads, announcedId = '', now = Date.now(), navigationType = '', crashNoticePending = false, safeStart = false } = input ?? {};
+        const record = Array.isArray(reloads) ? reloads[reloads.length - 1] : null;
+        const id = safeId(own(record, 'id'));
+        const at = own(record, 'at');
+        const age = typeof at === 'string' ? now - Date.parse(at) : NaN;
+        if (!id || own(record, 'kind') !== 'page-reloaded-by-app' || !RELOAD_NOTICE_REASONS.includes(own(record, 'reason')) || id === announcedId) return { action: 'skip', id };
+        // A few seconds of clock drift are tolerated; an older note belongs to an earlier visit.
+        if (!Number.isFinite(age) || age < -5000 || age > RELOAD_NOTICE_MAX_AGE_MS) return { action: 'skip', id };
+        if (navigationType !== 'reload') return { action: 'skip', id };
+        return { action: crashNoticePending || safeStart ? 'suppress' : 'show', id };
+    }
+    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null, isIOSWebKitBrowser, evaluateStartupGuard, evaluateReloadNotice };
     globalThis.NeconyanCrashDiagnostics = api;
     if (typeof window === 'undefined' || !window.document) return;
 
     let reports = [];
     // Kept apart so a later activity write cannot replace the advice to copy unsaved reports.
-    let reportStorageError = '', recoveryStorageError = '', activityStorageError = '';
-    const storageError = () => reportStorageError || recoveryStorageError || activityStorageError;
+    let reportStorageError = '', recoveryStorageError = '', activityStorageError = '', reloadStorageError = '';
+    const storageError = () => reportStorageError || recoveryStorageError || activityStorageError || reloadStorageError;
     let capturing = false;
     let unsaved = false;
     const activity = [];
     const startedAt = Date.now();
     const SESSION_PREFIX = 'neconyan.crash-session.v1:';
     const RECOVERY_KEY = 'neconyan.crash-recoveries.v1';
+    // Reloads Neconyan starts itself are routine and frequent, so they keep their own slots
+    // instead of pushing crash and discard observations out of the eight-entry recovery list.
+    const RELOAD_KEY = 'neconyan.page-reloads.v1';
     const STARTUP_FAILURES_KEY = 'neconyan.crash-startup-failures.v1';
     const LOW_MEMORY_MODE_KEY = 'neconyan:low-memory-mode:v1';
-    let recoveries = [];
+    let recoveries = [], reloads = [];
     const TAB_KEY = 'neconyan.crash-tab.v1';
     const randomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     function legacyId(report) {
@@ -160,6 +211,8 @@
     let events = [{ at: startedAt, type: 'page-start' }];
     const handles = new Map(), observedJobs = new Map(), customLabels = new Map(), phases = new Map(), retainedActivities = [];
     let nextHandle = 0, nativeToken = '', lastWrite = 0, flushTimer = null, heartbeatTimer = null, state = 'running', dirty = true;
+    // When the current hidden stretch began (null while visible), whether the browser froze the page, and the last time away.
+    let hiddenAt = document.visibilityState === 'hidden' ? startedAt : null, frozen = false, lastAway = null;
     try {
         tabId = safeId(sessionStorage.getItem(TAB_KEY)) || tabId;
         sessionStorage.setItem(TAB_KEY, tabId);
@@ -266,7 +319,7 @@
     function updateActivity(patch) {
         const before = JSON.stringify(snapshot);
         const next = validateActivity(patch);
-        for (const key of ['view', 'mode', 'chat', 'dom', 'generation', 'extensions']) if (own(patch, key) !== undefined) snapshot[key] = next[key];
+        for (const key of ['view', 'mode', 'chat', 'dom', 'generation', 'extensions', 'keepAlive']) if (own(patch, key) !== undefined) snapshot[key] = next[key];
         if (own(own(patch, 'agents'), 'enabledCount') !== undefined) snapshot.agents.enabledCount = next.agents.enabledCount;
         refreshAgents();
         if (JSON.stringify(snapshot) !== before) scheduleFlush();
@@ -282,7 +335,8 @@
             const memory = performance.memory;
             if (memory) snapshot.heap = { usedBytes: counter(memory.usedJSHeapSize, 1099511627776), totalBytes: counter(memory.totalJSHeapSize, 1099511627776), limitBytes: counter(memory.jsHeapSizeLimit, 1099511627776) };
             snapshotText = JSON.stringify(snapshot); eventsText = JSON.stringify(events);
-            const entry = { schema: 1, documentId, state, startedAt, heartbeatAt: now, visibility: snapshot.visibility, ready: snapshot.ready, fatalReportId: safeId(api.fatalReportId) || null };
+            const entry = { schema: 1, documentId, state, startedAt, heartbeatAt: now, visibility: snapshot.visibility, hiddenAt: snapshot.visibility === 'hidden' ? hiddenAt : null, frozen,
+                ready: snapshot.ready, fatalReportId: safeId(api.fatalReportId) || null };
             const text = JSON.stringify(entry).slice(0, -1) + ',"snapshot":' + snapshotText + ',"events":' + eventsText + '}';
             // Canonical activity contains only ASCII enums, reviewed labels and safe IDs.
             if (text.length <= 8192) localStorage.setItem(SESSION_PREFIX + tabId, text);
@@ -295,11 +349,21 @@
         } catch { /* Native recording is optional and cannot block application work. */ }
         lastWrite = now; dirty = false;
     }
+    // A hidden page keeps a slower heartbeat, so the last one is its last known sign of life if it never closes.
     function heartbeat() {
         if (heartbeatTimer !== null) clearTimeout(heartbeatTimer);
         heartbeatTimer = null;
-        if (document.visibilityState !== 'visible' || state !== 'running' || typeof setTimeout !== 'function') return;
-        heartbeatTimer = setTimeout(() => { heartbeatTimer = null; flushActivity(); heartbeat(); }, 30000);
+        if (state !== 'running' || typeof setTimeout !== 'function') return;
+        heartbeatTimer = setTimeout(() => { heartbeatTimer = null; flushActivity(); heartbeat(); }, document.visibilityState === 'visible' ? 30000 : 60000);
+    }
+    function trackVisibility() {
+        const now = Date.now();
+        if (document.visibilityState === 'hidden') {
+            if (hiddenAt === null) hiddenAt = now;
+        } else if (hiddenAt !== null) {
+            lastAway = { endedAt: now, ms: Math.max(0, now - hiddenAt) };
+            hiddenAt = null;
+        }
     }
     function guarded(callback) { return (...args) => { try { return callback(...args); } catch { return null; } }; }
     Object.assign(api, {
@@ -352,6 +416,38 @@
             if (Array.isArray(parsed)) recoveries = parsed.filter(report => report?.schema === 1 && safeId(report.id)).slice(-8);
         }
     } catch { reportStorageError = 'Browser storage is unavailable; reports last only until this page closes.'; }
+
+    // Rebuilt from allowed fields only, so stored text can never add anything else to a report.
+    function reloadRecord(input, at = Date.now()) {
+        const reason = choice(own(input, 'reason'), Object.keys(RELOAD_REASONS), 'other');
+        const time = Date.parse(own(input, 'at'));
+        const record = { schema: 1, id: safeId(own(input, 'id')) || 'reload:' + (safeId(randomId()) || String(at)), runtime: 'browser', kind: 'page-reloaded-by-app',
+            at: new Date(Number.isFinite(time) ? time : at).toISOString(), reason, summary: RELOAD_REASONS[reason] };
+        const from = safeVersion(own(input, 'from')), to = safeVersion(own(input, 'to')), awayMs = counter(own(input, 'awayMs'), 2592000000);
+        if (from) record.from = from;
+        if (to) record.to = to;
+        if (awayMs !== null) record.awayMs = awayMs;
+        record.limitation = 'This was an intentional reload started by Neconyan, not a crash. It does not count as a failed start.';
+        return record;
+    }
+    try {
+        const reloadText = localStorage.getItem(RELOAD_KEY);
+        if (reloadText && reloadText.length <= 16384) {
+            const parsed = JSON.parse(reloadText);
+            if (Array.isArray(parsed)) reloads = parsed.filter(item => item?.schema === 1 && item.kind === 'page-reloaded-by-app' && safeId(item.id)).slice(-8).map(item => reloadRecord(item));
+        }
+    } catch { /* Reload notes are optional context. */ }
+    // Called right before Neconyan reloads the page itself, so the next page can say why. It is
+    // not a crash, never raises a crash notice and never touches the recovery list or the startup counter.
+    // Only the automatic update reloads later earn the short 'Neconyan updated' notice (claimReloadNotice).
+    api.noteReload = guarded(input => {
+        const now = Date.now();
+        const awayMs = lastAway && now - lastAway.endedAt < 30000 ? lastAway.ms : null;
+        reloads.push(reloadRecord({ reason: own(input, 'reason'), from: own(input, 'from'), to: own(input, 'to'), awayMs }, now));
+        reloads = reloads.slice(-8);
+        try { localStorage.setItem(RELOAD_KEY, JSON.stringify(reloads)); reloadStorageError = ''; } catch { reloadStorageError = 'Could not save the reload note; it is lost when this page closes.'; }
+        return true;
+    });
 
     function breadcrumb(type) {
         activity.push({ at: new Date().toISOString(), type });
@@ -423,12 +519,13 @@
             return report;
         } catch { return null; } finally { capturing = false; }
     };
-    api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, storageError: storageError(), retainedActivities }));
+    api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, reloads, storageError: storageError(), retainedActivities }));
     api.clear = () => {
         reports = [];
         recoveries = [];
+        reloads = [];
         unsaved = false;
-        try { localStorage.removeItem(KEY); localStorage.removeItem(RECOVERY_KEY); reportStorageError = ''; recoveryStorageError = ''; return true; } catch { return false; }
+        try { localStorage.removeItem(KEY); localStorage.removeItem(RECOVERY_KEY); localStorage.removeItem(RELOAD_KEY); reportStorageError = ''; recoveryStorageError = ''; reloadStorageError = ''; return true; } catch { return false; }
     };
     const SEEN_KEY = 'neconyan.crash-notice-seen.v1';
     let seen = [], pendingRecovery = null, currentStartupNotice = null;
@@ -509,10 +606,19 @@
         report.summary = discarded ? 'Your browser discarded the previous page' : 'The previous page did not close cleanly';
         // Device details measured when the page reopened, not at the failure; labelled as such.
         report.environment = recoveryEnvironment();
-        const heartbeatAt = counter(previousSession?.heartbeatAt, Number.MAX_SAFE_INTEGER);
+        const heartbeatAt = counter(previousSession?.heartbeatAt, Number.MAX_SAFE_INTEGER), lastSignAt = previousSession ? heartbeatAt : null;
         report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession?.events), relationship: previous.at ? 'same-tab-previous-page' : 'unavailable',
             ageMs: previous.at && heartbeatAt >= previous.at ? heartbeatAt - previous.at : null };
         report.limitation = 'The time and cause of the stop are unknown. Backgrounding does not imply a crash; a normal pagehide prevents this observation. Other tabs are never automatically diagnosed.';
+        // A hidden page now keeps a slow heartbeat, so its last one is its last sign of life.
+        if (lastSignAt !== null) {
+            const hidden = previousSession.visibility === 'hidden', hiddenSince = counter(previousSession.hiddenAt, Number.MAX_SAFE_INTEGER);
+            report.previousPage = { lastSignOfLifeAgeMs: Math.max(0, Date.now() - lastSignAt), hiddenAtLastSignOfLife: hidden,
+                hiddenForMs: hidden && hiddenSince !== null && lastSignAt >= hiddenSince ? lastSignAt - hiddenSince : null,
+                frozenAtLastSignOfLife: previousSession.frozen === true, keepAlive: previous.keepAlive || null };
+            report.limitation = 'The page stopped at some point between its last sign of life and this reopening. The browser does not provide the time or the cause, and a missing normal-close event does not prove a crash. Backgrounding alone does not imply one either. Other tabs are never automatically diagnosed.'
+                + (hidden ? ' The page was hidden at its last sign of life. A page that is hidden with no keep-alive sound playing is commonly unloaded by phones to free memory; this record cannot confirm that this is what happened here.' : '');
+        }
         recoveries.push(report); recoveries = recoveries.slice(-8);
         if (previousSession?.visibility === 'visible') pendingRecovery = report;
         if (previousSession) previousSession.state = 'recovered';
@@ -652,6 +758,28 @@
     api.getStartupGuardState = () => ({ failures: startupFailureCount, safeStart: startupSafeStart, holdActive: startupHoldActive,
         choice: startupHoldChoice, lowMemoryAuto: startupLowMemoryAuto, ios: isIOSWebKitBrowser() });
     api.isStartupHoldActive = () => startupHoldActive;
+    const RELOAD_ANNOUNCED_KEY = 'neconyan.page-reload-announced.v1';
+    // The notes this page found when it loaded, so a note this page writes right before reloading is never announced by it.
+    const reloadsAtLoad = reloads.slice();
+    function loadNavigationType() {
+        try {
+            const entry = globalThis.performance?.getEntriesByType?.('navigation')?.[0];
+            if (typeof entry?.type === 'string') return entry.type;
+            return globalThis.performance?.navigation?.type === 1 ? 'reload' : '';
+        } catch { return ''; }
+    }
+    // True once per reload note, and only when this page load is that reload. The newest note is remembered as
+    // handled even when it is held back, so it never appears later. A browser that cannot remember it shows nothing.
+    api.claimReloadNotice = guarded(() => {
+        let announcedId = '';
+        try { announcedId = safeId(localStorage.getItem(RELOAD_ANNOUNCED_KEY)); } catch { /* Without storage the notice could repeat, so it stays hidden below. */ }
+        const decision = evaluateReloadNotice({ reloads: reloadsAtLoad, announcedId, now: Date.now(), navigationType: loadNavigationType(),
+            crashNoticePending: Boolean(pendingRecovery) || Boolean(document.getElementById('neconyan-crash-notice')),
+            safeStart: startupSafeStart || startupSafeStartShown || startupHoldActive });
+        if (decision.action === 'skip') return false;
+        try { localStorage.setItem(RELOAD_ANNOUNCED_KEY, decision.id); } catch { return false; }
+        return decision.action === 'show';
+    });
     api.waitForStartupGate = guarded(() => {
         if (!startupSafeStart || startupHoldChoice) return Promise.resolve(startupHoldChoice);
         if (startupGatePromise) return startupGatePromise;
@@ -716,8 +844,11 @@
         if (flushTimer !== null) clearTimeout(flushTimer); flushTimer = null;
         heartbeat();
     });
-    window.addEventListener('pageshow', event => { if (event?.persisted) { state = 'running'; noteActivity('pageshow'); scheduleFlush(); heartbeat(); } });
-    document.addEventListener('visibilitychange', () => { breadcrumb(`visibility:${document.visibilityState}`); noteActivity('visibility'); flushActivity('visibility'); heartbeat(); });
+    window.addEventListener('pageshow', event => { if (event?.persisted) { state = 'running'; frozen = false; trackVisibility(); noteActivity('pageshow'); scheduleFlush(); heartbeat(); } });
+    document.addEventListener('visibilitychange', () => { trackVisibility(); breadcrumb(`visibility:${document.visibilityState}`); noteActivity('visibility'); flushActivity('visibility'); heartbeat(); });
+    // Where supported, a frozen page runs no timers, so the write at the freeze is its last sign of life.
+    document.addEventListener('freeze', () => { frozen = true; flushActivity('freeze'); });
+    document.addEventListener('resume', () => { frozen = false; flushActivity('resume'); heartbeat(); });
     breadcrumb('capture-started');
     scheduleFlush(); heartbeat();
 })();

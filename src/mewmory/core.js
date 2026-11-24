@@ -159,6 +159,33 @@ function recordContent(record) {
     return hash(content);
 }
 
+/** Counts the lookup tables built, so a test can show a caller does not rebuild them per record. */
+export const eligibilityStats = { builds: 0 };
+
+/**
+ * Tables over a state's records and audit, built on first use, for a caller that asks about many records of a
+ * state it does not edit meanwhile (eligibleRecords, inspection, assembling a reply's context): scanning the
+ * records and the audit for each of a few hundred records made listing them take seconds. A caller that asks about
+ * one record at a time passes nothing and scans, which is the cheaper way to ask once.
+ */
+export function eligibilityLookups(state) {
+    let built;
+    return () => {
+        if (built) return built;
+        eligibilityStats.builds++;
+        const byId = new Map();
+        const entities = new Map();
+        const audit = new Map();
+        const add = (map, key, value) => (map.get(key) ?? map.set(key, []).get(key)).push(value);
+        for (const record of state.records) {
+            if (!byId.has(record.id)) byId.set(record.id, record);
+            if (record.kind === 'entity') add(entities, record.entityId, record);
+        }
+        for (const entry of state.audit) add(audit, entry.recordId, entry);
+        return built = { byId, entities, audit };
+    };
+}
+
 /** A development preserves history; a correction invalidates the superseded interpretation. */
 export function recordRevision(state, id, version) {
     const current = state.records.find(record => record.id === id);
@@ -194,13 +221,47 @@ export function recordEligible(state, record, { asOf = Infinity, includeExcluded
     });
 }
 
+/** recordRevision answered from the tables of eligibilityLookups. */
+export function recordRevisionIn(state, lookups, id, version) {
+    const current = lookups().byId.get(id);
+    if (!current || current.version === version) return current;
+    if (current.excluded || ['invalidated', 'deleted'].includes(current.status)) return null;
+    const changes = (lookups().audit.get(id) ?? []).filter(entry => entry.afterVersion > version);
+    const previous = changes.find(entry => entry.before?.version === version)?.before;
+    if (!previous) return null;
+    return recordContent(previous) === recordContent(current) || changes.every(entry => entry.historical)
+        ? previous : null;
+}
+
+/** recordEligible answered from the tables of eligibilityLookups; the rules are the same lines as above. */
+export function recordEligibleIn(state, lookups, record, { asOf = Infinity, includeExcluded = false } = {}, seen = new Set()) {
+    if (!record || record.storyId !== state.storyId || record.branchId !== state.branchId
+        || record.asOf > asOf || ['invalidated', 'deleted'].includes(record.status)
+        || (!includeExcluded && record.excluded) || seen.has(record.id + '@' + record.version)) return false;
+    if (!record.refs.length || ![...record.refs, ...(record.evidenceRefs || [])]
+        .every(ref => sourceEligible(state, ref, asOf))) return false;
+    if (!(record.inputRefs || []).every(ref => sourceEligible(state, ref))) return false;
+    const next = new Set(seen).add(record.id + '@' + record.version);
+    if (['knowledge', 'interview', 'overview'].includes(record.kind)) {
+        const owners = (lookups().entities.get(record.ownerId) ?? [])
+            .flatMap(owner => owner.asOf <= asOf ? [owner] : (lookups().audit.get(owner.id) ?? [])
+                .filter(entry => entry.before?.asOf <= asOf)
+                .map(entry => recordRevisionIn(state, lookups, owner.id, entry.before.version)));
+        const owner = currentRecords(owners.filter(owner => recordEligibleIn(state, lookups, owner, { asOf }, next)), owner => owner.entityId)[0];
+        if (record.ownerId === 'player' || !owner?.isCharacter) return false;
+    }
+    return (record.dependencies || []).every(dependency => recordEligibleIn(state, lookups,
+        recordRevisionIn(state, lookups, dependency.id, dependency.version), { asOf, includeExcluded }, next));
+}
+
 export function eligibleRecords(state, options) {
+    const lookups = eligibilityLookups(state);
     return state.records.flatMap(record => {
-        if (recordEligible(state, record, options)) return [record];
+        if (recordEligibleIn(state, lookups, record, options)) return [record];
         if (!Number.isFinite(options?.asOf) || record.asOf <= options.asOf) return [];
-        const historical = state.audit.filter(entry => entry.recordId === record.id && entry.before?.asOf <= options.asOf)
-            .map(entry => recordRevision(state, record.id, entry.before.version))
-            .filter(candidate => recordEligible(state, candidate, options))
+        const historical = (lookups().audit.get(record.id) ?? []).filter(entry => entry.before?.asOf <= options.asOf)
+            .map(entry => recordRevisionIn(state, lookups, record.id, entry.before.version))
+            .filter(candidate => recordEligibleIn(state, lookups, candidate, options))
             .sort((a, b) => b.asOf - a.asOf || b.version - a.version);
         return historical.slice(0, 1);
     });
@@ -247,8 +308,11 @@ function trackerSource(message, previous, trackerAgentIds) {
         '[Tracker output: ' + output.name + '; supplementary state, not dialogue]\n' + output.text)].join('\n\n') };
 }
 
-/** Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter. */
-export function syncSources(state, messages, context = [], { trackerAgentIds = [] } = {}) {
+/**
+ * Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter.
+ * `groupStart` is the chat index of a group chat's memory starting point (0 for none); left out, the saved one stays.
+ */
+export function syncSources(state, messages, context = [], { trackerAgentIds = [], groupStart } = {}) {
     const previousTimeline = state.timeline;
     const extractionContext = refs => refs.filter(ref => state.sources[ref.id]?.type !== 'file').map(refKey).join(',');
     const previousContext = extractionContext(state.contextSources);
@@ -309,9 +373,16 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
         });
         state.sources[sourceId].identity = String(message.send_date ?? 'undated');
         if (message.mewmory_id) state.sources[sourceId].messageId = message.mewmory_id;
+        // Who heard a group line sits beside its revisions, so changing it never re-reads the message.
+        const audience = message.extra?.group_scene;
+        if (audience && typeof audience === 'object') state.sources[sourceId].audience = structuredClone(audience);
+        else delete state.sources[sourceId].audience;
         return ref;
     });
     const timeline = [...inherited, ...local];
+    // Lines before the starting point, inherited ones included, are out of every member's memory.
+    if (Number.isSafeInteger(groupStart) && groupStart > 0) state.groupStart = inherited.length + groupStart;
+    else if (groupStart !== undefined) delete state.groupStart;
     const remaining = new Set(timeline.map(ref => ref.id));
     const deleted = previousTimeline.filter(ref => !remaining.has(ref.id)).map(ref => ref.id);
     if (deleted.length) purgeSources(state, deleted);
@@ -384,14 +455,31 @@ export function purgeSources(state, sourceIds) {
     state.sceneNpcIds = null;
     state.recalls = [];
     state.preview = null;
-    state.index = { version: '', vectors: {}, pending: true };
+    // Keep paid vectors for surviving documents. Record search text can also contain a
+    // name or alias taken from an entity record, even without an evidence link to it.
+    const snapshots = [state.index, state.index.build].filter(snapshot => snapshot?.vectors);
+    if (snapshots.length) {
+        const removedNames = new Set(revisions.filter(record => record.kind === 'entity'
+            && removedVersions.has(record.id + '@' + record.version)).map(record => record.entityId));
+        const recordIds = new Set(state.records.filter(record => !removedNames.has(record.ownerId || record.entityId)
+            && !record.subjectIds.some(id => removedNames.has(id))).map(record => record.id));
+        const passageRefs = new Set([...state.timeline, ...state.contextSources].map(refKey));
+        for (const snapshot of snapshots) {
+            snapshot.vectors = Object.fromEntries(Object.entries(snapshot.vectors).filter(([id]) =>
+                recordIds.has(id) || (id.startsWith('source:') && passageRefs.has(id.slice('source:'.length, id.lastIndexOf(':'))))));
+        }
+    }
+    state.index.pending = true;
     forgetReaders(revisions.filter(record => removedVersions.has(record.id + '@' + record.version)), state);
     retireCoverage(state);
 }
 
 export function sourceFingerprint(state) {
-    return hash([state.storyId, state.branchId,
-        [...state.timeline, ...state.contextSources].map(ref => [ref, sourceAt(state, ref)?.hash]), state.excludedSources]);
+    const value = [state.storyId, state.branchId,
+        [...state.timeline, ...state.contextSources].map(ref => [ref, sourceAt(state, ref)?.hash]), state.excludedSources];
+    const audiences = state.timeline.flatMap(ref => state.sources[ref.id]?.audience ? [[ref.id, state.sources[ref.id].audience]] : []);
+    const scene = [...audiences.length ? [audiences] : [], ...state.groupStart > 0 ? [{ groupStart: state.groupStart }] : []];
+    return hash(scene.length ? [...value, ...scene] : value);
 }
 
 export function forkState(parent, locator, through, messages) {
@@ -447,6 +535,8 @@ export function continueState(parent, locator, messages) {
     state.sourceNamespace = state.branchId;
     state.parent = { branchId: parent.branchId, locator: parent.locator, through: parent.timeline.length - 1, continuation: true };
     state.inheritedTimeline = structuredClone(parent.timeline);
+    // The new chat's own scene sets its starting point on the next sync.
+    delete state.groupStart;
     state.records = state.records.map(record => ({ ...record, branchId: state.branchId }));
     copyRecordHistory(state);
     state.recalls = [];
@@ -507,6 +597,7 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         text: text(input.text, 'Memory text', 32000, input.kind === 'interview'),
         refs: validateRefs(state, input.refs, { asOf, allowedRefs }),
         dependencies: list(input.dependencies || [], 'Dependencies', 100).map(dependency => {
+            object(dependency, 'Dependency');
             const parent = recordRevision(state, dependency.id, dependency.version);
             if (!recordEligible(state, parent, { asOf })
                 || (allowedDependencies && !allowedDependencies.has(dependency.id))) fail('A memory this one builds on was changed, rejected, or switched off. Reload Mewmory and try again.', 409);
@@ -557,9 +648,10 @@ export function validateRecord(state, input, { asOf, origin = 'author', allowedR
         record.triggerTerms = list(input.triggerTerms || [], 'Commitment cues', 12).map(value => text(value, 'Cue', 160));
     }
     if (record.kind === 'interview') {
-        record.interview = list(input.interview, 'Interview', 8).map(turn => ({
-            question: text(turn.question, 'Question', 2000), answer: text(turn.answer, 'Answer', 8000),
-        }));
+        record.interview = list(input.interview, 'Interview', 8).map(turn => {
+            object(turn, 'Interview turn');
+            return { question: text(turn.question, 'Question', 2000), answer: text(turn.answer, 'Answer', 8000) };
+        });
         if (!record.interview.length) fail('The Pawspective interview has no questions and answers.');
         record.searchDescription = text(input.searchDescription, 'Search description', 1500);
         record.previousId = input.previousId ? id(input.previousId) : '';

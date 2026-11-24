@@ -357,10 +357,13 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
    whole page on every small DOM change (about 350ms each with a long chat open). The shell pages
    sit two levels down, so '> * >' keeps the check to those levels instead of all 18k elements. */
 body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ #sheld {
-    visibility: hidden !important; pointer-events: none !important;
+    /* Neither declaration inherits, so revealing the chat later does not restyle every row. */
+    content-visibility: hidden !important; clip-path: inset(100%);
 }
-body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ :where(#sheld) #neconyan-home-host {
-    visibility: hidden !important; pointer-events: none !important;
+@supports not (content-visibility: hidden) {
+    body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ #sheld {
+        visibility: hidden !important; pointer-events: none !important;
+    }
 }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-nav-wrapper { display: none; }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-header {
@@ -963,7 +966,7 @@ body.neconyan #chat :is(.mes_edit_buttons, .mes_reasoning_actions) {
     gap: 4px;
     max-inline-size: 100%;
 }
-body.neconyan #chat .mes_reasoning_details:has(.reasoning_edit_textarea) .mes_reasoning_summary { flex-wrap: wrap; }
+body.neconyan #chat .mes.is_reasoning_editing .mes_reasoning_summary { flex-wrap: wrap; }
 body.neconyan #chat .neconyan-edit-action {
     flex: 0 1 auto;
     width: auto;
@@ -2005,8 +2008,10 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
         width: min(400px, 38vw) !important;
         border-left: 1px solid var(--neco-border) !important;
     }
-    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen) ~ #sheld {
+    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
         right: min(400px, 38vw);
+        content-visibility: visible !important;
+        clip-path: none;
         visibility: visible !important;
         pointer-events: auto !important;
     }
@@ -2279,7 +2284,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon { displa
 body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] { align-items: center; justify-content: center; gap: 6px; width: auto; height: auto; min-width: 44px; min-height: 44px; padding: 8px; opacity: 1; filter: none; }
 body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-action] > span { font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; line-height: 1.3; }
 body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar,
-body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
+body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar:not(.avatar_collage) > img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
 
 /* Use the bar width so pinned panels get compact controls too. */
 @container (max-width: 560px) {
@@ -3449,25 +3454,6 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > .paginationjs { order: 0; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination :is(.paginationjs-first, .paginationjs-last) { display: none; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination .paginationjs-nav { white-space: nowrap; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton) {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        width: auto !important;
-        max-width: none !important;
-        aspect-ratio: auto !important;
-        padding: 0 10px !important;
-        white-space: nowrap;
-    }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton)::after {
-        font-family: var(--mainFontFamily);
-        font-weight: 500;
-        font-size: 12px;
-    }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #charListGridToggle::after { content: 'Grid'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkEditButton::after { content: 'Bulk edit'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkSelectAllButton::after { content: 'Select all'; }
-    body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > #bulkDeleteButton::after { content: 'Delete'; }
     body.neconyan #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) > #CharListButtonAndHotSwaps { display: none !important; }
     body.neconyan #right-nav-panel.openDrawer > #CharListButtonAndHotSwaps.has-favorites { min-height: 44px !important; max-height: 44px !important; padding: 2px 12px !important; }
     body.neconyan #right-nav-panel.openDrawer #CharListButtonAndHotSwaps.has-favorites #HotSwapWrapper { flex-wrap: nowrap; margin: 0 !important; min-height: 0; }
@@ -3482,6 +3468,23 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
         scrollbar-width: none;
     }
     body.neconyan #left-nav-panel .sb-model-native-nav-wrapper .sb-shell-tab { flex: 0 0 auto; width: auto; white-space: nowrap; }
+}
+/* The list tool buttons carry their names as text at every width; data-label is set (and translated) by the shell. */
+body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto !important;
+    max-width: none !important;
+    aspect-ratio: auto !important;
+    padding: 0 10px !important;
+    white-space: nowrap;
+}
+body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > :is(#charListGridToggle, #bulkEditButton, #bulkSelectAllButton, #bulkDeleteButton)::after {
+    content: attr(data-label);
+    font-family: var(--mainFontFamily);
+    font-weight: 500;
+    font-size: 12px;
 }
 
 /* Neconyan: passkey manager in Settings > User Settings. */
@@ -3622,8 +3625,8 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_text::before { float: left; margin: -8px 10px 4px -14px; }
     .nn-echo-header-plate { position: absolute; pointer-events: none; z-index: -1; top: var(--nn-echo-plate-top); left: var(--nn-echo-plate-left); width: var(--nn-echo-plate-width); height: var(--nn-echo-plate-height); border: 1px solid var(--neco-border); border-radius: 12px; background: rgb(from var(--neco-surface) r g b / var(--sb-message-opacity)); }
     .nn-echo-header-bottom { position: absolute; pointer-events: none; width: 1px; height: 1px; top: calc(var(--nn-echo-plate-top) + var(--nn-echo-plate-height) - 1px); }
-    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
-    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], [aria-expanded='true'])):not(.is_editing, .is_reasoning_editing) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], [aria-expanded='true'])):not(.is_editing, .is_reasoning_editing) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
     #chat .sb-message-screenshot-surface .mes.nn-echo-layout :is(.mesAvatarWrapper, .ch_name, .mes_reasoning_details, .nn-echo-header-plate) { visibility: visible; }
     .sb-message-screenshot-surface .nn-echo-header-bottom { display: none; }
 }

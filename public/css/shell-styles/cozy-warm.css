@@ -226,6 +226,11 @@
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }
+    /* The dashed edge is on the outer box here, so the composer keeps the default phone inset
+       and the text box stays as wide as in the other styles. */
+    :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #send_form {
+        padding: 4px;
+    }
 }
 
 /* Letter outline (Panels): Recent chats' Pin, Rename and Delete have a face in this style, so they stay unstroked. */

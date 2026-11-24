@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { parse } from 'acorn';
 import { expect, jest, test } from '@jest/globals';
 import { bindRoleplayAccount, roleplayAccountStamp, rememberRoleplayRead } from '../public/scripts/roleplay-save-chain.js';
+import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 import { renderMessagesInBatches } from '../public/scripts/chat-render-lifecycle/render-batch.js';
 
 const groupSource = fs.readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
@@ -35,7 +36,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         const responseControls = jest.fn();
         const runtime = vm.createContext({
             console: { info: no, warn: no, error: no }, performance, groups, selected_group: 'A', chat: [], chat_metadata: {}, this_chid: undefined,
-            roleplayAccountStamp, rememberRoleplayRead, getCurrentUserHandle: () => owner,
+            roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages, getCurrentUserHandle: () => owner,
             getChatGeneration: () => generation, incrementChatGeneration: () => generation++,
             validateGroup: async () => {}, unshallowGroupMembers: async () => {}, loadItemizedPrompts: async () => {},
             loadGroupChat: async id => ({ records: [{ chat_metadata: { tainted: true, integrity: id } },
@@ -43,7 +44,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
             evidence: { account, source: { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) } } }),
             chatElement: { 0: { appendChild: fragment => rows.push(...fragment.children) }, find: () => chain },
             revealChat,
-            ensureMessageMediaIsArray: no, updateChatMetadata: value => { runtime.chat_metadata = value; },
+            ensureMessageMediaIsArray: no, importPresenceRecords: no, updateChatMetadata: value => { runtime.chat_metadata = value; },
             eventSource: { emit: async () => {} }, event_types: {}, getCurrentChatId: () => runtime.selected_group,
             toastr: { error: no }, t: strings => strings.join(''), power_user: {},
             getChatRenderWindowSize: () => 50, getChatRenderWindowStartIndex: () => 0,
@@ -102,13 +103,13 @@ for (const switchDuringReceived of [false, true]) {
         const events = [];
         const runtime = vm.createContext({
             console, groups: ['A', 'B'].map(id => ({ id, chat_id: id, chats: [id], members: [] })),
-            selected_group: 'A', chat: [], chat_metadata: {}, roleplayAccountStamp, rememberRoleplayRead,
+            selected_group: 'A', chat: [], chat_metadata: {}, roleplayAccountStamp, rememberRoleplayRead, rememberChatPatchBase, fingerprintMessages,
             getCurrentUserHandle: () => owner, getChatGeneration: () => generation, incrementChatGeneration: () => generation++,
             validateGroup: async () => {}, unshallowGroupMembers: async () => {}, loadItemizedPrompts: async () => {},
             loadGroupChat: async id => id === 'A' ? { records: [], evidence: { account, vacancy: 0 } }
                 : { records: [{ chat_metadata: { tainted: true } }, { mes: 'Existing B text' }],
                     evidence: { account, source: { instanceId: randomUUID(), revision: 1, rawHash: 'a'.repeat(64) } } },
-            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray() {}, printMessages: async () => {},
+            chatElement: { find: () => ({ remove() {} }) }, ensureMessageMediaIsArray() {}, importPresenceRecords() {}, printMessages: async () => {},
             updateChatMetadata: metadata => { runtime.chat_metadata = metadata; },
             addFreshGroupGreeting: () => { runtime.chat.push({ mes: 'Fresh A greeting' }); return 0; },
             saveGroupChat: async () => true,

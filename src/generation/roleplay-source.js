@@ -6,9 +6,10 @@ import sanitize from 'sanitize-filename';
 import { registerMemoryReclaimer } from '../memory-pressure.js';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { parseChatJsonl } from '../chat-recovery.js';
+import { chatPatchMismatch, parseChatHeaderBytes } from '../chat-patch.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { TavernCardValidator } from '../validator/TavernCardValidator.js';
-import { canonical } from '../jobs/store.js';
+import { canonicalSha256, isStrictJsonTree } from '../jobs/store.js';
 import { inspectRoleplayFileStat, readRoleplayFile, roleplayAvatarOwner, validRoleplayAvatar, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccountLock } from '../roleplay-store.js';
 
 export { roleplayPathKey } from '../roleplay-store.js';
@@ -111,53 +112,11 @@ export function roleplayContentHash(records) {
 const isPlainRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     && Object.getPrototypeOf(value) === Object.prototype;
 
-/**
- * True only for the values JSON.stringify would round-trip exactly. The parsed
- * chat path needs this check because the direct canonical hash below would
- * otherwise hash undefined as null, or turn -0 into 0, where the legacy path
- * refuses the record outright.
- */
-function isParsedChatValue(value, ancestors) {
-    if (value === null) return true;
-    switch (typeof value) {
-        case 'string':
-        case 'boolean':
-            return true;
-        case 'number':
-            return Number.isFinite(value) && !Object.is(value, -0);
-        case 'object':
-            break;
-        default:
-            return false;
-    }
-    if (ancestors.has(value)) return false;
-    ancestors.add(value);
-    try {
-        if (Array.isArray(value)) {
-            for (let index = 0; index < value.length; index += 1) {
-                if (!Object.hasOwn(value, index) || !isParsedChatValue(value[index], ancestors)) return false;
-            }
-            for (const key of Object.keys(value)) {
-                if (!/^(?:0|[1-9]\d*)$/.test(key) || Number(key) >= value.length) return false;
-            }
-            return !Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
-        }
-        if (Object.getPrototypeOf(value) !== Object.prototype) return false;
-        if (Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol))) return false;
-        for (const key of Object.keys(value)) {
-            if (!isParsedChatValue(value[key], ancestors)) return false;
-        }
-        return true;
-    } finally {
-        ancestors.delete(value);
-    }
-}
-
 function canHashParsedChat(records) {
     if (!Array.isArray(records) || records.length === 0) return false;
     const header = records[0];
     if (!isPlainRecord(header) || !isPlainRecord(header.chat_metadata)) return false;
-    return isParsedChatValue(records, new Set());
+    return isStrictJsonTree(records);
 }
 
 /**
@@ -179,7 +138,7 @@ export function roleplayParsedContentHash(records) {
     const copy = records.slice();
     copy[0] = { ...records[0], chat_metadata: { ...records[0].chat_metadata } };
     delete copy[0].chat_metadata.integrity;
-    return crypto.createHash('sha256').update(canonical(copy)).digest('hex');
+    return canonicalSha256(copy);
 }
 
 /**
@@ -418,7 +377,8 @@ export function captureRoleplayDependenciesLocked(lease, locator, groupId) {
     return { dependencies, changed: changed || dependencies.some(item => item.changed) };
 }
 
-export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {}) {
+/** `keepFile` also returns the verified read itself, for a write prepared on exactly these bytes; a load leaves it out. */
+export function readRoleplayChatLocked(lease, input, { enrolMissing = true, keepFile = false } = {}) {
     const held = roleplayLease(lease);
     const { scope, state } = held;
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
@@ -441,9 +401,45 @@ export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {
         if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The Roleplay chat needs recovery.');
         const contentHash = reusableChatContentHash(state, locator, file) ?? roleplayParsedContentHash(parsed.records);
         const entry = enrol(lease, 'chat', locator, file, contentHash, parsed.records[0].chat_metadata[ROLEPLAY_METADATA_KEY]);
-        const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename };
+        const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename, ...(keepFile ? { file } : {}) };
         CHAT_READ_SNAPSHOTS.set(result, { token: chatReadToken(held), physical: file.physical });
         return result;
+    } finally { release(); }
+}
+
+/**
+ * The checks of `assertRoleplaySourceLocked` for an ordinary chat edit, made from one read of the saved file and
+ * without parsing its messages: the same file, version, owner and write marker the save was based on. Anything
+ * short of an exact match throws a patch mismatch before anything is written, and the page sends the whole chat,
+ * which is judged by the full checks as always.
+ * @returns {{instanceId: string, integrity: string, file: object, header: object}}
+ */
+export function assertRoleplayPatchSourceLocked(lease, source) {
+    const held = roleplayLease(lease);
+    const { scope, state } = held;
+    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
+    if (source?.kind !== 'storage') throw chatPatchMismatch('source');
+    const locator = normaliseRoleplayLocator(source.locator);
+    const instanceId = state.paths[roleplayPathKey(state, 'chat', locator)]?.instanceId;
+    if (!instanceId) throw chatPatchMismatch('untracked');
+    const filename = roleplayChatPath(scope, locator);
+    if (!inspectRoleplayFileStat(filename, CHAT_READ_LIMIT)) throw chatPatchMismatch('missing');
+    const release = acquireChatFileLock(filename);
+    try {
+        const file = readRoleplayFile(filename, CHAT_READ_LIMIT);
+        if (!file) throw chatPatchMismatch('missing');
+        // The recorded head has to be this very file, or its content hash cannot be reused without reading every message.
+        if (reusableChatContentHash(state, locator, file) === null) throw chatPatchMismatch('head');
+        const firstLineEnd = file.bytes.indexOf(0x0a);
+        const header = parseChatHeaderBytes(file.bytes, firstLineEnd === -1 ? file.bytes.length : firstLineEnd);
+        if (!header) throw chatPatchMismatch('header');
+        const resource = state.resources[instanceId];
+        if (resource.head.writeId !== null && !isDeepStrictEqual(header.chat_metadata[ROLEPLAY_METADATA_KEY],
+            { schema: 1, instanceId, revision: resource.revision, writeId: resource.head.writeId })) throw chatPatchMismatch('marker');
+        const current = { kind: 'storage', accountId: state.accountId, dataEpoch: state.dataEpoch, instanceId, revision: resource.revision,
+            rawHash: resource.head.rawHash, locator: structuredClone(resource.locator), dependencies: [] };
+        if (!isDeepStrictEqual(current, source)) throw chatPatchMismatch('source');
+        return { instanceId, integrity: header.chat_metadata.integrity ?? '', file, header };
     } finally { release(); }
 }
 
@@ -544,8 +540,8 @@ export function captureRoleplaySource(scope, input) {
 }
 
 /** Ordinary storage edits bind the chat itself; they do not authorise generation. */
-export function captureRoleplayStorageSourceLocked(lease, locator) {
-    const saved = readRoleplayChatLocked(lease, locator);
+export function captureRoleplayStorageSourceLocked(lease, locator, { keepFile = false } = {}) {
+    const saved = readRoleplayChatLocked(lease, locator, { keepFile });
     const { accountId, dataEpoch, instanceId, revision, rawHash } = saved;
     return { source: { kind: 'storage', accountId, dataEpoch, instanceId, revision, rawHash,
         locator: saved.locator, dependencies: [] }, saved, changed: saved.changed };
@@ -589,7 +585,7 @@ export function describeRoleplaySourceChange(expected, current) {
     return result('chat-saved', 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages)');
 }
 
-export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
+export function assertRoleplaySourceLocked(lease, source, { effect, keepFile = false } = {}) {
     if (source?.kind !== undefined && source.kind !== 'storage') throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay source kind.', 400);
     let locator = source.locator;
     if (effect) {
@@ -601,9 +597,20 @@ export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
         }
         locator = resource.locator;
     }
-    const captured = source.kind === 'storage' ? captureRoleplayStorageSourceLocked(lease, locator)
-        : captureRoleplaySourceLocked(lease, { locator, groupId: source.groupId,
+    let captured;
+    if (source.kind === 'storage') {
+        captured = captureRoleplayStorageSourceLocked(lease, locator, { keepFile });
+    } else {
+        const saved = readRoleplayChatLocked(lease, locator, { keepFile });
+        const count = saved.records.length - 1;
+        if (source.message?.index >= count || source.range?.start + source.range?.count > count) {
+            const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', `The message this was for was deleted, ${SOURCE_CHANGE_OUTCOME}`);
+            error.reason = source.message ? 'message' : 'range';
+            throw error;
+        }
+        captured = captureRoleplaySourceFromCurrentChatLocked(lease, saved, { locator, groupId: source.groupId,
             message: source.message?.index, range: source.range });
+    }
     const expected = effect ? { ...source, locator, ...(effect === 'append' ? {}
         : { revision: captured.source.revision, rawHash: captured.source.rawHash }) } : source;
     if (!isDeepStrictEqual(captured.source, expected)) {

@@ -31,6 +31,9 @@ import { roleplayNativeHost } from '../endpoints/chats.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
 import { readRoleplayPreview } from './roleplay-preview.js';
 import { reasoningOnlyResult } from './reasoning-only-result.js';
+import { offRecordReplyExtra } from '../mewmory/message-policy.js';
+import { addGroupHearer } from '../../public/scripts/group-chat-visibility.js';
+import { savedGroupReplyTarget } from './roleplay-group-scene.js';
 
 export const KEPT_REPLY_ARTIFACT = 'roleplay-kept-reply';
 export const MAIN_COMPLETE_ARTIFACT = 'roleplay-main-complete';
@@ -647,14 +650,9 @@ function isWitnessed(reply, message) {
         && message.gen_started === reply.timings.gen_started;
 }
 
-/** A chat set 'off the record' in Mewmory keeps every new reply out of memory, even one the server saves alone. */
-function offRecord(records) {
-    return records[0]?.chat_metadata?.mewmory_off_record === true ? { mewmoryExclude: true } : {};
-}
-
 function appendRecord(records, reply, identity) {
     const extra = cleanExtra({ ...reply.extra, ...(reply.reasoning ? { reasoning: reply.reasoning } : {}),
-        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecord(records) });
+        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecordReplyExtra(records) });
     const userMessage = reply.userAlternative === true;
     const message = { name: userMessage ? reply.userName || records[0]?.user_name || 'User' : reply.name,
         is_user: userMessage, mes: reply.text, send_date: new Date().toISOString(),
@@ -665,19 +663,29 @@ function appendRecord(records, reply, identity) {
             message.force_avatar = reply.avatar;
         }
         message.extra.gen_id = reply.group.generationId;
+        if (reply.groupAudience) message.extra.group_scene = structuredClone(reply.groupAudience);
     }
     records.push(message);
     return { index: records.length - 2, placement: 'append' };
 }
 
-function extendRecord(records, record, index, reply, identity, { swipe = false, select = true } = {}) {
-    const extra = cleanExtra({ ...record.extra, ...reply.extra, ...(reply.reasoning ? { reasoning: reply.reasoning } : {}),
-        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...(swipe ? offRecord(records) : {}) });
+function extendRecord(records, record, index, reply, identity, { swipe = false, select = true, replace = false } = {}) {
+    const extra = cleanExtra({ ...(!swipe ? record.extra : {}), ...reply.extra, ...(reply.reasoning ? { reasoning: reply.reasoning } : {}),
+        ...(reply.reasoningDuration !== undefined ? { reasoning_duration: reply.reasoningDuration } : {}), ...offRecordReplyExtra(records) });
     const marker = keptMarker(identity);
     if (swipe) {
         const swipes = Array.isArray(record.swipes) && record.swipes.length ? [...record.swipes] : [record.mes];
         const info = Array.isArray(record.swipe_info) ? structuredClone(record.swipe_info.slice(0, swipes.length)) : [];
         while (info.length < swipes.length) info.push({});
+        const previous = record.swipe_id ?? 0;
+        if (swipes[previous] === record.mes && !info[previous]?.extra) {
+            const { send_date, gen_started, gen_finished } = record;
+            info[previous] = { ...info[previous],
+                ...(send_date !== undefined ? { send_date } : {}),
+                ...(gen_started !== undefined ? { gen_started } : {}),
+                ...(gen_finished !== undefined ? { gen_finished } : {}),
+                extra: structuredClone(record.extra ?? {}) };
+        }
         let selected = isWitnessed(reply, record) ? swipes.findIndex(value => value === reply.text) : -1;
         if (selected < 0) selected = swipes.findIndex(value => typeof value === 'string'
             && isWitnessed(reply, record) && value.startsWith(reply.witness)
@@ -699,46 +707,58 @@ function extendRecord(records, record, index, reply, identity, { swipe = false, 
             record.swipe_id = selected;
             record.mes = swipes[selected];
             Object.assign(record, reply.timings);
+            record.extra = { ...info[selected].extra };
         }
-        record.extra = { ...record.extra, ...extra, roleplay_kept_reply: marker };
-        return { index, placement: 'swipe' };
+        return { index, placement: 'swipe', swipeIndex: selected };
     }
     // A continuation extends its own message; a longer saved tail is kept.
     const currentText = typeof record.mes === 'string' ? record.mes : '';
-    if (currentText.length <= reply.text.length) record.mes = reply.text;
+    if (replace || currentText.length <= reply.text.length) record.mes = reply.text;
+    if (record.mes !== currentText) {
+        for (const key of ['display_text', 'reasoning_display_text', 'generation_outcome']) {
+            if (!reply.extra?.[key]) delete extra[key];
+        }
+    }
     Object.assign(record, reply.timings);
     const selected = Number(record.swipe_id ?? 0);
     if (Array.isArray(record.swipes) && record.swipes.length && Number.isSafeInteger(selected)
         && selected >= 0 && selected < record.swipes.length
-        && (typeof record.swipes[selected] !== 'string' || record.swipes[selected].length <= reply.text.length)) {
+        && (replace || typeof record.swipes[selected] !== 'string' || record.swipes[selected].length <= reply.text.length)) {
         record.swipes[selected] = record.mes;
+        if (record.swipe_info?.[selected]) {
+            record.swipe_info[selected] = { ...record.swipe_info[selected], ...reply.timings, extra: { ...extra } };
+        }
     }
-    record.extra = { ...record.extra, ...extra, roleplay_kept_reply: marker };
+    record.extra = { ...extra, roleplay_kept_reply: marker };
     return { index, placement: 'continue' };
 }
 
 function adoptRecord(records, record, index, placement) {
     // The chat already holds this exact reply, from this same job or from an
     // older page. Never touch it, and never append a second copy.
-    return { index, placement: placement === 'swipe' ? 'swipe' : placement, unchanged: true };
+    return { index, placement, unchanged: true };
 }
 
 function placeReply(records, reply, intent, identity) {
+    const effect = intent.effect;
+    const existing = records.findIndex((record, index) => index > 0 && markedElsewhere(record, identity));
+    if (existing > 0) {
+        const message = records[existing];
+        const swipeIndex = message.swipe_info?.findIndex(info => markedElsewhere(info, identity));
+        const adopted = adoptRecord(records, message, existing - 1, effect === 'continue' ? 'continue' : 'append');
+        return swipeIndex >= 0 ? { ...adopted, placement: 'swipe', swipeIndex } : adopted;
+    }
     // Keep the failed thinking separately. A rerun, swipe or continuation must
     // never select a blank alternative or overwrite the existing story.
     if (isThinkingOnly(reply)) {
-        const existing = records.findIndex((record, index) => index > 0 && markedElsewhere(record, identity));
-        if (existing > 0) return adoptRecord(records, records[existing], existing - 1, 'append');
+        if (reply.userAlternative) return { index: null, placement: 'empty' };
         return appendRecord(records, reply, identity);
     }
-    const effect = intent.effect;
     const targetIndex = Number.isSafeInteger(intent.source?.message?.index) ? intent.source.message.index
         : Number.isSafeInteger(intent.source?.range?.start) ? intent.source.range.start : null;
     if (effect === 'append' || targetIndex === null) {
         const last = records.at(-1);
         if (isModelRecord(last)) {
-            const marked = markedElsewhere(last, identity);
-            if (marked) return adoptRecord(records, last, records.length - 2, 'append');
             // An older page saved this same reply itself. Only the final model
             // message is compared, and only with evidence from this reply's own
             // preview, so unrelated similar prose is never suppressed.
@@ -757,37 +777,22 @@ function placeReply(records, reply, intent, identity) {
         return appendRecord(records, reply, identity);
     }
     const record = records[targetIndex + 1];
-    const marked = record && markedElsewhere(record, identity);
-    if (marked) return adoptRecord(records, record, targetIndex, effect === 'continue' ? 'continue' : 'swipe');
     if (!isModelRecord(record) && !(reply.userAlternative && record?.is_user === true)) {
         // A deleted or replaced target is never recreated or overwritten. An
         // unsupported user alternative keeps its role rather than becoming a
         // character message.
         return appendRecord(records, reply, identity);
     }
+    const unchanged = intent.source?.message?.recordHash && roleplayHash(record) === intent.source.message.recordHash;
     if (effect === 'continue') {
-        const unchanged = intent.source?.message?.recordHash
-            && roleplayHash(record) === intent.source.message.recordHash;
         if (!unchanged) return appendRecord(records, reply, identity);
         const prefix = String(record.mes ?? '');
         const full = reply.chunk ? prefix + reply.text : reply.text;
         if (full === prefix) return { index: targetIndex, placement: 'empty' };
-        if (full.startsWith(prefix)) {
-            if (record.mes === full) return adoptRecord(records, record, targetIndex, 'continue');
-            if (record.mes.length > prefix.length) {
-                // Someone already saved a partial or longer tail. Keep the
-                // longer copy; only extend when the saved text is a prefix.
-                if (record.mes.startsWith(full) && record.mes.length > full.length) {
-                    return adoptRecord(records, record, targetIndex, 'continue');
-                }
-                if (!full.startsWith(record.mes)) return appendRecord(records, { ...reply, text: full, chunk: false }, identity);
-            }
-            return extendRecord(records, record, targetIndex, { ...reply, text: full, chunk: false }, identity);
-        }
-        // The user edited the original message; append the generated text
-        // instead of replacing what they wrote.
-        return appendRecord(records, { ...reply, text: full, chunk: false }, identity);
+        // The exact target is unchanged, so a full text rewritten by Agents can replace it.
+        return extendRecord(records, record, targetIndex, { ...reply, text: full, chunk: false }, identity, { replace: true });
     }
+    if (!unchanged && records.length - 1 < intent.request?.worldInfo?.savedChatLength) return appendRecord(records, reply, identity);
     return extendRecord(records, record, targetIndex, reply, identity, { swipe: true, select: effect !== 'alternative' });
 }
 
@@ -988,13 +993,19 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
             const speaker = Number.isSafeInteger(speakerIndex) ? group?.speakers?.[speakerIndex] : null;
             const avatar = intent.request?.worldInfo?.avatar || speaker?.avatar || reply.avatar || '';
             const named = rootNamed({ directories, job, rootJobId: root });
-            const placed = placeReply(records, { ...reply, group, avatar,
+            const groupAudience = (speaker ?? group?.speakers?.find(entry => entry.avatar === avatar))?.audience;
+            const placed = placeReply(records, { ...reply, group, avatar, groupAudience,
                 userAlternative: named?.name === 'deep-swipe.user',
                 userName: capturedSource.saved.records[0]?.user_name || '' }, intent, {
                 reason, rootJobId: root, childJobId: job.id, textHash: '' });
-            if (placed.placement === 'empty') return null;
+            if (placed.placement === 'empty') {
+                const done = { ...latest, state: 'done', messageIndex: placed.index, placement: 'empty' };
+                writeArtifact(directories, job.id, KEPT_REPLY_ARTIFACT, done);
+                return keptReplySummary(done);
+            }
             const present = records[placed.index + 1];
-            const presentText = typeof present?.mes === 'string' ? present.mes : reply.text;
+            const selectedText = placed.swipeIndex === undefined ? present?.mes : present?.swipes?.[placed.swipeIndex];
+            const presentText = typeof selectedText === 'string' ? selectedText : reply.text;
             if (placed.unchanged) {
                 // The chat already held this exact reply. Record the keeper
                 // result without rewriting or re-marking the user's saved text.
@@ -1003,6 +1014,9 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
                 writeArtifact(directories, job.id, KEPT_REPLY_ARTIFACT, done);
                 return keptReplySummary(done);
             }
+            // A first speaker who answered a line they missed has heard it, while that line is still the one they answered.
+            if (placed.placement === 'append' && Number.isSafeInteger(speaker?.hears)
+                && savedGroupReplyTarget(records.slice(0, -1), avatar) === speaker.hears) addGroupHearer(records[speaker.hears + 1], avatar);
             const rootJob = root === job.id ? job : getJob(directories, root);
             const capacityLimit = rootJob?.intent?.request?.capacity?.limitBytes;
             if (Number.isSafeInteger(capacityLimit) && capacityLimit > 0
@@ -1013,10 +1027,13 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
             const kept = present;
             const keptText = presentText;
             const marker = keptMarker({ reason, rootJobId: root, childJobId: job.id, textHash: roleplayHash(keptText) });
-            if (kept?.extra) kept.extra = { ...kept.extra, roleplay_kept_reply: marker };
-            if (Array.isArray(kept?.swipe_info) && Number.isInteger(kept.swipe_id) && kept.swipe_info[kept.swipe_id]) {
-                const info = kept.swipe_info[kept.swipe_id];
-                kept.swipe_info[kept.swipe_id] = { ...info, extra: { ...(info?.extra ?? {}), roleplay_kept_reply: marker } };
+            const swipeIndex = placed.swipeIndex ?? kept?.swipe_id;
+            if (kept?.extra && (placed.swipeIndex === undefined || swipeIndex === kept.swipe_id)) {
+                kept.extra = { ...kept.extra, roleplay_kept_reply: marker };
+            }
+            if (Array.isArray(kept?.swipe_info) && Number.isInteger(swipeIndex) && kept.swipe_info[swipeIndex]) {
+                const info = kept.swipe_info[swipeIndex];
+                kept.swipe_info[swipeIndex] = { ...info, extra: { ...(info?.extra ?? {}), roleplay_kept_reply: marker } };
             }
             const writing = { ...latest, state: 'writing', messageIndex: placed.index, placement: placed.placement,
                 textHash: roleplayHash(keptText), committedAt: null };
@@ -1193,6 +1210,7 @@ export function preserveInterruptedRoleplayReply(context, error) {
 }
 
 const DELIVERY_CONFLICT_CODES = new Set(['ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_JOB_REJECTED',
+    'ROLEPLAY_GROUP_MISMATCH', 'ROLEPLAY_GROUP_AMBIGUOUS',
     'ROLEPLAY_AGENT_RECOVERY', 'ROLEPLAY_WORKFLOW_RECOVERY', 'ROLEPLAY_RECOVERY_REQUIRED',
     'ROLEPLAY_STORE_FULL', 'ROLEPLAY_STORE_UNCERTAIN', 'ROLEPLAY_WRITE_UNCERTAIN',
     'ROLEPLAY_SOURCE_MISSING', 'ROLEPLAY_SOURCE_DAMAGED']);
@@ -1223,9 +1241,16 @@ export function preserveRoleplayWorkflowReply(context, error) {
     // candidate now and make the later retry find a changed chat.
     if (context.signal?.aborted && !job.cancellation?.requested) return null;
     const children = (job.children ?? []).map(id => getJob(context.directories, id)).filter(Boolean);
-    const candidate = children.reverse().find(child => child.type === 'roleplay.candidate'
+    children.reverse();
+    const candidate = children.find(child => child.type === 'roleplay.candidate'
         && child.state === 'completed' && readArtifactSafe(context.directories, child.id, 'roleplay-candidate')?.kind === 'text');
     if (!candidate) return null;
+    for (const child of children.slice(0, children.indexOf(candidate))) {
+        if (child.type !== 'roleplay.candidate' || child.intent?.request?.workflowCandidate?.speakerIndex
+            !== candidate.intent?.request?.workflowCandidate?.speakerIndex) continue;
+        const kept = readArtifactSafe(context.directories, child.id, KEPT_REPLY_ARTIFACT);
+        if (['captured', 'writing', 'done'].includes(kept?.state)) return keptReplySummary(kept);
+    }
     if (isToolTurnOnly({ directories: context.directories, job: candidate })) return null;
     const saved = readArtifactSafe(context.directories, candidate.id, 'roleplay-candidate');
     const code = String(error?.code ?? '');

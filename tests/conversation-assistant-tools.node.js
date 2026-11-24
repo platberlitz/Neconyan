@@ -64,9 +64,9 @@ async function fixture(t, id = 'miso-male', { text = false } = {}) {
     const context = (id = job.id) => ({ owner: 'tester', directories, job: getJob(directories, id), signal: new AbortController().signal });
     await commitConversationEffect(context(), target, 'accepted', () => null);
     const options = { messages: snapshot.messages };
-    const run = generate => {
+    const run = (generate, overrides) => {
         updateJob(directories, job.id, { state: 'running' });
-        return generateConversationAssistantReply(context(), snapshot, options, generate);
+        return generateConversationAssistantReply(context(), snapshot, { ...options, ...overrides }, generate);
     };
     const child = () => getJob(directories, getJob(directories, job.id).children.at(-1));
     const finishTool = async () => {
@@ -124,6 +124,31 @@ test('Text Completion assistants retain the reference without receiving unsuppor
     const f = await fixture(t, 'taro-neutral', { text: true });
     assert.match(f.snapshot.messages[0].content, /Dialogue Colors/);
     assert.equal(f.snapshot.assistantTools, undefined);
+});
+
+test('retrying a blank final answer reuses the completed tool and only requests prose', async t => {
+    const f = await fixture(t);
+    const calls = [];
+    const generate = async options => {
+        calls.push(options);
+        if (calls.length === 1) return tool('ReadLorebookEntry', { book: 'Manual', uid: 12 });
+        if (calls.length === 2) return { text: '' };
+        return { text: 'Found the old note.' };
+    };
+    assert.equal(await f.run(generate), null);
+    await f.finishTool();
+    assert.equal((await f.run(generate)).text, '');
+    assert.equal((await f.run(generate)).text, '');
+    assert.equal(calls.length, 2);
+
+    const retry = { stepNamespace: 'conversation-empty-retry:1' };
+    assert.equal((await f.run(generate, retry)).text, 'Found the old note.');
+    assert.equal((await f.run(generate, retry)).text, 'Found the old note.');
+    assert.equal(calls.length, 3);
+    assert.match(calls[2].messages.at(-1).content, /Old note/);
+    assert.deepEqual(calls[2].functionTools, []);
+    assert.equal(f.child().state, 'completed');
+    assert.equal(getJob(f.directories, f.job.id).children.length, 1);
 });
 
 test('an explicit family retry recovers an interrupted tool without repeating a completed read', async t => {

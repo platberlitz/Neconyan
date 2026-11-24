@@ -3,6 +3,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
+import { parseSavedWorldInfo } from '../world-info-file.js';
 import { getPresetSettingsByAPI } from '../endpoints/presets.js';
 import { agentCollectionDirectory, assertAgentWriteCapacityLocked, readAgentCollection, readAgentRecordLocked } from '../in-chat-agent-storage.js';
 import { authoringEvidence, readAuthoringFileLocked } from '../authoring-store.js';
@@ -81,7 +82,7 @@ function lorebooks(lease) {
         const file = readAuthoringFileLocked(lease, path.join(folder, item.name), 8 * 1024 * 1024);
         if (!file) throw invalid('A saved lorebook changed during selection.');
         let book;
-        try { book = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The saved lorebook is unreadable.'); }
+        try { book = parseSavedWorldInfo(file.bytes.toString('utf8')); } catch { throw invalid('The saved lorebook is unreadable.'); }
         if (!isValidWorldInfoData(book)) throw invalid('The saved lorebook is invalid.');
         return { name: item.name.slice(0, -5), filename: item.name, book, file };
     });
@@ -95,7 +96,7 @@ function bookResource(lease, name) {
     const full = path.join(dirs.worlds, filename);
     const file = readAuthoringFileLocked(lease, full, 8 * 1024 * 1024);
     let book;
-    try { book = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The saved lorebook is unreadable.'); }
+    try { book = parseSavedWorldInfo(file.bytes.toString('utf8')); } catch { throw invalid('The saved lorebook is unreadable.'); }
     if (!isValidWorldInfoData(book)) throw invalid('The saved lorebook is invalid.');
     return { filename, full, file, book, resource: { kind: 'lorebook', id: filename, relative: relative(dirs, full),
         evidence: authoringEvidence(file), hash: roleplayHash(book) } };

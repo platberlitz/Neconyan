@@ -39,6 +39,18 @@ describe('Mewmory chat controls', () => {
         expect(usedLabel({ used: 0, passages: 4 })).toBe('Used 4 earlier passages');
     });
 
+    test('a fresh reply without recall clears only the active stamp, not privacy or another swipe', () => {
+        const summary = { at: 1, records: ['event:gift'], passages: 0 };
+        const message = { extra: { mewmoryRecall: summary, mewmoryExclude: true }, swipe_id: 1,
+            swipe_info: [{ extra: { mewmoryRecall: summary } }, { extra: { mewmoryRecall: summary } }] };
+        expect(stampMessage(message)).toBe(false);
+        expect(messageChips(message).used).toBe(1);
+        expect(stampMessage(message, { summary: null })).toBe(true);
+        expect(messageChips(message)).toEqual({ used: 0, passages: 0, promises: 0, offRecord: true });
+        expect(message.swipe_info[0].extra.mewmoryRecall).toEqual(summary);
+        expect(message.swipe_info[1].extra).toEqual({});
+    });
+
     test('promises brought back by their cues are counted on the chip', () => {
         const summary = recallSummary({ retrieval: { selected: ['event:gift', 'commitment:return', 'commitment:visit'] }, forcedIds: ['commitment:return', 'commitment:visit', 'commitment:return', 'source:chat:a:0', 'commitment:gone'] }, 5);
         expect(summary).toEqual({ at: 5, records: ['event:gift', 'commitment:return', 'commitment:visit'], passages: 0, promises: 2 });

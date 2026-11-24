@@ -7,6 +7,7 @@ import { scheduleCustomFontRefresh } from './fonts.js';
 import { normalizeRegistryIdentityName } from './group-profiles.js';
 import { saveHistory } from './history.js';
 import { callLLMWithProfile, classifyLlmRequestError } from './llm.js';
+import { isUnchangedLoadedMessage } from './message-baseline.js';
 import { getNarratorVisual } from './narrator-style.js';
 import { isExcludedSpeakerName } from './speaker-exclusions.js';
 import { applyThemeReadabilityAndBrightness, getBaseColor, getEntryEffectiveColor, invalidateThemeCache, syncAllEffectiveColors } from './palettes.js';
@@ -2135,9 +2136,12 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
             scheduleDomRefreshSeries();
             return;
         }
-        // Profile mode delivers no instruction to the reply model, so every reply
+        // Profile mode delivers no instruction to the reply model, so every new reply
         // arrives uncolored and the colorize pass below is the only thing that colors it.
-        const shouldAutoColorize = settings.autoColorize === true || getEffectivePromptMode() === 'profile';
+        // A message that was already open when the chat loaded is not a new reply, even
+        // when its render event arrives after the mode changed.
+        const shouldAutoColorize = !isUnchangedLoadedMessage(lastMsg)
+            && (settings.autoColorize === true || getEffectivePromptMode() === 'profile');
         if (shouldAutoColorize && isColorableMessage(lastMsg) && isAutoColorizing && !parseTrailingColorMetadata(text)) {
             queueRetry();
             setLastProcessedMessageSignature('');
@@ -2160,7 +2164,12 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
         const hasActualColorSpans = collectFontColorsFromText(text).size > 0;
         const hadRemapping = colorStats.hadRemapping;
         const remappedAssignments = colorStats.remappedAssignments;
-        if (registryBeforeIngest !== null && registryBeforeIngest !== getPersistentRegistryFingerprint()) saveData();
+        if (registryBeforeIngest !== null && registryBeforeIngest !== getPersistentRegistryFingerprint()) {
+            saveData();
+            // The render-time font pass ran before this ingest registered any new
+            // speaker, so their gradient, font and style would wait for a later repaint.
+            scheduleCustomFontRefresh(0);
+        }
         scheduleDialogueCountSync(chat, { refreshCharList: true }); injectPrompt();
 
         let latestRemapChanged = false;

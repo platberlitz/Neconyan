@@ -3,9 +3,9 @@ import { beginServerWork } from '../android-wake.js';
 import { subscribeJobsChanged } from './notifications.js';
 import {
     getJob,
-    listJobs,
     recordReceipt,
     recoverJobs,
+    selectJobs,
     setJobState,
     updateJob,
 } from './store.js';
@@ -110,6 +110,12 @@ function targetBusy(job) {
     if (key === null) return false;
     for (const runningJob of running.values()) {
         if (targetKey(runningJob) !== key) continue;
+        // Background summaries commit against their saved message prefix,
+        // not the live tail. A manual reply can safely append in parallel.
+        const summary = job.type === 'conversation.summary' ? job : runningJob;
+        const reply = summary === job ? runningJob : job;
+        if (summary.type === 'conversation.summary' && isAutomatic(summary) && !isAutomatic(reply)
+            && ['conversation.reply', 'conversation.participant'].includes(reply.type)) continue;
         // Sibling participants of one accepted request share the thread on
         // purpose; they were selected together and each owns its own receipts.
         // Any other job on the same target stays mutually exclusive.
@@ -226,7 +232,12 @@ async function execute(directories, saved, handler, controller) {
 async function reportFailure(directories, id, error, signal) {
     const saved = getJob(directories, id);
     if (saved?.cancellation?.requested) {
-        await settleQuietly(() => setJobState(directories, id, 'cancelled'));
+        // Only a stop during the memory wait can offer Reply now on the
+        // existing message. A stop during model generation is just a stop.
+        const memoryWait = ['roleplay.reply', 'roleplay.candidate'].includes(saved.type) && error?.code === 'MEWMORY_WAIT_ABORTED';
+        await settleQuietly(() => setJobState(directories, id, 'cancelled', {
+            error: memoryWait ? { code: error.code, message: error.message } : null,
+        }));
         return;
     }
     const status = typeof error?.status === 'number' ? error.status : 500;
@@ -272,8 +283,8 @@ async function tick() {
             let candidates;
             try {
                 if (waitingResolver) {
-                    for (const job of listJobs(directories, { owner, includeDismissed: true })) {
-                        if (job.state !== 'waiting' || job.cancellation?.requested) continue;
+                    for (const job of selectJobs(directories, job => job.owner === owner && job.state === 'waiting')) {
+                        if (job.cancellation?.requested) continue;
                         try { await waitingResolver({ job, directories, owner }); } catch (error) {
                             // The resolver can wait, so a Stop saved meanwhile wins. A failed
                             // write here must not hold back this owner's queued work.
@@ -283,8 +294,7 @@ async function tick() {
                         }
                     }
                 }
-                candidates = listJobs(directories, { owner, includeDismissed: true })
-                    .filter(job => job.state === 'queued' && !job.cancellation?.requested)
+                candidates = selectJobs(directories, job => job.owner === owner && job.state === 'queued' && !job.cancellation?.requested)
                     .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0));
             } catch {
                 // A damaged ledger fails closed for that owner and must not stop

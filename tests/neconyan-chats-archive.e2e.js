@@ -1444,7 +1444,7 @@ function fixtureHtml(useLongLabel, duplicateCharacters = false) {
                     eventSource: { on() {}, removeListener() {} },
                     eventTypes: { APP_READY: 'app-ready' },
                     getRequestHeaders() { return { 'Content-Type': 'application/json' }; },
-                    getThumbnailUrl(_type, avatar) { return '/avatar/' + encodeURIComponent(avatar); },
+                    getThumbnailUrlForViewport(_type, avatar) { return '/avatar/' + encodeURIComponent(avatar); },
                     timestampToMoment(value) {
                         const date = new Date(value);
                         return {

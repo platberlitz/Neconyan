@@ -100,6 +100,11 @@ final class CrashReport {
         }
         return false;
     }
+    static final String CACHED_MEMORY_EXIT = "android-cached-memory-exit";
+
+    static boolean needsNotice(Entry entry, boolean saved) {
+        return entry != null && (!saved || !CACHED_MEMORY_EXIT.equals(entry.event));
+    }
     static boolean shouldOffer(Entry entry, String seenBoundary, Set<String> incidents) {
         return entry != null && entry.id.compareTo(seenBoundary == null ? "" : seenBoundary) > 0 && !incidents.contains(entry.incident);
     }

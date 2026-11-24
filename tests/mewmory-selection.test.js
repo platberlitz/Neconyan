@@ -87,6 +87,7 @@ jest.unstable_mockModule('../public/scripts/events.js', () => ({
 const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill, validateMewmoryGeneration } = await import('../public/scripts/mewmory/index.js');
 const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config-autosave.js');
 const { setAgentWorkProbe } = await import('../public/scripts/extensions/in-chat-agents/agent-work-state.js');
+const { beginGroupPromptScope } = await import('../public/scripts/group-chat-visibility.js');
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
 const response = data => ({ ok: true, json: async () => data });
 const enabledChatView = () => {
@@ -368,10 +369,54 @@ test('native chat changes and returning from Conversation load immediately', asy
     expect(mewmory.view.locator.chat).toBe('first');
 });
 
-test('first generation inspects its saved chat while the memory panel is closed', async () => {
+test('first generation checks its saved chat without loading the closed memory panel', async () => {
+    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
     const messages = [{ mes: 'Hello', mewmorySourceIndex: 0 }];
     expect(await prepareMewmoryGeneration(messages)).toEqual({ enabled: false, chat: messages });
-    expect(fetch.mock.calls.some(([url]) => url.endsWith('inspect'))).toBe(true);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).locator.chat).toBe('first');
+});
+
+test('a group speaker who missed a line asks for memories as that speaker', async () => {
+    const heard = { mes: 'Hello', mewmorySourceIndex: 0, extra: { group_scene: { present: ['kit.png', 'mira.png'], whisper_to: [] } } };
+    const missed = { mes: 'Secret', mewmorySourceIndex: 1, extra: { group_scene: { present: ['kit.png'], whisper_to: [] } } };
+    const restore = beginGroupPromptScope(['mira.png'], [heard, missed]);
+    try {
+        fetch.mockResolvedValueOnce(response({ enabled: true, excludedIndices: [], npcText: '', memoryText: 'Mira heard this.' }));
+        expect((await prepareMewmoryGeneration([heard])).viewers).toEqual(['mira.png']);
+        expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/mewmory/prepare']);
+        expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toEqual(['mira.png']);
+    } finally {
+        restore();
+    }
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(response({ enabled: true, excludedIndices: [], npcText: '', memoryText: 'Everyone heard this.' }));
+    expect((await prepareMewmoryGeneration([heard])).viewers).toBeUndefined();
+    expect(JSON.parse(fetch.mock.calls[0][1].body).viewers).toBeUndefined();
+});
+
+test('a chat already known to be off asks for a reply without its history', async () => {
+    initMewmory();
+    mewmory.view = { enabled: false, revision: 1, locator: getMewmoryLocator() };
+    fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+    await prepareMewmoryGeneration([{ mes: 'Hello', mewmorySourceIndex: 0 }]);
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.historyOmitted).toBe(true);
+    expect(body.history).toBeUndefined();
+});
+
+test('a stale off view sends the history again after the server asks for it', async () => {
+    initMewmory();
+    mewmory.view = { enabled: false, revision: 1, locator: getMewmoryLocator() };
+    fetch.mockResolvedValueOnce(response({ enabled: true, needsHistory: true }))
+        .mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
+    const messages = [{ mes: 'Hello', mewmorySourceIndex: 0 }];
+    expect(await prepareMewmoryGeneration(messages)).toEqual({ enabled: false, chat: messages });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).historyOmitted).toBe(true);
+    const resent = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(resent.historyOmitted).toBeUndefined();
+    expect(resent.history).toEqual([{ index: 0, text: ': Hello' }]);
 });
 
 test('backfill starts one server job, restores its status and cancels only on an explicit stop', async () => {
@@ -1006,7 +1051,7 @@ test('generation, first-message and prompt preparation wait for a delayed new-ch
             await delayedEnable.promise;
             state = { enabled: true, revision: 2 };
         }
-        if (url.endsWith('/prepare')) return response({ excludedIndices: [], npcText: '', memoryText: 'Remembered', inspection: {} });
+        if (url.endsWith('/prepare')) return response({ enabled: state.enabled, excludedIndices: [], npcText: '', memoryText: 'Remembered', inspection: {} });
         return response({ locator: JSON.parse(body).locator, ...state });
     });
     chat.splice(0, chat.length, { is_user: false, mes: 'Hello there' });

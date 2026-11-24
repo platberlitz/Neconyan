@@ -232,7 +232,7 @@ export function serializeWorldInfoEntry(entry, positions, originalEntry = {}) {
 }
 
 export function getFreeCharacterBookEntryId(entries) {
-    const ids = new Set(entries.map(entry => String(entry.id ?? entry.uid)));
+    const ids = new Set(entries.map(entry => String(entry?.id ?? entry?.uid)));
     let id = 0;
     while (ids.has(String(id))) id++;
     return id;

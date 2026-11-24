@@ -70,6 +70,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pals-rai
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.js', () => ({
     bindPartnerList: jest.fn(),
     bindWeeklyScheduleEditor: jest.fn(),
+    renderConversationGroupMemberSummary: () => false,
     updateUserFooter: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/prompt.js', () => ({ updateConversationMemorySummary: jest.fn(async () => { memoryText = 'Fresh memory'; return true; }) }));
@@ -143,6 +144,16 @@ describe('Conversation settings close identity', () => {
             groupId: 'drawer-group',
             personaId: 'drawer-persona.png',
         });
+    });
+
+    test('closing with save: false hides the drawer, clears its identity and saves nothing', () => {
+        closeConversationSettings(null, { save: false });
+
+        expect(drawer.hidden).toBe(true);
+        expect(saveCurrentPanelSettings).not.toHaveBeenCalled();
+        expect(drawer.dataset.conversationAvatar).toBeUndefined();
+        expect(drawer.dataset.conversationGroupId).toBeUndefined();
+        expect(drawer.dataset.conversationPersonaId).toBeUndefined();
     });
 
     test('successful native memory refresh redraws the currently visible field', async () => {

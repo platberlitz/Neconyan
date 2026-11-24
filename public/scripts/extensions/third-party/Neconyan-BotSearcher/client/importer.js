@@ -345,6 +345,9 @@ export async function commitPreparedCardImport(prepared, { replaceAvatar, expect
             revision = await readCharacterRevision(avatar);
         } catch { /* Import succeeded; an unavailable revision only withholds Undo. */ }
         const refreshed = await refreshCharacterList(avatar);
+        if (!replaceAvatar) {
+            await announceImport(avatar, prepared.file.name);
+        }
         return {
             avatar,
             name: context().characters?.find((entry) => entry?.avatar === avatar)?.name ?? '',
@@ -458,6 +461,18 @@ async function refreshCharacterList(avatar) {
     } catch {
         return false;
     }
+}
+
+// Lets the host file the new card (for example into its site folder). The file
+// name starts with the source id, which is how the host tells sites apart.
+async function announceImport(avatar, fileName) {
+    try {
+        const ctx = context();
+        const type = ctx.eventTypes?.CHARACTER_IMPORTED;
+        if (type && ctx.eventSource?.emit) {
+            await ctx.eventSource.emit(type, { entries: [{ avatar, fileName }] });
+        }
+    } catch { /* Filing is optional; the import already succeeded. */ }
 }
 
 async function cardResponseError(response) {

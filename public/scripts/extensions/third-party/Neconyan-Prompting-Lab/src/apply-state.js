@@ -35,7 +35,7 @@ const CONNECTION_COMMANDS = Object.freeze({
         'request-images', 'request-image-resolution', 'request-image-aspect-ratio',
         'custom-reasoning-param-format',
         'custom-reasoning-param-name', 'custom-reasoning-enabled-value',
-        'custom-reasoning-disabled-value', 'prompt-post-processing', 'regex-preset',
+        'custom-reasoning-disabled-value', 'custom-reasoning-documented-levels', 'prompt-post-processing', 'regex-preset',
     ]),
     tc: Object.freeze([
         'api', 'preset', 'api-url', 'model', 'sysprompt', 'sysprompt-state',

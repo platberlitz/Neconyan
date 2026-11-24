@@ -1,20 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { enableCompileCache } from 'node:module';
 import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { verifyAndroidStorage } from './file-stats.mjs';
 import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-diagnostics.js';
 import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
-import { ensureBootstrapConfigSections } from './bootstrap-config.mjs';
+import { loadBootstrapConfig, setAsideNotice } from './bootstrap-config.mjs';
 import { startupNoteMessage } from './src/startup-note.js';
+import { applyAndroidConfigPolicy, validateAndroidListenerConfig } from './src/android-config-policy.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
+const [privatePath, port, password, mode = 'normal', cachePath = process.env.TMPDIR] = process.argv.slice(2);
 if (!privatePath || !/^\d+$/.test(port) || !/^[a-f0-9]{64}$/.test(password) || !['normal', 'safe'].includes(mode)) throw new Error('Invalid private Android launch configuration.');
 // Android's /data/user/0 alias must be resolved before strict storage checks.
 const statePath = fs.realpathSync(privatePath);
+if (cachePath) {
+    process.env.TMPDIR = cachePath;
+    enableCompileCache(path.join(cachePath, 'node-cache'));
+}
 initialiseCrashDiagnostics(path.join(statePath, 'data'));
 installCrashHandlers();
 let started = false;
@@ -31,23 +37,21 @@ if (process.platform === 'android') {
     if (!creationTimes) console.info('Android storage does not record file creation times; file identity uses device and inode numbers.');
 }
 const configPath = path.join(statePath, 'android-config.yaml');
-const config = YAML.parse(fs.readFileSync(fs.existsSync(configPath) ? configPath : path.join(root, 'default/config.yaml'), 'utf8'));
-// Older saved configurations predate some sections; create the missing containers
-// before any launch, safe mode included. A malformed file throws here, before the
-// configuration is written back, so the user's saved file stays untouched.
-ensureBootstrapConfigSections(config);
-Object.assign(config, {
-    dataRoot: path.join(statePath, 'data'), port: Number(port), listen: true,
-    listenAddress: { ipv4: '127.0.0.1', ipv6: '::1' }, protocol: { ipv4: true, ipv6: false },
-    basicAuthMode: true, basicAuthUser: { username: 'neconyan', password },
-    perUserBasicAuth: false, enableUserAccounts: false,
-    enableServerPlugins: false, enableServerPluginsAutoUpdate: false,
+// Older saved configurations predate some sections; the missing containers are created
+// before any launch, safe mode included. A file that cannot be used is set aside and the
+// launch continues from the default, so one damaged file cannot stop the app for good.
+const { config, source, setAside, reason } = loadBootstrapConfig(configPath, path.join(root, 'default/config.yaml'), Date.now, validateAndroidListenerConfig);
+if (setAside) {
+    console.warn(`${setAsideNotice(setAside)} Reason: ${reason}`);
+    try {
+        writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), setAsideNotice(setAside), { mode: 0o600 });
+    } catch { /* The warning above still reaches the private server log. */ }
+}
+const { repairs } = applyAndroidConfigPolicy(config, {
+    source,
+    managed: { dataRoot: path.join(statePath, 'data'), port: Number(port), basicAuthUser: { username: 'neconyan', password } },
 });
-config.browserLaunch.enabled = false;
-config.extensions.autoUpdate = false;
-config.git.backend = 'builtin';
-config.performance.frontendBuild.enabled = true;
-config.logging.enableAccessLog = false;
+if (repairs.length) console.warn(`Android launcher restored required settings: ${repairs.map(({ field, reason }) => `${field}: ${reason}`).join(' ')}`);
 fs.mkdirSync(statePath, { recursive: true });
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';
@@ -66,7 +70,12 @@ serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {
     endStartup();
     writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port), safe: mode === 'safe' }), { mode: 0o600 });
 });
-process.once('exit', () => {
+process.once('exit', code => {
+    if (code === 75) {
+        try {
+            writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), 'Restarting your workspace…', { mode: 0o600 });
+        } catch { /* Android's exit record also carries the requested restart code. */ }
+    }
     fs.rmSync(readyPath, { force: true });
     configureServerWakeMarker(null);
 });

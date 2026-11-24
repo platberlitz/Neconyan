@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readArtifact, writeArtifact, isDefiniteProviderRefusal } from '../jobs/artifacts.js';
+import { getJob } from '../jobs/store.js';
 import { runChatProfile } from '../generation/service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { capturePromptingContext, promptingMaterial } from '../labs/prompting-context.js';
@@ -28,10 +29,9 @@ export async function captureQuietGeneration(base, account, input = {}) {
         throw operationError('Background prompts need an open solo chat.', 409);
     }
     const profileId = typeof input.profileId === 'string' ? input.profileId : '';
-    const macros = { names: { user: 'User', char: '' }, variables: {}, extra: { chat: [], chatMetadata: {} } };
-    await captureLabConnection(base, { profileId, acknowledgement: input.acknowledgement, maxTokens }, macros);
     const context = capturePromptingContext(base, account, { characterAvatar: locator.avatar, connectionProfileId: profileId || undefined },
         { maxTokens, locator: { group: false, avatar: locator.avatar, chat: locator.chat } });
+    await captureLabConnection(base, { profileId, acknowledgement: input.acknowledgement, maxTokens }, context.macros);
     return { account, context, prompt, maxTokens };
 }
 
@@ -59,7 +59,11 @@ export async function runQuietGeneration(context, plan, { generate = runChatProf
             characterName: plan.context.macros.names.char, rawOptions: { includePreset: true, includeInstruct: !capture.combinedPrompt },
             beforeDispatch: () => withOperation(context, () => {}) });
     } catch (error) {
-        if (isDefiniteProviderRefusal(error.status)) error.operationRefused = true;
+        if (error?.code !== 'PROVIDER_OUTCOME_UNKNOWN'
+            && getJob(context.directories, context.job.id)?.recoverability !== 'unknown-outcome'
+            && isDefiniteProviderRefusal(error?.providerStatus ?? error?.status)) {
+            error.operationRefused = true;
+        }
         throw error;
     }
     const result = { text: typeof reply === 'string' ? reply : String(reply?.text ?? '') };
