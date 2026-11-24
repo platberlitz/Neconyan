@@ -12,11 +12,12 @@ import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { append, clear, h, formatBytes } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
-import { buildTextDiffMarkup } from '../text-diff.js';
+import { buildTextDiffMarkup, textDiffParts } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
 import { addReplyVersion, prepareChange, replyVersionTarget } from './changes.js';
+import { canUndoEntry, findHistoryEntry, historyHeading, renderChangeHistory } from './change-history-ui.js';
 import { needsSavedPersonaSelection, saveSelectedPersona } from './persona-changes.js';
 import {
     buildContext,
@@ -70,7 +71,7 @@ import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261204-scratchpad-try-change';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261205-scratchpad-change-history';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -726,6 +727,7 @@ function applyBucket(bucket, { ticket = null } = {}) {
     if (session) app.assistant = session.assistant;
     announceReplyChange(before, session);
     render();
+    renderHistoryView();
     syncWatchers();
 }
 
@@ -1641,6 +1643,7 @@ function renderChat() {
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
             iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
+            historyCount() ? iconButton(t`History`, () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-link scratchpad-history-button', title: t`Change history (${historyCount()})` }) : null,
         ]);
     }
     renderOverview();
@@ -2113,8 +2116,11 @@ function renderChangeCard(session, message, part) {
     const card = h('div', { class: `scratchpad-change${state ? ` is-${state}` : ''}` },
         h('p', { class: 'scratchpad-change-title' }, h('i', { class: 'fa-solid fa-wand-magic-sparkles', 'aria-hidden': 'true' }), h('span', { text: describeChange(part.change) })),
         part.change.reason ? h('p', { class: 'scratchpad-change-reason', text: part.change.reason }) : null);
-    if (state === 'applied') {
-        card.append(h('p', { class: 'scratchpad-change-state', text: t`Saved` }));
+    if (state === 'applied') return renderSavedChange(card, session, message, part);
+    if (state === 'undone') {
+        card.append(h('div', { class: 'scratchpad-change-actions' },
+            h('span', { class: 'scratchpad-change-state', text: t`Undone` }),
+            iconButton(t`Review again`, () => void markChange(session, message, part.index, null), { className: 'scratchpad-link' })));
         return card;
     }
     if (state === 'rejected') {
@@ -2135,6 +2141,118 @@ function renderChangeCard(session, message, part) {
         }) : null,
         iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark', disabled: busy })));
     return card;
+}
+
+// Saved changes being undone, the latest refusal for each, and reversals whose history mark failed, keyed by history entry id.
+const undoingChanges = new Set();
+const undoConflicts = new Map();
+const revertedChanges = new Set();
+
+function savedHistoryEntry(session, message, part) {
+    return findHistoryEntry(app.bucket?.changeHistory, { sessionId: session.id, messageId: message.id, proposalIndex: part.index });
+}
+
+function renderSavedChange(card, session, message, part) {
+    const entry = savedHistoryEntry(session, message, part);
+    const undoable = canUndoEntry(entry);
+    const busy = undoable && undoingChanges.has(entry.id);
+    const conflict = entry ? undoConflicts.get(entry.id) : '';
+    let action = null;
+    if (undoable) {
+        action = iconButton(busy ? t`Undoing…` : t`Undo`, () => void undoSavedChange(entry.id), {
+            icon: 'fa-rotate-left', className: 'scratchpad-change-undo', disabled: busy,
+            title: t`Put back what was there before this change`,
+        });
+        if (busy) action.setAttribute('aria-busy', 'true');
+    } else if (entry) {
+        action = iconButton(t`History`, () => void openChangeHistory(), { className: 'scratchpad-link', title: historyHeading() });
+    }
+    card.append(h('div', { class: 'scratchpad-change-actions' },
+        h('span', { class: 'scratchpad-change-state', text: t`Saved` }), action));
+    if (conflict) {
+        card.append(h('div', { class: 'scratchpad-change-conflict', role: 'status' },
+            h('p', { text: conflict }),
+            h('div', { class: 'scratchpad-change-actions' },
+                entry.before ? iconButton(t`Copy previous text`, () => void copyText(entry.before), { icon: 'fa-copy', className: 'scratchpad-link' }) : null,
+                iconButton(historyHeading(), () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-link' }))));
+    }
+    return card;
+}
+
+// The open Change history dialog, redrawn whenever the bucket or an undo changes.
+let historyView = null;
+
+function historyCount() {
+    return Array.isArray(app.bucket?.changeHistory) ? app.bucket.changeHistory.length : 0;
+}
+
+function renderHistoryView({ force = false } = {}) {
+    if (!historyView || (!force && !historyView.isConnected)) return;
+    const open = new Set([...historyView.querySelectorAll('.scratchpad-history-entry')]
+        .filter(item => item.querySelector('details')?.open).map(item => item.dataset.historyId));
+    clear(historyView).append(renderChangeHistory(app.bucket?.changeHistory, {
+        button: iconButton, busy: undoingChanges, conflicts: undoConflicts, open, diffParts: textDiffParts,
+        onUndo: entry => void undoSavedChange(entry.id), onCopy: text => void copyText(text),
+    }));
+}
+
+async function openChangeHistory() {
+    if (historyView?.isConnected) return;
+    const view = h('div', { class: 'scratchpad-review scratchpad-history-dialog' });
+    historyView = view;
+    renderHistoryView({ force: true });
+    try {
+        await callGenericPopup(view, POPUP_TYPE.TEXT, '', { okButton: t`Close`, allowVerticalScrolling: true });
+    } finally {
+        if (historyView === view) historyView = null;
+    }
+}
+
+function refreshUndoViews() {
+    renderMessages();
+    renderHeader();
+    renderHistoryView();
+}
+
+// Puts back what a saved change replaced, then marks its history entry undone. A conflict leaves the entry saved.
+async function undoSavedChange(entryId) {
+    const source = app.source;
+    const entry = app.bucket?.changeHistory?.find(item => item?.id === entryId);
+    if (!canUndoEntry(entry) || undoingChanges.has(entryId)) return;
+    undoingChanges.add(entryId);
+    undoConflicts.delete(entryId);
+    refreshUndoViews();
+    try {
+        await app.queue;
+        try {
+            requireScope(source);
+            if (!revertedChanges.has(entryId)) {
+                const { undoChange } = await import('./change-undo.js');
+                await undoChange(entry, source);
+                revertedChanges.add(entryId);
+            }
+        } catch (error) {
+            if (error?.conflict) {
+                undoConflicts.set(entryId, error.message);
+                toastr.warning(error.message);
+            } else {
+                reportError(error, t`That change could not be undone.`);
+            }
+            return;
+        }
+        const marked = await change(wire => api.markChangeUndone(wire, entryId),
+            t`The change was undone, but Change history could not be updated. Press Undo again to finish.`, source);
+        if (marked) {
+            revertedChanges.delete(entryId);
+            const label = entry.description || t`Saved change`;
+            toastr.success(t`Undid: ${label}`);
+            app.contextKey = '';
+            render();
+        }
+    } finally {
+        undoingChanges.delete(entryId);
+        refreshUndoViews();
+    }
 }
 
 // A trial waits for any running reply, so it never queues behind one or races a save.
@@ -2248,8 +2366,8 @@ async function approveImagePrompt(session, message, part) {
 const busyChanges = new Set();
 // Unsaved changes behind each change-trial rehearsal, keyed by session and user message, so Try again reuses them.
 const trialChanges = new Map();
-// Saved changes whose 'Saved' mark failed; the next Review only retries the mark.
-const committedChanges = new Set();
+// Saved changes whose Change history entry failed, with their receipts; the next Review only retries the entry.
+const committedChanges = new Map();
 
 function changeKey(session, message, part) {
     return `${session.id}:${message.id}:${part.index}`;
@@ -2276,6 +2394,29 @@ function markChange(session, message, index, state, source = app.source) {
     return change(wire => api.markProposal(wire, session.id, message.id, index, state), t`Scratchpad could not update that suggestion.`, source);
 }
 
+const NO_UNDO_REASONS = {
+    image: () => t`Picture changes are not undone automatically. The previous picture stays in your images if you want it back.`,
+    notebook: () => t`Note changes are not undone from Scratchpad. Open the note in Notes to change it back.`,
+};
+
+// A history record for saves that carry no receipt of their own, such as pictures and notes.
+function fallbackReceipt(part, plan = null, after = '') {
+    const type = part.change.type;
+    return {
+        type, action: String(part.change.action ?? ''), description: describeChange(part.change),
+        target: { kind: type, label: String(plan?.target ?? '') }, field: String(plan?.field ?? ''),
+        before: String(plan?.before ?? ''), after: String(after ?? plan?.after ?? ''),
+        undo: null, undoable: false, undoUnavailableReason: NO_UNDO_REASONS[type]?.() ?? t`Automatic undo is not available for this change.`,
+    };
+}
+
+// Marks the suggestion saved and adds it to Change history in one request.
+function recordSaved(session, message, part, receipt, source = app.source, { markApplied = true } = {}) {
+    const entry = { ...(receipt ?? fallbackReceipt(part)), sessionId: session.id, messageId: message.id, proposalIndex: part.index };
+    return change(wire => api.recordSavedChange(wire, entry, { markApplied }),
+        t`The change was saved, but Scratchpad could not mark it saved. Press Review to finish.`, source);
+}
+
 async function reviewChange(session, message, part, picture) {
     if (part.change.type === 'notebook') return reviewNotebookChange(session, message, part);
     const key = changeKey(session, message, part);
@@ -2284,7 +2425,7 @@ async function reviewChange(session, message, part, picture) {
     let trial;
     try {
         if (committedChanges.has(key)) {
-            if (await markChange(session, message, part.index, 'applied', app.source)) committedChanges.delete(key);
+            if (await recordSaved(session, message, part, committedChanges.get(key), app.source)) committedChanges.delete(key);
             return;
         }
         trial = await reviewAndSaveChange(session, message, part, key, picture);
@@ -2431,17 +2572,20 @@ async function reviewAndSaveChange(session, message, part, key, picture) {
     if (result === POPUP_RESULT.CUSTOM1) return { tryValue: draft };
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
     let creatorDraftId = null;
+    let receipt = null;
     try {
-        const saved = await commitReviewPlan(source, session, part, plan, editor ? editor.value : plan.after);
+        const text = editor ? editor.value : plan.after;
+        const saved = await commitReviewPlan(source, session, part, plan, text);
         creatorDraftId = saved?.creatorDraftId;
+        receipt = saved?.receipt ?? fallbackReceipt(part, plan, text);
         if (saved?.refreshFailed) toastr.info(t`The change was saved. Refresh this view to see it.`);
     } catch (error) {
         reportError(error, t`That change could not be saved.`);
         return;
     }
-    committedChanges.add(key);
+    committedChanges.set(key, receipt);
     toastr.success(t`Change saved.`);
-    if (await markChange(session, message, part.index, 'applied', source)) committedChanges.delete(key);
+    if (await recordSaved(session, message, part, receipt, source)) committedChanges.delete(key);
     if (creatorDraftId) {
         hideScratchpad();
         globalThis.NeconyanShell?.openCreator?.({ draftId: creatorDraftId });
@@ -2520,12 +2664,13 @@ async function reviewAllChanges(session, message) {
                     if (fresh.before !== item.plan.before || fresh.after !== item.plan.after || fresh.snapshot !== item.plan.snapshot) {
                         throw new Error(t`This changed after you reviewed it, so it was not saved. Review it again on its own.`);
                     }
-                    const outcome = await commitReviewPlan(source, session, item.part, fresh, item.editor ? item.editor.value : fresh.after);
+                    const text = item.editor ? item.editor.value : fresh.after;
+                    const outcome = await commitReviewPlan(source, session, item.part, fresh, text);
                     if (outcome?.refreshFailed) toastr.info(t`The change was saved. Refresh this view to see it.`);
-                    committedChanges.add(item.key);
+                    committedChanges.set(item.key, outcome?.receipt ?? fallbackReceipt(item.part, fresh, text));
                 }
                 saved++;
-                if (await markChange(session, message, item.part.index, 'applied', source)) committedChanges.delete(item.key);
+                if (await recordSaved(session, message, item.part, committedChanges.get(item.key), source)) committedChanges.delete(item.key);
             } catch (error) {
                 failed.push({ title: item.title, reason: error?.message || t`That change could not be saved.` });
             }
@@ -2565,7 +2710,11 @@ async function reviewNotebookChange(session, message, part, { dismiss = false } 
         const result = await api.decideNotebookProposal(wireSource(source), session.id, message.id, part.index, proposal.proposalHash, dismiss ? 'deny' : 'allow');
         requireScope(source, session.id);
         applyBucket(result.bucket);
-        if (result.result.committed) toastr.success(t`Change saved.`);
+        if (result.result.committed) {
+            toastr.success(t`Change saved.`);
+            const plan = { target: proposal.summary?.label || '', field: '', before: proposal.before, after: proposal.after };
+            await recordSaved(session, message, part, fallbackReceipt(part, plan, proposal.after), source, { markApplied: false });
+        }
     } catch (error) { reportError(error, t`That note change could not be saved.`); }
 }
 
@@ -3818,6 +3967,7 @@ function renderSessions() {
             iconButton(t`Temporary session`, () => void newSession(true), { icon: 'fa-hourglass-half' }),
             iconButton(t`Import`, importSessionFile, { icon: 'fa-file-import' }),
             current ? iconButton(t`Export current`, () => void exportSession(current), { icon: 'fa-file-export' }) : null,
+            iconButton(historyCount() ? t`Change history (${historyCount()})` : historyHeading(), () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-history-open' }),
             current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
         h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out message picks and saved-note sharing. Add these again after importing. Thinking, web search sources and attached files are included only when you tick them.` }),
         renderCleanup(),

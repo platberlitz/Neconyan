@@ -9,6 +9,7 @@
 - Turn on **Neconyan source code** in **Scratchpad** and it reads the actual code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads, never changes anything.
 - When **Scratchpad** can't answer without something you haven't shared, like your preset or the last prompt sent, it asks with a **Share with the assistant** card. Untick anything you'd rather keep back and press **Share & continue**; nothing turns on until you do.
 - Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists.
+- Changes you save from **Scratchpad** can be undone: press **Undo** on the card, or open **Sessions → Change history** to see what each change replaced and undo it there. If something was edited since, Undo stops rather than overwrite your later work.
 - Character folders and folder tabs, if you want them. They're off until you turn them on.
 - Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand.
 - **Author's Note** has a full screen editor, and **Plot Compass** lets you pick the next direction straight from the note.

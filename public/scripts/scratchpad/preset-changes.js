@@ -1,8 +1,17 @@
 import { getPresetManager } from '../preset-manager.js';
 import { currentPresetTargets, currentPromptOrderId } from './preset.js';
 import { normaliseChange, fail } from './proposals.js';
+import { refuseUndo, UndoConflictError } from './undo-errors.js';
 
 const conflict = 'This preset changed while the review was open. Review the suggestion again before saving.';
+const undoConflict = 'This preset was edited after Scratchpad saved it, so automatic undo was stopped to avoid overwriting your later changes. Open Change history to see the previous text.';
+
+function presetField(preset, undo) {
+    if (undo.api !== 'openai') return preset;
+    const prompt = preset.prompts?.find(item => item.identifier === undo.module);
+    const entry = preset.prompt_order?.find(item => String(item.character_id) === String(undo.orderId))?.order?.find(item => item.identifier === undo.module);
+    return undo.field === 'enabled' ? entry : prompt;
+}
 
 export function preparePresetChange(change, shared, guard) {
     const check = () => {
@@ -41,10 +50,33 @@ export function preparePresetChange(change, shared, guard) {
                 || (change.api === 'openai' && currentPromptOrderId() !== orderId)) fail(conflict);
             const proposal = normaliseChange({ ...change, value: editable ? edited : change.value });
             const next = { ...structuredClone(expected), ...structuredClone(live) };
-            readField(next)[change.field] = proposal.value;
+            const slot = readField(next);
+            const previous = Object.hasOwn(slot, change.field) ? structuredClone(slot[change.field]) : undefined;
+            slot[change.field] = proposal.value;
             await manager.savePreset(change.preset, next, { expectedPreset: expected, quiet: true, isCurrent: () => {
                 try { check(); return JSON.stringify(manager.getPresetSettings(change.preset)) === JSON.stringify(live); } catch { return false; }
             } });
+            return { undo: { kind: 'preset', api: change.api, preset: change.preset, module: change.module ?? null, field: change.field,
+                orderId, missing: previous === undefined, before: previous ?? null, after: structuredClone(proposal.value) } };
         },
     };
+}
+
+export async function undoPresetChange(undo) {
+    if (!currentPresetTargets().some(item => item.api === undo.api && item.name === undo.preset)) {
+        refuseUndo(`Select the preset ${undo.preset} first, then undo again.`);
+    }
+    if (undo.api === 'openai' && String(currentPromptOrderId()) !== String(undo.orderId)) refuseUndo(`Select the preset ${undo.preset} first, then undo again.`);
+    const manager = getPresetManager(undo.api);
+    const saved = manager.getCompletionPresetByName(undo.preset);
+    if (!saved) throw new UndoConflictError(undoConflict);
+    const expected = structuredClone(saved);
+    const live = structuredClone(manager.getPresetSettings(undo.preset));
+    const slot = presetField(live, undo);
+    if (!slot || JSON.stringify(slot[undo.field]) !== JSON.stringify(undo.after)) throw new UndoConflictError(undoConflict);
+    const next = { ...structuredClone(expected), ...structuredClone(live) };
+    const target = presetField(next, undo);
+    if (undo.missing) delete target[undo.field];
+    else target[undo.field] = structuredClone(undo.before);
+    await manager.savePreset(undo.preset, next, { expectedPreset: expected, quiet: true, isCurrent: () => JSON.stringify(manager.getPresetSettings(undo.preset)) === JSON.stringify(live) });
 }

@@ -8,6 +8,7 @@ import { getCurrentUserHandle } from '../user.js';
 import { sourcePersona, isCurrentSource } from './context.js';
 import { PERSONA_FIELDS, personaFieldValue } from './persona-fields.js';
 import { resolveScenarioNoteId } from './scenario-note-references.js';
+import { UndoConflictError } from './undo-errors.js';
 
 export function requireSharedPersona(source, shared, name) {
     const current = sourcePersona(source);
@@ -91,6 +92,44 @@ export async function preparePersonaChange(change, source, shared, guard) {
             }
             let refreshFailed = false;
             try { await getUserAvatars(); await eventSource.emit(event_types.PERSONA_UPDATED, shared.avatar); } catch { refreshFailed = true; }
-            return { committed: true, refreshFailed };
+            return { committed: true, refreshFailed, undo: { kind: 'persona', avatar: shared.avatar, note, noteId, field: change.field, before, after: value } };
         } };
+}
+
+const undoConflict = 'This persona was edited after Scratchpad saved it, so automatic undo was stopped to avoid overwriting your later changes. Open Change history to see the previous text.';
+
+export async function undoPersonaChange(undo) {
+    const findNote = () => {
+        const matches = (power_user.persona_descriptions?.[undo.avatar]?.appendices || []).filter(item => item.id === undo.noteId);
+        if (matches.length !== 1) throw new UndoConflictError(undoConflict);
+        return matches[0];
+    };
+    const read = () => undo.note ? findNote()[undo.field] || ''
+        : undo.field === 'name' ? power_user.personas?.[undo.avatar] ?? ''
+            : power_user.persona_descriptions?.[undo.avatar]?.[undo.field] || '';
+    if (!undo.note && !Object.hasOwn(power_user.personas ?? {}, undo.avatar)) throw new UndoConflictError(undoConflict);
+    if (read() !== undo.after) throw new UndoConflictError(undoConflict);
+    const write = value => {
+        if (undo.note) {
+            if (undo.field === 'avatar' && !value) delete findNote().avatar;
+            else findNote()[undo.field] = value;
+        } else if (undo.field === 'name') power_user.personas[undo.avatar] = value;
+        else {
+            power_user.persona_descriptions ??= {};
+            power_user.persona_descriptions[undo.avatar] ??= {};
+            power_user.persona_descriptions[undo.avatar][undo.field] = value;
+        }
+        if (undo.avatar === user_avatar) {
+            if (!undo.note && undo.field === 'name') setUserName(value, { toastPersonaNameChange: false });
+            setPersonaDescription();
+        }
+    };
+    try {
+        write(undo.before);
+        if (!await saveSettings(0, { returnResult: true })) throw new Error('The persona was not restored. Reload and try again.');
+    } catch (error) {
+        try { if (read() === undo.before) write(undo.after); } catch { /* A note removed meanwhile stays removed. */ }
+        throw error;
+    }
+    try { await getUserAvatars(); await eventSource.emit(event_types.PERSONA_UPDATED, undo.avatar); } catch { /* The restore is saved; the list refreshes on next open. */ }
 }
