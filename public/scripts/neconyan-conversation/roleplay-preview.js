@@ -213,9 +213,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             // child identity for the handover to match a completed group speaker.
             const currentChild = String(latest.childId ?? '');
             if (node.dataset.roleplayChild !== currentChild) node.dataset.roleplayChild = currentChild;
+            if (node.dataset.roleplayJob !== String(jobId)) node.dataset.roleplayJob = String(jobId);
             // Display-only decorators run before the browser paints. Saved-message
             // events would incorrectly treat this draft as part of the chat history.
-            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
+            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node, jobId } }));
             rendered = latest;
             renderedMessageId = messageId;
         };

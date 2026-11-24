@@ -17,6 +17,13 @@ describe('companion tracker panel', () => {
     let translatedKeys;
     let initCompanionWindowsMock;
     let formatCompanionContentMock;
+    let isCompanionRunStoppableMock;
+    let stopCompanionRunMock;
+    let stopServerReplyCompanionMock;
+
+    function buttonTag(html, action) {
+        return html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))?.[0] ?? '';
+    }
 
     function createEventSource() {
         const handlers = new Map();
@@ -39,6 +46,9 @@ describe('companion tracker panel', () => {
 
     async function importPanel() {
         jest.resetModules();
+        isCompanionRunStoppableMock = jest.fn(() => true);
+        stopCompanionRunMock = jest.fn(async () => true);
+        stopServerReplyCompanionMock = jest.fn(async () => true);
         initCompanionWindowsMock = jest.fn();
         formatCompanionContentMock = jest.fn((agentId, result) => `<formatted>${result.content}</formatted>`);
 
@@ -148,6 +158,11 @@ describe('companion tracker panel', () => {
             getAutomaticCompanionAgents: jest.fn(() => automaticCompanionAgents),
             getCompanionCoveredMessageIndices: jest.fn((index, agentId) => companionResultsByMessage.get(chat[index])?.[agentId]?.contextCoverage ?? []),
             getCompanionResults: jest.fn(message => companionResultsByMessage.get(message) ?? {}),
+            getDisplayedCompanionResults: jest.fn(message => companionResultsByMessage.get(message) ?? {}),
+            isCompanionRunStoppable: isCompanionRunStoppableMock,
+            isServerReplyCompanionStopping: jest.fn(() => false),
+            stopCompanionRun: stopCompanionRunMock,
+            stopServerReplyCompanion: stopServerReplyCompanionMock,
             getLatestAssistantCompanionMessageIndex: jest.fn(() => chat.length - 1),
             getLatestCompanionResultsMessageIndex: jest.fn(() => chat.length - 1),
             getLatestValidCompanionMessageIndex: jest.fn(() => chat.length - 1),
@@ -273,15 +288,110 @@ describe('companion tracker panel', () => {
         const html = panel.buildPanelHtml();
         expect(html).toContain('data-roleplay-draft="true"');
         expect(html).toContain('Ready before the last Companion');
-        expect(html).not.toContain('data-action="panel-edit-note"');
-        expect(html).not.toContain('data-action="panel-regenerate"');
-        expect(html).not.toContain('data-action="panel-run-latest"');
+        for (const action of ['panel-edit-note', 'panel-regenerate', 'panel-fix', 'panel-run-latest', 'panel-jump', 'panel-edit', 'panel-open-window', 'panel-hide']) {
+            expect(buttonTag(html, action)).toContain(' disabled');
+        }
+        expect(buttonTag(html, 'panel-regenerate-all')).toContain(' disabled');
+        expect(buttonTag(html, 'panel-run-auto')).toContain(' disabled');
+        expect(html).not.toContain('data-action="panel-stop"');
         expect(chat).toEqual([saved]);
 
         element.isConnected = false;
         listeners.get('neconyan:roleplay-preview-removed')({ detail: { element } });
         expect(panel.collectPanelAgentStates()[0].latest.result.content).toBe('Previous state');
-        expect(panel.buildPanelHtml()).toContain('data-action="panel-edit-note"');
+        expect(buttonTag(panel.buildPanelHtml(), 'panel-edit-note')).not.toContain(' disabled');
+    });
+
+    test('keeps every button in place but greyed out while a companion writes, except Stop', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const message = { is_user: false, is_system: false, mes: 'Reply' };
+        chat.push(message);
+        companionResultsByMessage.set(message, { 'tracker-1': { status: 'pending', content: '' } });
+        const panel = await importPanel();
+
+        let html = panel.buildPanelHtml();
+        const stop = buttonTag(html, 'panel-stop');
+        expect(html).toMatch(/data-action="panel-stop"[^>]*><i class="fa-solid fa-stop"><\/i>/);
+        expect(stop).not.toContain(' disabled');
+        expect(html.indexOf('data-action="panel-stop"')).toBeLessThan(html.indexOf('data-action="panel-hide"'));
+        for (const action of ['panel-hide', 'panel-run-latest', 'panel-regenerate', 'panel-fix', 'panel-edit-note', 'panel-open-window', 'panel-edit', 'panel-jump', 'panel-regenerate-all', 'panel-run-auto']) {
+            expect(buttonTag(html, action)).toContain(' disabled');
+        }
+        expect(html).toMatch(/ica--tpanel-drag-handle"[^>]* disabled/);
+
+        isCompanionRunStoppableMock.mockReturnValue(false);
+        expect(buttonTag(panel.buildPanelHtml(), 'panel-stop')).toContain(' disabled');
+
+        companionResultsByMessage.set(message, { 'tracker-1': { status: 'done', content: 'Ready' } });
+        html = panel.buildPanelHtml();
+        expect(html).not.toContain('data-action="panel-stop"');
+        for (const action of ['panel-hide', 'panel-run-latest', 'panel-regenerate', 'panel-edit-note', 'panel-jump', 'panel-regenerate-all']) {
+            expect(buttonTag(html, action)).not.toContain(' disabled');
+        }
+    });
+
+    function bindPanelActions(panel, sectionAttributes) {
+        const panelElement = {
+            on: jest.fn(() => panelElement),
+            html: jest.fn(() => panelElement),
+            toggle: jest.fn(() => panelElement),
+            attr: jest.fn(() => panelElement),
+            addClass: jest.fn(() => panelElement),
+            removeClass: jest.fn(() => panelElement),
+            0: { addEventListener: jest.fn(), dataset: {} },
+        };
+        const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
+        const actionButton = {};
+        const section = { attr: jest.fn(name => sectionAttributes[name]) };
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) return { append: jest.fn() };
+            if (arg === '#ica--tracker-panel') return panelElement;
+            if (arg === '#ica--tracker-panel-handle') return handleElement;
+            if (arg === actionButton) {
+                return {
+                    attr: jest.fn(name => (name === 'data-action' ? 'panel-stop' : undefined)),
+                    closest: jest.fn(() => section),
+                    prop: jest.fn(),
+                };
+            }
+            return { length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() };
+        });
+        panel.initCompanionPanel();
+        const handler = panelElement.on.mock.calls.find(([, selector]) => selector === '[data-action]')[2];
+        return () => handler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+    }
+
+    test('Stop in the panel stops that companion only', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const message = { is_user: false, is_system: false, mes: 'Reply' };
+        chat.push(message);
+        companionResultsByMessage.set(message, { 'tracker-1': { status: 'pending', content: '' } });
+        const panel = await importPanel();
+        const clickStop = bindPanelActions(panel, { 'data-agent-id': 'tracker-1', 'data-message-index': '0' });
+
+        await clickStop();
+        expect(stopCompanionRunMock).toHaveBeenCalledWith(0, 'tracker-1');
+        expect(stopServerReplyCompanionMock).not.toHaveBeenCalled();
+        expect(globalThis.toastr.info).not.toHaveBeenCalled();
+
+        stopCompanionRunMock.mockResolvedValueOnce(false);
+        await clickStop();
+        expect(globalThis.toastr.info).toHaveBeenCalledWith('This companion cannot be stopped yet. Try again in a moment.');
+    });
+
+    test('Stop on a live reply companion asks the server reply job to stop it', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const preview = { is_user: false, mes: 'Live reply', extra: { inChatAgentCompanionResults: {} } };
+        companionResultsByMessage.set(preview, { 'tracker-1': { status: 'pending', content: '' } });
+        const panel = await importPanel();
+        const clickStop = bindPanelActions(panel, { 'data-agent-id': 'tracker-1', 'data-roleplay-draft': 'true' });
+        const listeners = new Map(globalThis.document.addEventListener.mock.calls);
+        listeners.get('neconyan:roleplay-preview-rendered')({ detail: { element: { isConnected: true, dataset: {} }, message: preview, jobId: 'job-7' } });
+
+        expect(buttonTag(panel.buildPanelHtml(), 'panel-stop')).not.toContain(' disabled');
+        await clickStop();
+        expect(stopServerReplyCompanionMock).toHaveBeenCalledWith('job-7', 'tracker-1');
+        expect(stopCompanionRunMock).not.toHaveBeenCalled();
     });
 
     test('shows a model pill on the latest note that follows Short Model Name', async () => {

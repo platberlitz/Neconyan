@@ -115,6 +115,9 @@ describe('exact expression history', () => {
                 getUnitExtraContextSections: () => [], requestPromptTransform: () => request, MAX_AGENT_MAX_TOKENS: 100,
                 setCompanionResult: write, restoreCompanionResult: write, emitCompanionResultsUpdated: write, DOMException,
                 isLocalCompanionAgent,
+                isCompanionRunStopped: run => Boolean(run?.controller?.signal.aborted),
+                watchBatchCompanionStops: () => ({ signal: undefined, release() {} }),
+                settleStoppedBatchMember: async () => false,
             });
             vm.runInContext(`${extract(companion, 'captureCompanionTarget')}\n${extract(companion, name)}`, runtime);
             const pending = runtime[name](name.includes('Batch') ? [agent] : agent, 0, 'normal', 0);

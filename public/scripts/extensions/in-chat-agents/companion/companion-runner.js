@@ -782,6 +782,7 @@ function beginCompanionRun(message, agent, content = '') {
         : stored ? structuredClone(stored) : null;
     const run = {
         previousResult,
+        controller: new AbortController(),
         isCurrent: () => runs.get(key) === run && (message.swipe_id ?? 0) === swipe && isMessageCurrent(),
         async finish(messageIndex) {
             if (runs.get(key) !== run) return;
@@ -814,6 +815,130 @@ function beginCompanionRun(message, agent, content = '') {
     });
     run.swipeInfo = message.swipe_info?.[swipe];
     return run;
+}
+
+const isCompanionRunStopped = run => Boolean(run?.controller?.signal.aborted);
+const stoppedCompanionRun = () => new DOMException('Companion stopped.', 'AbortError');
+
+/**
+ * Companions running as a server Agent job. The chat is left alone while the job
+ * runs (the server saves the result), so the running state lives here instead.
+ */
+const serverCompanionRuns = new WeakMap();
+
+function trackServerCompanionRun(message, agentIds) {
+    if (!message || typeof message !== 'object') return { accept() {}, release() {} };
+    let runs = serverCompanionRuns.get(message);
+    if (!runs) serverCompanionRuns.set(message, runs = new Map());
+    const entry = { jobId: '', agentIds: [...agentIds], stopping: new Set(), startedAt: new Date().toISOString() };
+    for (const agentId of entry.agentIds) runs.set(agentId, entry);
+    return {
+        accept(jobId) { entry.jobId = String(jobId ?? ''); },
+        release() {
+            for (const agentId of entry.agentIds) {
+                if (runs.get(agentId) === entry) runs.delete(agentId);
+            }
+        },
+    };
+}
+
+/** Stored results plus Companions that are still running in a server job. */
+export function getDisplayedCompanionResults(message) {
+    const results = getCompanionResults(message);
+    const remote = serverCompanionRuns.get(message);
+    if (!remote?.size) return results;
+    const shown = { ...results };
+    for (const [agentId, entry] of remote) {
+        const stored = results[agentId];
+        if (stored?.status === 'pending') continue;
+        const agent = getAgentById(agentId);
+        shown[agentId] = {
+            agentName: String(agent?.name ?? '').trim() || 'Companion',
+            icon: String(agent?.icon ?? '').trim(),
+            displayMode: agent ? getCompanionConfig(agent).displayMode : undefined,
+            ...(stored ?? {}),
+            status: 'pending',
+            content: '',
+            error: '',
+            updatedAt: stored?.updatedAt ?? entry.startedAt,
+            previousResult: stored?.status === 'done' ? { ...stored, previousResult: undefined } : null,
+        };
+    }
+    return shown;
+}
+
+/** Whether a running Companion on this message can still be stopped. */
+export function isCompanionRunStoppable(message, agentId) {
+    if (!message || !agentId) return false;
+    const remote = serverCompanionRuns.get(message)?.get(agentId);
+    if (remote) return Boolean(remote.jobId) && !remote.stopping.has(agentId);
+    const run = companionRuns.get(message)?.get(`${message.swipe_id ?? 0}:${agentId}`);
+    return Boolean(run?.isCurrent()) && !isCompanionRunStopped(run);
+}
+
+/**
+ * Stops one running Companion, leaving the others in its pass running.
+ * @returns {Promise<boolean>} false when nothing was running
+ */
+export async function stopCompanionRun(messageIndex, agentId) {
+    const message = chat[messageIndex];
+    if (!message || !agentId) return false;
+    const remote = serverCompanionRuns.get(message)?.get(agentId);
+    if (remote) {
+        if (!remote.jobId || remote.stopping.has(agentId)) return false;
+        remote.stopping.add(agentId);
+        await emitCompanionResultsUpdated(messageIndex, agentId);
+        try {
+            const jobs = await import('../../../jobs.js');
+            if (await jobs.stopJobCompanion(remote.jobId, agentId)) return true;
+            // The job has not reached its Companions yet. Stopping every one of
+            // them is the same as cancelling the job; one of several has to wait.
+            if (remote.agentIds.every(id => remote.stopping.has(id))) {
+                await jobs.cancelJob(remote.jobId, { reason: 'Companion stopped.' });
+                return true;
+            }
+            remote.stopping.delete(agentId);
+            await emitCompanionResultsUpdated(messageIndex, agentId);
+            return false;
+        } catch (error) {
+            remote.stopping.delete(agentId);
+            await emitCompanionResultsUpdated(messageIndex, agentId);
+            throw error;
+        }
+    }
+    const run = companionRuns.get(message)?.get(`${message.swipe_id ?? 0}:${agentId}`);
+    if (!run?.isCurrent() || isCompanionRunStopped(run)) return false;
+    run.controller.abort(stoppedCompanionRun());
+    await emitCompanionResultsUpdated(messageIndex, agentId);
+    return true;
+}
+
+/** Reply previews whose Companions were asked to stop, by job id. */
+const serverReplyCompanionStops = new Map();
+
+export function isServerReplyCompanionStopping(jobId, agentId) {
+    return Boolean(serverReplyCompanionStops.get(String(jobId ?? ''))?.has(agentId));
+}
+
+/** Stops one Companion in a server reply that is still being written. */
+export async function stopServerReplyCompanion(jobId, agentId) {
+    const key = String(jobId ?? '');
+    if (!key || !agentId || isServerReplyCompanionStopping(key, agentId)) return false;
+    let stops = serverReplyCompanionStops.get(key);
+    if (!stops) {
+        serverReplyCompanionStops.set(key, stops = new Set());
+        while (serverReplyCompanionStops.size > 20) serverReplyCompanionStops.delete(serverReplyCompanionStops.keys().next().value);
+    }
+    stops.add(agentId);
+    try {
+        const { stopJobCompanion } = await import('../../../jobs.js');
+        if (await stopJobCompanion(key, agentId)) return true;
+    } catch (error) {
+        stops.delete(agentId);
+        throw error;
+    }
+    stops.delete(agentId);
+    return false;
 }
 
 export async function emitCompanionResultsUpdated(messageIndex, agentId = '') {
@@ -1946,10 +2071,11 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         const previous = previousContent ?? getCompanionResultContent(message, agent.id);
         const isMessageCurrent = captureCompanionTarget(messageIndex);
         const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
+        const isStopped = () => isCompanionRunStopped(run);
         const generate = async ({ repair: repairPass, extraContextSections: sections }) => {
             const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
             const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair: repairPass, extraContextSections: sections, contextCapture });
-            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
             onGenerationStart?.();
@@ -1966,10 +2092,10 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
                 return inspectCompanionTrackerOutput(agent, text, display).action === 'keep';
             };
             const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, {
-                diagnosticHandle, acceptOutput, isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent: isTargetCurrent,
+                diagnosticHandle, acceptOutput, isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent: isTargetCurrent, signal: run?.controller?.signal,
             }).catch(markCompanionConnectionFailure);
 
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
 
@@ -1977,14 +2103,14 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             const rawContent = capResultContent(response.output);
             // Token usage reflects the companion's own generation; post passes run after counting.
             const tokenUsage = await buildCompanionTokenUsage(promptMessages, rawContent);
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion target changed.', 'AbortError');
             }
             return { rawContent, tokenUsage, profileId: response.profileId, model: response.model, contextCoverage: contextCapture?.coverage };
         };
 
         try {
-            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
 
@@ -2000,7 +2126,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             const { rawContent, tokenUsage } = attempt;
             let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
-            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            if (!isTargetCurrent() || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
             // A caller-supplied finishing step, such as appending a Chatroom reply to its feed.
@@ -2042,7 +2168,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             const targetChanged = !isTargetCurrent();
             if (targetChanged) return { agentId: agent.id, changed: false, result: null };
-            const cancelled = targetChanged || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
+            const cancelled = targetChanged || isStopped() || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
             const restoreResult = previousResult ?? run?.previousResult ?? null;
             if (repair && cancelled) {
                 restoreCompanionResult(message, agent.id, restoreResult);
@@ -2131,6 +2257,27 @@ async function cancelCompanionAgentResults(message, agents, messageIndex, profil
     }
 }
 
+/** A signal for a shared batch request that aborts once every member has been stopped. */
+function watchBatchCompanionStops(agents, runs) {
+    const controller = new AbortController();
+    const signals = agents.map(agent => runs?.get(agent.id)?.controller?.signal).filter(Boolean);
+    if (signals.length !== agents.length) return { signal: controller.signal, release() {} };
+    const check = () => {
+        if (!controller.signal.aborted && signals.every(signal => signal.aborted)) controller.abort(stoppedCompanionRun());
+    };
+    for (const signal of signals) signal.addEventListener('abort', check);
+    check();
+    return { signal: controller.signal, release: () => signals.forEach(signal => signal.removeEventListener('abort', check)) };
+}
+
+async function settleStoppedBatchMember(message, agent, runs, messageIndex, profileId = '') {
+    const run = runs?.get(agent.id);
+    if (!isCompanionRunStopped(run)) return false;
+    settleFailedCompanionRun(message, agent, run.previousResult ?? null, { cancelled: true, profileId });
+    await emitCompanionResultsUpdated(messageIndex, agent.id);
+    return true;
+}
+
 async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
     agents = agents.filter(agent => !isLocalCompanionAgent(agent));
     if (agents.length === 0) {
@@ -2174,7 +2321,13 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 throw new DOMException('A batch companion became unavailable.', 'AbortError');
             }
             const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
-            const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents, diagnosticHandle: diagnosticHandles.get(agents[0].id) }).catch(markCompanionConnectionFailure);
+            const batchStop = watchBatchCompanionStops(agents, runs);
+            let response;
+            try {
+                response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents, diagnosticHandle: diagnosticHandles.get(agents[0].id), signal: batchStop.signal }).catch(markCompanionConnectionFailure);
+            } finally {
+                batchStop.release();
+            }
             if (!isTargetCurrent()) return getResults();
 
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
@@ -2205,6 +2358,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                     return getResults();
                 }
                 if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                if (await settleStoppedBatchMember(message, agent, runs, messageIndex, response.profileId)) continue;
                 if (!parsed.has(agent.id)) {
                     missingAgents.push(agent);
                     continue;
@@ -2250,6 +2404,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                     return getResults();
                 }
                 if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                if (await settleStoppedBatchMember(message, agent, runs, messageIndex, response.profileId)) continue;
                 setCompanionResult(message, agent, {
                     status: 'done',
                     content,
@@ -2729,7 +2884,24 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
  * @returns {Promise<object[]|null>} null when the page should run them itself
  */
 async function runCompanionsOnServer(agents, messageIndex, { repair = false } = {}) {
-    const remote = await runAgentActionOnServer({ mode: repair ? 'repair-companions' : 'companions', agentIds: agents.map(agent => agent.id), messageIndex });
+    const agentIds = agents.map(agent => agent.id);
+    let tracked = null;
+    let remote;
+    try {
+        remote = await runAgentActionOnServer({
+            mode: repair ? 'repair-companions' : 'companions', agentIds, messageIndex,
+            onAccepted(jobId) {
+                tracked = trackServerCompanionRun(chat[messageIndex], agentIds);
+                tracked.accept(jobId);
+                void emitCompanionResultsUpdated(messageIndex);
+            },
+        });
+    } finally {
+        if (tracked) {
+            tracked.release();
+            if (!remote?.current) void emitCompanionResultsUpdated(messageIndex);
+        }
+    }
     if (!remote) return null;
     if (!remote.current) return [];
     await emitCompanionResultsUpdated(messageIndex);

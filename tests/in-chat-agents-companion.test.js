@@ -42,9 +42,15 @@ describe('companion card ui', () => {
     let powerUser;
     let batchReaderChange;
     let settleScroll;
+    let isCompanionRunStoppableMock;
+    let stopCompanionRunMock;
+    let stopServerReplyCompanionMock;
 
     async function importCompanionUi() {
         jest.resetModules();
+        isCompanionRunStoppableMock = jest.fn(() => true);
+        stopCompanionRunMock = jest.fn(async () => true);
+        stopServerReplyCompanionMock = jest.fn(async () => true);
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/plot-compass-context.js', () => ({
             getPlotCompassIdentity: () => ({ avatar: 'character.png', chatId: 'chat-1' }),
@@ -146,6 +152,11 @@ describe('companion card ui', () => {
             emitCompanionResultsUpdated: jest.fn(async () => {}),
             deleteCompanionResult: jest.fn(),
             getCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
+            getDisplayedCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
+            isCompanionRunStoppable: isCompanionRunStoppableMock,
+            isServerReplyCompanionStopping: jest.fn(() => false),
+            stopCompanionRun: stopCompanionRunMock,
+            stopServerReplyCompanion: stopServerReplyCompanionMock,
             getLatestAssistantCompanionMessageIndex: jest.fn(() => chat.findLastIndex(message => message && !message.is_user && !message.is_system)),
             getLatestValidCompanionMessageIndex: jest.fn(() => Math.max(0, chat.length - 1)),
             runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
@@ -324,6 +335,36 @@ describe('companion card ui', () => {
         agents.length = 0;
         ui.renderCompanionResultsForMessage(0);
         expect(jqueryObject.html.mock.calls.at(-1)[0]).not.toContain('data-action="fix"');
+    });
+
+    test('shows Stop on a writing note and keeps the other note actions greyed out in place', async () => {
+        const result = { status: 'pending', content: '', agentName: 'Status Companion', displayMode: 'card' };
+        chat.push({ is_user: false, is_system: false, name: 'Aria', extra: { inChatAgentCompanionResults: { 'companion-tracker': result } } });
+        const ui = await importCompanionUi();
+        jqueryObject.length = 1;
+        const tag = (html, action) => html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))?.[0] ?? '';
+
+        ui.renderCompanionResultsForMessage(0);
+        let html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).toMatch(/data-action="stop"[^>]*><i class="fa-solid fa-stop"><\/i>/);
+        expect(tag(html, 'stop')).not.toContain(' disabled');
+        expect(html.indexOf('data-action="stop"')).toBeLessThan(html.indexOf('data-action="regenerate"'));
+        for (const action of ['regenerate', 'fix', 'edit', 'copy', 'delete']) {
+            expect(tag(html, action)).toContain(' disabled');
+        }
+
+        isCompanionRunStoppableMock.mockReturnValue(false);
+        ui.renderCompanionResultsForMessage(0);
+        expect(tag(jqueryObject.html.mock.calls.at(-1)[0], 'stop')).toContain(' disabled');
+
+        result.status = 'done';
+        result.content = 'Saved tracker';
+        ui.renderCompanionResultsForMessage(0);
+        html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).not.toContain('data-action="stop"');
+        for (const action of ['regenerate', 'fix', 'edit', 'copy', 'delete']) {
+            expect(tag(html, action)).not.toContain(' disabled');
+        }
     });
 
     test.each([false, true])('repairs only the clicked note and releases its button after failure=%s', async fail => {
