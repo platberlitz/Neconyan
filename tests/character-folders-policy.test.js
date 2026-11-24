@@ -3,6 +3,7 @@ import {
     AI_SORT_BATCH_MIN,
     buildAiSortPrompt,
     buildFolderTabs,
+    characterFolderListMode,
     chunkForAiSort,
     classifyAiSortError,
     cleanFolderName,
@@ -93,6 +94,26 @@ describe('character folder settings', () => {
         expect(defaults.autoSort.enabled).toBe(false);
         expect(defaults.autoSort.folderType).toBe('OPEN');
         expect(defaults.tabs.collapsed).toBe(false);
+        expect(defaults.tabs.enabled).toBe(false);
+        expect(defaults.folders).toEqual({ enabled: false });
+    });
+
+    test('keeps the folders page and folder tabs as separate opt-in switches', () => {
+        expect(normalizeCharacterFolderSettings({ folders: { enabled: true } }).tabs.enabled).toBe(false);
+        expect(normalizeCharacterFolderSettings({ tabs: { enabled: true } }).folders.enabled).toBe(false);
+        expect(normalizeCharacterFolderSettings({ folders: { enabled: 'yes' }, tabs: { enabled: 1 } }))
+            .toMatchObject({ folders: { enabled: false }, tabs: { enabled: false } });
+    });
+
+    test.each([
+        [{ folders: { enabled: true } }, { bogusFolders: false }, 'none'],
+        [{ folders: { enabled: false } }, { bogusFolders: true }, 'none'],
+        [{ folders: { enabled: false } }, { bogusFolders: true, folderOpen: true }, 'nested'],
+        [{ folders: { enabled: true } }, { bogusFolders: true, folderOpen: true, pageOpen: true }, 'nested'],
+        [{ folders: { enabled: true } }, { bogusFolders: true }, 'characters'],
+        [{ folders: { enabled: true } }, { bogusFolders: true, pageOpen: true }, 'folders'],
+    ])('lists %j with %j as %s', (settings, view, mode) => {
+        expect(characterFolderListMode(normalizeCharacterFolderSettings(settings), view)).toBe(mode);
     });
 
     test('keeps valid values and drops invalid ones', () => {
@@ -101,7 +122,7 @@ describe('character folder settings', () => {
             autoSort: { enabled: true, createFolders: false, folderType: 'WEIRD', sources: { chub: 'tag-1', nowhere: 'tag-2', janitorai: 7 } },
             ai: { promptId: 'missing', scope: 'all', allowNewFolders: false, batchSize: 999, customPrompts: [{ id: 'custom-x', name: 'X', prompt: 'Sort by colour' }, { id: 'bad' }] },
         });
-        expect(settings.tabs).toEqual({ collapsed: true, hidden: ['a'] });
+        expect(settings.tabs).toEqual({ enabled: false, collapsed: true, hidden: ['a'] });
         expect(settings.autoSort.enabled).toBe(true);
         expect(settings.autoSort.createFolders).toBe(false);
         expect(settings.autoSort.folderType).toBe('OPEN');

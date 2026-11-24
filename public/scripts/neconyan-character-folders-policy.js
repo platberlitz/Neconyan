@@ -72,7 +72,8 @@ const PRESET_BY_ID = new Map(AI_SORT_PRESETS.map(preset => [preset.id, preset]))
 /**
  * @typedef {object} CharacterFolderSettings
  * @property {number} version
- * @property {{ collapsed: boolean, hidden: string[] }} tabs
+ * @property {{ enabled: boolean }} folders Show folders on their own page instead of in the character list
+ * @property {{ enabled: boolean, collapsed: boolean, hidden: string[] }} tabs
  * @property {{ enabled: boolean, createFolders: boolean, folderType: 'OPEN'|'CLOSED', sources: Record<string, string> }} autoSort
  * @property {{ promptId: string, customPrompts: { id: string, name: string, prompt: string }[], scope: 'unsorted'|'all', allowNewFolders: boolean, batchSize: number }} ai
  */
@@ -81,7 +82,8 @@ const PRESET_BY_ID = new Map(AI_SORT_PRESETS.map(preset => [preset.id, preset]))
 export function defaultCharacterFolderSettings() {
     return {
         version: CHARACTER_FOLDER_SETTINGS_VERSION,
-        tabs: { collapsed: false, hidden: [] },
+        folders: { enabled: false },
+        tabs: { enabled: false, collapsed: false, hidden: [] },
         autoSort: { enabled: false, createFolders: true, folderType: 'OPEN', sources: {} },
         ai: { promptId: 'genre', customPrompts: [], scope: 'unsorted', allowNewFolders: true, batchSize: AI_SORT_DEFAULT_BATCH },
     };
@@ -109,6 +111,7 @@ function clampInteger(value, min, max, fallback) {
 export function normalizeCharacterFolderSettings(raw) {
     const defaults = defaultCharacterFolderSettings();
     const source = isPlainObject(raw) ? raw : {};
+    const folders = isPlainObject(source.folders) ? source.folders : {};
     const tabs = isPlainObject(source.tabs) ? source.tabs : {};
     const autoSort = isPlainObject(source.autoSort) ? source.autoSort : {};
     const ai = isPlainObject(source.ai) ? source.ai : {};
@@ -146,7 +149,11 @@ export function normalizeCharacterFolderSettings(raw) {
 
     return {
         version: CHARACTER_FOLDER_SETTINGS_VERSION,
+        folders: {
+            enabled: typeof folders.enabled === 'boolean' ? folders.enabled : defaults.folders.enabled,
+        },
         tabs: {
+            enabled: typeof tabs.enabled === 'boolean' ? tabs.enabled : defaults.tabs.enabled,
             collapsed: typeof tabs.collapsed === 'boolean' ? tabs.collapsed : defaults.tabs.collapsed,
             hidden,
         },
@@ -286,6 +293,27 @@ export function planImportFolder({ sourceId, settings, tags }) {
 /** @param {{ folder_type?: string }} tag */
 export function isFolderTag(tag) {
     return AUTO_SORT_FOLDER_TYPES.includes(tag?.folder_type);
+}
+
+/** Page state shared with the character list: whether the Folders page is showing. */
+export const characterFolderView = { pageOpen: false };
+
+/**
+ * Which folder rows the character list shows.
+ * - 'none': no folder rows, and characters in closed folders show in the list
+ * - 'characters': folders are on but the Folders page is closed; rows stay off the list
+ * - 'folders': the Folders page shows only the folder rows
+ * - 'nested': a folder is open, so its rows and characters show as before
+ *
+ * @param {ReturnType<typeof normalizeCharacterFolderSettings>} settings
+ * @param {{ bogusFolders?: boolean, pageOpen?: boolean, folderOpen?: boolean }} state
+ * @returns {'none'|'characters'|'folders'|'nested'}
+ */
+export function characterFolderListMode(settings, { bogusFolders = false, pageOpen = false, folderOpen = false } = {}) {
+    if (!bogusFolders) return 'none';
+    if (folderOpen) return 'nested';
+    if (!settings?.folders?.enabled) return 'none';
+    return pageOpen ? 'folders' : 'characters';
 }
 
 /**

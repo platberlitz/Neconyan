@@ -1,4 +1,4 @@
-import { characters, entitiesFilter, generateRaw, getGeneratingModel, online_status, saveSettingsDebounced } from '../script.js';
+import { characters, entitiesFilter, generateRaw, getGeneratingModel, online_status, printCharactersDebounced, saveSettingsDebounced } from '../script.js';
 import { eventSource, event_types } from './events.js';
 import { FILTER_TYPES } from './filters.js';
 import { groups } from './group-chats.js';
@@ -25,6 +25,7 @@ import {
     IMPORT_SOURCES,
     buildAiSortPrompt,
     buildFolderTabs,
+    characterFolderView,
     chunkForAiSort,
     classifyAiSortError,
     createCustomPrompt,
@@ -247,9 +248,109 @@ function updateTab(button, { id, name, count, selected, closed, empty }) {
     if (countNode.textContent !== countText) countNode.textContent = countText;
 }
 
+const PAGE_ID = 'neconyan-folder-page';
+const ENTRY_ID = 'neconyan-folders-button';
+let pageHead = null;
+let entryButton = null;
+
+function enableTagFolders() {
+    if (power_user.bogus_folders) return;
+    const toggle = document.getElementById('bogus_folders');
+    if (toggle instanceof HTMLInputElement) {
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    power_user.bogus_folders = true;
+}
+
+/** Opens or closes the Folders page, which lists the folders instead of the characters. */
+export function setFolderPageOpen(open) {
+    const next = Boolean(open) && getSettings().folders.enabled;
+    if (next) enableTagFolders();
+    if (!next) {
+        const block = document.getElementById('rm_characters_block');
+        if (block) selectFolder(block, ALL_TAB_ID);
+    }
+    const changed = characterFolderView.pageOpen !== next;
+    characterFolderView.pageOpen = next;
+    renderFolderPage();
+    scheduleRender();
+    if (changed) printCharactersDebounced();
+}
+
+function buildEntryButton() {
+    const node = el('div', 'menu_button fa-solid fa-folder-tree interactable');
+    node.id = ENTRY_ID;
+    node.tabIndex = 0;
+    node.setAttribute('role', 'button');
+    node.addEventListener('click', () => {
+        if (getSettings().folders.enabled) setFolderPageOpen(!characterFolderView.pageOpen);
+        else openOrganiser();
+    });
+    node.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        node.click();
+    });
+    return node;
+}
+
+function buildPageHead() {
+    const head = el('div', 'neconyan-folder-page');
+    head.id = PAGE_ID;
+    const back = el('button', 'menu_button neconyan-folder-page-back');
+    back.type = 'button';
+    back.append(icon('fa-arrow-left'), el('span', '', t`All characters`));
+    back.addEventListener('click', () => setFolderPageOpen(false));
+    const title = el('h4', 'neconyan-folder-page-title', t`Folders`);
+    const organise = el('button', 'menu_button neconyan-folder-page-organise');
+    organise.type = 'button';
+    organise.title = t`Organise folders`;
+    organise.setAttribute('aria-label', t`Organise folders`);
+    organise.append(icon('fa-wand-magic-sparkles'));
+    organise.addEventListener('click', () => openOrganiser());
+    head.append(back, title, organise);
+    return head;
+}
+
+function renderFolderPage() {
+    const block = document.getElementById('rm_characters_block');
+    if (!block) return;
+    const settings = getSettings();
+    if (!settings.folders.enabled && characterFolderView.pageOpen) {
+        characterFolderView.pageOpen = false;
+        printCharactersDebounced();
+    }
+
+    const slot = document.getElementById('rm_buttons_container');
+    if (slot) {
+        entryButton ??= buildEntryButton();
+        if (entryButton.parentElement !== slot) slot.append(entryButton);
+        const label = !settings.folders.enabled ? t`Organise folders`
+            : characterFolderView.pageOpen ? t`Back to all characters` : t`Folders`;
+        entryButton.title = label;
+        entryButton.setAttribute('aria-label', label);
+        if (settings.folders.enabled) entryButton.setAttribute('aria-pressed', String(characterFolderView.pageOpen));
+        else entryButton.removeAttribute('aria-pressed');
+    }
+
+    pageHead ??= buildPageHead();
+    // Sit beside the folder tabs in the library card so the row shares its padding.
+    const library = document.getElementById('neconyan-character-library');
+    const list = document.getElementById('rm_print_characters_block');
+    if (library && block.contains(library)) {
+        if (pageHead.parentElement !== library) library.append(pageHead);
+    } else if (list?.parentElement && pageHead.nextElementSibling !== list) list.parentElement.insertBefore(pageHead, list);
+    pageHead.hidden = !characterFolderView.pageOpen;
+    block.classList.toggle('neconyan-folder-page-open', characterFolderView.pageOpen);
+}
+
 function renderTabs() {
     if (!ensureMounted()) return;
     const settings = getSettings();
+    renderFolderPage();
+    root.hidden = !settings.tabs.enabled;
+    if (!settings.tabs.enabled) return;
     const selectedIds = getSelectedTagIds();
     const folders = buildFolderTabs({
         tags: getFolderTags(),
@@ -471,11 +572,45 @@ function button(text, iconName, onClick, primary = false) {
     return node;
 }
 
+function renderShowSection(container, onChange) {
+    const settings = getSettings();
+    container.replaceChildren();
+    container.append(el('h4', '', t`Show`));
+    container.append(el('p', 'neconyan-folder-organiser-intro', t`Both are off until you turn them on, so the character list keeps its space.`));
+    const page = checkbox(t`Folders page`, settings.folders.enabled, (checked) => {
+        getSettings().folders.enabled = checked;
+        if (checked) enableTagFolders();
+        saveSettings();
+        if (!checked) setFolderPageOpen(false);
+        else printCharactersDebounced();
+        scheduleRender();
+        onChange?.();
+    });
+    const tabsToggle = checkbox(t`Folder tabs`, settings.tabs.enabled, (checked) => {
+        getSettings().tabs.enabled = checked;
+        if (checked) enableTagFolders();
+        saveSettings();
+        scheduleRender();
+        onChange?.();
+    });
+    const option = (control, hint) => {
+        const field = el('div', 'neconyan-folder-organiser-option');
+        field.append(control, el('small', 'neconyan-folder-organiser-hint', hint));
+        return field;
+    };
+    container.append(
+        option(page.label, t`Folders leave the character list and get their own page. Open it with the folder button.`),
+        option(tabsToggle.label, t`A row of folder tabs sits above the character list.`),
+    );
+}
+
 function renderTabsSection(container) {
     const settings = getSettings();
     container.replaceChildren();
     container.append(el('h4', '', t`Tabs`));
-    container.append(el('p', 'neconyan-folder-organiser-intro', t`Choose which folders show as tabs above your character list.`));
+    container.append(el('p', 'neconyan-folder-organiser-intro', settings.tabs.enabled
+        ? t`Choose which folders show as tabs above your character list.`
+        : t`Turn on Folder tabs above to show these as tabs above your character list.`));
 
     const folders = buildFolderTabs({ tags: getFolderTags(), tagMap: tag_map, entityKeys: getEntityKeys(), hidden: settings.tabs.hidden });
     const list = el('div', 'neconyan-folder-organiser-list');
@@ -984,15 +1119,18 @@ export function applySuggestions(suggestions) {
 export async function openOrganiser() {
     const content = el('div', 'neconyan-folder-organiser');
     content.append(el('h3', '', t`Organise folders`));
+    const showSection = el('section', 'neconyan-folder-organiser-section');
+    showSection.classList.add('neconyan-folder-organiser-show');
     const tabsSection = el('section', 'neconyan-folder-organiser-section');
     const autoSection = el('section', 'neconyan-folder-organiser-section');
     const aiSection = el('section', 'neconyan-folder-organiser-section');
     aiSection.classList.add('neconyan-folder-ai');
     const run = { controller: null, refreshPlan: null, closed: false };
+    renderShowSection(showSection, () => renderTabsSection(tabsSection));
     renderTabsSection(tabsSection);
     renderAutoSortSection(autoSection);
     renderAiSection(aiSection, run);
-    content.append(tabsSection, autoSection, aiSection);
+    content.append(showSection, tabsSection, autoSection, aiSection);
 
     const popup = new Popup(content, POPUP_TYPE.TEXT, '', {
         okButton: t`Done`,
