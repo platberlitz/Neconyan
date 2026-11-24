@@ -1757,6 +1757,22 @@ button.ica--card-pill--version-update {
     margin-bottom: 0;
 }
 
+/* Companion notes break long unspaced lines (Memory Shard's pipe-joined records, links)
+   instead of widening the panel, window or card into a sideways scroll. */
+.ica--companion-body,
+.ica--tpanel-agent-body,
+.ica--cwin-body {
+    overflow-wrap: break-word;
+}
+
+:is(.ica--companion-body, .ica--tpanel-agent-body, .ica--cwin-body) pre {
+    white-space: pre-wrap;
+}
+
+:is(.ica--companion-body, .ica--tpanel-agent-body, .ica--cwin-body) :is(table, img, video) {
+    max-width: 100%;
+}
+
 .ica--chatonly-composer {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 36px;
