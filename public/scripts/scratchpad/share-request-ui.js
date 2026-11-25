@@ -20,6 +20,7 @@ function shareLabel(key) {
         case 'appSource': return t`Neconyan source code`;
         case 'lastPrompt': return t`Last prompt sent`;
         case 'agents': return t`Agents`;
+        case 'companionNotes': return t`Companion notes`;
         case 'regex': return t`Regexes`;
         case 'cssSnippets': return t`CSS Snippets`;
         case 'dialogueColors': return t`Dialogue Colors`;
@@ -47,6 +48,7 @@ function shareHint(key, source) {
         case 'appSource': return t`Before replying, the server looks up the parts of Neconyan's own code (public/scripts, public/script.js and src) that match your question and the app diagnostics, read-only. Your config, secrets and data folder are never read, and the assistant can't change Neconyan's code.`;
         case 'lastPrompt': return t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`;
         case 'agents': return t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`;
+        case 'companionNotes': return t`Shares the finished notes Companion agents wrote on the shared messages, such as trackers, Plot Compass and Memory Shards. Notes on hidden messages are shared only when their Companion keeps them in chat history.`;
         case 'regex': return t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`;
         case 'cssSnippets': return t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`;
         case 'dialogueColors': return t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`;

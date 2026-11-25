@@ -23,6 +23,7 @@
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
 - Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
 - Turkish and Vietnamese headings no longer mix thin letters into heavy words. The Turkish letters ğ, ş and İ match the rest, and Vietnamese headings are bold all the way through.
+- Turn on **Companion notes** in **Scratchpad**'s **Context** tab and it reads the finished notes your Companions wrote on the shared messages, like trackers, **Plot Compass** and **Memory Shard**. It's off by default in Roleplay, and **Scratchpad** can ask for it with a **Share with the assistant** card.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

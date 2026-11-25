@@ -176,7 +176,7 @@ export function defaultSettings() {
         depth: DEFAULT_DEPTH,
         picked: [],
         notes: [],
-        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false },
+        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false, companionNotes: false },
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
