@@ -260,11 +260,16 @@ for (const phone of [true, false]) {
         await checkArrows(page, geometry);
 
         if (!phone) {
-            // A plain mouse wheel glides the row sideways instead of scrolling the page.
+            // A plain mouse wheel glides the row sideways instead of scrolling the page, even after clicking a rail arrow.
             const box = await quick.boundingBox();
             await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-            await page.mouse.wheel(0, 240);
-            await expect.poll(() => quick.evaluate(node => node.scrollLeft)).toBeGreaterThan(100);
+            await page.mouse.wheel(0, 120);
+            await expect.poll(() => quick.evaluate(node => node.scrollLeft)).toBeGreaterThan(80);
+            await page.locator('#neconyan-scratchpad .scratchpad-quick-rail .sb-mobile-rail-right').click();
+            await expect.poll(() => quick.evaluate(node => node.scrollLeft)).toBeGreaterThan(250);
+            const afterArrow = await quick.evaluate(node => node.scrollLeft);
+            await page.mouse.wheel(0, 120);
+            await expect.poll(() => quick.evaluate(node => node.scrollLeft)).toBeGreaterThan(afterArrow + 40);
             await page.mouse.wheel(0, -2400);
             await expect.poll(() => quick.evaluate(node => node.scrollLeft)).toBe(0);
         }

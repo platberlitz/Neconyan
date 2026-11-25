@@ -230,7 +230,7 @@ const app = {
     tab: 'chat',
     overviewCollapsed: false,
     quickBar: createQuickBarState(),
-    quickWheelTarget: NaN,
+    quickWheel: null,
     source: null,
     personaWarning: false,
     bucket: null,
@@ -835,7 +835,7 @@ function buildChatPanel() {
     el.replyStatus = h('div', { class: 'sr-only', role: 'status' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
         quickPromptChips());
-    el.quick.addEventListener('wheel', onQuickWheel, { passive: false });
+    el.quick.addEventListener('scrollend', () => { app.quickWheel = null; });
     el.quickToggle = h('button', {
         type: 'button',
         class: 'scratchpad-quick-toggle',
@@ -846,9 +846,11 @@ function buildChatPanel() {
         onclick: onQuickToggle,
     }, h('i', { class: 'fa-solid fa-chevron-down', 'aria-hidden': 'true' }), h('span', { text: t`Quick prompts` }));
     el.quickEdit = iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' });
+    const quickRail = h('div', { id: 'scratchpad-quick-rail', class: 'scratchpad-quick-rail' }, el.quick);
+    quickRail.addEventListener('wheel', onQuickWheel, { passive: false });
     el.quickBar = h('div', { class: 'scratchpad-quick-bar', 'data-expanded': 'true' },
         el.quickToggle,
-        h('div', { id: 'scratchpad-quick-rail', class: 'scratchpad-quick-rail' }, el.quick),
+        quickRail,
         el.quickEdit);
     el.composer = h('textarea', {
         class: 'text_pole scratchpad-composer',
@@ -1780,10 +1782,19 @@ function onQuickWheel(event) {
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.body.classList.contains('reduced-motion');
     // Trackpads send many small steps that already feel smooth; a mouse wheel's large notches glide.
     const smooth = !still && (event.deltaMode !== 0 || Math.abs(delta) >= 40);
-    const gliding = smooth && Number.isFinite(app.quickWheelTarget) && Math.abs(app.quickWheelTarget - rail.scrollLeft) > 1;
+    const now = Date.now();
+    const current = rail.scrollLeft;
+    const prev = app.quickWheel;
+    const gliding = smooth && prev !== null
+        && now - prev.at < 500
+        && Math.abs(prev.target - current) > 1
+        && Math.sign(delta) === Math.sign(prev.target - prev.from)
+        && current >= Math.min(prev.from, prev.target) - 2
+        && current <= Math.max(prev.from, prev.target) + 2;
     const room = rail.scrollWidth - rail.clientWidth;
-    app.quickWheelTarget = Math.max(0, Math.min(room, (gliding ? app.quickWheelTarget : rail.scrollLeft) + delta));
-    rail.scrollTo({ left: app.quickWheelTarget, behavior: smooth ? 'smooth' : 'instant' });
+    const target = Math.max(0, Math.min(room, (gliding ? prev.target : current) + delta));
+    app.quickWheel = smooth ? { from: current, target, at: now } : null;
+    rail.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'instant' });
 }
 
 /** Switches on the sharing a check prompt needs for this session and says what changed. Resolves to null when that could not be saved. */
