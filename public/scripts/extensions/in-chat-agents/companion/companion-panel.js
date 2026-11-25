@@ -3063,8 +3063,12 @@ export function initCompanionPanel() {
     // The grace window keeps the click that opened the panel from immediately closing it.
     // Keep the panel open while a popup dialog or fullscreen textarea overlay is active,
     // or when the clicked control belonged to a popup or was detached by its own handler.
+    // Clicks fired by code, such as the composer focus after a chat loads, are not taps.
     $(document).on('click', event => {
         if (!panelOpen || panelLocked || panelResizeActive || Date.now() < suppressOutsideClickUntil || Date.now() - panelOpenedAt < 250) {
+            return;
+        }
+        if (event.originalEvent?.isTrusted !== true) {
             return;
         }
         if (document?.querySelector?.('dialog.popup[open], .ica--textarea-fullscreen-overlay')) {
