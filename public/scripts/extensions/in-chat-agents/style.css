@@ -6545,6 +6545,20 @@ body.neconyan .ica--standalone-title { display: none; }
         min-height: 44px;
     }
 
+    .neco-dice-options {
+        padding-block: 0;
+    }
+
+    .neco-dice-options[open] {
+        padding-block-end: 8px;
+    }
+
+    .neco-dice-options summary {
+        box-sizing: border-box;
+        padding-block: 10px;
+        align-content: center;
+    }
+
     .neco-dice-stage {
         padding: 8px;
     }

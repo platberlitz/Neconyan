@@ -542,3 +542,32 @@ for (const [viewport, phone] of [['phone', true], ['desktop', false]]) {
         await test.info().attach('accent-measurements', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
     });
 }
+
+for (const [viewport, phone] of [['phone', true], ['desktop', false]]) {
+    test(`${viewport} closed Roll options box hugs its title`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const page = await openChat(account);
+        await waitForAgents(page);
+        await enableDice(page);
+        const panel = await openCompanionPanel(page);
+        const options = panel.locator('.neco-dice-options');
+        await expect(options).toBeVisible();
+        await options.scrollIntoViewIfNeeded();
+        const measured = await options.evaluate(details => {
+            const summary = details.querySelector('summary');
+            const range = document.createRange();
+            range.selectNodeContents(summary);
+            const box = details.getBoundingClientRect();
+            const text = range.getBoundingClientRect();
+            return {
+                height: box.height,
+                summaryHeight: summary.getBoundingClientRect().height,
+                above: text.top - box.top,
+                below: box.bottom - text.bottom,
+            };
+        });
+        expect(measured.summaryHeight, JSON.stringify(measured)).toBeGreaterThanOrEqual(phone ? 44 : 0);
+        expect(measured.height, JSON.stringify(measured)).toBeLessThanOrEqual(phone ? 48 : 42);
+        expect(Math.abs(measured.above - measured.below), JSON.stringify(measured)).toBeLessThanOrEqual(3);
+    });
+}
