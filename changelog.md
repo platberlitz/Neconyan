@@ -236,6 +236,7 @@
 - PR #975 (2026-11-25) `feat(scratchpad): share several lorebooks by hand in General`
 - PR #976 (2026-11-25) `fix(openai): remove retired sora-2 video endpoint`
 - PR #977 (2026-11-25) `feat(scratchpad): compare one assistant on two connections`
+- PR #978 (2026-11-25) `test: clear the nightly browser check failures`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
