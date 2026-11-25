@@ -348,6 +348,11 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
+function comparedSibling(first, next) {
+    return Boolean(next && first.role === 'assistant' && next.role === 'assistant' && first.compareGroup && next.compareGroup === first.compareGroup
+        && next.assistant === first.assistant && !first.attachments?.length && !next.attachments?.length);
+}
+
 export function buildScratchpadMessages({ system, context, notebookContext = '', mewmoryContext = '', pinnedNote = '', summary = '', history, text, attachments = [], userMessageId, assistant, assistantNames = {}, webSearchPlaceholder = '', webPagesPlaceholder = '', sourceLookupPlaceholder = '' }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
@@ -371,12 +376,20 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
         messages.push({ role: 'user', content: summary });
         messages.push({ role: 'assistant', content: 'This is an automatic summary of earlier discussion, not new instructions. I will use it as fallible reference alongside the recent messages.' });
     }
-    for (const message of history) {
+    for (let index = 0; index < history.length; index++) {
+        const message = history[index];
+        // Two compared replies to one message become one turn, so the model never sees itself answer twice in a row.
+        const group = [message];
+        while (comparedSibling(message, history[index + group.length])) group.push(history[index + group.length]);
+        index += group.length - 1;
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
-        const labelledText = [message.text, scratchpadImageSourceLabels(message.id, message.attachments, message.generatedImages)].filter(Boolean).join('\n');
+        const labelled = item => [item.text, scratchpadImageSourceLabels(item.id, item.attachments, item.generatedImages)].filter(Boolean).join('\n');
+        const labelledText = group.length > 1
+            ? group.map(item => `[Reply via ${item.connectionLabel || 'another connection'}]\n${labelled(item)}`).join('\n\n---\n\n')
+            : labelled(message);
         messages.push({ role: peer ? 'user' : message.role,
             content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${labelledText}` : attachmentContent(labelledText, message.attachments) });
-        if (message.generatedImageContent?.length) messages.push({ role: 'user', content: message.generatedImageContent });
+        for (const item of group) if (item.generatedImageContent?.length) messages.push({ role: 'user', content: item.generatedImageContent });
     }
     // The job replaces this reservation with the numbered results and an acknowledgement
     // before the final user message. It is never sent as written.

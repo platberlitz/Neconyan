@@ -149,7 +149,7 @@ for (const phone of [false, true]) {
         const stored = await listed();
         expect(stored.setups.map(setup => setup.name)).toEqual(['Quick look']);
         expect(stored.setups[0].settings).toMatchObject({ depth: 7, stream: false });
-        expect(Object.keys(stored.setups[0].settings).sort()).toEqual(['depth', 'feedbackTone', 'include', 'maxTokens', 'partialPrefill', 'prefill', 'readLinks', 'stream', 'webSearch']);
+        expect(Object.keys(stored.setups[0].settings).sort()).toEqual(['compareConnection', 'depth', 'feedbackTone', 'include', 'maxTokens', 'partialPrefill', 'prefill', 'readLinks', 'stream', 'webSearch']);
 
         await section.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${prefix}-saved.png` });

@@ -9,9 +9,10 @@ const FILE_LIMIT = 4 * 1024 * 1024;
 
 /**
  * Only choices that mean the same in every chat travel. Message picks, lorebook entry choices, shared notes,
- * connections and round-table seats name things that belong to one chat or one session, so they stay behind.
+ * per-assistant connections and round-table seats name things that belong to one chat or one session, so they stay behind.
+ * The compare connection names an account-wide saved profile, so it travels; setups saved before it existed turn compare off.
  */
-export const CONTEXT_SETUP_KEYS = Object.freeze(['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone']);
+export const CONTEXT_SETUP_KEYS = Object.freeze(['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone', 'compareConnection']);
 /** Setups saved before these keys existed leave the session's own choice alone. */
 const OPTIONAL_SETUP_KEYS = new Set(['feedbackTone']);
 

@@ -136,7 +136,7 @@ function imageSnapshot(lease, source, session, message, target, acknowledgement,
         ...(target ? { speaker: { avatar: target.avatar }, target: { avatar: target.avatar } } : {}) };
     if (settings._backupContextualFilters?.some(filter => filter.enabled !== false && filter.matchMode === 'LLM'
         && (target || !filter.scope || filter.scope === 'global'))) {
-        const chosen = assistantConnection(session.settings, message.assistant || session.assistant);
+        const chosen = message.connection ?? assistantConnection(session.settings, message.assistant || session.assistant);
         const binding = settings.llmOverrideEnabled ? null : captureGenerationBinding(directories,
             chosen.kind === 'profile' ? chosen : { kind: 'active' }, acknowledgement);
         snapshot.quickImageGenTextAI = captureQuickImageTextSettings(directories, settings, binding, []);

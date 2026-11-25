@@ -66,6 +66,27 @@ const PREPARE_TIMEOUT_MS = 60 * 1000;
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
 const bytes = value => Buffer.byteLength(String(value ?? ''), 'utf8');
 
+/** The connection a reply really uses: a saved profile, or the chat's own profile, or the current connection. */
+export function effectiveConnection(connection, chatProfileId = '') {
+    const profileId = connection?.kind === 'profile' ? connection.profileId : chatProfileId;
+    return profileId ? { kind: 'profile', profileId } : { kind: 'active' };
+}
+
+export function sameConnectionTarget(a, b) {
+    return a.kind === b.kind && (a.kind !== 'profile' || a.profileId === b.profileId);
+}
+
+/** A short name for a reply's connection. It never includes a key, an address or a model setting. */
+export function connectionDisplayLabel(connection, material) {
+    if (connection?.kind === 'profile') return boundedLabel(material?.profile?.name) || 'Saved profile';
+    if (material?.profile) return `Chat connection (${boundedLabel(material.profile.name) || 'Saved profile'})`;
+    return 'Current connection';
+}
+
+function boundedLabel(value) {
+    return typeof value === 'string' ? value.trim().slice(0, 120) : '';
+}
+
 function boundedText(value, max, label, { required = false } = {}) {
     if (value === undefined || value === null || value === '') {
         if (required) throw fail('SCRATCHPAD_TEXT_REQUIRED', `${label} is empty.`);
@@ -190,7 +211,8 @@ function historyFrom(messages) {
         const webPages = usable[index].role === 'assistant' && usable[index].state === 'done' ? webPagesHistoryLine(usable[index].webPages) : '';
         const sourceFiles = usable[index].role === 'assistant' && usable[index].state === 'done' ? sourceLookupHistoryLine(usable[index].sourceLookup) : '';
         const generatedImages = generatedImageReceipts(usable[index]);
-        history.unshift({ id: usable[index].id, role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, sourceFiles, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(generatedImages.length ? { generatedImages } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        history.unshift({ id: usable[index].id, role: usable[index].role, text: [usable[index].rehearsal ? '[Rehearsal only, not an event in the story.]' : '', text, webSources, webPages, sourceFiles, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(generatedImages.length ? { generatedImages } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}),
+            ...(usable[index].role === 'assistant' && usable[index].compareGroup ? { compareGroup: usable[index].compareGroup, connectionLabel: usable[index].connectionLabel || '' } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -214,14 +236,21 @@ export function planReply(session, request, chooseIndex = randomInt) {
         if (request.discuss && !roundToDiscuss(session).length) {
             throw fail('SCRATCHPAD_DISCUSS_INVALID', 'A discussion needs a round table and finished answers from at least two assistants to your latest message.', 409);
         }
-        const assistants = session.settings.roundTable && session.settings.randomReply
-            ? [participants[chooseIndex(participants.length)]] : participants;
-        if (messages.length + (unanswered ? 0 : 1) + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
-        const compact = planSummary(session, unanswered ? messages.slice(0, -1) : messages);
         const rehearsal = unanswered ? unanswered.rehearsal === true : request.rehearsal === true;
+        // Compare sends one message to the main assistant on two connections. Round tables, discussions and rehearsals keep one reply per assistant.
+        const compareConnection = !request.discuss && !rehearsal && !session.settings.roundTable ? session.settings.compareConnection ?? null : null;
+        const assistants = compareConnection ? [session.assistant]
+            : session.settings.roundTable && session.settings.randomReply ? [participants[chooseIndex(participants.length)]] : participants;
+        if (compareConnection && sameConnectionTarget(effectiveConnection(assistantConnection(session.settings, session.assistant), request.chatProfileId),
+            effectiveConnection(compareConnection, request.chatProfileId))) {
+            throw fail('SCRATCHPAD_COMPARE_SAME_CONNECTION', 'Choose two different connections to compare.');
+        }
+        if (messages.length + (unanswered ? 0 : 1) + (compareConnection ? 2 : assistants.length) > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
+        const compact = planSummary(session, unanswered ? messages.slice(0, -1) : messages);
         const label = !rehearsal ? '' : normaliseRehearsalLabel(unanswered ? unanswered.rehearsalLabel : request.rehearsalLabel);
         return { userMessageId: unanswered?.id ?? newScratchpadId(), prompt: unanswered?.text ?? request.text, rehearsal, ...(label ? { rehearsalLabel: label } : {}),
-            attachments: unanswered?.attachments ?? request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants };
+            attachments: unanswered?.attachments ?? request.attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: null, assistants,
+            ...(compareConnection ? { compareConnection } : {}) };
     }
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
     // The message this reply answered, which need not be the latest one. Later messages stay as they are.
@@ -240,7 +269,9 @@ export function planReply(session, request, chooseIndex = randomInt) {
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
     const compact = planSummary(session, messages.slice(0, userIndex));
-    return { userMessageId: messages[userIndex].id, prompt: messages[userIndex].text, rehearsal, ...(label ? { rehearsalLabel: label } : {}), attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant] };
+    return { userMessageId: messages[userIndex].id, prompt: messages[userIndex].text, rehearsal, ...(label ? { rehearsalLabel: label } : {}), attachments: messages[userIndex].attachments ?? [], history: historyFrom(compact.messages), summary: compact.summary, replace: reply.id, assistants: [reply.assistant || session.assistant],
+        // A compared reply tries again on the connection it first used.
+        ...(reply.connection ? { replyConnection: reply.connection } : {}), ...(reply.compareGroup ? { compareGroup: reply.compareGroup } : {}) };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -309,15 +340,19 @@ export async function acceptScratchpadReply(request, body = {}) {
             assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
             participants: sessionAssistants(session),
             randomReply: session.settings.roundTable && session.settings.randomReply,
-            speakers: plan.assistants.map(assistant => ({ assistant, userInstructions: instructionsForAssistant(instructions, assistant),
-                persona: resolveAssistant(library, assistant, snapshots),
-                customPrompt: session.settings.assistantPrompts?.[assistant], feedbackTone: assistantFeedbackTone(session.settings, assistant), gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
+            speakers: plan.assistants.flatMap(assistant => {
+                const speaker = { assistant, userInstructions: instructionsForAssistant(instructions, assistant),
+                    persona: resolveAssistant(library, assistant, snapshots),
+                    customPrompt: session.settings.assistantPrompts?.[assistant], feedbackTone: assistantFeedbackTone(session.settings, assistant), gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'),
+                    connection: plan.replyConnection ?? assistantConnection(session.settings, assistant), ...(plan.compareGroup ? { compareGroup: plan.compareGroup } : {}) };
+                if (!plan.compareConnection) return [speaker];
+                return [{ ...speaker, compareGroup: plan.userMessageId }, { ...speaker, connection: plan.compareConnection, compareGroup: plan.userMessageId }];
+            }) };
     });
 
     const imageHistoryCache = new Map();
     const replies = await Promise.all(planned.speakers.map(async speaker => {
-        const profileId = speaker.connection.kind === 'profile' ? speaker.connection.profileId : input.chatProfileId;
-        const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
+        const selection = effectiveConnection(speaker.connection, input.chatProfileId);
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const material = resolveGenerationProfile(directories, binding);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
@@ -354,7 +389,8 @@ export async function acceptScratchpadReply(request, body = {}) {
         }
         await validateActiveGenerationContext(material, environment,
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
-        return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
+        const compared = speaker.compareGroup ? { compareGroup: speaker.compareGroup, connection: speaker.connection, connectionLabel: connectionDisplayLabel(speaker.connection, material) } : {};
+        return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, ...compared, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
             summaryIndex, searchIndex, webPages: planned.webPages, pagesIndex,
             ...(planned.sourceLookup ? { sourceLookup: planned.sourceLookup, sourceIndex } : {}), prefillReply: prefill.reply,
@@ -375,7 +411,9 @@ export async function acceptScratchpadReply(request, body = {}) {
         target: { kind: 'scratchpad', id: input.sessionId },
         credentialRef: replies.length === 1 ? replies[0].binding : { participants: replies.map(reply => ({ assistant: reply.assistant, binding: reply.binding })) },
         config: { requestHash },
-        label: `Scratchpad ${replies.length > 1 ? 'round table' : 'reply'} from ${replies.map(reply => reply.characterName).join(', ')}`,
+        label: planned.compareConnection
+            ? `Scratchpad compare from ${replies[0].characterName} (${replies.map(reply => reply.connectionLabel).join(' vs ')})`
+            : `Scratchpad ${replies.length > 1 ? 'round table' : 'reply'} from ${replies.map(reply => reply.characterName).join(', ')}`,
     });
     noteOwner(owner);
     if (!created) return { created: false, job, bucket: readProjectedBucket(base, input.source) };
@@ -408,7 +446,8 @@ export async function acceptScratchpadReply(request, body = {}) {
             if (!input.regenerate && !input.replyTo) session.messages.push({ id: planned.userMessageId, role: 'user', text: input.text, ...mode, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
-                ...mode, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
+                ...mode, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender,
+                ...(reply.compareGroup ? { compareGroup: reply.compareGroup, connection: reply.connection, connectionLabel: reply.connectionLabel } : {}) }));
             if (planned.replace) {
                 const index = session.messages.findIndex(message => message.id === planned.replace);
                 session.messages[index] = appendReplySwipe(session.messages[index], pending[0]);

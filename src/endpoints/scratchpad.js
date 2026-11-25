@@ -11,6 +11,7 @@ import {
     createSession,
     findSession,
     deleteMessage,
+    keepComparedReply,
     deleteSession,
     markProposal,
     markSavedChangeUndone,
@@ -341,6 +342,10 @@ router.post('/message/update', (request, response) => change(request, response, 
 
 router.post('/message/delete', (request, response) => change(request, response, (bucket, body) => {
     deleteMessage(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'));
+}));
+
+router.post('/message/keep-compared', (request, response) => change(request, response, (bucket, body) => {
+    keepComparedReply(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'));
 }));
 
 router.post('/proposal/mark', (request, response) => change(request, response, (bucket, body) => {

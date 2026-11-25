@@ -87,6 +87,7 @@ export const clearSession = (source, sessionId) => post('/session/clear', { sour
 export const updateMessage = (source, sessionId, messageId, text) => post('/message/update', { source, sessionId, messageId, text });
 export const swipeMessage = (source, sessionId, messageId, index) => post('/message/swipe', { source, sessionId, messageId, index });
 export const deleteMessage = (source, sessionId, messageId) => post('/message/delete', { source, sessionId, messageId });
+export const keepComparedReply = (source, sessionId, messageId) => post('/message/keep-compared', { source, sessionId, messageId });
 export const markProposal = (source, sessionId, messageId, index, state) => post('/proposal/mark', { source, sessionId, messageId, index, state });
 export const recordSavedChange = (source, entry, { markApplied = true } = {}) => post('/history/record', { source, entry, markApplied });
 export const markChangeUndone = (source, entryId) => post('/history/undo', { source, entryId });

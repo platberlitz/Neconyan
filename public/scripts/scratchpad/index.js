@@ -62,6 +62,7 @@ import { showHtmlPreview } from './html-preview.js';
 import { MAX_REPLY_SWIPES, replySwipes } from './swipes.js';
 import { buildSessionExport, chooseSessionExport, exportFileName, MAX_IMPORT_BYTES, sessionMarkdown, withoutAttachments } from './export.js';
 import { roundToDiscuss } from './discuss.js';
+import { CURRENT_CONNECTION_CHOICE, activeCompareConnection, compareChoiceValue, compareConnectionFromChoice, comparedSiblings, comparingPending, sameCompareTarget } from './compare.js';
 import { canDictate, DICTATION_SERVICES, DictationError, dictationService, MAX_DICTATION_SECONDS, recordingToWav, startRecording, transcribeWav } from './dictation.js';
 import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
 import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
@@ -77,7 +78,7 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261209-scratchpad-general-lorebooks';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261210-scratchpad-compare-connections';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -199,6 +200,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     lorebooks: [],
     connection: { kind: 'current' },
     assistantConnections: {},
+    compareConnection: null,
     roundTable: false,
     randomReply: false,
     feedbackTone: DEFAULT_FEEDBACK_TONE,
@@ -1552,7 +1554,14 @@ async function sendMessage({ regenerate = '', discuss = false, rehearsal = false
         await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
-        const connectionsSaved = !(chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile'));
+        const compareConnection = activeCompareConnection(settings, { regenerate: Boolean(regenerate), discuss: Boolean(discuss), rehearsal: Boolean(rehearsal || replyTo?.rehearsal) });
+        if (compareConnection && sameCompareTarget(assistantConnection(settings, session.assistant), compareConnection, chatProfileId)) {
+            throw new Error(t`Choose two different connections to compare.`);
+        }
+        const connections = retried
+            ? [retried.connection ?? assistantConnection(settings, retried.assistant || session.assistant)]
+            : [...assistants.map(assistant => assistantConnection(settings, assistant)), ...(compareConnection ? [compareConnection] : [])];
+        const connectionsSaved = !(chatProfileId || connections.every(connection => connection.kind === 'profile'));
         const acknowledgement = connectionsSaved ? await acknowledge() : undefined;
         const personaSaved = rehearsal || retried?.rehearsal || replyTo?.rehearsal || !context.capabilities.persona || !needsSavedPersonaSelection(source, connectionsSaved) || await saveSelectedPersona();
         if (!personaSaved) toastr.warning(t`Scratchpad could not save your persona, so Scenario Note suggestions for it are left out of this reply.`);
@@ -1853,6 +1862,7 @@ function renderOverview() {
         ...sessionAssistants(session).map(id => h('img', { src: assistantPortrait(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
         h('span', { class: 'scratchpad-overview-name', text: name, ...(app.source && session?.name ? { 'data-i18n-ignore': '' } : {}) }),
         randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
+        app.source ? compareBadge(session) : null,
         sharedFeedbackTone() === DEFAULT_FEEDBACK_TONE ? null : h('span', { class: 'scratchpad-badge scratchpad-tone-badge', text: feedbackToneLabel(sharedFeedbackTone()) }),
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
         app.source ? h('span', { class: 'scratchpad-overview-context', text: contextSummary(currentSettings()) }) : null,
@@ -1883,6 +1893,7 @@ function renderChat() {
         append(el.summary, [
             h('span', { text: session ? session.name : t`New session with ${assistant.name}`, ...(session?.name ? { 'data-i18n-ignore': '' } : {}) }),
             settings.roundTable ? h('span', { class: 'scratchpad-badge', text: t`Round table: ${sessionAssistants(session).length}` }) : null,
+            compareBadge(session, settings),
             randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
@@ -2090,6 +2101,9 @@ function renderMessage(session, message, { latest, retry }) {
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: assistantPortrait(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: message.assistantName || assistant.name, 'data-i18n-ignore': '' }))
         : h('div', { class: 'scratchpad-author' }, h('span', userName ? { text: userName, 'data-i18n-ignore': '' } : { text: t`You` }));
     article.append(author);
+    if (assistant && message.compareGroup && message.connectionLabel) {
+        author.append(h('span', { class: 'scratchpad-badge scratchpad-connection-badge', text: message.connectionLabel, title: message.connectionLabel, 'data-i18n-ignore': '' }));
+    }
     if (message.rehearsal) {
         const trial = message.rehearsalLabel ? String(message.rehearsalLabel) : '';
         author.append(h('span', { class: `scratchpad-badge${trial ? ' scratchpad-trial-badge' : ''}`, text: trial ? t`Rehearsal · Unsaved change` : t`Rehearsal` }));
@@ -2123,7 +2137,7 @@ function renderMessage(session, message, { latest, retry }) {
                 h('summary', { text: t`Thinking` }),
                 h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '', 'data-i18n-ignore': '' })),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '', 'data-i18n-ignore': '' }),
-            iconButton(session.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
+            iconButton((session.settings.roundTable && !randomReplyEnabled()) || comparingPending(session.messages) ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
         append(article, [renderReplySwipes(session, message, { latest })]);
         return article;
     } else {
@@ -3061,6 +3075,10 @@ async function removeMessage(session, message) {
     await change(source => api.deleteMessage(source, session.id, message.id), t`Scratchpad could not delete that message.`, scope);
 }
 
+async function keepOnlyReply(session, message) {
+    await change(source => api.keepComparedReply(source, session.id, message.id), t`Scratchpad could not keep that reply.`, app.source);
+}
+
 /** The original session stays as it is; the copy ends at this message, or just before it when it is the user's own. */
 async function branchFrom(session, message) {
     const own = message.role === 'user';
@@ -3096,6 +3114,9 @@ function renderMessageActions(session, message, { retry }) {
     }
     if (retry) {
         actions.append(iconButton('', () => void send({ regenerate: message.id }), { icon: 'fa-rotate-right', title: t`Try again`, disabled: busy || app.sending }));
+    }
+    if (message.role === 'assistant' && message.state !== 'pending' && comparedSiblings(session.messages, message).length) {
+        actions.append(iconButton('', () => void keepOnlyReply(session, message), { icon: 'fa-check-double', className: 'scratchpad-keep-reply', title: t`Keep only this reply`, disabled: busy || app.sending }));
     }
     actions.append(iconButton('', () => void branchFrom(session, message), { icon: 'fa-code-branch', className: 'scratchpad-branch',
         title: message.role === 'user' ? t`Reword in a new session` : t`Branch into a new session from here`, disabled: busy || app.sending }));
@@ -3295,7 +3316,7 @@ function renderSendButton(pending = pendingReply()) {
     const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
     const queue = canQueueFollowUp(pending);
     const sendLabel = queue ? t`Queue follow-up`
-        : pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
+        : pending ? ((activeSession()?.settings.roundTable && !randomReplyEnabled()) || comparingPending(activeSession()?.messages) ? t`Stop all` : t`Stop`)
             : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
     el.send.setAttribute('aria-label', sendLabel);
     el.send.title = sendLabel;
@@ -3312,6 +3333,50 @@ function onComposerInput() {
 function connectionProfiles() {
     const profiles = extension_settings.connectionManager?.profiles;
     return Array.isArray(profiles) ? profiles.filter(item => item?.id) : [];
+}
+
+function connectionChoiceLabel(connection) {
+    if (connection?.kind === 'profile') {
+        const profile = connectionProfiles().find(item => item.id === connection.profileId);
+        return profile ? (profile.name || profile.id) : t`Unavailable profile: ${connection.profileId}`;
+    }
+    return app.source?.kind === 'general' ? t`Current connection` : t`Same connection as the chat`;
+}
+
+/** The second connection this session compares on, or null when comparing is off or Round Table is on. */
+function sessionCompareConnection(settings = currentSettings()) {
+    return activeCompareConnection(settings);
+}
+
+function compareBadge(session, settings = currentSettings()) {
+    const compare = sessionCompareConnection(settings);
+    if (!compare) return null;
+    const main = connectionChoiceLabel(assistantConnection(settings, session?.assistant ?? app.assistant));
+    return h('span', { class: 'scratchpad-badge scratchpad-compare-badge', text: t`Compare: 2 connections`,
+        title: [main, connectionChoiceLabel(compare)].join(' vs ') });
+}
+
+function renderCompareConnectionField(settings, profiles, general) {
+    const id = 'scratchpad-compare-connection';
+    const value = compareChoiceValue(settings.compareConnection ?? null);
+    const assistant = assistantInfo(activeSession()?.assistant ?? app.assistant);
+    const select = h('select', {
+        class: 'text_pole', id, disabled: settings.roundTable === true,
+        onchange: event => void updateSettings({ compareConnection: compareConnectionFromChoice(event.currentTarget.value) }, { rerenderContext: true }),
+    }, h('option', { value: '', text: t`Off` }),
+    h('option', { value: CURRENT_CONNECTION_CHOICE, text: general ? t`Current connection` : t`Same connection as the chat` }),
+    profiles.map(profile => h('option', { value: profile.id, text: [profile.name || profile.id, profile.model].filter(Boolean).join(' · ') })));
+    if (value && value !== CURRENT_CONNECTION_CHOICE && !profiles.some(profile => profile.id === value)) {
+        select.append(h('option', { value, text: t`Unavailable profile: ${value}` }));
+    }
+    select.value = value;
+    const same = !settings.roundTable && sameCompareTarget(assistantConnection(settings, assistant.id), settings.compareConnection, sourceConnectionProfile(app.source));
+    return h('div', { class: 'scratchpad-field scratchpad-compare-field' },
+        h('label', { for: id, text: t`Compare with a second connection` }),
+        select,
+        h('small', { text: t`Each message gets two replies from ${assistant.name}, one from each connection, so you can keep the better one.` }),
+        settings.roundTable ? h('p', { class: 'scratchpad-muted scratchpad-compare-note', text: t`Turn off Round Table to compare one assistant on two connections.` }) : null,
+        same ? h('p', { class: 'scratchpad-compare-warning', role: 'status', text: t`Choose a different connection from ${assistant.name}'s main connection.` }) : null);
 }
 
 function checkbox(label, checked, onChange, hint = '') {
@@ -3492,7 +3557,8 @@ function renderContext({ force = true } = {}) {
                 const profileId = event.currentTarget.value;
                 app.connections[assistant.id] = profileId ? { kind: 'profile', profileId } : { kind: 'current' };
                 writePrefs();
-                void updateSettings({ assistantConnections: { [assistant.id]: profileId ? { kind: 'profile', profileId } : { kind: 'current' } } });
+                void updateSettings({ assistantConnections: { [assistant.id]: profileId ? { kind: 'profile', profileId } : { kind: 'current' } } },
+                    { rerenderContext: Boolean(settings.compareConnection) });
             },
         }, h('option', { value: '', text: general ? t`Current connection` : t`Same connection as the chat` }),
         profiles.map(profile => h('option', { value: profile.id, text: [profile.name || profile.id, profile.model].filter(Boolean).join(' · ') })));
@@ -3502,6 +3568,7 @@ function renderContext({ force = true } = {}) {
         connection.value = value;
         return h('div', { class: 'scratchpad-field' }, h('label', { for: id, text: t`${assistant.name}'s connection` }), connection);
     });
+    const compareField = renderCompareConnectionField(settings, profiles, general);
 
     const include = settings.include;
     const setInclude = (name, value) => void updateSettings({ include: { [name]: value } });
@@ -3554,6 +3621,7 @@ function renderContext({ force = true } = {}) {
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
             ...connections,
+            compareField,
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
             ...allAssistants().map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
             checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
@@ -3675,7 +3743,7 @@ function renderFeedbackToneSettings(settings) {
 }
 
 /* Mirrors CONTEXT_SETUP_KEYS on the server: only choices that mean the same in every chat are saved. */
-const CONTEXT_SETUP_KEYS = ['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone'];
+const CONTEXT_SETUP_KEYS = ['depth', 'include', 'maxTokens', 'stream', 'webSearch', 'readLinks', 'prefill', 'partialPrefill', 'feedbackTone', 'compareConnection'];
 
 function findContextSetup(name) {
     const key = String(name ?? '').trim().toLowerCase();
