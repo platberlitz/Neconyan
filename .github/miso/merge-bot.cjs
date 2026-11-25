@@ -6,6 +6,21 @@ const { BLOCKING_LABELS } = require('./labels.cjs');
 const MARKER = '<!-- miso-merge-bot';
 const BOT_LOGIN = 'github-actions[bot]';
 const OWN_CHECK_NAMES = new Set(['🐯 Miso merge check']);
+// Keep in sync with top-level `name:` in .github/workflows/pr-miso.yml
+const OWN_WORKFLOW_NAMES = new Set(['🐯 Miso Merge Check']);
+// Keep in sync with .github/workflows/pr-auto-manager.yml ('PR Label Warning')
+const ADVISORY_CHECK_NAMES = new Set(['PR Label Warning']);
+// Keep in sync with .github/workflows/pr-checks.yml (workflow name and all job names)
+const REQUIRED_WORKFLOW_NAMES = new Set(['✅ Pull Request Checks']);
+const REQUIRED_PR_CHECK_NAMES = new Set([
+    '✅ Block tracked default-user state',
+    '✅ Check ESLint on PR',
+    '✅ Run Unit Tests on PR',
+    '✅ Run Server Tests on PR',
+    '✅ Check Frontend Assets',
+    '✅ Check Bun Runtime',
+    '🐾 Check Browser Smoke on PR',
+]);
 const FAILED_CONCLUSIONS = {
     failure: 'failed',
     timed_out: 'timed out',
@@ -123,6 +138,40 @@ function latestByName(checkRuns) {
     return [...latest.values()];
 }
 
+function latestWorkflowRuns(workflowRuns, headSha) {
+    const latest = new Map();
+    const unnamed = [];
+    for (const run of workflowRuns) {
+        if (run.head_sha && headSha && run.head_sha !== headSha) {
+            continue;
+        }
+        if (run.event && run.event !== 'pull_request') {
+            continue;
+        }
+        if (OWN_WORKFLOW_NAMES.has(run.name)) {
+            continue;
+        }
+        const key = run.workflow_id ?? run.name;
+        if (key == null) {
+            unnamed.push(run);
+            continue;
+        }
+        const previous = latest.get(key);
+        if (!previous || previous.id == null || (run.id != null && Number(run.id) > Number(previous.id))) {
+            latest.set(key, run);
+        }
+    }
+    return [...latest.values(), ...unnamed];
+}
+
+function isApprovalPendingWorkflow(run) {
+    return run.status === 'action_required' || (run.status === 'completed' && run.conclusion === 'action_required');
+}
+
+function isActiveWorkflowRun(run) {
+    return run.status !== 'completed' && run.status !== 'action_required';
+}
+
 function latestReviewStates(reviews) {
     const states = new Map();
     for (const review of reviews) {
@@ -140,7 +189,7 @@ function latestReviewStates(reviews) {
  * Known blockers are reported straight away; 'ready' waits until every check has finished.
  * @returns {{ state: 'ready' | 'blocked' | 'pending' | 'skip', reasons: string[] }}
  */
-function evaluatePullRequest({ pr, checkRuns = [], statuses = [], reviews = [] }) {
+function evaluatePullRequest({ pr, checkRuns = [], statuses = [], reviews = [], workflowRuns = [], workflowRunsAvailable = true }) {
     if (pr.state !== 'open' || pr.draft) {
         return { state: 'skip', reasons: [] };
     }
@@ -155,7 +204,8 @@ function evaluatePullRequest({ pr, checkRuns = [], statuses = [], reviews = [] }
     }
 
     const runs = latestByName(checkRuns);
-    if (runs.length === 0) {
+    const ciRuns = runs.filter(run => !ADVISORY_CHECK_NAMES.has(run.name));
+    if (ciRuns.length === 0) {
         pending = true;
     }
     for (const run of runs) {
@@ -163,6 +213,34 @@ function evaluatePullRequest({ pr, checkRuns = [], statuses = [], reviews = [] }
             pending = true;
         } else if (FAILED_CONCLUSIONS[run.conclusion]) {
             reasons.push(`The **${run.name}** check ${FAILED_CONCLUSIONS[run.conclusion]}.`);
+        }
+    }
+
+    const workflows = latestWorkflowRuns(workflowRuns, pr.head?.sha);
+    for (const workflowRun of workflows) {
+        if (workflowRun.status !== 'completed') {
+            pending = true;
+        } else if (FAILED_CONCLUSIONS[workflowRun.conclusion]) {
+            reasons.push(`The **${workflowRun.name || 'Pull request'}** workflow ${FAILED_CONCLUSIONS[workflowRun.conclusion]}.`);
+        }
+    }
+
+    if (workflowRunsAvailable) {
+        const hasPassingTestWorkflow = workflows.some(run =>
+            REQUIRED_WORKFLOW_NAMES.has(run.name)
+            && run.status === 'completed'
+            && run.conclusion === 'success');
+        if (!hasPassingTestWorkflow) {
+            pending = true;
+        }
+    } else {
+        const runsByName = new Map(runs.map(run => [run.name, run]));
+        const hasAllRequiredChecks = [...REQUIRED_PR_CHECK_NAMES].every(name => {
+            const run = runsByName.get(name);
+            return run && run.status === 'completed' && run.conclusion === 'success';
+        });
+        if (!hasAllRequiredChecks) {
+            pending = true;
         }
     }
 
@@ -278,20 +356,59 @@ function planComment({ evaluation, existingBody, sha, random = Math.random }) {
     return body === existingBody ? null : body;
 }
 
+async function listWorkflowRuns({ github, owner, repo, sha, core, state }) {
+    if (state?.skip) {
+        return { workflowRuns: [], available: state.available };
+    }
+    const listForRepo = github?.rest?.actions?.listWorkflowRunsForRepo;
+    if (typeof listForRepo !== 'function') {
+        if (state) {
+            state.available = false;
+            state.skip = true;
+        }
+        return { workflowRuns: [], available: false };
+    }
+    try {
+        const workflowRuns = (await github.paginate(listForRepo, { owner, repo, head_sha: sha, event: 'pull_request', per_page: 100 })) || [];
+        return { workflowRuns, available: true };
+    } catch (error) {
+        const status = error?.status ?? error?.response?.status;
+        if (status === 403) {
+            if (state) {
+                state.available = false;
+                state.skip = true;
+            }
+            core?.info?.(`Workflow runs for ${String(sha).slice(0, 7)} were skipped (${error?.message || 'forbidden'}).`);
+            return { workflowRuns: [], available: false };
+        }
+        throw error;
+    }
+}
+
 /**
  * Waits until every check on a commit has finished, because a pull request can
  * arrive before GitHub has registered its checks or finished running them.
  * An empty list is only believed after a quiet period, and the whole run shares
  * one deadline. Times are injected so tests never wait for real.
  */
-async function waitForFinishedChecks({ github, owner, repo, sha, sleep, core, now = Date.now, deadline = now() + CHECK_WAIT_MINUTES * 60000 }) {
+async function waitForFinishedChecks({ github, owner, repo, sha, sleep, core, now = Date.now, deadline = now() + CHECK_WAIT_MINUTES * 60000, workflowState = { available: true, skip: false } }) {
     const started = now();
     for (;;) {
-        const runs = latestByName(await github.paginate(github.rest.checks.listForRef, { owner, repo, ref: sha, per_page: 100 }));
-        if (runs.length > 0 && runs.every(run => run.status === 'completed')) {
+        const [checkRuns, { workflowRuns }] = await Promise.all([
+            github.paginate(github.rest.checks.listForRef, { owner, repo, ref: sha, per_page: 100 }),
+            listWorkflowRuns({ github, owner, repo, sha, core, state: workflowState }),
+        ]);
+        const runs = latestByName(checkRuns).filter(run => !ADVISORY_CHECK_NAMES.has(run.name));
+        const workflowList = latestWorkflowRuns(workflowRuns, sha);
+        const activeWorkflow = workflowList.some(isActiveWorkflowRun);
+        const approvalPending = workflowList.some(isApprovalPendingWorkflow);
+        if (!activeWorkflow && runs.length > 0 && runs.every(run => run.status === 'completed')) {
             return;
         }
-        if (runs.length === 0 && now() - started >= CHECK_QUIET_MS) {
+        if (!activeWorkflow && runs.length === 0 && approvalPending) {
+            return;
+        }
+        if (!activeWorkflow && runs.length === 0 && now() - started >= CHECK_QUIET_MS) {
             return;
         }
         if (now() >= deadline) {
@@ -321,8 +438,9 @@ async function processPullRequest({ github, core, owner, repo, number, random, s
         return 'skip';
     }
 
+    const workflowState = { available: true, skip: false };
     if (settleChecks) {
-        await waitForFinishedChecks({ github, owner, repo, sha: pr.head.sha, sleep, core, now, deadline });
+        await waitForFinishedChecks({ github, owner, repo, sha: pr.head.sha, sleep, core, now, deadline, workflowState });
         pr = await getPullRequest({ github, owner, repo, number, sleep });
         if (pr.state !== 'open' || pr.draft) {
             core.info(`#${number}: skipped (${pr.draft ? 'draft' : pr.state}).`);
@@ -331,14 +449,15 @@ async function processPullRequest({ github, core, owner, repo, number, random, s
     }
 
     const sha = pr.head.sha;
-    const [checkRuns, combined, reviews, comments] = await Promise.all([
+    const [checkRuns, combined, reviews, comments, { workflowRuns, available }] = await Promise.all([
         github.paginate(github.rest.checks.listForRef, { owner, repo, ref: sha, per_page: 100 }),
         github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: sha, per_page: 100 }),
         github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: number, per_page: 100 }),
         github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 }),
+        listWorkflowRuns({ github, owner, repo, sha, core, state: workflowState }),
     ]);
 
-    const evaluation = evaluatePullRequest({ pr, checkRuns, statuses: combined.data.statuses || [], reviews });
+    const evaluation = evaluatePullRequest({ pr, checkRuns, statuses: combined.data.statuses || [], reviews, workflowRuns, workflowRunsAvailable: available });
     const existing = comments.find(isMisoComment);
     const body = planComment({ evaluation, existingBody: existing?.body, sha, random });
     core.info(`#${number}: ${evaluation.state}${evaluation.reasons.length ? ` (${evaluation.reasons.join(' ')})` : ''}.`);
@@ -411,9 +530,13 @@ async function run({ github, context, core, random = Math.random, sleep = ms => 
 }
 
 module.exports = {
+    ADVISORY_CHECK_NAMES,
     BLOCKING_LABELS,
     CHARACTERS,
     MARKER,
+    OWN_WORKFLOW_NAMES,
+    REQUIRED_PR_CHECK_NAMES,
+    REQUIRED_WORKFLOW_NAMES,
     evaluatePullRequest,
     optionsForEvent,
     parseMarker,

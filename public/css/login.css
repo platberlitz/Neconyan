@@ -46,6 +46,9 @@ h2 {
     margin: 0 0 20px;
 }
 
+:root:lang(vi) :is(h1, h2) { font-family: 'Nunito Heading', 'Nunito', system-ui, sans-serif; }
+:root:lang(vi) h1 { letter-spacing: -0.04em; }
+
 p { line-height: 1.5; color: var(--login-muted); }
 
 #logoBlock p { margin: 8px 0 0; }

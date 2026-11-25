@@ -9,6 +9,7 @@
 - Turn on **Neconyan source code** in **Scratchpad** and it reads the actual code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads, never changes anything.
 - When **Scratchpad** can't answer without something you haven't shared, like your preset or the last prompt sent, it asks with a **Share with the assistant** card. Untick anything you'd rather keep back and press **Share & continue**; nothing turns on until you do.
 - Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists.
+- Changes you save from **Scratchpad** can be undone: press **Undo** on the card, or open **Sessions → Change history** to see what each change replaced and undo it there. If something was edited since, Undo stops rather than overwrite your later work.
 - Character folders and folder tabs, if you want them. They're off until you turn them on.
 - Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand.
 - **Author's Note** has a full screen editor, and **Plot Compass** lets you pick the next direction straight from the note.
@@ -16,8 +17,13 @@
 - When the page reloads itself for an update, it tells you once instead of just quietly doing it.
 - The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 - **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
+- The **Companions** panel now docks beside the chat instead of covering it. Opening **Scratchpad** or **Notes** takes the space instead, so the chat stays readable.
 - The **Companions** panel opens without freezing the app for a few seconds when you run a lot of themed companions, and its buttons respond straight away.
 - Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
+- Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
+- Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
+- Turkish and Vietnamese headings no longer mix thin letters into heavy words. The Turkish letters ğ, ş and İ match the rest, and Vietnamese headings are bold all the way through.
+- Turn on **Companion notes** in **Scratchpad**'s **Context** tab and it reads the finished notes your Companions wrote on the shared messages, like trackers, **Plot Compass** and **Memory Shard**. It's off by default in Roleplay, and **Scratchpad** can ask for it with a **Share with the assistant** card.
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
 
 ### Merged Staging PRs
@@ -188,6 +194,13 @@
 - PR #949 (2026-11-24) `feat(scratchpad): let the assistant ask to share more context`
 - PR #950 (2026-11-24) `fix(companions): stop the panel freezing on open and on button presses`
 - PR #951 (2026-11-24) `feat(scratchpad): rehearse a suggested change before saving it`
+- PR #952 (2026-11-24) `docs(changelog): add Turkish to the v1.6.0 highlights`
+- PR #953 (2026-11-24) `feat(scratchpad): undo saved changes and keep a change history`
+- PR #954 (2026-11-24) `fix(mewmory): stop counting hidden reply data as prompt text`
+- PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
+- PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
+- PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
+- PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

@@ -20,6 +20,7 @@ import { DEFAULT_FEEDBACK_TONE, isFeedbackTone } from '../../public/scripts/scra
 import { splitReply } from '../../public/scripts/scratchpad/proposals.js';
 import { normaliseScenarioNoteRefs } from '../../public/scripts/scratchpad/scenario-note-references.js';
 import { normaliseRehearsalLabel } from '../../public/scripts/scratchpad/rehearsal.js';
+import { markChangeUndone, normaliseChangeHistory, recordChange } from './change-history.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -175,7 +176,7 @@ export function defaultSettings() {
         depth: DEFAULT_DEPTH,
         picked: [],
         notes: [],
-        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false },
+        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false, companionNotes: false },
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
@@ -318,7 +319,7 @@ function normaliseProposals(value) {
     const proposals = {};
     if (!isPlainObject(value)) return proposals;
     for (const [key, state] of Object.entries(value).slice(0, 64)) {
-        if (/^\d{1,3}$/.test(key) && ['applied', 'rejected'].includes(state)) proposals[key] = state;
+        if (/^\d{1,3}$/.test(key) && ['applied', 'rejected', 'undone'].includes(state)) proposals[key] = state;
     }
     return proposals;
 }
@@ -476,7 +477,7 @@ export function updateCleanupLocked(lease, input) {
 }
 
 export function emptyBucket(source) {
-    return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [] };
+    return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [], changeHistory: [] };
 }
 
 function damagedBucket() {
@@ -490,7 +491,7 @@ export function normaliseBucket(input, source, { allowInternalKeys = false } = {
         if (sessions.includes(null)) throw damagedBucket();
         const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
         return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
-            cleanup: defaultCleanup(), sessions };
+            cleanup: defaultCleanup(), sessions, changeHistory: normaliseChangeHistory(input.changeHistory) };
     } catch {
         throw damagedBucket();
     }
@@ -655,7 +656,7 @@ export function writeChatBucketLocked(lease, bucket, { cleanupApplied = false } 
     bucket.cleanup = readCleanupLocked(lease);
     if (!cleanupApplied) applyCleanup(bucket);
     const cleanup = bucket.cleanup;
-    if (!bucket.sessions.length) {
+    if (!bucket.sessions.length && !bucket.changeHistory?.length) {
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
@@ -944,13 +945,42 @@ export function markProposal(bucket, sessionId, messageId, index, state) {
     if (message.role !== 'assistant' || !splitReply(message.text).some(part => part.type === 'change' && String(part.index) === key)) {
         throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change is not part of this reply.');
     }
-    if (!['applied', 'rejected', null].includes(state)) throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change state is not valid.');
+    if (!['applied', 'rejected', 'undone', null].includes(state)) throw fail('SCRATCHPAD_PROPOSAL_INVALID', 'That change state is not valid.');
     message.proposals = { ...message.proposals };
     if (state === null) delete message.proposals[key];
     else message.proposals[key] = state;
     if (!Object.keys(message.proposals).length) delete message.proposals;
     touch(session);
     return message;
+}
+
+/**
+ * Record a change the browser just saved, and mark its suggestion saved in
+ * the same locked write so the card and the history can never disagree.
+ */
+export function recordSavedChange(bucket, input, { markApplied = true } = {}) {
+    const sessionId = typeof input?.sessionId === 'string' ? input.sessionId : null;
+    const messageId = typeof input?.messageId === 'string' ? input.messageId : null;
+    const index = Number.isInteger(input?.proposalIndex) ? input.proposalIndex : null;
+    const session = sessionId && bucket.sessions.find(item => item.id === sessionId);
+    const exists = session && session.messages.some(item => item.id === messageId);
+    // The change is already saved, so a reply deleted meanwhile must not lose its history entry.
+    if (markApplied && exists && index !== null) markProposal(bucket, sessionId, messageId, index, 'applied');
+    const { entry, history } = recordChange(bucket.changeHistory, input, { id: newScratchpadId(), savedAt: now() });
+    bucket.changeHistory = history;
+    return entry;
+}
+
+/** Mark a history entry undone, and its suggestion card too when that reply still exists. */
+export function markSavedChangeUndone(bucket, entryId) {
+    const { entry, history } = markChangeUndone(bucket.changeHistory, requireId(entryId, 'change'), { undoneAt: now() });
+    bucket.changeHistory = history;
+    const session = entry.sessionId && bucket.sessions.find(item => item.id === entry.sessionId);
+    const message = session && session.messages.find(item => item.id === entry.messageId);
+    if (message && entry.proposalIndex !== null && message.proposals?.[String(entry.proposalIndex)] === 'applied') {
+        markProposal(bucket, session.id, message.id, entry.proposalIndex, 'undone');
+    }
+    return entry;
 }
 
 /** Fold job state into pending placeholders. A caller writing the bucket also saves these changes. */
@@ -996,6 +1026,7 @@ export function publicBucket(bucket) {
         activeSessionId: bucket.activeSessionId,
         cleanup: bucket.cleanup ?? defaultCleanup(),
         sessions: bucket.sessions,
+        changeHistory: bucket.changeHistory ?? [],
         limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, inputBytes: MAX_INPUT_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
     };
 }

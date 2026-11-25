@@ -5,3 +5,10 @@
     font-display: swap;
     src: url('/webfonts/FredokaOne/FredokaOne-Regular.ttf?v=20260913g') format('truetype');
 }
+
+@font-face {
+    font-family: 'Fredoka One';
+    font-display: swap;
+    src: url('/webfonts/FredokaOne/heading-letters/NeconyanHeadingLetters-Regular.woff2?v=20261205a') format('woff2');
+    unicode-range: U+11E-11F, U+130, U+15E-15F;
+}

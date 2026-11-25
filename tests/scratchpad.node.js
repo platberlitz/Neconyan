@@ -58,6 +58,45 @@ test('Agent changes are offered only when Agents are shared, and never for a not
     assert.match(buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: { agents: true } }).text, /"type":"agent"/);
 });
 
+test('Companion notes stay off by default, travel in context setups and are read only in Roleplay', t => {
+    assert.equal(store.defaultSettings().include.companionNotes, false);
+    assert.equal(store.normaliseSettings({}).include.companionNotes, false);
+    assert.equal(store.normaliseSettings({ include: { companionNotes: true } }).include.companionNotes, true);
+    assert.equal(store.normaliseSettings({ include: { companionNotes: 'yes' } }).include.companionNotes, false);
+    const a = account(t);
+    const session = startSession(a, { include: { companionNotes: true } });
+    assert.equal(session.settings.include.companionNotes, true);
+    const reread = store.withScratchpad(a.base, lease => store.findSession(store.readChatBucketLocked(lease, SOURCE), session.id));
+    assert.equal(reread.settings.include.companionNotes, true, 'the switch survives a saved session');
+    const turnedOff = store.mutateBucket(a.base, SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { include: { ...session.settings.include, companionNotes: false } } }));
+    assert.equal(turnedOff.settings.include.companionNotes, false);
+    const setups = store.withScratchpad(a.base, lease => updateContextSetupsLocked(lease, [
+        { name: 'With notes', settings: { include: { companionNotes: true } } },
+        { name: 'Older', settings: { include: { card: true } } },
+    ], 0)).setups;
+    assert.equal(setups[0].settings.include.companionNotes, true);
+    assert.equal(setups[1].settings.include.companionNotes, false, 'a setup saved before the switch existed keeps it off');
+    assert.deepEqual(store.withScratchpad(a.base, readContextSetupsLocked).setups, setups);
+
+    assert.equal(normaliseCapabilities({ companionNotes: true }, 'roleplay').companionNotes, true);
+    for (const kind of ['conversation', 'general', 'notebook']) assert.equal(normaliseCapabilities({ companionNotes: true }, kind).companionNotes, undefined);
+    assert.equal(normaliseCapabilities({ companionNotes: 'yes' }, 'roleplay').companionNotes, undefined);
+    assert.deepEqual(normaliseCapabilities({ shareable: ['companionNotes', 'agents'] }, 'roleplay').shareable, ['agents', 'companionNotes']);
+    for (const kind of ['conversation', 'general']) assert.equal(normaliseCapabilities({ shareable: ['companionNotes'] }, kind).shareable, undefined);
+
+    for (const customPrompt of ['', 'Be helpful.']) {
+        for (const capabilities of [{}, { agents: true }, { lastPrompt: true, shareable: ['card'] }]) {
+            const off = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities, customPrompt }).text;
+            assert.equal(buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, companionNotes: false }, customPrompt }).text, off,
+                'the prompt is byte-identical while the notes are not shared');
+            assert.doesNotMatch(off, /Companion notes for this chat/);
+            const on = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { ...capabilities, companionNotes: true }, customPrompt }).text;
+            assert.match(on, /Companion notes for this chat/);
+            assert.match(on, /You cannot edit these notes from here/);
+        }
+    }
+});
+
 test('regex script changes are offered only when Regexes are shared, and never for a note', () => {
     assert.equal(store.normaliseSettings({}).include.regex, false);
     assert.equal(store.normaliseSettings({ include: { regex: true } }).include.regex, true);
@@ -638,6 +677,19 @@ test('a sent message offers Agent changes only while the session shares Agents',
         const accepted = await acceptScratchpadReply(a.request(body), body);
         await runJob(getJob(a.directories, accepted.job.id));
         assert.equal(calls.at(-1).messages[0].content.includes('"type":"agent"'), offered);
+    }
+});
+
+test('a sent message explains Companion notes only while the Roleplay session shares them', async t => {
+    const a = account(t);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    for (const [include, offered] of [[{ companionNotes: true }, true], [{ companionNotes: false }, false]]) {
+        const session = startSession(a, { include });
+        const body = sendBody(session, { capabilities: { companionNotes: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(calls.at(-1).messages[0].content.includes('Companion notes for this chat'), offered);
     }
 });
 
@@ -1259,7 +1311,7 @@ test('saved context setups keep only portable choices, are account-owned and pro
     assert.deepEqual(saved.setups, [{
         name: 'Lean read',
         settings: {
-            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: true },
+            depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: true, companionNotes: false },
             maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
         },
     }], 'the shared feedback tone travels, and per-assistant tones stay with their session');

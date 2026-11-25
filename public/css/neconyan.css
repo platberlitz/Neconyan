@@ -1,4 +1,5 @@
 :root:has(> body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
+html:lang(vi):has(> body.neconyan) { --sb-font-display: 'Nunito Heading', var(--mainFontFamily); }
 :root[style*='--mainFontFamily']:has(> body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
 :root[style*='--sb-font-chat'] body.neconyan:not(.sbterm) :is(#chat .mes .mes_block .mes_text, .sb-conversation-message-text) { font-family: var(--sb-font-chat); }

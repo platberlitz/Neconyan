@@ -6134,20 +6134,21 @@ class Message {
      * @returns {Promise<void>}
      */
     async setToolCalls(invocations, includeSignature, includeReasoning = false) {
-        this.tool_calls = invocations.map(i => ({
+        const calls = invocations.map(i => ({
             id: i.id,
             type: 'function',
             function: {
                 arguments: i.parameters,
                 name: i.name,
             },
-            ...(includeSignature && i.signature ? { signature: i.signature } : {}),
         }));
+        // A signature is sent with the call but is not text the model reads, so it stays out of the count below.
+        this.tool_calls = calls.map((call, index) => (includeSignature && invocations[index].signature ? { ...call, signature: invocations[index].signature } : call));
         const fallbackReasoning = invocations.find(i => typeof i.reasoning === 'string' && i.reasoning.length > 0)?.reasoning || null;
         this.reasoning = includeReasoning ? fallbackReasoning : null;
         this.tokens = await tokenHandler.countAsync({
             role: this.role,
-            tool_calls: JSON.stringify(this.tool_calls),
+            tool_calls: JSON.stringify(calls),
             ...(this.reasoning ? { reasoning: this.reasoning } : {}),
         });
     }

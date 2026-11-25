@@ -15,7 +15,7 @@ jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPres
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({
     currentPresetTargets: () => selected, currentPromptOrderId: () => orderId,
 }));
-const { preparePresetChange } = await import('../public/scripts/scratchpad/preset-changes.js');
+const { preparePresetChange, undoPresetChange } = await import('../public/scripts/scratchpad/preset-changes.js');
 const { normaliseChange } = await import('../public/scripts/scratchpad/proposals.js');
 const shared = [{ api: 'openai', name: 'Lantern' }];
 const proposal = { type: 'preset', action: 'replace', api: 'openai', preset: 'Lantern', module: 'main', field: 'content', value: 'New {{char}} text.' };
@@ -101,4 +101,29 @@ test('a failed save leaves the live preset untouched and may be retried', async 
     expect(live.prompts[0].content).toBe('Old text.');
     await plan.commit('Reviewed');
     expect(live.prompts[0].content).toBe('Reviewed');
+});
+
+test('undo puts back the previous module text and prompt-order toggle', async () => {
+    const plan = preparePresetChange(normaliseChange(proposal), shared);
+    const { undo } = await plan.commit('Reviewed {{char}}.');
+    expect(undo).toMatchObject({ kind: 'preset', api: 'openai', preset: 'Lantern', module: 'main', field: 'content', orderId: 7, missing: false, before: 'Old text.', after: 'Reviewed {{char}}.' });
+    await undoPresetChange(undo);
+    expect(saved.prompts[0].content).toBe('Old text.');
+    expect(saved.extensionData).toEqual({ keep: true });
+    const toggle = await preparePresetChange(normaliseChange({ ...proposal, field: 'enabled', value: false }), shared).commit('false');
+    expect(saved.prompt_order[0].order[0].enabled).toBe(false);
+    await undoPresetChange(toggle.undo);
+    expect(saved.prompt_order[0].order[0].enabled).toBe(true);
+});
+
+test('undo stops when the preset was edited after the save, or is not selected', async () => {
+    const { undo } = await preparePresetChange(normaliseChange(proposal), shared).commit('Reviewed.');
+    live.prompts[0].content = 'Edited by hand.';
+    saved = structuredClone(live);
+    savePreset.mockClear();
+    await expect(undoPresetChange(undo)).rejects.toMatchObject({ conflict: true, message: expect.stringContaining('automatic undo was stopped') });
+    selected = [];
+    await expect(undoPresetChange(undo)).rejects.toThrow(/Select the preset Lantern first/);
+    expect(savePreset).not.toHaveBeenCalled();
+    expect(live.prompts[0].content).toBe('Edited by hand.');
 });

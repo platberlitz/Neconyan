@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -454,6 +455,42 @@ describe('Meower prompt defaults', () => {
         expect(fredoka).toContain('font-display: swap;');
         expect(fredoka).toContain('FredokaOne-Regular.ttf?v=20260913g');
         expect(fredoka).not.toContain('font-style: italic');
+    });
+
+    test('supplies the Turkish heading letters and Vietnamese heading weight from small faces of their own', () => {
+        const fredoka = readSource('public', 'webfonts', 'FredokaOne', 'stylesheet.css');
+        const nunito = readSource('public', 'webfonts', 'Nunito', 'stylesheet.css');
+        const faces = css => css.split('@font-face').slice(1);
+        const letters = faces(fredoka).filter(face => face.includes('heading-letters'));
+        const original = faces(fredoka).filter(face => face.includes('FredokaOne-Regular.ttf'));
+        expect(letters).toHaveLength(1);
+        expect(letters[0]).toContain('font-family: \'Fredoka One\';');
+        expect(letters[0]).toContain('unicode-range: U+11E-11F, U+130, U+15E-15F;');
+        expect(letters[0]).toContain('src: url(\'/webfonts/FredokaOne/heading-letters/NeconyanHeadingLetters-Regular.woff2?v=20261205a\') format(\'woff2\');');
+        expect(original).toHaveLength(1);
+        expect(original[0]).not.toContain('unicode-range');
+        const normal = faces(nunito).filter(face => face.includes('font-family: \'Nunito\';') && !face.includes('italic'));
+        const heading = faces(nunito).filter(face => face.includes('font-family: \'Nunito Heading\';'));
+        expect(normal).toHaveLength(1);
+        expect(heading).toHaveLength(1);
+        expect(heading[0]).toContain('font-weight: 900;');
+        expect(heading[0].match(/src: url\([^)]*\)/)[0]).toBe(normal[0].match(/src: url\([^)]*\)/)[0]);
+        expect(readSource('public', 'css', 'neconyan.css')).toContain('html:lang(vi):has(> body.neconyan) { --sb-font-display: \'Nunito Heading\', var(--mainFontFamily); }');
+        expect(readSource('public', 'css', 'login.css')).toContain(':root:lang(vi) :is(h1, h2) { font-family: \'Nunito Heading\', \'Nunito\', system-ui, sans-serif; }');
+        const noteTitle = readSource('public', 'css', 'neconyan-authors-note.css').match(/body\.neconyan #floatingPrompt \.an-panel-title \{[^}]*\}/)?.[0] ?? '';
+        expect(noteTitle).toContain('var(--sb-font-display');
+        const dir = ['public', 'webfonts', 'FredokaOne', 'heading-letters'];
+        const sha256 = 'c11256e3fd47618387fd2df628e1ec482bf8446588e216f64994400bc8f2e723';
+        const font = readFileSync(path.join(repoRoot, ...dir, 'NeconyanHeadingLetters-Regular.woff2'));
+        expect(createHash('sha256').update(font).digest('hex')).toBe(sha256);
+        const source = readJson(...dir, 'source.json');
+        expect(source.sha256).toBe(sha256);
+        expect(source.bytes).toBe(font.length);
+        expect(source.filename).toBe('NeconyanHeadingLetters-Regular.woff2');
+        expect(source.family).not.toMatch(/fredoka/i);
+        const licence = readSource(...dir, 'OFL.txt').split('\n');
+        licence.splice(1, 1);
+        expect(licence.join('\n')).toBe(readSource('public', 'webfonts', 'FredokaOne', 'OFL.txt'));
     });
 
     test('purges caches through the service-worker protocol', () => {
