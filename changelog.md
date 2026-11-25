@@ -203,6 +203,7 @@
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
 - PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
 - PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
+- PR #961 (2026-11-25) `fix(i18n): protect Meower and Scratchpad text, translate textarea placeholders, keep TTS disabled values, and guard against invisible characters`
 - PR #962 (2026-11-25) `fix(i18n): match empty template holes and split adjacent Dialogue Colors toast templates`
 - PR #963 (2026-11-25) `fix(i18n): fold Turkish dotted I in search and mark untranslated uppercase headings`
 
