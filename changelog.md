@@ -210,6 +210,7 @@
 - PR #962 (2026-11-25) `fix(i18n): match empty template holes and split adjacent Dialogue Colors toast templates`
 - PR #963 (2026-11-25) `fix(i18n): fold Turkish dotted I in search and mark untranslated uppercase headings`
 - PR #964 (2026-11-25) `feat(companions): resize the docked panel beside the chat`
+- PR #965 (2026-11-25) `feat(scratchpad): change messages and the preset in Conversation`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
