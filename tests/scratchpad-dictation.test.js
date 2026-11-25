@@ -151,4 +151,34 @@ describe('Scratchpad dictation', () => {
         getUserMedia.mockRejectedValueOnce(new Error('denied'));
         expect(await code(startRecording())).toBe('microphone');
     });
+
+    test('asks for microphone processing and falls back to the plain request', async () => {
+        const tracks = [{ stop: jest.fn() }];
+        const stream = { getTracks: () => tracks };
+        const getUserMedia = jest.fn(async () => stream);
+        setGlobal('navigator', { mediaDevices: { getUserMedia } });
+        setGlobal('MediaRecorder', class {
+            constructor() { this.state = 'inactive'; }
+            start() { this.state = 'recording'; }
+            stop() { this.state = 'inactive'; this.onstop(); }
+        });
+        const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        const recording = await startRecording({ audio });
+        expect(getUserMedia.mock.calls).toEqual([[{ audio }]]);
+        expect(recording.stream).toBe(stream);
+        recording.cancel();
+        expect(tracks[0].stop).toHaveBeenCalledTimes(1);
+        await recording.stop();
+        expect(tracks[0].stop).toHaveBeenCalledTimes(1);
+
+        getUserMedia.mockClear();
+        getUserMedia.mockRejectedValueOnce(Object.assign(new Error('constraints'), { name: 'OverconstrainedError' }));
+        (await startRecording({ audio })).cancel();
+        expect(getUserMedia.mock.calls).toEqual([[{ audio }], [{ audio: true }]]);
+
+        getUserMedia.mockClear();
+        getUserMedia.mockRejectedValueOnce(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
+        expect(await code(startRecording({ audio }))).toBe('microphone');
+        expect(getUserMedia).toHaveBeenCalledTimes(1);
+    });
 });

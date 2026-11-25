@@ -50,7 +50,7 @@ function fixture(kind = 'roleplay') {
     const app = { built: true, open: true, tab: 'context', source: scope, bucket: null, contextKey: '', ticket: 1,
         library: { assistants: [] }, el: { panels: { context: panel } } };
     const h = (tag, attributes, ...children) => new Element(tag, attributes, children);
-    const runtime = vm.createContext({ markFollowUpsAway() {}, reconcileFollowUps() {}, app, structuredClone, DEFAULT_SETTINGS: defaults, ASSISTANTS: [],
+    const runtime = vm.createContext({ markFollowUpsAway() {}, endTalk() {}, checkTalkSession() {}, reconcileFollowUps() {}, app, structuredClone, DEFAULT_SETTINGS: defaults, ASSISTANTS: [],
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(), document: {},
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         renderHeader() {}, renderChat() {}, renderSessions() {}, renderHistoryView() {}, syncDraft() {}, syncWatchers() {}, announceReplyChange() {},
@@ -131,7 +131,7 @@ function openingFixture({ delayedLibrary = false } = {}) {
     const scope = { kind: 'general', key: 'general' };
     const app = { open: false, opening: 0, layout: 'beside', ticket: 0, tab: 'chat', openMenus: new Set(),
         el: { root: { hidden: true, contains: () => false }, heading: { focus: jest.fn() }, composer: { focus: jest.fn() } } };
-    const runtime = vm.createContext({ markFollowUpsAway() {}, app, sameSourceBucket, document: {}, clearJobRecovery() {},
+    const runtime = vm.createContext({ markFollowUpsAway() {}, endTalk() {}, checkTalkSession() {}, app, sameSourceBucket, document: {}, clearJobRecovery() {},
         getCurrentUserHandle: () => 'reader', loadStylesheetAsync: async () => {}, isPhone: () => true,
         api: {
             readAssistants: () => delayedLibrary ? library.promise : Promise.resolve({}),
@@ -285,7 +285,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         let owner = 'first';
         let live = general;
         const requests = [];
-        const runtime = vm.createContext({ markFollowUpsAway() {}, reconcileFollowUps() {}, resetFollowUps() {}, app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
+        const runtime = vm.createContext({ markFollowUpsAway() {}, endTalk() {}, checkTalkSession() {}, reconcileFollowUps() {}, resetFollowUps() {}, app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
             currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, clearJobRecovery() {}, announceReplyChange() {}, renderHistoryView() {}, closeComposeMenu() {}, warnMissingPersona() {}, reportError: error => { throw error; },
             t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
             render() { runtime.syncDraft(); },
@@ -490,7 +490,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             };
             return element;
         };
-        const runtime = vm.createContext({ markFollowUpsAway() {}, reconcileFollowUps() {},
+        const runtime = vm.createContext({ markFollowUpsAway() {}, endTalk() {}, checkTalkSession() {}, reconcileFollowUps() {},
             app,
             structuredClone,
             DEFAULT_SETTINGS: defaults,

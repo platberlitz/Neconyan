@@ -65,7 +65,8 @@ import { roundToDiscuss } from './discuss.js';
 import { CURRENT_CONNECTION_CHOICE, activeCompareConnection, compareChoiceValue, compareConnectionFromChoice, comparedSiblings, comparingPending, sameCompareTarget } from './compare.js';
 import { canDictate, DICTATION_SERVICES, DictationError, dictationService, MAX_DICTATION_SECONDS, recordingToWav, startRecording, transcribeWav } from './dictation.js';
 import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from './typed-tools.js';
-import { canReadAloud, isReadingAloud, stopReadAloud, toggleReadAloud } from './read-aloud.js';
+import { canReadAloud, isReadingAloud, speakReplies, spokenText, stopReadAloud, toggleReadAloud } from './read-aloud.js';
+import { createAudioContext, createTalkMode, monitorStream, TALK_PAUSES, talkPause } from './talk-mode.js';
 import { editQuickPrompts } from './quick-prompts.js';
 import { findShortcuts, parseShortcut, replaceShortcut } from './check-shortcuts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
@@ -78,7 +79,7 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261210-scratchpad-compare-connections';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261211-scratchpad-talk-mode';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -275,6 +276,8 @@ const app = {
     contextSetup: '',
     dictation: 'local',
     dictating: null,
+    talkPause: 'normal',
+    talk: null,
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
@@ -299,6 +302,7 @@ function readPrefs() {
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
         if (typeof saved.contextSetup === 'string') app.contextSetup = saved.contextSetup;
         if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
+        if (TALK_PAUSES.some(pause => pause.id === saved.talkPause)) app.talkPause = saved.talkPause;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
             if (connection?.kind === 'current') app.connections[id] = { kind: 'current' };
@@ -319,6 +323,7 @@ function writePrefs() {
         collapsed: app.overviewCollapsed,
         connections: app.connections,
         dictation: app.dictation,
+        talkPause: app.talkPause,
         contextSetup: app.contextSetup,
     }));
 }
@@ -724,6 +729,8 @@ function build() {
     app.built = true;
     const el = app.el;
     document.addEventListener('visibilitychange', wakePendingJobs);
+    // A hidden tab cannot be listened to or answered, so talk mode lets go of the microphone.
+    document.addEventListener('visibilitychange', () => { if (document.hidden) endTalk(); });
     globalThis.addEventListener('online', wakePendingJobs);
 
     el.portrait = h('img', { class: 'scratchpad-portrait', alt: '', width: 36, height: 36 });
@@ -859,6 +866,8 @@ function buildChatPanel() {
     el.plus.setAttribute('aria-controls', 'scratchpad-compose-menu');
     el.plus.setAttribute('aria-expanded', 'false');
     el.dictate = canDictate() ? iconButton('', () => void toggleDictation(), { icon: 'fa-microphone-lines', className: 'scratchpad-dictate', title: t`Dictate`, pressed: false }) : null;
+    el.talk = canDictate() ? iconButton('', toggleTalk, { icon: 'fa-comments', className: 'scratchpad-talk-toggle', title: t`Talk mode`, pressed: false }) : null;
+    el.talkBar = el.talk ? buildTalkBar() : null;
     el.composeActions = h('div', { class: 'scratchpad-compose-actions', onkeydown: event => {
         if (event.key === 'Escape') { event.stopPropagation(); closeComposeMenu(); el.plus.focus(); }
     }, onfocusout: event => {
@@ -898,7 +907,7 @@ function buildChatPanel() {
         el.overview,
         el.replyStatus,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, el.queue, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, el.talkBar, el.queue, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.talk, el.send)),
     ]);
 }
 
@@ -944,6 +953,7 @@ function applyBucket(bucket, { ticket = null } = {}) {
     if (session) app.assistant = session.assistant;
     announceReplyChange(before, session);
     markFollowUpsAway();
+    checkTalkSession();
     render();
     renderHistoryView();
     syncWatchers();
@@ -1023,6 +1033,7 @@ function checkSource() {
             const changed = next.label !== app.source?.label || !sameSourceContext(next, app.source);
             app.source = next;
             if (changed) {
+                endTalk('context');
                 app.contextKey = '';
                 render();
                 reconcileFollowUps();
@@ -1030,6 +1041,7 @@ function checkSource() {
         }
         return;
     }
+    endTalk('context');
     stopWatchers();
     app.source = next;
     app.bucket = null;
@@ -3229,6 +3241,7 @@ async function finishDictation(dictating) {
 
 async function toggleDictation() {
     if (app.dictating) return finishDictation(app.dictating);
+    endTalk();
     const dictating = { state: 'starting', recorder: null, abort: new AbortController() };
     app.dictating = dictating;
     app.el.dictate.disabled = true;
@@ -3262,7 +3275,211 @@ function renderDictationSettings() {
         h('p', { class: 'scratchpad-muted', text: t`The microphone button beside Send records you, and the service below turns the recording into text in the message box. Nothing is sent until you press Send.` }),
         h('div', { class: 'scratchpad-field' },
             h('label', { for: 'scratchpad-dictation-service', text: t`Transcription service` }), select),
-        h('p', { class: 'scratchpad-muted', text: t`This server needs no key, but it is slow the first time while it fetches its speech model. The others use the API key saved for that service, and your recording is sent to them.` }));
+        h('p', { class: 'scratchpad-muted', text: t`This server needs no key, but it is slow the first time while it fetches its speech model. The others use the API key saved for that service, and your recording is sent to them.` }),
+        renderTalkSettings());
+}
+
+/* Talk mode */
+
+function talkPauseLabel(id) {
+    return {
+        short: t`Short (1.0 s)`,
+        normal: t`Normal (1.6 s)`,
+        patient: t`Patient (2.5 s)`,
+    }[id];
+}
+
+function renderTalkSettings() {
+    if (!app.el.talk) return null;
+    const select = h('select', { id: 'scratchpad-talk-pause', class: 'text_pole', onchange: () => {
+        app.talkPause = talkPause(select.value).id;
+        writePrefs();
+    } }, TALK_PAUSES.map(pause => h('option', { value: pause.id, text: talkPauseLabel(pause.id) })));
+    select.value = app.talkPause;
+    return [
+        h('div', { class: 'scratchpad-field' },
+            h('label', { for: 'scratchpad-talk-pause', text: t`Talk mode pause` }), select),
+        h('p', { class: 'scratchpad-muted', text: t`Talk mode sends your turn after this much quiet. It uses the same transcription service, and reads replies aloud with Text to Speech.` }),
+    ];
+}
+
+function buildTalkBar() {
+    const el = app.el;
+    el.talkStatus = h('span', { class: 'scratchpad-talk-status', role: 'status', 'aria-live': 'polite' });
+    el.talkLevel = h('span', { class: 'scratchpad-talk-level-fill' });
+    el.talkMeter = h('span', { class: 'scratchpad-talk-level', role: 'meter', 'aria-label': t`Microphone level`, 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '0' }, el.talkLevel);
+    el.talkSendNow = iconButton(t`Send now`, () => app.talk?.controller.sendNow(), { icon: 'fa-paper-plane', className: 'scratchpad-talk-send', primary: true });
+    el.talkInterrupt = iconButton(t`Interrupt`, () => app.talk?.controller.interrupt(), { icon: 'fa-hand', className: 'scratchpad-talk-interrupt', primary: true });
+    el.talkEnd = iconButton(t`End talk`, () => endTalk(), { icon: 'fa-stop', className: 'scratchpad-talk-end' });
+    return h('div', { class: 'scratchpad-talk', role: 'group', 'aria-label': t`Talk mode`, hidden: true },
+        h('div', { class: 'scratchpad-talk-info' }, el.talkStatus, el.talkMeter),
+        h('div', { class: 'scratchpad-talk-actions' }, el.talkSendNow, el.talkInterrupt, el.talkEnd));
+}
+
+function talkStateLabel({ state, hearing }) {
+    if (state === 'listening') return hearing ? t`Hearing you…` : t`Listening…`;
+    if (state === 'transcribing') return t`Transcribing…`;
+    if (state === 'speaking') return t`Speaking…`;
+    return t`Waiting for reply…`;
+}
+
+function renderTalk() {
+    const el = app.el;
+    if (!el.talk) return;
+    const snapshot = app.talk?.controller.snapshot() ?? { state: 'idle', hearing: false, active: false };
+    el.talk.setAttribute('aria-pressed', String(snapshot.active));
+    el.talk.disabled = !snapshot.active && el.composer.disabled;
+    el.talkBar.hidden = !snapshot.active;
+    el.talkBar.dataset.state = snapshot.state;
+    el.talkBar.dataset.hearing = String(snapshot.state === 'listening' && snapshot.hearing);
+    if (!snapshot.active) {
+        el.talkStatus.textContent = '';
+        setTalkLevel(0);
+        return;
+    }
+    const label = talkStateLabel(snapshot);
+    if (el.talkStatus.textContent !== label) el.talkStatus.textContent = label;
+    el.talkSendNow.hidden = snapshot.state !== 'listening';
+    el.talkInterrupt.hidden = snapshot.state !== 'speaking';
+    el.talkMeter.hidden = snapshot.state !== 'listening';
+}
+
+function setTalkLevel(level) {
+    const el = app.el;
+    if (!el.talkLevel) return;
+    // Speech sits well below full scale, so a quarter of it already fills the bar.
+    const value = Math.round(Math.min(1, Math.max(0, Number(level) || 0) / 0.25) * 100);
+    if (el.talkMeter.getAttribute('aria-valuenow') === String(value)) return;
+    el.talkMeter.setAttribute('aria-valuenow', String(value));
+    el.talkLevel.style.setProperty('--scratchpad-talk-level', String(value / 100));
+}
+
+/** Whether the chat is free for the next spoken turn: no reply running, nothing being sent and no queued follow-up waiting to go. */
+function talkReady() {
+    const followUps = activeFollowUps();
+    return Boolean(app.source && app.bucket) && !app.sending && !app.swiping && !pendingReply() && (!followUps.items.length || Boolean(followUps.held));
+}
+
+function waitForTalk(check, signal) {
+    return new Promise(resolve => {
+        if (signal.aborted || check()) return resolve();
+        const timer = setInterval(() => {
+            if (!signal.aborted && !check()) return;
+            clearInterval(timer);
+            resolve();
+        }, 250);
+        signal.addEventListener('abort', () => {
+            clearInterval(timer);
+            resolve();
+        }, { once: true });
+    });
+}
+
+function talkProblem(message) {
+    return Object.assign(new Error(message), { talkMessage: message });
+}
+
+// The replies to one spoken turn, once every one of them has finished.
+function talkReplies(session, userId) {
+    const messages = session?.messages ?? [];
+    const start = messages.findIndex(item => item.id === userId);
+    if (start < 0) return null;
+    const after = messages.slice(start + 1);
+    const next = after.findIndex(item => item.role === 'user');
+    const replies = (next < 0 ? after : after.slice(0, next)).filter(item => item.role === 'assistant');
+    return !replies.length || replies.some(item => item.state === 'pending') ? null : replies;
+}
+
+async function sendTalkTurn(text, { signal }) {
+    await waitForTalk(talkReady, signal);
+    if (signal.aborted) return [];
+    const seen = new Set((activeSession()?.messages ?? []).map(item => item.id));
+    if (!await send({ followUp: text })) throw Object.assign(new Error('Talk mode could not send its turn'), { reported: true });
+    const userId = activeSession()?.messages.find(item => item.role === 'user' && !seen.has(item.id))?.id;
+    if (!userId) return [];
+    let replies = null;
+    await waitForTalk(() => Boolean(replies = talkReplies(activeSession(), userId)), signal);
+    if (signal.aborted || !replies) return [];
+    const finished = replies.filter(item => item.state !== 'failed');
+    if (!finished.length && replies.some(item => !/^Stopped\b/.test(String(item.error || '')))) throw talkProblem(t`Talk mode stopped because the reply failed.`);
+    const session = activeSession();
+    // Only the words are read: change cards stay on screen for you to save or skip yourself.
+    return finished.filter(item => spokenText(item.text)).map(message => ({ message, speaker: message.assistantName || assistantInfo(message.assistant, session).name }));
+}
+
+async function speakTalkReplies(replies, { signal }) {
+    try {
+        return await speakReplies(replies, { signal, onChange: () => { if (app.open) renderMessages(); } });
+    } catch (error) {
+        console.warn('[Scratchpad] Talk mode could not read a reply aloud', error);
+        throw talkProblem(t`That reply could not be read aloud. Check the text to speech settings.`);
+    }
+}
+
+function onTalkEnd(talk, reason, error) {
+    if (app.talk === talk) app.talk = null;
+    document.removeEventListener('keydown', talk.onKey, true);
+    renderTalk();
+    if (reason === 'no-speech') toastr.info(t`Stopped talk mode because no speech was heard.`, t`Talk mode`);
+    else if (reason === 'context') toastr.info(t`Talk mode ended because the chat changed.`, t`Talk mode`);
+    else if (reason === 'error' && !error?.reported) {
+        console.warn('[Scratchpad] Talk mode stopped', error);
+        toastr.warning(error instanceof DictationError ? dictationProblem(error) : error?.talkMessage || t`Talk mode stopped because something went wrong.`, t`Talk mode`);
+    }
+}
+
+function startTalk() {
+    if (app.talk || !app.el.talk || app.el.composer.disabled) return;
+    cancelDictation();
+    stopReadAloud();
+    const talk = { controller: null, sessionId: activeSession()?.id ?? null, onKey: null };
+    talk.onKey = event => {
+        if (event.key !== 'Escape' || app.talk !== talk || event.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        endTalk();
+    };
+    talk.controller = createTalkMode({
+        record: options => startRecording(options),
+        toWav: recordingToWav,
+        transcribe: (wav, { signal }) => transcribeWav(wav, app.dictation, { signal }),
+        waitUntilReady: ({ signal }) => waitForTalk(talkReady, signal),
+        sendTurn: sendTalkTurn,
+        canSpeak: canReadAloud,
+        speak: speakTalkReplies,
+        stopSpeaking: stopReadAloud,
+        createAudioContext,
+        monitor: monitorStream,
+        pauseMs: () => talkPause(app.talkPause).ms,
+        onChange: () => { if (app.talk === talk) renderTalk(); },
+        onLevel: level => { if (app.talk === talk) setTalkLevel(level); },
+        onNotice: code => { if (code === 'tts-off') toastr.info(t`Text to speech is off, so replies will appear as text.`, t`Talk mode`); },
+        onEnd: (reason, error) => onTalkEnd(talk, reason, error),
+    });
+    app.talk = talk;
+    document.addEventListener('keydown', talk.onKey, true);
+    // Started inside the click, so the browser lets the audio context run.
+    talk.controller.start();
+    renderTalk();
+}
+
+/** Ends talk mode, if it is on: the microphone and any voice stop at once. */
+function endTalk(reason = 'ended') {
+    return app.talk?.controller.end(reason) ?? false;
+}
+
+function toggleTalk() {
+    if (app.talk) endTalk();
+    else startTalk();
+}
+
+// Talk mode belongs to the session it started in; another session or context ends it.
+function checkTalkSession() {
+    const talk = app.talk;
+    if (!talk) return;
+    const id = activeSession()?.id ?? null;
+    if (talk.sessionId === null) talk.sessionId = id;
+    else if (id !== talk.sessionId) endTalk('context');
 }
 
 function renderComposer() {
@@ -3296,6 +3513,7 @@ function renderComposer() {
     el.rehearse.hidden = !canRehearse(app.source);
     el.rehearse.disabled = disabled || Boolean(pending) || Boolean(app.editing);
     renderDictate(el.composer.disabled);
+    renderTalk();
     clear(el.attachments);
     append(el.attachments, renderAttachments(app.attachments, { draft: true }));
     el.attachments.hidden = !app.attachments.length;
@@ -4477,6 +4695,7 @@ export function hideScratchpad() {
     markFollowUpsAway();
     app.ticket += 1;
     app.personaWarning = false;
+    endTalk();
     stopReadAloud();
     cancelDictation();
     app.openMenus.clear();

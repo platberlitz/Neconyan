@@ -83,6 +83,18 @@ Turn on **Random** beside **Round table** for one reply per message. **Ask 1** p
 
 With **Random** off, round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views, or press **Discuss these answers** under the round: each assistant then reads the others' answers and replies again, saying where they agree, where they disagree and what they would change. Anything you have typed in the message box is sent with it as the point to focus on. The button appears once at least two assistants have finished answering your latest message, and that round doesn't run a web search. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant. Random uses **Stop** for its single reply.
 
+### Talk mode
+
+**Talk mode**, the button between **Dictate** and **Send**, turns Scratchpad into a spoken conversation. Press it and speak; a bar above the message box shows **Listening…**, then **Hearing you…** once it picks up your voice, with a small level meter. When you stop talking for a moment, your turn ends by itself: the recording is turned into text with the same **Transcription service** as **Dictate**, sent as your message, and the reply is read aloud with Text to Speech. Then it listens again, so you can keep going without touching the screen.
+
+- **Send now** ends your turn straight away instead of waiting for the pause.
+- **Interrupt**, shown while a reply is being read, stops the voice and goes back to listening.
+- **End talk** stops Talk mode. Pressing Escape, pressing **Dictate**, closing Scratchpad, switching session or chat, or leaving the tab does the same.
+
+The microphone is only on while it is listening: it is let go as soon as your turn ends, before anything is transcribed, sent or read aloud, and whenever Talk mode stops. Round table and **Compare connections** replies are read one after another. Change cards are never saved for you; they wait in the chat as usual, and a reply that is only a change card goes straight back to listening. If Text to Speech is off, Scratchpad says **Text to speech is off, so replies will appear as text.** once and carries on. If nothing is heard for 20 seconds, or three turns in a row come back empty, it stops with **Stopped talk mode because no speech was heard.** When follow-ups are queued, Talk mode waits for them to finish before it listens.
+
+Under **Context → Dictation**, **Talk mode pause** sets how much quiet ends your turn: **Short (1.0 s)**, **Normal (1.6 s)** or **Patient (2.5 s)**. It is saved with your Scratchpad layout. Like **Dictate**, Talk mode only appears in browsers that can record from a microphone.
+
 ### Compare connections
 
 To see how one assistant answers on two models, open **Context → Assistant connections** and pick a profile under **Compare with a second connection**. The choices are **Off**, the current connection (**Current connection** in General, **Same connection as the chat** in a story chat) and each saved connection profile. Each message then gets two replies from the same assistant, one from its main connection and one from the second, written at the same time. The header shows **Compare: 2 connections**, and each reply carries a small badge naming the connection it came from, such as the profile name or **Current connection**. Badges show profile names only, never keys or addresses.
