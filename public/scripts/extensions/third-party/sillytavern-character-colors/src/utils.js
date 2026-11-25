@@ -534,3 +534,67 @@ export function htmlToNode(html) {
     tpl.innerHTML = String(html).trim();
     return tpl.content.firstElementChild;
 }
+
+export function formatColorizedMessagesToast(colorizedCount, skippedNoColor, saveConfirmed) {
+    const singular = colorizedCount === 1;
+    const hasSkipped = skippedNoColor > 0;
+    if (saveConfirmed) {
+        if (hasSkipped) {
+            return singular
+                ? `Colorized ${colorizedCount} message (${skippedNoColor} skipped - no speaker/color match).`
+                : `Colorized ${colorizedCount} messages (${skippedNoColor} skipped - no speaker/color match).`;
+        }
+        return singular
+            ? `Colorized ${colorizedCount} message.`
+            : `Colorized ${colorizedCount} messages.`;
+    }
+    if (hasSkipped) {
+        return singular
+            ? `Colorized ${colorizedCount} message (${skippedNoColor} skipped - no speaker/color match); the host did not confirm the chat save.`
+            : `Colorized ${colorizedCount} messages (${skippedNoColor} skipped - no speaker/color match); the host did not confirm the chat save.`;
+    }
+    return singular
+        ? `Colorized ${colorizedCount} message; the host did not confirm the chat save.`
+        : `Colorized ${colorizedCount} messages; the host did not confirm the chat save.`;
+}
+
+export function formatRandomizedColorsToast(changedCount, skippedLockedCount) {
+    const singular = changedCount === 1;
+    if (skippedLockedCount > 0) {
+        return singular
+            ? `Randomized ${changedCount} unlocked color; skipped ${skippedLockedCount} locked.`
+            : `Randomized ${changedCount} unlocked colors; skipped ${skippedLockedCount} locked.`;
+    }
+    return singular
+        ? `Randomized ${changedCount} unlocked color.`
+        : `Randomized ${changedCount} unlocked colors.`;
+}
+
+export function formatSetGroupToast(changedCount, profileAppliedCount) {
+    const singular = changedCount === 1;
+    if (profileAppliedCount > 0) {
+        return singular
+            ? `Set group for ${changedCount} character; applied its profile to ${profileAppliedCount}.`
+            : `Set group for ${changedCount} characters; applied its profile to ${profileAppliedCount}.`;
+    }
+    return singular
+        ? `Set group for ${changedCount} character.`
+        : `Set group for ${changedCount} characters.`;
+}
+
+export function formatCleanedMessagesToast(messageCount, swipeCount) {
+    const singularMessage = messageCount === 1;
+    if (swipeCount > 1) {
+        return singularMessage
+            ? `Cleaned ${messageCount} message (${swipeCount} swipes).`
+            : `Cleaned ${messageCount} messages (${swipeCount} swipes).`;
+    }
+    if (swipeCount === 1) {
+        return singularMessage
+            ? `Cleaned ${messageCount} message (${swipeCount} swipe).`
+            : `Cleaned ${messageCount} messages (${swipeCount} swipe).`;
+    }
+    return singularMessage
+        ? `Cleaned ${messageCount} message.`
+        : `Cleaned ${messageCount} messages.`;
+}

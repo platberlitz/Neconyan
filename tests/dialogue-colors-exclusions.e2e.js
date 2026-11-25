@@ -1,4 +1,4 @@
-/* global window */
+/* global window, localStorage */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
@@ -167,3 +167,71 @@ for (const phone of [true, false]) {
         });
     });
 }
+
+test('recoloring 1 message shows the full German save-failure warning when chat save fails', async ({ app }) => {
+    test.setTimeout(180000);
+    const account = await app.account({ phone: false });
+    await account.context.addInitScript(() => localStorage.setItem('language', 'de-de'));
+    const page = await account.open({ workspace: false });
+
+    const seedSavePromise = page.waitForResponse(response =>
+        /\/api\/chats\/(save|patch)(?:\?|$)/.test(response.url()) && response.request().method() === 'POST');
+    const seedSaved = await page.evaluate(async ({ avatar, extension }) => {
+        const core = await import('/script.js');
+        const { settings } = await import(`${extension}/state.js`);
+        Object.assign(settings, {
+            coloringEngine: 'llm',
+            keepCardCharacter: false,
+            autoPersonaCharacter: false,
+            llmAttributionCheck: false,
+            disableToasts: false,
+            autoScanNewMessages: false,
+        });
+        if (!core.characters.some(character => character.avatar === avatar)) await core.getCharacters();
+        const charIndex = core.characters.findIndex(character => character.avatar === avatar);
+        if (charIndex < 0) throw new Error(`Fixture character ${avatar} not found`);
+        await core.selectCharacterById(charIndex, { switchMenu: false });
+        const template = core.chat[0];
+        core.chat.splice(0, core.chat.length, {
+            ...template,
+            name: 'Mira',
+            mes: '<font color="#22aa66">"Hello."</font> Mira said.\n[COLORS:Mira=#22aa66]',
+            swipes: undefined,
+            swipe_id: undefined,
+            extra: {},
+        });
+        return await core.saveChatConditional();
+    }, { avatar: account.avatar, extension });
+    expect(seedSaved).toBe(true);
+    expect((await seedSavePromise).status()).toBe(200);
+
+    await page.evaluate(async extension => {
+        const core = await import('/script.js');
+        const { characterColors } = await import(`${extension}/state.js`);
+        const { scanAllMessages } = await import(`${extension}/color-blocks.js`);
+        await core.reloadCurrentChat();
+        await scanAllMessages();
+        const mira = Object.values(characterColors).find(entry => entry.name === 'Mira');
+        if (!mira) throw new Error('Mira missing from characterColors after scanAllMessages()');
+        Object.assign(mira, { color: '#ff5500', baseColor: '#ff5500' });
+        if (!window.NeconyanShell?.openIncludedTool?.('sillytavern-character-colors')) {
+            window.NeconyanExtensions.focusUnit('Dialogfarben');
+        }
+    }, extension);
+
+    await openPage(page, 'process', locator => locator.click());
+    let interceptedHits = 0;
+    await page.route(/\/api\/chats\/(save|patch)(?:\?|$)/, route => {
+        interceptedHits += 1;
+        return route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'simulated save failure' }),
+        });
+    });
+    await page.locator('#dc-recolor').click();
+    await page.locator('.dc-dialog [data-dialog-value="confirm"]').click();
+    await expect(page.locator('#toast-container .toast-warning .toast-message'))
+        .toHaveText('1 Nachricht umgefärbt; der Host hat das Speichern des Chats nicht bestätigt.');
+    expect(interceptedHits).toBeGreaterThanOrEqual(1);
+});
