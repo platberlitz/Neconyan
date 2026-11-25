@@ -97,6 +97,11 @@ const PANEL_LAUNCHERS = ['handle', 'topbar'];
 const TOPBAR_LAUNCHER_ID = 'ica--tracker-panel-topbar';
 const HANDLE_DRAG_THRESHOLD_PX = 6;
 const HANDLE_EDGES = ['right', 'left', 'top', 'bottom'];
+const COMPANION_BESIDE_CLASS = 'neconyan-companion-beside';
+const COMPANION_BESIDE_EDGE_CLASSES = {
+    left: 'neconyan-companion-beside-left',
+    right: 'neconyan-companion-beside-right',
+};
 const PANEL_ANCHOR_OPTIONS = {
     messageSelector: '.ica--tpanel-agent[data-agent-id]',
     keyAttribute: 'data-agent-id',
@@ -301,6 +306,7 @@ export function setCompanionPanelLauncher(launcher) {
     if (panelOpen) {
         renderPanel();
         $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
+        syncCompanionPanelDock();
     }
     updateCompanionPanelHandleVisibility();
     return panelLauncher;
@@ -310,6 +316,41 @@ export function setCompanionPanelLauncher(launcher) {
 function getPanelEdge() {
     const { edge } = (panelLauncher === 'handle' ? getStoredHandlePosition() : null) ?? { edge: 'right' };
     return edge;
+}
+
+/**
+ * Carries the panel's dock state to the shell. A body class lets CSS fit the chat beside
+ * the open panel without a body-level :has() restyling the page on every DOM change.
+ * Phones keep the panel as an overlay, and top/bottom docks remain sheets.
+ */
+export function syncCompanionPanelDock({ open = panelOpen, edge = getPanelEdge(), phone = isPhonePanelLayout() } = {}) {
+    const classList = globalThis.document?.body?.classList;
+    if (typeof classList?.toggle !== 'function') {
+        return;
+    }
+
+    const beside = open && !phone && (edge === 'left' || edge === 'right');
+    classList.toggle(COMPANION_BESIDE_CLASS, beside);
+    for (const [candidate, className] of Object.entries(COMPANION_BESIDE_EDGE_CLASSES)) {
+        classList.toggle(className, beside && candidate === edge);
+    }
+}
+
+/**
+ * The chat only has room for one side workspace. Scratchpad and Notes already close each
+ * other, so the panel gives way to whichever of them opened last.
+ */
+function handleSideWorkspaceVisibilityChange() {
+    updateCompanionPanelHandleVisibility();
+    if (!panelOpen || isPhonePanelLayout()) {
+        return;
+    }
+    const classList = globalThis.document?.body?.classList;
+    const workspaceOpen = classList?.contains?.('neconyan-scratchpad-open')
+        || classList?.contains?.('neconyan-notes-open');
+    if (workspaceOpen) {
+        closeCompanionPanel();
+    }
 }
 
 function getViewportWidth() {
@@ -1310,6 +1351,12 @@ export function openCompanionPanel() {
         return;
     }
 
+    // One side workspace shares the chat width. The panel opened last takes that space.
+    if (!isPhonePanelLayout()) {
+        globalThis.NeconyanScratchpad?.hide?.();
+        globalThis.NeconyanNotes?.hide?.();
+    }
+
     if (!panelOpen) returnFocus = document.activeElement;
     if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
@@ -1319,8 +1366,10 @@ export function openCompanionPanel() {
     // The open state goes in with the new content, so the browser restyles the page once.
     renderPanel({
         applyOpenState: () => {
-            const panel = $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
-            setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge: getPanelEdge() });
+            const edge = getPanelEdge();
+            const panel = $('#ica--tracker-panel').attr('data-edge', edge).attr('data-launcher', panelLauncher);
+            syncCompanionPanelDock();
+            setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge });
             panel.attr('aria-hidden', 'false');
             $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
             globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
@@ -1335,6 +1384,7 @@ export function openCompanionPanel() {
 export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
     panelOpen = false;
+    syncCompanionPanelDock();
     const panel = $('#ica--tracker-panel');
     setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'true');
@@ -1978,7 +2028,11 @@ export function initCompanionPanel() {
     });
 
     observeConversationModeState();
-    // The story's handle must not cover Scratchpad messages, including the beside-chat layout.
-    document.addEventListener('neconyan:scratchpad-visibility', updateCompanionPanelHandleVisibility);
+    // The story's handle must not cover Scratchpad messages, and one side workspace owns the width.
+    document.addEventListener('neconyan:scratchpad-visibility', handleSideWorkspaceVisibilityChange);
+    document.addEventListener('neconyan:notes-visibility', handleSideWorkspaceVisibilityChange);
+    globalThis.addEventListener?.('resize', syncCompanionPanelDock);
+    globalThis.visualViewport?.addEventListener?.('resize', syncCompanionPanelDock);
     syncConversationModePanelVisibility();
+    syncCompanionPanelDock();
 }

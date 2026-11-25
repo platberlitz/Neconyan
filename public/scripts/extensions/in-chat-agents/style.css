@@ -1507,6 +1507,31 @@ button.ica--card-pill--version-update {
     height: calc(var(--ica--tpanel-viewport-height) - var(--sb-topbar-layout-offset, 0px));
 }
 
+/* On desktop the panel docks beside the chat instead of covering it. Only one side workspace
+   owns that width at a time; a pinned character panel keeps the outer right edge. Anchored on
+   #top-settings-holder, not body, so page changes do not restyle everything. */
+@media (min-width: 769px) {
+    body.neconyan.neconyan-companion-beside-right #sheld {
+        right: min(420px, 94vw);
+    }
+
+    body.neconyan.neconyan-companion-beside-right #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #ica--tracker-panel[data-edge="right"] {
+        right: min(400px, 38vw);
+    }
+
+    body.neconyan.neconyan-companion-beside-right #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
+        right: calc(min(400px, 38vw) + min(420px, 94vw));
+    }
+
+    body.neconyan.neconyan-companion-beside-left #sheld {
+        left: calc(var(--neco-sidebar-offset, 0px) + min(420px, 94vw));
+    }
+
+    body.neconyan.neconyan-companion-beside-left #ica--tracker-panel[data-edge="left"] {
+        left: var(--neco-sidebar-offset, 0px);
+    }
+}
+
 .ica--tpanel[data-edge="top"],
 .ica--tpanel[data-edge="bottom"] {
     left: 0;

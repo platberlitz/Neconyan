@@ -27,6 +27,7 @@ export const SHARE_ITEM_KEYS = Object.freeze([
     'appSource',
     'lastPrompt',
     'agents',
+    'companionNotes',
     'regex',
     'cssSnippets',
     'dialogueColors',
@@ -48,6 +49,7 @@ export const SHARE_LABELS = Object.freeze({
     appSource: 'Neconyan source code',
     lastPrompt: 'Last prompt sent',
     agents: 'Agents',
+    companionNotes: 'Companion notes',
     regex: 'Regexes',
     cssSnippets: 'CSS Snippets',
     dialogueColors: 'Dialogue Colors',
@@ -55,9 +57,14 @@ export const SHARE_LABELS = Object.freeze({
     depth: 'Recent messages to read',
 });
 
+/** Short English explanations for switches whose label alone is unclear to the assistant. */
+export const SHARE_HINTS = Object.freeze({
+    companionNotes: 'Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)',
+});
+
 const CHAT_ITEMS = Object.freeze({
     roleplay: SHARE_ITEM_KEYS,
-    conversation: Object.freeze(SHARE_ITEM_KEYS.filter(key => !['authorsNote', 'mewmory', 'preset'].includes(key))),
+    conversation: Object.freeze(SHARE_ITEM_KEYS.filter(key => !['authorsNote', 'mewmory', 'preset', 'companionNotes'].includes(key))),
 });
 const GENERAL_ITEMS = Object.freeze(['persona', 'preset', 'problems', 'appEvidence', 'appSource', 'agents', 'regex', 'cssSnippets', 'dialogueColors']);
 

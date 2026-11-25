@@ -60,6 +60,17 @@ describe('Scratchpad session export', () => {
         expect(JSON.stringify(payload)).not.toMatch(/thoughts|example\.com|notes\.txt|applied|"job"/);
     });
 
+    test('Change history and undone marks never travel in an export', () => {
+        const original = session();
+        original.messages[1].proposals = { 0: 'undone' };
+        original.changeHistory = [{ id: 'h1', type: 'character', status: 'undone', before: 'Secret before.', after: 'Secret after.' }];
+        for (const options of [{}, { reasoning: true, sources: true, attachments: true }]) {
+            const text = JSON.stringify(buildSessionExport(original, library, options));
+            expect(text).not.toMatch(/changeHistory|Secret before|Secret after|undone|proposals/);
+        }
+        expect(sessionMarkdown(original)).not.toMatch(/Secret before|Secret after|undone/);
+    });
+
     test('ticked extras travel with each message and version, without saved permissions', () => {
         const [user, reply] = buildSessionExport(session(), library, { reasoning: true, sources: true, attachments: true }).session.messages;
         expect(user.attachments).toEqual(attachments);

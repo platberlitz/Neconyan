@@ -17,3 +17,10 @@
     font-display: swap;
     src: url('/webfonts/Nunito/Nunito-Italic[wght].woff2?v=20260913g') format('woff2');
 }
+
+@font-face {
+    font-family: 'Nunito Heading';
+    font-weight: 900;
+    font-display: swap;
+    src: url('/webfonts/Nunito/Nunito[wght].woff2?v=20260913g') format('woff2');
+}

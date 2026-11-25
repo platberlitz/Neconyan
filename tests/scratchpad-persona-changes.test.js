@@ -13,7 +13,7 @@ jest.unstable_mockModule('../public/scripts/notebooks/dom.js', () => ({ h: (tag,
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { PERSONA_UPDATED: 'updated' }, eventSource: { emit: jest.fn() } }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => owner }));
 jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({ sourcePersona: () => current, isCurrentSource: () => true }));
-const { needsSavedPersonaSelection, preparePersonaChange, saveSelectedPersona } = await import('../public/scripts/scratchpad/persona-changes.js');
+const { needsSavedPersonaSelection, preparePersonaChange, saveSelectedPersona, undoPersonaChange } = await import('../public/scripts/scratchpad/persona-changes.js');
 const { preparePersonaCreation } = await import('../public/scripts/scratchpad/persona-create.js');
 const { normaliseChange } = await import('../public/scripts/scratchpad/proposals.js');
 const shared = { avatar: 'User.png', name: 'Kris' };
@@ -249,4 +249,26 @@ test('Scenario Note avatar proposals reject arbitrary images and require an exis
     expect(normaliseChange(image)).toMatchObject(image);
     expect(() => normaliseChange({ ...image, noteId: '' })).toThrow();
     expect(() => normaliseChange({ ...image, character: 'Nova' })).toThrow();
+});
+
+test('undo restores a persona field and a Scenario Note, and stops after a later edit', async () => {
+    const base = await (await prepare()).commit('Edited {{user}}');
+    expect(base.undo).toMatchObject({ kind: 'persona', avatar: 'User.png', note: false, field: 'description', before: 'Base', after: 'Edited {{user}}' });
+    await undoPersonaChange(base.undo);
+    expect(descriptor().description).toBe('Base');
+    expect(descriptor().connections).toEqual([{ id: 'chat' }]);
+    const note = await (await prepare({ type: 'persona-note', noteId: 'au', field: 'description', value: 'Updated' })).commit('Updated');
+    expect(note.undo).toMatchObject({ note: true, noteId: 'au', before: 'Original note', after: 'Updated' });
+    descriptor().appendices[0].description = 'Changed by hand';
+    saveSettings.mockClear();
+    await expect(undoPersonaChange(note.undo)).rejects.toMatchObject({ conflict: true, message: expect.stringContaining('automatic undo was stopped') });
+    expect(descriptor().appendices[0].description).toBe('Changed by hand');
+    expect(saveSettings).not.toHaveBeenCalled();
+});
+
+test('a failed undo save puts the saved text back', async () => {
+    const { undo } = await (await prepare()).commit('Edited');
+    saveSettings.mockResolvedValueOnce(false);
+    await expect(undoPersonaChange(undo)).rejects.toThrow(/not restored/);
+    expect(descriptor().description).toBe('Edited');
 });

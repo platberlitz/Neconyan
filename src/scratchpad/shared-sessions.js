@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { AUTHORING_FILE_LIMIT, authoringEvidence, deleteAuthoringFileLocked, readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayLease } from '../roleplay-store.js';
 import { applyCleanup, cleanupCandidates, emptyBucket, readChatBucketLocked, readCleanupLocked, readIdentitiesLocked, scratchpadFile, ScratchpadError, serialiseChatBucketLocked, writeChatBucketLocked } from './store.js';
+import { normaliseChangeHistory } from './change-history.js';
 
 const SHARDS = Symbol('scratchpadSessionFiles');
 const sourceCache = new Map();
@@ -198,6 +199,7 @@ export function readSharedBucketLocked(lease, inputSource) {
     if (selected && (selected.version !== 1 || !(selected.activeSessionId === null || typeof selected.activeSessionId === 'string'))) {
         throw new ScratchpadError('SCRATCHPAD_DAMAGED', 'Scratchpad\'s saved session selection could not be read. The original files were kept.', 500);
     }
+    bucket.changeHistory = normaliseChangeHistory(selected?.changeHistory);
     const current = shards.find(shard => shard.storage.key === source.key || shard.storage.key === source.legacyKey)?.bucket.activeSessionId;
     bucket.activeSessionId = [selected?.activeSessionId, current, bucket.sessions[0]?.id].find(id => bucket.sessions.some(session => session.id === id)) ?? null;
     if (!selected && bucket.activeSessionId) saveSelection(lease, bucket, space);
@@ -206,7 +208,7 @@ export function readSharedBucketLocked(lease, inputSource) {
 }
 
 function saveSelection(lease, bucket, space = '') {
-    writeAuthoringFileLocked(lease, selectionFile(lease, bucket.source.scope, space), JSON.stringify({ version: 1, activeSessionId: bucket.activeSessionId }));
+    writeAuthoringFileLocked(lease, selectionFile(lease, bucket.source.scope, space), JSON.stringify({ version: 1, activeSessionId: bucket.activeSessionId, changeHistory: bucket.changeHistory ?? [] }));
 }
 
 function stripOriginTags(bucket, origin) {

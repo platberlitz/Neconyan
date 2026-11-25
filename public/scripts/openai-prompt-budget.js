@@ -10,6 +10,23 @@ export function shouldCheckPostInterceptChatBudget(eventData) {
     return eventData?.chatChanged === true;
 }
 
+/** Copies of the messages without what the model never reads as text: signatures and inlined media. */
+function withoutHiddenData(chat) {
+    const bare = (value, strip) => (value && typeof value === 'object' ? strip({ ...value }) : value);
+    return chat.map(message => bare(message, copy => {
+        delete copy.signature;
+        if (Array.isArray(copy.tool_calls)) copy.tool_calls = copy.tool_calls.map(call => bare(call, entry => { delete entry.signature; return entry; }));
+        if (Array.isArray(copy.content)) {
+            copy.content = copy.content.map(part => bare(part, entry => {
+                for (const key of ['image_url', 'video_url', 'audio_url'])
+                    if (String(entry[key]?.url).startsWith('data:')) entry[key] = { ...entry[key], url: '' };
+                return entry;
+            }));
+        }
+        return copy;
+    }));
+}
+
 /**
  * Recounts a finalized chat-completion payload against the prompt budget.
  *
@@ -28,7 +45,7 @@ export async function checkPostInterceptChatBudget(chat, userSettings = {}, coun
     }
 
     const promptTokenBudget = Number(userSettings?.openai_max_context) - Number(userSettings?.openai_max_tokens);
-    const promptTokens = await countTokens(cleanMewmoryCountView(chat, marker));
+    const promptTokens = await countTokens(withoutHiddenData(cleanMewmoryCountView(chat, marker)));
 
     return {
         promptTokens,
