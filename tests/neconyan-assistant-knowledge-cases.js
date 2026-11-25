@@ -716,4 +716,8 @@ export const refreshedKnowledgeCases = [
     ['Where do I set the PixAI negative prompt?', 'images.pixai-loras', 'Advanced Prompt Options → Negative Prompt'],
     ['Why is there an Unknown macro warning under my character description?', 'tools.macro-field-warnings', 'Neconyan sends it as plain text'],
     ['What does Unclosed macro mean under a text box?', 'tools.macro-field-warnings', 'add the closing braces'],
+    ['Does the Companions panel cover the chat on desktop?', 'agents.companion-panel', 'docks beside the chat'],
+    ['What happens when Scratchpad opens while the Companions panel is open?', 'agents.companion-panel', 'yielding when Scratchpad or Notes opens'],
+    ['How do I resize the docked Companions panel?', 'agents.companion-panel', 'width is remembered'],
+    ['Can I resize the Companions panel with the keyboard?', 'agents.companion-panel', 'Left/Right arrow keys'],
 ];
