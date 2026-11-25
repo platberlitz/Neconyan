@@ -14,7 +14,8 @@ for (const phone of [false, true]) {
             if (phone) await applyIOSOnlyCss(page);
         };
         const quick = page.locator('.scratchpad-quick');
-        const edit = quick.getByRole('button', { name: 'Edit quick prompts', exact: true });
+        // The editor button is pinned beside the scrolling row rather than inside it.
+        const edit = page.locator('.scratchpad-quick-bar').getByRole('button', { name: 'Edit quick prompts', exact: true });
         const add = page.getByRole('button', { name: 'Add a prompt', exact: true });
         const save = page.getByRole('button', { name: 'Save quick prompts', exact: true });
         const cancel = page.getByRole('button', { name: 'Cancel', exact: true });

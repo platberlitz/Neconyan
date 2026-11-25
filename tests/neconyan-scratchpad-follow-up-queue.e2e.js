@@ -167,6 +167,11 @@ for (const phone of [true, false]) {
         // Typing or picking a quick prompt turns Stop into Queue follow-up; an empty composer keeps Stop.
         await expect(composer).toHaveValue('');
         await expectButton(send, 'Stop', 'fa-stop');
+        // The session has messages, so the quick prompts row starts folded away.
+        const quickToggle = page.locator('.scratchpad-quick-toggle');
+        await expect(quickToggle).toHaveAttribute('aria-expanded', 'false');
+        await quickToggle.click();
+        await expect(quickToggle).toHaveAttribute('aria-expanded', 'true');
         await page.locator('.scratchpad-quick .scratchpad-chip:not(.scratchpad-chip-edit)').first().click();
         await expect(composer).not.toHaveValue('');
         await expectButton(send, 'Queue follow-up', 'fa-clock');

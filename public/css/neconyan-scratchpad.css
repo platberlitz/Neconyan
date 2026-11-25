@@ -1286,10 +1286,34 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     background: var(--neco-surface);
 }
 
+.scratchpad-quick-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.scratchpad-quick-rail {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* One sideways row; the padding keeps focus rings inside the scroller. */
 .scratchpad-quick {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
+    margin: -4px;
+    padding: 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    scrollbar-width: none;
+}
+
+.scratchpad-quick::-webkit-scrollbar {
+    display: none;
 }
 
 .scratchpad-app .scratchpad-chip {
@@ -1299,10 +1323,157 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     font-size: 0.82rem;
 }
 
+.scratchpad-app .scratchpad-quick .scratchpad-chip {
+    flex: 0 0 auto;
+}
+
 .scratchpad-app .scratchpad-chip-edit {
+    flex: 0 0 auto;
     justify-content: center;
     min-width: 32px;
     padding-inline: 8px;
+}
+
+.scratchpad-app .scratchpad-quick-toggle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 32px;
+    min-height: 32px;
+    margin: 0;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--neco-muted);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.scratchpad-app .scratchpad-quick-toggle:hover {
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+
+.scratchpad-quick-toggle i {
+    width: 12px;
+    font-size: 0.75rem;
+}
+
+.scratchpad-quick-bar[data-expanded='false'] .scratchpad-quick-toggle i {
+    rotate: -90deg;
+}
+
+.scratchpad-quick-bar[data-expanded='true'] .scratchpad-quick-toggle span {
+    display: none;
+}
+
+/* The toggle pushes the pencil to the right; host icon-button rules reset margins on the pencil itself. */
+.scratchpad-app .scratchpad-quick-bar[data-expanded='false'] .scratchpad-quick-toggle {
+    margin-right: auto;
+}
+
+@media (min-width: 769px) {
+    #neconyan-scratchpad .scratchpad-quick.sb-mobile-swipe-rail {
+        --sb-rail-fade-left: 0px;
+        --sb-rail-fade-right: 0px;
+        mask-image: linear-gradient(to right, transparent, black var(--sb-rail-fade-left), black calc(100% - var(--sb-rail-fade-right)), transparent);
+    }
+
+    #neconyan-scratchpad .scratchpad-quick.sb-mobile-swipe-rail.sb-can-scroll-left {
+        --sb-rail-fade-left: 22px;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick.sb-mobile-swipe-rail.sb-can-scroll-right {
+        --sb-rail-fade-right: 22px;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome {
+        position: absolute;
+        z-index: 11;
+        pointer-events: none;
+        direction: ltr;
+        contain: layout style;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome[hidden],
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-arrow[hidden] {
+        display: none;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-arrow {
+        position: absolute;
+        top: 50%;
+        translate: 0 -50%;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: min(100%, 36px);
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--neco-on-accent);
+        box-shadow: none;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-arrow > span {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 28px;
+        border: 1px solid var(--neco-ginger);
+        border-radius: 999px;
+        background: var(--neco-ginger);
+        color: var(--neco-on-accent);
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-arrow:hover > span {
+        border-color: var(--neco-ginger-hover);
+        background: var(--neco-ginger-hover);
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-arrow:focus-visible {
+        outline: 2px solid var(--neco-ginger);
+        outline-offset: 1px;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-left {
+        left: 0;
+        justify-items: start;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-right {
+        right: 0;
+        justify-items: end;
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-track {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--neco-ginger) 20%, transparent);
+    }
+
+    #neconyan-scratchpad .scratchpad-quick-rail > .sb-mobile-rail-chrome .sb-mobile-rail-thumb {
+        position: absolute;
+        height: 100%;
+        width: var(--sb-rail-thumb-width);
+        left: var(--sb-rail-thumb-left);
+        border-radius: inherit;
+        background: var(--neco-ginger);
+    }
 }
 
 .scratchpad-quick-rows {
@@ -2664,6 +2835,7 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
     .scratchpad-app .scratchpad-link,
     .scratchpad-app .scratchpad-overview-toggle,
     .scratchpad-app .scratchpad-overview-bar,
+    .scratchpad-app .scratchpad-quick-toggle,
     .scratchpad-tab,
     .scratchpad-assistant,
     .scratchpad-check,
@@ -2676,7 +2848,8 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
     }
 
     .scratchpad-app .scratchpad-message-actions .scratchpad-button,
-    .scratchpad-app .scratchpad-overview-toggle {
+    .scratchpad-app .scratchpad-overview-toggle,
+    .scratchpad-app .scratchpad-quick-toggle {
         min-width: 44px;
     }
 
@@ -2701,30 +2874,18 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
         padding: 12px;
     }
 
-    .scratchpad-quick {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overscroll-behavior-x: contain;
-        touch-action: pan-x;
-        scrollbar-width: none;
-    }
-
-    .scratchpad-quick::-webkit-scrollbar {
-        display: none;
-    }
-
-    .scratchpad-app .scratchpad-quick .scratchpad-chip {
-        flex: 0 0 auto;
-    }
-
-    .scratchpad-app .scratchpad-quick .scratchpad-chip-edit {
+    .scratchpad-app .scratchpad-quick-bar .scratchpad-chip-edit {
         min-width: 44px;
     }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    body:not(.reduced-motion) :is(.scratchpad-tab, .scratchpad-assistant, .scratchpad-overview-toggle, .scratchpad-overview-bar, .scratchpad-segment-choice) {
+    body:not(.reduced-motion) :is(.scratchpad-tab, .scratchpad-assistant, .scratchpad-overview-toggle, .scratchpad-overview-bar, .scratchpad-quick-toggle, .scratchpad-segment-choice) {
         transition: background-color 120ms ease-out, border-color 120ms ease-out;
+    }
+
+    body:not(.reduced-motion) .scratchpad-quick-toggle i {
+        transition: rotate 120ms ease-out;
     }
 
     body:not(.reduced-motion) .scratchpad-tone-stop {
