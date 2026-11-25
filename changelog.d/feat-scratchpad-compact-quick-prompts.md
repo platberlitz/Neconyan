@@ -1,1 +1,0 @@
-**Scratchpad** quick prompts now sit in one scrolling row with arrows at each end, on desktop as well as phones, with **Edit quick prompts** pinned beside it; once a session has messages the row folds into a slim **Quick prompts** bar you can open again with one press.

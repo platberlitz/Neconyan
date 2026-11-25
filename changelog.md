@@ -38,6 +38,7 @@
 - **Scratchpad** can ask one assistant the same thing on two connections at once now. Pick a second one in **Compare with a second connection** under **Assistant connections**, read both replies side by side with their connection badges, and press **Keep only this reply** on the one you prefer.
 - **Scratchpad** can hold a spoken conversation now. Press **Talk mode** beside **Dictate**, speak, and your turn is sent when you pause; replies are read aloud and it listens again, with **Send now**, **Interrupt** and **End talk** in a bar above the message box and **Talk mode pause** under **Context → Dictation**.
 - The **Companions** panel keeps your place steady while you scroll up, reopen it or get live updates, loading off-screen cards in the background so opening stays fast.
+- **Scratchpad** quick prompts now sit in one scrolling row with arrows at each end, on desktop as well as phones, with **Edit quick prompts** pinned beside it; once a session has messages the row folds into a slim **Quick prompts** bar you can open again with one press.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -241,6 +242,7 @@
 - PR #978 (2026-11-25) `test: clear the nightly browser check failures`
 - PR #979 (2026-11-25) `feat(scratchpad): add hands-free talk mode`
 - PR #980 (2026-11-25) `fix(companions): render panel cards in background to stop scroll jumps`
+- PR #981 (2026-11-25) `feat(scratchpad): fit quick prompts on one row that folds away`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
