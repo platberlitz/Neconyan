@@ -1,7 +1,16 @@
 /** Matching shared by the browser's controls and the account's saved content. */
+/** Locale-independent fold for UI search boxes: maps Turkish İ/ı to i while stripping only Latin combining diacritics (U+0300..U+036F). */
+export function foldSearchText(value) {
+    return String(value ?? '')
+        .replace(/[İı]/g, 'i')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .normalize('NFKC')
+        .toLowerCase();
+}
+
 export function normaliseSearchText(value) {
-    return String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    return foldSearchText(value).replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ').trim();
 }
 
 // Bounded Damerau-Levenshtein distance includes an adjacent transposition.
@@ -70,7 +79,7 @@ export function searchSnippet(text, query, length = 180) {
     if (value.length <= length) return value;
     const matchers = normaliseSearchText(query).split(' ').filter(Boolean).map(createSearchMatcher);
     let found;
-    for (const word of value.matchAll(/[\p{L}\p{N}]+/gu)) {
+    for (const word of value.matchAll(/[\p{L}\p{M}\p{N}]+/gu)) {
         if (matchers.some(match => match(word[0]))) { found = word; break; }
     }
     const start = Math.max(0, (found?.index ?? 0) - 45);

@@ -26,6 +26,7 @@ import {
 } from '../presets.js';
 import { createDraft, newId, validateDraft } from '../schema.js';
 import * as storage from '../storage.js';
+import { foldSearchText } from '../../../../../util/fuzzy-search.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -81,11 +82,11 @@ export function createPresetsTab({ onChanged = null, onPromptSaved = null } = {}
     }
 
     function matches(name, apiId) {
-        const term = searchInput.value.trim().toLowerCase();
+        const term = foldSearchText(searchInput.value).trim();
         if (typeSelect.value && typeSelect.value !== apiId) {
             return false;
         }
-        return !term || name.toLowerCase().includes(term);
+        return !term || foldSearchText(name).includes(term);
     }
 
     async function copyToDrafts(apiId, name) {

@@ -2,7 +2,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as railModel from '../public/scripts/mobile-shell-lifecycle/index.js';
-import { createSearchMatcher } from '../public/scripts/util/fuzzy-search.js';
+import { createSearchMatcher, foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const source = readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
 const functionSource = name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0];
@@ -15,6 +15,7 @@ function harness() {
             getQuickActionKey: railModel.getMobileShellQuickActionKey,
         } },
         normalizeText: value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
+        foldSearchText,
         getShellConfig: key => key === 'left' ? { title: 'Fine-tuning', baseTab: { id: 'sampling', label: 'Sampling' } } : null,
         getNeconyanNativeTools: () => [{ id: 'css-snippets', label: 'CSS Snippets', description: 'Edit CSS snippets.' }],
         NECONYAN_MODE_DEFINITIONS: [{ id: 'conversation', label: 'Conversation' }],

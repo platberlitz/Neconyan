@@ -8,6 +8,7 @@ import { createCase, createSuite, pinnedMode, validateCase } from '../schema.js'
 import * as storage from '../storage.js';
 import { avatarThumbnail, createCharacterPicker } from './character-picker.js';
 import { debounce } from './debounce.js';
+import { foldSearchText } from '../../../../../util/fuzzy-search.js';
 
 const SCOPES = ['total', 'system', 'final'];
 
@@ -65,17 +66,17 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
     }
 
     function visibleCases() {
-        const term = searchInput.value.trim().toLowerCase();
+        const term = foldSearchText(searchInput.value).trim();
         if (!term) {
             return cases;
         }
-        return cases.filter(testCase => [
+        return cases.filter(testCase => foldSearchText([
             testCase.name,
             testCase.notes,
             testCase.tags.join(' '),
             testCase.pins.characterAvatar,
             testCase.pins.presets.map(ref => ref.name).join(' '),
-        ].join(' ').toLowerCase().includes(term));
+        ].join(' ')).includes(term));
     }
 
     /** Names for the avatars a case pins, so a list reads as people not files. */

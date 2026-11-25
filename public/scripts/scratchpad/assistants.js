@@ -4,6 +4,7 @@ import { h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_TYPE } from '../popup.js';
 import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 
 const button = (text, onclick, options = {}) => h('button', { type: 'button', class: 'menu_button scratchpad-library-button', text, onclick, ...options });
 const field = (label, input) => h('label', { class: 'scratchpad-field' }, h('span', { text: label }), input);
@@ -125,7 +126,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         // Rows are drawn once and typing only hides them, with a class rather than the hidden
         // attribute, which :has() rules watch. Rebuilding every card row per key made typing lag.
         const rows = characters.filter(card => card.avatar && card.name).map(card => ({
-            name: card.name.toLocaleLowerCase(),
+            name: foldSearchText(card.name),
             row: h('div', { class: 'scratchpad-library-row' },
                 h('img', { src: getThumbnailUrlForViewport('avatar', card.avatar), alt: '', width: 48, height: 48, loading: 'lazy' }),
                 h('strong', { text: card.name, 'data-i18n-ignore': '' }),
@@ -138,7 +139,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         const empty = h('p', { text: t`No character cards match. Import a card in Characters, or add a new assistant.` });
         results.replaceChildren(...rows.map(item => item.row), empty);
         const render = () => {
-            const query = search.value.trim().toLocaleLowerCase();
+            const query = foldSearchText(search.value).trim();
             let shown = 0;
             for (const item of rows) {
                 const filtered = !item.name.includes(query);
@@ -159,7 +160,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
         const search = h('input', { class: 'text_pole', type: 'search', value: searchText, placeholder: t`Search assistants`, 'aria-label': t`Search assistants` });
         const focusRow = (kind, key) => focus(results.querySelector(`[data-assistant="${CSS.escape(key)}"] .scratchpad-library-${kind}:not(:disabled)`) || search);
         const render = () => {
-            const matches = assistants().filter(item => item.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()));
+            const matches = assistants().filter(item => foldSearchText(item.name).includes(foldSearchText(search.value).trim()));
             results.replaceChildren(...matches.map(item => h('div', { class: 'scratchpad-library-row', 'data-assistant': item.id },
                 h('img', { src: portrait(item.id), alt: '', width: 48, height: 48 }),
                 h('div', { class: 'scratchpad-library-description', title: item.name }, h('strong', { text: item.name, 'data-i18n-ignore': '' }),

@@ -1,8 +1,9 @@
 import { conversationState } from './state.js';
 import { getConversationAttachmentLabels, getConversationAttachmentSummary } from './thread-store.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 
 export function getConversationTimelineMessages(messages, { channel = conversationState.conversationTimelineChannel, query = conversationState.conversationTimelineSearchQuery } = {}) {
-    const normalizedQuery = String(query || '').trim().toLowerCase();
+    const normalizedQuery = foldSearchText(query).trim();
     return (Array.isArray(messages) ? messages : []).filter((message) => {
         if (!message) {
             return false;
@@ -37,7 +38,7 @@ export function getConversationTimelineMessages(messages, { channel = conversati
 
         if (normalizedQuery) {
             const replyReference = message.extra?.conversation_reply_to;
-            const haystack = [
+            const haystack = foldSearchText([
                 message.name,
                 message.role,
                 message.mes,
@@ -47,8 +48,7 @@ export function getConversationTimelineMessages(messages, { channel = conversati
                 replyReference?.attachmentSummary,
             ]
                 .filter(Boolean)
-                .join(' ')
-                .toLowerCase();
+                .join(' '));
             if (!haystack.includes(normalizedQuery)) {
                 return false;
             }

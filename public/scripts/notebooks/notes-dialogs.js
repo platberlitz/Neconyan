@@ -258,7 +258,7 @@ export async function chooseNote(app, message, candidates = []) {
 function linkLabel(note, notes) {
     const stem = note.path.replace(/\.md$/i, '');
     const name = stem.replace(/^.*\//, '');
-    const duplicate = notes.filter(other => other.path.replace(/\.md$/i, '').replace(/^.*\//, '').toLocaleLowerCase() === name.toLocaleLowerCase()).length > 1;
+    const duplicate = notes.filter(other => other.path.replace(/\.md$/i, '').replace(/^.*\//, '').toLocaleLowerCase('und') === name.toLocaleLowerCase('und')).length > 1;
     return duplicate ? stem : name;
 }
 

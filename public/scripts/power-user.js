@@ -2144,7 +2144,7 @@ function normalizeAccentProfile(profile) {
 }
 
 function getAccentProfileKey(profile) {
-    return profile.name.toLocaleLowerCase();
+    return profile.name.toLowerCase();
 }
 
 function normalizeAccentProfiles() {
@@ -2269,7 +2269,7 @@ async function saveAccentProfile() {
     }
 
     normalizeAccentProfiles();
-    const existingIndex = power_user.sb_accent_profiles.findIndex(profile => profile.name.toLocaleLowerCase() === newProfile.name.toLocaleLowerCase());
+    const existingIndex = power_user.sb_accent_profiles.findIndex(profile => profile.name.toLowerCase() === newProfile.name.toLowerCase());
 
     if (existingIndex !== -1) {
         const confirm = await callGenericPopup(`Replace the "${newProfile.name}" accent profile?`, POPUP_TYPE.CONFIRM, '', {

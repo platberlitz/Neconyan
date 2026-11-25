@@ -23,6 +23,7 @@ import { commonEnumProviders, enumIcons } from './slash-commands/SlashCommandCom
 import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { StructuredCloneMap } from './util/StructuredCloneMap.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 import { renderTemplateAsync } from './templates.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
@@ -4722,8 +4723,8 @@ function buildAutocompleteCallback({ data, collectValues, includeExtras = () => 
         const haystack = Array.from(values).sort((a, b) => a.localeCompare(b));
 
         // Case-insensitive contains
-        const needle = String(input.term ?? '').toLowerCase();
-        let result = haystack.filter(x => x.toLowerCase().includes(needle));
+        const needle = foldSearchText(input.term);
+        let result = haystack.filter(x => foldSearchText(x).includes(needle));
 
         // Optional final-pass semantics
         if (postFilter) {

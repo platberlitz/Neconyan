@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-settings-tabs.js'), 'utf8');
@@ -354,9 +355,14 @@ describe('Neconyan settings and extension controllers', () => {
             HTMLElement, getUniversalSearchState: () => ({ results, expanded: true }),
             collectGlobalSearchMatches: () => matches,
             createElement: (tag, options) => new HTMLElement(tag, options),
+            foldSearchText,
+            translate: value => value,
             normalizeText: value => value, setUniversalSearchActiveIndex() {},
         });
-        vm.runInContext(shellSource.match(/^function renderSearchMatches\([\s\S]*?^}/m)[0], context);
+        vm.runInContext([
+            shellSource.match(/^function createSearchGroupLabel\([\s\S]*?^}/m)[0],
+            shellSource.match(/^function renderSearchMatches\([\s\S]*?^}/m)[0],
+        ].join('\n'), context);
         context.renderSearchMatches('test', matches, { loadMore() {} });
         expect(results.querySelectorAll().map(button => button.id)).toEqual([
             'sb-search-result-0', 'sb-search-result-1', 'sb-search-result-2', 'sb-search-result-3',

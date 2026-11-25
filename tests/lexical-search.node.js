@@ -27,3 +27,32 @@ test('word splitting gives the same memory search terms with or without Intl.Seg
     assert.equal(found, 1);
     assert.equal(lexicalSearch([{ text: 'Denji kept the promise', searchText: '' }], 'denji').length, 1);
 });
+
+test('terms and lexicalSearch fold Turkish İ and API under tr-TR while preserving kır/kir, всё/все, café/cafe, Thai, and Japanese', () => {
+    const originalToLocaleLowerCase = String.prototype.toLocaleLowerCase;
+    String.prototype.toLocaleLowerCase = function () {
+        return originalToLocaleLowerCase.call(this, 'tr-TR');
+    };
+    try {
+        assert.deepEqual(terms('İçe'), terms('içe'));
+        assert.deepEqual(terms('API'), ['api']);
+        assert.equal(lexicalSearch([{ text: 'İçe aktar ve API', searchText: '' }], 'içe').length, 1);
+        assert.equal(lexicalSearch([{ text: 'İçe aktar ve API', searchText: '' }], 'api').length, 1);
+
+        assert.notDeepEqual(terms('kır'), terms('kir'));
+        assert.equal(lexicalSearch([{ text: 'kır evi', searchText: '' }], 'kir').length, 0);
+
+        assert.notDeepEqual(terms('всё'), terms('все'));
+        assert.equal(lexicalSearch([{ text: 'всё готово', searchText: '' }], 'все').length, 0);
+
+        assert.notDeepEqual(terms('café'), terms('cafe'));
+        assert.equal(lexicalSearch([{ text: 'café', searchText: '' }], 'cafe').length, 0);
+
+        assert.notDeepEqual(terms('ที่'), terms('ที'));
+        assert.equal(terms('がっこう').join(''), 'がっこう');
+        assert.notDeepEqual(terms('がっこう'), terms('かっこう'));
+        assert.equal(lexicalSearch([{ text: 'がっこう', searchText: '' }], 'かっこう').length, 0);
+    } finally {
+        String.prototype.toLocaleLowerCase = originalToLocaleLowerCase;
+    }
+});

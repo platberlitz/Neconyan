@@ -1,5 +1,6 @@
 import { t } from '../../i18n.js';
 import { regexFromString } from '../../regex-utils.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 
 const FLAG_ORDER = 'dgimsuvy';
 
@@ -430,10 +431,10 @@ export function setupRegexEditorHelpers(root, { getSampleText, onChange } = {}) 
  * @returns {number} Number of rows left visible
  */
 export function filterRegexScriptRows(root, query) {
-    const needle = String(query ?? '').trim().toLowerCase();
+    const needle = foldSearchText(query).trim();
     let visible = 0;
     for (const row of root.querySelectorAll('.regex-script-label')) {
-        const name = row.querySelector('.regex_script_name')?.textContent?.toLowerCase() ?? '';
+        const name = foldSearchText(row.querySelector('.regex_script_name')?.textContent);
         const shown = !needle || name.includes(needle);
         row.classList.toggle('regex_filtered_out', !shown);
         if (shown) visible += 1;

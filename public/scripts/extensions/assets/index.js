@@ -8,6 +8,7 @@ import { getRequestHeaders, processDroppedFiles, eventSource, event_types } from
 import { deleteExtension, EMPTY_AUTHOR, extensionNames, getAuthorFromUrl, getContext, installExtension, renderExtensionTemplateAsync, isOfficialExtension } from '../../extensions.js';
 import { POPUP_TYPE, Popup, callGenericPopup } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 import { escapeHtml, flashHighlight, getStringHash, isValidUrl } from '../../utils.js';
 import { t, translate } from '../../i18n.js';
 import { SlashCommandParser } from '/scripts/slash-commands/SlashCommandParser.js';
@@ -30,7 +31,7 @@ let currentAssets = {};
 //#############################//
 
 function filterAssets() {
-    const searchValue = String($('#assets_search').val()).toLowerCase().trim();
+    const searchValue = foldSearchText($('#assets_search').val()).trim();
     const typeValue = String($('#assets_type_select').val());
 
     if (typeValue === '') {
@@ -47,7 +48,7 @@ function filterAssets() {
     } else {
         $('#assets_menu .asset-block').hide();
         $('#assets_menu .asset-block').filter(function () {
-            return $(this).text().toLowerCase().includes(searchValue);
+            return foldSearchText($(this).text()).includes(searchValue);
         }).show();
     }
 }

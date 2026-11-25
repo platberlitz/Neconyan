@@ -4,6 +4,7 @@ import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { createAgentUiPreferences, readCollapsedAgentCategories } from './ui-preferences.js';
 import { cancelDebounce, debounce, download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 import { debounce_timeout } from '../../constants.js';
 import { getStringHash } from '../../macro-primitives.js';
 import { getPlotCompassIdentity } from './companion/plot-compass-context.js';
@@ -1904,18 +1905,18 @@ function getTemplateSearchHaystack(template) {
     const subcategoryLabel = getTemplateSubcategoryLabel(template);
     const tags = Array.isArray(template?.tags) ? template.tags.join(' ') : '';
 
-    return [
+    return foldSearchText([
         template?.name,
         template?.description,
         tags,
         template?.category,
         categoryLabel,
         subcategoryLabel,
-    ].join(' ').toLowerCase();
+    ].join(' '));
 }
 
 function filterTemplates(templateList = templates, { searchTerm = '', category = '' } = {}) {
-    const normalizedSearchTerm = String(searchTerm ?? '').trim().toLowerCase();
+    const normalizedSearchTerm = foldSearchText(searchTerm).trim();
     const normalizedCategory = String(category ?? '').trim();
 
     return templateList.filter(template => {
@@ -3694,14 +3695,14 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
 
 function getFilteredAgentList(allAgents = sortAgentsByOrder(getVisibleInChatAgents())) {
     const activeTab = getActiveAgentListTab();
-    const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
+    const searchTerm = foldSearchText($('#ica--search').val() || '');
     const timingFilter = ($('#ica--timingFilter').val() || '').toString();
     let agents = [...allAgents];
     if (searchTerm) {
         agents = agents.filter(a =>
-            a.name.toLowerCase().includes(searchTerm) ||
-            a.description.toLowerCase().includes(searchTerm) ||
-            a.tags.some(t => t.toLowerCase().includes(searchTerm)),
+            foldSearchText(a.name).includes(searchTerm) ||
+            foldSearchText(a.description).includes(searchTerm) ||
+            a.tags.some(t => foldSearchText(t).includes(searchTerm)),
         );
     }
     if (timingFilter) agents = agents.filter(agent => agentMatchesTimingFilter(agent, timingFilter));
@@ -3746,7 +3747,7 @@ function renderAgentList() {
     syncAgentListKindTabs(allAgents, activeTab);
     syncAgentTabStrip(activeTab);
 
-    const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
+    const searchTerm = foldSearchText($('#ica--search').val() || '');
     const timingFilter = ($('#ica--timingFilter').val() || '').toString();
     const agents = getFilteredAgentList(allAgents);
     for (const id of selectedAgentIds) if (!allAgents.some(agent => agent.id === id)) selectedAgentIds.delete(id);

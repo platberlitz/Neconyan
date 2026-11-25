@@ -1,5 +1,6 @@
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { escapeHtml } from '../../utils.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 import {
     captureAgentSaveGuard,
     DEFAULT_LENGTH_TARGET,
@@ -72,9 +73,9 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
         });
         section.find('[role="status"]').text(`${list.find('input:checked').length} selected`);
     };
-    const rows = list.children().toArray().map(row => ({ row, text: row.textContent.toLowerCase() }));
+    const rows = list.children().toArray().map(row => ({ row, text: foldSearchText(row.textContent) }));
     section.find('input[type="search"]').on('input', function () {
-        const query = this.value.toLowerCase();
+        const query = foldSearchText(this.value);
         // A class, not the hidden attribute: Chrome restyles the whole dialog for every hidden change because :has() rules watch it.
         for (const { row, text } of rows) {
             const filtered = !text.includes(query);

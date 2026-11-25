@@ -2,6 +2,8 @@ import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+import { foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readSource = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').replace(/\r\n/g, '\n');
@@ -82,6 +84,20 @@ describe('Neconyan settings theme drawers', () => {
         expect(shellTabsSource).toContain('header?.classList.add(\'userSettingsInnerExpandable\');');
         expect(shellTabsSource).not.toContain('card.append(shellStyleSettingsGroup');
         expect(neconyanCssSource).toContain('.sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*=\'display: block\']');
+    });
+
+    test('normalizeSettingsSearchText folds Turkish İ/ı and English terms via foldSearchText', () => {
+        const fnSource = settingsTabsSource.match(/^ {4}function normalizeSettingsSearchText\([\s\S]*?^ {4}\}/m)?.[0];
+        expect(fnSource).toBeTruthy();
+        const context = vm.createContext({ foldSearchText });
+        vm.runInContext(`${fnSource}\nglobalThis.normalizeSettingsSearchText = normalizeSettingsSearchText;`, context);
+
+        expect(context.normalizeSettingsSearchText('İçe   aktar')).toBe('ice aktar');
+        expect(context.normalizeSettingsSearchText('içe aktar')).toBe('ice aktar');
+        expect(context.normalizeSettingsSearchText('API')).toBe('api');
+        expect(context.normalizeSettingsSearchText('Işık')).toBe('isik');
+        expect(context.normalizeSettingsSearchText('ışık')).toBe('isik');
+        expect(context.normalizeSettingsSearchText('Quick Image Gen')).toBe(context.normalizeSettingsSearchText('quıck ımage gen'));
     });
 
     test('gives settings drawers icons and files the Chat & Writing drawers under their tabs', () => {

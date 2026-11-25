@@ -1,6 +1,7 @@
 import { t } from './i18n.js';
 import { Popup, POPUP_TYPE } from './popup.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 import { ENTRY_FOLDER_KEY, addEntryFolder, findEntryFolderHeadingAt, getEntryFolder, getEntryFolders, groupEntriesByFolder, normalizeEntryFolder, renameEntryFolder, resolveEntryFolderDrop, setEntryFolder } from './world-info-entry-folders.js';
 
 const views = new Map();
@@ -100,12 +101,12 @@ export function createEntryFolderUI({ name, data, save, refresh, syncOriginal, r
                 check.type = 'checkbox';
                 check.addEventListener('change', () => check.checked ? selected.add(entry.uid) : selected.delete(entry.uid));
                 row.append(check, element('span', '', entry.comment || entry.key?.join(', ') || `Entry ${entry.uid}`));
-                row.dataset.search = `${entry.comment ?? ''} ${(entry.key ?? []).join(' ')} ${getEntryFolder(entry)}`.toLocaleLowerCase();
+                row.dataset.search = foldSearchText(`${entry.comment ?? ''} ${(entry.key ?? []).join(' ')} ${getEntryFolder(entry)}`);
                 list.append(row);
                 return { row, check, uid: entry.uid };
             });
             search.addEventListener('input', () => rows.forEach(({ row }) => {
-                row.hidden = !row.dataset.search.includes(search.value.trim().toLocaleLowerCase());
+                row.hidden = !row.dataset.search.includes(foldSearchText(search.value).trim());
             }));
             const actions = element('div', 'flex-container');
             actions.append(button('Select shown', 'fa-check-double', () => rows.forEach(({ row, check, uid }) => {
