@@ -19,7 +19,7 @@ test('share capabilities keep only switches the source mode offers', () => {
     assert.equal(roleplay.shareDepth, 12);
 
     const conversation = normaliseCapabilities({ shareable: HOSTILE, shareDepth: 30 }, 'conversation', {});
-    assert.deepEqual(conversation.shareable, ['card', 'persona', 'lore', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'regex', 'cssSnippets', 'dialogueColors', 'hidden']);
+    assert.deepEqual(conversation.shareable, ['card', 'persona', 'lore', 'preset', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'regex', 'cssSnippets', 'dialogueColors', 'hidden']);
     assert.equal(conversation.shareDepth, 30);
 
     const general = normaliseCapabilities({ shareable: HOSTILE, shareDepth: 30 }, 'general', {});

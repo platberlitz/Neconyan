@@ -262,7 +262,7 @@ export function normaliseChange(value) {
     }
     if (value.type === 'chat') {
         if (value.action === 'insert') {
-            const after = messageNumber(value.after);
+            const after = String(value.after ?? '').trim() === '-1' ? -1 : messageNumber(value.after);
             if (after === null) fail('This new message does not say where it goes.');
             const body = text(value.text);
             if (!body.trim()) fail('This new message has no text.');
@@ -348,7 +348,7 @@ export function describeChange(change) {
     if (change.type === 'mewmory') return `Correct memory '${change.record}': ${change.field}`;
     switch (change.action) {
         case 'edit': return `Rewrite message #${change.message}`;
-        case 'insert': return `Add a message after #${change.after}`;
+        case 'insert': return change.after < 0 ? 'Add a message at the start' : `Add a message after #${change.after}`;
         case 'hide': return `Hide message #${change.message}`;
         case 'unhide': return `Show message #${change.message} again`;
         default: return `Delete message #${change.message}`;

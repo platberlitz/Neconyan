@@ -20,8 +20,13 @@ export const TRYABLE_CHANGE_TYPES = Object.freeze({
     persona: Object.freeze({ modes: STORY_MODES, fields: Object.freeze(['name', 'description', 'title']) }),
     authors_note: Object.freeze({ modes: ROLEPLAY_ONLY }),
     lore: Object.freeze({ modes: STORY_MODES, actions: Object.freeze(['add', 'edit', 'delete']) }),
-    preset: Object.freeze({ modes: ROLEPLAY_ONLY, actions: Object.freeze(['replace']) }),
-    chat: Object.freeze({ modes: ROLEPLAY_ONLY, actions: Object.freeze(['edit', 'insert', 'hide', 'unhide', 'delete']) }),
+    preset: Object.freeze({ modes: STORY_MODES, actions: Object.freeze(['replace']) }),
+    chat: Object.freeze({
+        modes: STORY_MODES,
+        actions: Object.freeze(['edit', 'insert', 'hide', 'unhide', 'delete']),
+        // Conversation messages have no hidden state, so only these can be tried there.
+        modeActions: Object.freeze({ conversation: Object.freeze(['edit', 'insert', 'delete']) }),
+    }),
 });
 
 export const UNSAVED_LORE_UID = 'unsaved';
@@ -52,7 +57,9 @@ export function rehearsalChangeKind(proposal) {
 export function canTryProposalInRehearsal(proposal, source) {
     if (!canRehearse(source)) return false;
     const kind = rehearsalChangeKind(proposal);
-    return Boolean(kind) && TRYABLE_CHANGE_TYPES[kind].modes.includes(source.kind);
+    if (!kind || !TRYABLE_CHANGE_TYPES[kind].modes.includes(source.kind)) return false;
+    const actions = TRYABLE_CHANGE_TYPES[kind].modeActions?.[source.kind];
+    return !actions || actions.includes(proposal.action);
 }
 
 export function buildTryRehearsalRequest(label) {
