@@ -28,6 +28,7 @@
 - Fixed non-English alerts that dropped singular counts or cut off save warnings in **Dialogue Colors**.
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
 - Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
+- **Scratchpad** can now rewrite, add and delete messages in a **Conversation** chat, and edit your preset there too once you tick **Current preset**. Each change has **Try first** before you save and **Undo** after.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

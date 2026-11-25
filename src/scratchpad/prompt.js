@@ -170,7 +170,7 @@ function imageInstructions({ image, avatar, persona }, imageEditing) {
     ].join('\n');
 }
 
-function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory, problems }) {
+function changeInstructions({ lore, character, chat, members, notebook, persona, preset, agents, authorsNote, regex, cssSnippets, dialogueColors, mewmory, problems, conversation = false }) {
     const kinds = [];
     const note = scenarioNoteFormat(persona);
     if (problems) kinds.push([
@@ -264,7 +264,15 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
             members ? `- In this group chat, name the member you mean: ${members}.` : '',
         ].filter(Boolean).join('\n'));
     }
-    if (chat) {
+    if (chat && conversation) {
+        kinds.push([
+            'Conversation messages (use the #numbers from the context):',
+            '{"type":"chat","action":"edit","message":<#number>,"text":"<the complete new message text>","reason":"<why>"}',
+            '{"type":"chat","action":"insert","after":<#number, or -1 for the start>,"speaker":"user" or "character","name":"<optional speaker name>","text":"<message text>","reason":"<why>"}',
+            '{"type":"chat","action":"delete","message":<#number>,"reason":"<why>"}',
+            'Conversation messages cannot be hidden, so only edit, insert and delete are available here.',
+        ].join('\n'));
+    } else if (chat) {
         kinds.push([
             'Story chat messages (use the #numbers from the context):',
             '{"type":"chat","action":"edit","message":<#number>,"text":"<the complete new message text>","reason":"<why>"}',
@@ -315,7 +323,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
         capabilities.lastPrompt ? LAST_PROMPT_INSTRUCTIONS : '',
         capabilities.companionNotes ? COMPANION_NOTES_INSTRUCTIONS : '',
         shareRequestInstructions(capabilities),
-        changeInstructions(capabilities),
+        changeInstructions({ ...capabilities, conversation: sourceKind === 'conversation' }),
     ];
     const customLore = generalLore || Boolean(capabilities.problems && capabilities.lore);
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()

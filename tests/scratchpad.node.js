@@ -243,15 +243,39 @@ test('Author\'s Note changes are offered only in Roleplay, and only when the not
     }
 });
 
-test('preset capabilities stay in Roleplay and remain available in custom assistant prompts', () => {
+test('preset capabilities stay in story chats and remain available in custom assistant prompts', () => {
     const preset = [{ api: 'openai', name: 'Lantern' }];
     assert.deepEqual(normaliseCapabilities({ preset }).preset, preset);
-    for (const kind of ['general', 'conversation', 'notebook']) assert.equal(normaliseCapabilities({ preset }, kind).preset, undefined);
+    assert.deepEqual(normaliseCapabilities({ preset }, 'conversation').preset, preset);
+    for (const kind of ['general', 'notebook']) assert.equal(normaliseCapabilities({ preset }, kind).preset, undefined);
     assert.equal(normaliseCapabilities({ preset: [{ api: '__proto__', name: 'No' }] }).preset, undefined);
     const { text } = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { preset }, customPrompt: 'Be helpful.' });
     assert.match(text, /"type":"preset"/);
     assert.match(text, /"name":"Lantern"/);
     assert.match(text, /Nothing changes until the user presses Save change/);
+});
+
+test('Conversation offers message edits, additions and deletions but never hiding, plus the shared preset', () => {
+    const preset = [{ api: 'openai', name: 'Lantern' }];
+    const conversation = buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'conversation', capabilities: normaliseCapabilities({ chat: true, preset }, 'conversation') }).text;
+    assert.match(conversation, /Conversation messages \(use the #numbers from the context\):/);
+    assert.match(conversation, /\{"type":"chat","action":"edit","message":<#number>/);
+    assert.match(conversation, /\{"type":"chat","action":"insert","after":<#number, or -1 for the start>/);
+    assert.match(conversation, /\{"type":"chat","action":"delete","message":<#number>/);
+    assert.match(conversation, /Conversation messages cannot be hidden, so only edit, insert and delete are available here\./);
+    assert.doesNotMatch(conversation, /"action":"hide"|"unhide"/);
+    assert.doesNotMatch(conversation, /Story chat messages/);
+    assert.match(conversation, /Shared preset targets: \[\{"api":"openai","name":"Lantern"\}\]/);
+
+    const unshared = buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'conversation', capabilities: normaliseCapabilities({}, 'conversation') }).text;
+    assert.doesNotMatch(unshared, /"type":"chat"|"type":"preset"/);
+
+    const roleplay = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: normaliseCapabilities({ chat: true, preset }) }).text;
+    assert.match(roleplay, /Story chat messages \(use the #numbers from the context\):\n\{"type":"chat","action":"edit","message":<#number>,"text":"<the complete new message text>","reason":"<why>"\}\n\{"type":"chat","action":"insert","after":<#number>,"speaker":"user" or "character","name":"<optional speaker name>","text":"<message text>","reason":"<why>"\}\n\{"type":"chat","action":"hide","message":<#number>,"reason":"<why>"\} \(also "unhide" and "delete"\)/);
+    assert.doesNotMatch(roleplay, /Conversation messages/);
+
+    const general = buildScratchpadSystemPrompt({ assistant: 'miso', sourceKind: 'general', capabilities: normaliseCapabilities({ chat: true, preset }, 'general') }).text;
+    assert.doesNotMatch(general, /"type":"chat"|"type":"preset"/);
 });
 let counter = 0;
 

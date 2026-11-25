@@ -37,7 +37,7 @@ async function load(api) {
     jest.resetModules();
     return import('../public/scripts/scratchpad/preset.js');
 }
-const { readCurrentPreset } = await load('openai');
+const { readCurrentPreset, currentPromptOrderId } = await load('openai');
 
 beforeEach(() => {
     promptManager.orders = new Map([
@@ -72,6 +72,13 @@ describe('Scratchpad preset reader', () => {
 
     test('uses only the global prompt order for General even when a character is still active', () => {
         expect(readCurrentPreset({ globalOnly: true }).modules.map(item => [item.id, item.enabled])).toEqual([['main', false]]);
+    });
+
+    test('names the account prompt order for General and Conversation, and the character order otherwise', () => {
+        expect(currentPromptOrderId()).toBe(7);
+        expect(currentPromptOrderId({ globalOnly: true })).toBe(100001);
+        promptManager.orders.delete(7);
+        expect(currentPromptOrderId()).toBe(100001);
     });
 
     test('lists the system prompt, context and instruct templates in Text Completion', async () => {

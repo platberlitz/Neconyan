@@ -13,7 +13,7 @@ jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPres
     getPresetSettings: () => live, getCompletionPresetByName: () => saved, savePreset,
 }) }));
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({
-    currentPresetTargets: () => selected, currentPromptOrderId: () => orderId,
+    currentPresetTargets: () => selected, currentPromptOrderId: ({ globalOnly = false } = {}) => (globalOnly ? 100 : orderId),
 }));
 const { preparePresetChange, undoPresetChange } = await import('../public/scripts/scratchpad/preset-changes.js');
 const { normaliseChange } = await import('../public/scripts/scratchpad/proposals.js');
@@ -25,7 +25,8 @@ beforeEach(() => {
     orderId = 7;
     live = { temperature: 0.8, prompts: [{ identifier: 'main', content: 'Old text.', role: 'system' }, { identifier: 'slot', marker: true }],
         prompt_order: [{ character_id: 7, order: [{ identifier: 'main', enabled: true }, { identifier: 'slot', enabled: true }] },
-            { character_id: 8, order: [{ identifier: 'main', enabled: false }] }] };
+            { character_id: 8, order: [{ identifier: 'main', enabled: false }] },
+            { character_id: 100, order: [{ identifier: 'main', enabled: true }] }] };
     saved = { ...structuredClone(live), extensionData: { keep: true } };
     savePreset.mockClear();
 });
@@ -126,4 +127,18 @@ test('undo stops when the preset was edited after the save, or is not selected',
     await expect(undoPresetChange(undo)).rejects.toThrow(/Select the preset Lantern first/);
     expect(savePreset).not.toHaveBeenCalled();
     expect(live.prompts[0].content).toBe('Edited by hand.');
+});
+
+test('Conversation edits the account prompt order, never the open character\'s own order, and undo keeps that choice', async () => {
+    const plan = preparePresetChange(normaliseChange({ ...proposal, field: 'enabled', value: false }), shared, undefined, { globalOnly: true });
+    const { undo } = await plan.commit('false');
+    expect(undo).toMatchObject({ kind: 'preset', orderId: 100, globalOnly: true });
+    expect(saved.prompt_order[2].order[0].enabled).toBe(false);
+    expect(saved.prompt_order[0].order[0].enabled).toBe(true);
+    orderId = 8;
+    await undoPresetChange(undo);
+    expect(saved.prompt_order[2].order[0].enabled).toBe(true);
+    expect(saved.prompt_order[1].order).toEqual([{ identifier: 'main', enabled: false }]);
+    const roleplay = await preparePresetChange(normaliseChange(proposal), shared).commit('Roleplay.');
+    expect(roleplay.undo).not.toHaveProperty('globalOnly');
 });

@@ -303,6 +303,10 @@ export async function undoChange(entry, source = null) {
         case 'chat-insert':
         case 'chat-delete':
             return undoMessage(undo, source);
+        case 'conversation-edit':
+        case 'conversation-insert':
+        case 'conversation-delete':
+            return (await import('./conversation-changes.js')).undoConversationChange(undo, { conflict });
         case 'mewmory':
             return undoMewmory(undo, source);
         default:
