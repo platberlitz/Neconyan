@@ -317,6 +317,8 @@ describe('agent workbench state', () => {
         const rule = styleSource.match(/^\.ica--tpanel-agent \{[^}]*\}/m)?.[0] ?? '';
         expect(rule).toContain('content-visibility: auto;');
         expect(rule).toMatch(/contain-intrinsic-size: auto \d+px;/);
+        const hydratedRule = styleSource.match(/^\.ica--tpanel-agent\.is-hydrated \{[^}]*\}/m)?.[0] ?? '';
+        expect(hydratedRule).toContain('content-visibility: visible;');
     });
 
     test('closed companion panel uses display none instead of inherited visibility', () => {
