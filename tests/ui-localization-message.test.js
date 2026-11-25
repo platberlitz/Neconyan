@@ -110,15 +110,14 @@ describe('localizeString', () => {
         expect(localizeString('Conversation selfie failed: X', dictionary)).toBe('Conversa selfie failed: X');
     });
 
-    test('characterisation: the shorter Scan key captures the failed-scan text, and the frame\'s own key cannot match an empty hole', () => {
+    test('the frame\'s own Scan key beats the shorter Scan key even when an optional hole is empty', () => {
         const short = ['Scan ${0}', 'Varredura ${0}'];
         const frame = ['Scan failed.${0} Technical details: ${1}', 'Falha na varredura.${0} Detalhes técnicos: ${1}'];
 
-        // The same result whichever key the dictionary lists first, which is why World Info Lab builds this line with its own hostT keys.
         for (const pairs of [[short, frame], [frame, short]]) {
             const dictionary = Object.fromEntries(pairs);
 
-            expect(localizeString('Scan failed. Technical details: X', dictionary)).toBe('Varredura failed. Technical details: X');
+            expect(localizeString('Scan failed. Technical details: X', dictionary)).toBe('Falha na varredura. Detalhes técnicos: X');
         }
     });
 
@@ -199,6 +198,122 @@ describe('localizeString', () => {
 
             expect(localizeString('cats and dogs too', dictionary)).toBe('L cats dogs');
             expect(localizeString('cats and dogs', dictionary)).toBe('S cats dogs');
+        }
+    });
+
+    test('templateIndex sizes separated letter-attached, separated non-letter, and ordinary holes accurately', () => {
+        const dictionary = {
+            'Group: ${0}${1}': 'Gruppe: ${0}${1}',
+            'Foo bar${0}${1}': 'Baz ${0}',
+            'Alpha ${0}${1}': 'Alpha [${0} | ${1}]',
+        };
+
+        expect(localizeString('Group: Alpha', dictionary)).toBe('Gruppe: Alpha');
+        expect(localizeString('Foo bars (x)', dictionary)).toBe('Baz s');
+        expect(localizeString('Alpha 12', dictionary)).toBe('Alpha [1 | 2]');
+        expect(localizeString('Alpha x', dictionary)).toBe('Alpha x');
+    });
+});
+
+describe('empty holes and Dialogue Colors localization', () => {
+    const loadShippedDictionary = language => {
+        const baseFile = `${language}.json`;
+        return assembleLocaleData({
+            base: fs.existsSync(localePath(baseFile)) ? readLocale(baseFile) : {},
+            supplement: readLocale(`neconyan/${language}.json`),
+            catalogue: readLocale('neconyan/en.json'),
+        }).dictionary;
+    };
+
+    test('L10N-49 translates Recolored and Colorized save-failure warnings without short-key swallowing', () => {
+        const recoloredCases = [
+            ['de-de', '1 Nachricht umgefärbt; der Host hat das Speichern des Chats nicht bestätigt.'],
+            ['ja-jp', '1件のメッセージの色を再適用しました（ホストがチャットの保存を確認しませんでした）。'],
+            ['tr-tr', '1 mesaj yeniden renklendirildi; ana uygulama sohbet kaydını onaylamadı.'],
+            ['it-it', 'Messaggi ricolorati: 1; l\'host non ha confermato il salvataggio della chat.'],
+            ['fr-fr', 'Recolored 1 message; the host did not confirm the chat save.'],
+        ];
+        for (const [language, expected] of recoloredCases) {
+            const dictionary = loadShippedDictionary(language);
+            expect(localizeString('Recolored 1 message; the host did not confirm the chat save.', dictionary)).toBe(expected);
+        }
+
+        const colorizedCases = [
+            [
+                'de-de',
+                '1 Nachricht eingefärbt; der Host hat das Speichern des Chats nicht bestätigt.',
+                '3 Nachrichts eingefärbt; der Host hat das Speichern des Chats nicht bestätigt.',
+            ],
+            [
+                'it-it',
+                'Messaggi colorati: 1; l\'host non ha confermato il salvataggio della chat.',
+                'Messaggi colorati: 3; l\'host non ha confermato il salvataggio della chat.',
+            ],
+            [
+                'tr-tr',
+                '1 mesaj renklendirildi; ana uygulama sohbet kaydını onaylamadı.',
+                '3 mesaj renklendirildi; ana uygulama sohbet kaydını onaylamadı.',
+            ],
+            [
+                'ja-jp',
+                '1件のメッセージを色分けしました（ホストがチャットの保存を確認しませんでした）。',
+                '3件sのメッセージを色分けしました（ホストがチャットの保存を確認しませんでした）。',
+            ],
+        ];
+        for (const [language, expectedOne, expectedThree] of colorizedCases) {
+            const dictionary = loadShippedDictionary(language);
+            expect(localizeString('Colorized 1 message; the host did not confirm the chat save.', dictionary)).toBe(expectedOne);
+            expect(localizeString('Colorized 3 messages; the host did not confirm the chat save.', dictionary)).toBe(expectedThree);
+        }
+    });
+
+    test('matches singular n=1 plural-ending keys and optional-suffix captions', () => {
+        const singularCases = [
+            ['de-de', '1 Nachricht umgefärbt.', '1 ausgewählte(n) Agent(en) löschen?'],
+            ['ja-jp', '1件のメッセージの色を再適用しました。', '選択した1体のエージェントを削除しますか？'],
+            ['tr-tr', '1 mesaj yeniden renklendirildi.', 'Seçili 1 ajan silinsin mi?'],
+        ];
+        for (const [language, recoloredOne, deleteOne] of singularCases) {
+            const dictionary = loadShippedDictionary(language);
+            expect(localizeString('Recolored 1 message.', dictionary)).toBe(recoloredOne);
+            expect(localizeString('Delete 1 selected agent?', dictionary)).toBe(deleteOne);
+        }
+
+        const german = loadShippedDictionary('de-de');
+        expect(localizeString('Extension Foo synced.', german)).toBe('Erweiterung Foo synchronisiert.');
+        expect(localizeString('QIG: generation complete.', german)).toBe('QIG: Generierung abgeschlossen.');
+    });
+
+    test('Turkish opt-filled Dialogue Colors outputs match exact non-regression strings', () => {
+        const turkish = loadShippedDictionary('tr-tr');
+        const cases = [
+            [
+                'Colorized 3 messages (2 skipped - no speaker/color match).',
+                '3 mesaj renklendirildi (2 skipped - no speaker/color match).',
+            ],
+            [
+                'Colorized 3 messages (2 skipped - no speaker/color match); the host did not confirm the chat save.',
+                '3 mesaj renklendirildi (2 skipped - no speaker/color match); ana uygulama sohbet kaydını onaylamadı.',
+            ],
+            [
+                'Randomized 3 unlocked colors; skipped 2 locked.',
+                '3 kilitlenmemiş renk rastgeleleştirildi; skipped 2 locked.',
+            ],
+            [
+                'Set group for 3 characters; applied its profile to 2.',
+                '3 karakter için grup ayarlandı; applied its profile to 2.',
+            ],
+            [
+                'Cleaned 3 messages (2 swipes).',
+                '3 mesaj temizlendi (2 swipes).',
+            ],
+            [
+                'Cleaned 3 messages (2 swipes). Click this toast to undo.',
+                '3 mesaj temizlendi (2 swipes). Click this toast to undo.',
+            ],
+        ];
+        for (const [input, expected] of cases) {
+            expect(localizeString(input, turkish)).toBe(expected);
         }
     });
 });

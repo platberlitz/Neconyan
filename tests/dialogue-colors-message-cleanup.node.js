@@ -85,6 +85,12 @@ const {
     restoreChatColorMarkup,
     stripColorFontTags,
 } = await import(`${EXTENSION}/message-cleanup.js`);
+const {
+    formatCleanedMessagesToast,
+    formatColorizedMessagesToast,
+    formatRandomizedColorsToast,
+    formatSetGroupToast,
+} = await import(`${EXTENSION}/utils.js`);
 hooks.deregister();
 
 const COLORED = '<font color="#22aa66">"Hello."</font> Mira waves.';
@@ -145,4 +151,32 @@ test('the cleanup action edits the open chat and its undo puts the text back', a
     const empty = await applyChatColorMarkupCleanup({ silent: true });
     assert.equal(empty.messageCount, 0);
     assert.equal(empty.undo, null);
+});
+
+test('Dialogue Colors toast formatters emit exact singular and plural messages across all 22 branches', () => {
+    assert.equal(formatColorizedMessagesToast(1, 0, true), 'Colorized 1 message.');
+    assert.equal(formatColorizedMessagesToast(3, 0, true), 'Colorized 3 messages.');
+    assert.equal(formatColorizedMessagesToast(1, 2, true), 'Colorized 1 message (2 skipped - no speaker/color match).');
+    assert.equal(formatColorizedMessagesToast(3, 2, true), 'Colorized 3 messages (2 skipped - no speaker/color match).');
+    assert.equal(formatColorizedMessagesToast(1, 0, false), 'Colorized 1 message; the host did not confirm the chat save.');
+    assert.equal(formatColorizedMessagesToast(3, 0, false), 'Colorized 3 messages; the host did not confirm the chat save.');
+    assert.equal(formatColorizedMessagesToast(1, 2, false), 'Colorized 1 message (2 skipped - no speaker/color match); the host did not confirm the chat save.');
+    assert.equal(formatColorizedMessagesToast(3, 2, false), 'Colorized 3 messages (2 skipped - no speaker/color match); the host did not confirm the chat save.');
+
+    assert.equal(formatRandomizedColorsToast(1, 0), 'Randomized 1 unlocked color.');
+    assert.equal(formatRandomizedColorsToast(3, 0), 'Randomized 3 unlocked colors.');
+    assert.equal(formatRandomizedColorsToast(1, 2), 'Randomized 1 unlocked color; skipped 2 locked.');
+    assert.equal(formatRandomizedColorsToast(3, 2), 'Randomized 3 unlocked colors; skipped 2 locked.');
+
+    assert.equal(formatSetGroupToast(1, 0), 'Set group for 1 character.');
+    assert.equal(formatSetGroupToast(3, 0), 'Set group for 3 characters.');
+    assert.equal(formatSetGroupToast(1, 2), 'Set group for 1 character; applied its profile to 2.');
+    assert.equal(formatSetGroupToast(3, 2), 'Set group for 3 characters; applied its profile to 2.');
+
+    assert.equal(formatCleanedMessagesToast(1, 0), 'Cleaned 1 message.');
+    assert.equal(formatCleanedMessagesToast(2, 0), 'Cleaned 2 messages.');
+    assert.equal(formatCleanedMessagesToast(1, 1), 'Cleaned 1 message (1 swipe).');
+    assert.equal(formatCleanedMessagesToast(2, 1), 'Cleaned 2 messages (1 swipe).');
+    assert.equal(formatCleanedMessagesToast(1, 2), 'Cleaned 1 message (2 swipes).');
+    assert.equal(formatCleanedMessagesToast(2, 2), 'Cleaned 2 messages (2 swipes).');
 });

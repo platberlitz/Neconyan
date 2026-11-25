@@ -17,7 +17,7 @@ import { bindMessageWorkLifecycle, createMessageWorkController } from './message
 import { COLOR_STATE_SAVE_DELAY_MS, LIVE_CHAT_SAVE_DELAY_MS, attributionChatGeneration, characterColors, colorStateSaveTimer, isAutoColorizing, isColorizing, isDomEngine, isRecoloring, lastProcessedMessageSignature, liveChatSaveTimer, pendingColorStateHistory, pendingColorStateInjectPrompt, pendingColorStateSaveData, pendingColorStateUpdateList, setColorStateSaveTimer, setIsAutoColorizing, setIsColorizing, setIsRecoloring, setLastProcessedMessageSignature, setLiveChatSaveTimer, setPendingColorStateHistory, setPendingColorStateInjectPrompt, setPendingColorStateSaveData, setPendingColorStateUpdateList, setPendingLiveChatSave, settings } from './state.js';
 import { getStorageKey, saveData } from './storage.js';
 import { clearAutoColorizeIndicators, hideAutoColorizeIndicator, setColorizeButtonBusy, setRecolorButtonBusy, showAutoColorizeIndicator, updateCharList, updateLegend, updateStorageScopeStatus } from './ui.js';
-import { findHtmlTagRanges, getMessageElementByIndex, hashMessageText, isCompositeSpeakerLabel, isToolCallMessage, maskHtmlTagQuotes, normalizeHexColor, normalizeSegmentText, splitsHtmlTag, toast } from './utils.js';
+import { findHtmlTagRanges, formatColorizedMessagesToast, getMessageElementByIndex, hashMessageText, isCompositeSpeakerLabel, isToolCallMessage, maskHtmlTagQuotes, normalizeHexColor, normalizeSegmentText, splitsHtmlTag, toast } from './utils.js';
 
 // A boolean retry flag forgets intermediate replies: when several arrive while a
 // colorize call is in flight, only the newest would ever be revisited. Keep each
@@ -2056,9 +2056,9 @@ export async function colorizeMessages(targetMode = 'all') {
             refreshTransientNarratorCount(chat);
             scheduleCustomFontRefresh(0);
             updateLegend();
-            const suffix = skippedNoColor > 0 ? ` (${skippedNoColor} skipped - no speaker/color match)` : '';
-            if (saveConfirmed) toast.info(`Colorized ${colorizedCount} message${colorizedCount !== 1 ? 's' : ''}${suffix}.`);
-            else toast.warning(`Colorized ${colorizedCount} message${colorizedCount !== 1 ? 's' : ''}${suffix}; the host did not confirm the chat save.`);
+            const message = formatColorizedMessagesToast(colorizedCount, skippedNoColor, saveConfirmed);
+            if (saveConfirmed) toast.info(message);
+            else toast.warning(message);
         } else if (skippedNoColor > 0) {
             toast.info(`No uncolored dialogue found; ${skippedNoColor} message${skippedNoColor !== 1 ? 's' : ''} skipped (no known speaker/color could be resolved).`);
         } else {
