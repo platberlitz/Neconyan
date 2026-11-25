@@ -1,1 +1,0 @@
-Scratchpad's **Context** tab now opens with **What Scratchpad will read**, a live summary of what's shared with **Show preview** beside it, and splits its choices into **Sharing**, **Replies** and **Setup**, with story and lore as quick switches and rarer settings folded away until they're in use.
