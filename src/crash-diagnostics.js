@@ -4,6 +4,7 @@ import os from 'node:os';
 import v8 from 'node:v8';
 import { randomUUID } from 'node:crypto';
 import '../public/scripts/crash-diagnostics.js';
+import { uiText } from '../public/scripts/ui-text.js';
 import { isBenignStreamAbort } from './stream-disconnect-guard.js';
 import { describeFatalStop, parseCrashBuild, SERVER_CRASH_BUILD_MESSAGE } from './server-crash-evidence.js';
 
@@ -249,7 +250,7 @@ export function initialiseCrashDiagnostics(dataRoot) {
                 try { process.kill(previous.pid, 0); continue; } catch (error) { if (error.code !== 'ESRCH' && error.code !== 'EPERM') continue; }
                 const fatal = consumeFatalReport(directory, previous.pid);
                 const stop = fatal && describeFatalStop(fatal, 'The previous server process');
-                const saved = writeCrashReport('unclean-previous-exit', stop?.explanation ?? 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.', {
+                const saved = writeCrashReport('unclean-previous-exit', stop?.explanation ?? uiText('The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.'), {
                     previous, ...(fatal && { fatal }),
                     limitation: `The environment was measured on recovery, not at the time of the previous exit.${fatal ? ' fatal is taken from the report Node wrote as that process stopped.' : ''}`,
                 }, directory);

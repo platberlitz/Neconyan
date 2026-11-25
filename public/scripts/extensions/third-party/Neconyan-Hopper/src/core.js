@@ -163,6 +163,9 @@ export function normalizeSession(raw, id = '') {
     return {
         id: (stringValue(id) || stringValue(source.id)).slice(0, 120),
         name: (typeof source.name === 'string' ? source.name.trim().slice(0, 80) : '') || 'Timeline',
+        ...(Number.isSafeInteger(source.defaultNameIndex) && source.defaultNameIndex >= 0
+            ? { defaultNameIndex: source.defaultNameIndex }
+            : {}),
         type: (typeof source.type === 'string' ? source.type.trim().slice(0, 120) : '') || 'Open timeline',
         personaId: typeof source.personaId === 'string' ? source.personaId.slice(0, 500) : '',
         invited: [...new Set(stringArray(source.invited))],
@@ -266,6 +269,7 @@ export function normalizeSettings(raw) {
     if (!Object.keys(sessions).length && !explicitlyEmptySessions) {
         sessions.legacy = normalizeSession({
             name: 'Timeline',
+            defaultNameIndex: 0,
             type: 'Open timeline',
             invited: source.invited,
             ambient: source.ambient,

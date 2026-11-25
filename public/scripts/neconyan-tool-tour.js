@@ -2137,7 +2137,9 @@ function buildCard(page) {
     count.setAttribute('aria-live', 'polite');
     const title = element('strong', 'neconyan-tool-tour-title');
     title.id = 'neconyan-tool-tour-title';
-    const speaker = t([`${ASSISTANT_NAMES[page.assistant]}'s ${page.name} tour`]);
+    const speakerName = ASSISTANT_NAMES[page.assistant];
+    const pageName = t([page.name]);
+    const speaker = t`${speakerName}'s ${pageName} tour`;
     heading.append(element('span', 'neconyan-tool-tour-speaker', speaker), title, count);
     const close = element('button', 'menu_button menu_button_icon neconyan-tool-tour-close');
     close.type = 'button';
@@ -2237,7 +2239,8 @@ function buildInvite(page, root, heading) {
     invite.dataset.toolPage = page.key;
     invite.setAttribute('role', 'note');
     const copy = element('p');
-    copy.append(element('strong', '', t([`New to ${page.name}?`])), document.createTextNode(` ${t([page.invite])}`));
+    const pageName = t([page.name]);
+    copy.append(element('strong', '', t`New to ${pageName}?`), document.createTextNode(` ${t([page.invite])}`));
     const actions = element('div', 'neconyan-tool-tour-invite-actions');
     const start = element('button', 'menu_button menu_button_primary neconyan-tool-tour-next', t`Show me around`);
     start.type = 'button';
@@ -2268,8 +2271,10 @@ export function mountToolPage(id, heading, root, headerHeading = null) {
     const introHeading = page.compactIntro ? null : headerHeading;
     const launch = element('button', 'menu_button menu_button_icon neconyan-tool-tour-button');
     launch.type = 'button';
-    launch.setAttribute('aria-label', t([`Start ${ASSISTANT_NAMES[page.assistant]}'s ${page.name} tour`]));
-    launch.title = t([`A guided walk through ${page.name}`]);
+    const speakerName = ASSISTANT_NAMES[page.assistant];
+    const pageName = t([page.name]);
+    launch.setAttribute('aria-label', t`Start ${speakerName}'s ${pageName} tour`);
+    launch.title = t`A guided walk through ${pageName}`;
     const icon = element('i', 'fa-solid fa-paw');
     icon.setAttribute('aria-hidden', 'true');
     launch.append(icon, element('span', '', t`Tour`));

@@ -4,7 +4,7 @@
  * the settings drawer. The manuscript look itself is style.css under body.sbstory.
  */
 import * as api from './api.js';
-import { t } from '../../../../i18n.js';
+import { t, translate } from '../../../../i18n.js';
 import { BODY_CLASS, DEFAULT_RULES, classifyBlock, computeJoins, formatDuration } from './core.js';
 
 const BAR_ID = 'sbstory-bar';
@@ -268,10 +268,24 @@ export function refreshBar() {
     // ponytail: the whole manuscript is rebuilt on every refresh; cache per block if long chats ever make this noticeable.
     const { words } = api.manuscript();
     if (wordCount) {
-        wordCount.replaceChildren(
-            el('span', { className: 'sbstory-words-num', text: words.toLocaleString() }),
-            el('span', { className: 'sbstory-words-unit', text: ` ${words === 1 ? 'word' : 'words'}` }),
-        );
+        const countText = words.toLocaleString();
+        const template = words === 1
+            ? translate('${0} word', 'scoped.story_mode.word_count_one')
+            : translate('${0} words', 'scoped.story_mode.word_count_many');
+        const formatted = template.replace('${0}', countText);
+        const splitAt = formatted.indexOf(countText);
+        if (splitAt === -1) {
+            wordCount.replaceChildren(el('span', { className: 'sbstory-words-num', attrs: { 'data-i18n-ignore': '' }, text: formatted }));
+        } else {
+            const before = formatted.slice(0, splitAt);
+            const after = formatted.slice(splitAt + countText.length);
+            const unitText = text => text.replace(/^ /, '\u00a0').replace(/ $/, '\u00a0');
+            wordCount.replaceChildren(
+                ...(before ? [el('span', { className: 'sbstory-words-unit', attrs: { 'data-i18n-ignore': '' }, text: unitText(before) })] : []),
+                el('span', { className: 'sbstory-words-num', attrs: { 'data-i18n-ignore': '' }, text: countText }),
+                ...(after ? [el('span', { className: 'sbstory-words-unit', attrs: { 'data-i18n-ignore': '' }, text: unitText(after) })] : []),
+            );
+        }
     }
     for (const [id, enabled] of [['sbstory-undo', revertable], ['sbstory-retry', revertable], ['sbstory-redo', api.canRedo()], ['sbstory-export', words > 0]]) {
         const button = document.getElementById(id);

@@ -189,6 +189,21 @@ function hostTag() {
         ?? ((strings, ...values) => strings.reduce((out, part, i) => out + part + (values[i] ?? ''), ''));
 }
 
+function translate(text, key = null) {
+    return globalThis.SillyTavern?.getContext?.()?.translate?.(text, key) ?? text;
+}
+
+function sessionDisplayName(session) {
+    if (session?.defaultNameIndex === 0) {
+        return translate('Timeline', 'scoped.hopper.timeline_default');
+    }
+    if (Number.isSafeInteger(session?.defaultNameIndex) && session.defaultNameIndex > 0) {
+        return translate('Timeline ${0}', 'scoped.hopper.timeline_numbered')
+            .replace('${0}', String(session.defaultNameIndex));
+    }
+    return session?.name ?? '';
+}
+
 function button(label, className, onClick, { iconName = '', title = '', ariaLabel = '', pressed = null, disabled = false, focusKey = label, attrs = {} } = {}) {
     const node = el('button', {
         className,
@@ -2539,8 +2554,11 @@ function settingsView() {
         el('div', { className: 'sbtw-row' }, [
             field('Timeline name', el('input', {
                 className: 'sbtw-input',
-                attrs: { type: 'text', value: session.name, maxlength: '80' },
-                on: { change: event => saveSession({ name: event.target.value }) },
+                attrs: { type: 'text', value: sessionDisplayName(session), maxlength: '80' },
+                on: { change: event => {
+                    const nextName = event.target.value.trim();
+                    saveSession(nextName ? { name: nextName } : { name: 'Timeline', defaultNameIndex: 0 });
+                } },
             })),
             field('Timeline type', el('input', {
                 className: 'sbtw-input',
@@ -2860,7 +2878,7 @@ function createTimeline() {
             }
             state.view = 'settings';
             render();
-            toast(`New timeline "${state.session?.name ?? 'Timeline'}" - invite characters, then refresh.`, 'info');
+            toast(`New timeline "${state.session ? sessionDisplayName(state.session) : translate('Timeline', 'scoped.hopper.timeline_default')}" - invite characters, then refresh.`, 'info');
             return true;
         } catch (error) {
             if (transition !== transitionEpoch) {
@@ -2887,7 +2905,7 @@ async function deleteTimeline() {
     const session = state.session;
     const context = globalThis.SillyTavern.getContext();
     const confirmed = await context.Popup.show.confirm(
-        `Delete "${session.name}"?`,
+        `Delete "${sessionDisplayName(session)}"?`,
         'Its posts, replies, reactions, follows and persona profile go for good. Other timelines and character profiles stay.',
     );
     if (!confirmed || state.session?.id !== session.id || state.session?.personaId !== session.personaId || state.busy || mutationTask || sessionTask) {
@@ -2906,7 +2924,7 @@ async function deleteTimeline() {
             if (transition !== transitionEpoch || !opened) {
                 return false;
             }
-            toast(`Deleted "${session.name}".`, 'success');
+            toast(`Deleted "${sessionDisplayName(session)}".`, 'success');
             return true;
         } catch (error) {
             if (transition !== transitionEpoch) {
@@ -2927,6 +2945,7 @@ async function deleteTimeline() {
 }
 
 function sessionBar() {
+    const hostT = hostTag();
     const personas = new Map(api.listPersonas().map(persona => [persona.entityId, persona.name]));
     const sessions = api.listSessions();
     const select = el('select', {
@@ -2934,8 +2953,8 @@ function sessionBar() {
         attrs: { 'aria-label': 'Timeline session', 'data-focus-key': 'session' },
         on: { change: event => void switchSession(event.target.value) },
     }, sessions.map(session => el('option', {
-        text: `${session.name} · ${personas.get(session.personaId) ?? 'Unassigned'}`,
-        attrs: { value: session.id, selected: session.id === state.session?.id ? 'selected' : null },
+        text: `${sessionDisplayName(session)} · ${personas.get(session.personaId) ?? hostT`Unassigned`}`,
+        attrs: { value: session.id, selected: session.id === state.session?.id ? 'selected' : null, 'data-i18n-ignore': '' },
     })));
     return el('div', { className: 'sbtw-session-bar' }, [
         select,
@@ -3663,7 +3682,7 @@ async function resetTimeline() {
                     report(message, 'success');
                 }
             } else {
-                toast(`Reset '${session.name}'. Drafts, profiles, follows and settings kept.`, 'success');
+                toast(`Reset '${sessionDisplayName(session)}'. Drafts, profiles, follows and settings kept.`, 'success');
             }
             return true;
         } catch (error) {
@@ -3671,7 +3690,7 @@ async function resetTimeline() {
             if (state.body === body && state.session?.id === sessionId) {
                 report(error.message || 'The saved timeline could not be reset.', 'error');
             } else {
-                toast(`Could not reset '${session.name}': ${error.message ?? 'save failed'}`, 'error');
+                toast(`Could not reset '${sessionDisplayName(session)}': ${error.message ?? 'save failed'}`, 'error');
             }
             return false;
         }

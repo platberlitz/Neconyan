@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { assembleLocaleData, isScopedKey, tableForKey } from '../public/scripts/locale-assembly.js';
@@ -12,6 +12,8 @@ const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${fi
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
 const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
+const STORY_MODE_WORD_COUNT_KEYS = ['scoped.story_mode.word_count_one', 'scoped.story_mode.word_count_many'];
+const HOPPER_TIMELINE_KEYS = ['scoped.hopper.timeline_default', 'scoped.hopper.timeline_numbered'];
 const catalogue = readJson('neconyan/en.json');
 const files = Object.fromEntries(LANGUAGES.map(language => [language, { base: readJson(`${language}.json`), supplement: readJson(`neconyan/${language}.json`), catalogue }]));
 
@@ -52,17 +54,35 @@ test('every real scoped key is a catalogued image choice or the Nano reasoning l
         const { base, supplement } = files[language];
         for (const [name, table] of [['base', base], ['supplement', supplement]]) {
             for (const key of Object.keys(table).filter(isScopedKey)) {
-                assert.ok(key.startsWith('scoped.prompt_media.') || [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY].includes(key), `${language} ${name} holds an uncatalogued scoped namespace`);
+                assert.ok(
+                    key.startsWith('scoped.prompt_media.') || [
+                        NANO_REASONING_SCOPED_KEY,
+                        SCRATCHPAD_HISTORY_SCOPED_KEY,
+                        ...STORY_MODE_WORD_COUNT_KEYS,
+                        ...HOPPER_TIMELINE_KEYS,
+                    ].includes(key),
+                    `${language} ${name} holds an uncatalogued scoped namespace`,
+                );
                 assert.ok(Object.hasOwn(catalogue, key), `${language} ${name}: ${key} is not a key of the catalogue`);
             }
         }
     }
-    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label and Scratchpad's Change history heading.
+    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label, Scratchpad's Change history heading,
+    // Story Mode's word-count templates and Meower's default timeline names.
     const catalogued = Object.keys(catalogue).filter(isScopedKey);
     assert.equal(catalogued.filter(key => key.startsWith('scoped.prompt_media.')).length, 51);
-    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY]);
+    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [
+        NANO_REASONING_SCOPED_KEY,
+        SCRATCHPAD_HISTORY_SCOPED_KEY,
+        ...STORY_MODE_WORD_COUNT_KEYS,
+        ...HOPPER_TIMELINE_KEYS,
+    ]);
     assert.equal(catalogue[NANO_REASONING_SCOPED_KEY], '${0} (unavailable)');
     assert.equal(catalogue[SCRATCHPAD_HISTORY_SCOPED_KEY], 'Change history');
+    assert.equal(catalogue['scoped.story_mode.word_count_one'], '${0} word');
+    assert.equal(catalogue['scoped.story_mode.word_count_many'], '${0} words');
+    assert.equal(catalogue['scoped.hopper.timeline_default'], 'Timeline');
+    assert.equal(catalogue['scoped.hopper.timeline_numbered'], 'Timeline ${0}');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -179,4 +199,32 @@ test('tableForKey sends a scoped key to the scoped table and every other key to 
     assert.equal(tableForKey('scoped.x', dictionary, undefined), undefined);
     assert.equal(tableForKey('Open', undefined, scoped), undefined);
     assert.equal(tableForKey('scoped.x', undefined, undefined), undefined);
+});
+
+test('Story Mode word-count and Hopper timeline scoped keys stay isolated across all 17 supplements', () => {
+    const supplementFiles = readdirSync(new URL('../public/locales/neconyan/', import.meta.url))
+        .filter(name => name.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(name))
+        .sort();
+    assert.equal(supplementFiles.length, 17);
+    const aliases = readJson('neconyan/en-aliases.json');
+    for (const key of [...STORY_MODE_WORD_COUNT_KEYS, ...HOPPER_TIMELINE_KEYS]) {
+        assert.equal(aliases[key], catalogue[key], `missing alias for ${key}`);
+    }
+    for (const file of supplementFiles) {
+        const lang = file.replace(/\.json$/, '');
+        const { dictionary, scoped } = assembleLocaleData({
+            base: readJson(file),
+            supplement: readJson(`neconyan/${file}`),
+            catalogue,
+        });
+        for (const key of [...STORY_MODE_WORD_COUNT_KEYS, ...HOPPER_TIMELINE_KEYS]) {
+            assert.equal(typeof scoped[key], 'string', `${lang}: missing scoped.${key}`);
+            assert.ok(scoped[key].length > 0, `${lang}: empty ${key}`);
+            assert.ok(!Object.hasOwn(dictionary, key), `${lang}: ${key} leaked into dictionary`);
+        }
+        for (const rawTemplate of ['${0} word', '${0} words', 'Timeline ${0}']) {
+            assert.ok(!Object.hasOwn(dictionary, rawTemplate), `${lang}: ${rawTemplate} leaked into dictionary`);
+        }
+        assert.equal(localizeString('Famous last words', dictionary), 'Famous last words', `${lang}: Famous last words collided`);
+    }
 });

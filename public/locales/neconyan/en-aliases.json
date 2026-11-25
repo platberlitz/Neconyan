@@ -572,5 +572,9 @@
   "custom_reasoning_format_string_hint": "Sends the Enabled Value when reasoning is requested and the Disabled Value when it is not.",
   "custom_reasoning_format_thinking_object_hint": "Sends an object with a type field: the Enabled Value when reasoning is requested, the Disabled Value when it is not. This is the shape GLM and Kimi endpoints expect for a thinking key.",
   "custom_reasoning_documented_levels_hint": "For recognised models. Others keep every level.",
-  "char_import_janny_cloudflare": "JannyAI links work too. JannyAI sits behind a Cloudflare check: if the import fails, open BotSearcher, choose JannyAI and press \"Open JannyAI login window\" to pass the check, then import again."
+  "char_import_janny_cloudflare": "JannyAI links work too. JannyAI sits behind a Cloudflare check: if the import fails, open BotSearcher, choose JannyAI and press \"Open JannyAI login window\" to pass the check, then import again.",
+  "scoped.story_mode.word_count_one": "${0} word",
+  "scoped.story_mode.word_count_many": "${0} words",
+  "scoped.hopper.timeline_default": "Timeline",
+  "scoped.hopper.timeline_numbered": "Timeline ${0}"
 }
