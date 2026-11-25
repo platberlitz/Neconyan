@@ -2553,4 +2553,527 @@ describe('companion tracker panel', () => {
             expect(styleCss).toContain('.ica--tpanel:not([data-edge="right"]):not([data-edge="left"]) .ica--tpanel-resizer');
         });
     });
+
+    describe('background hydration, height cache, and anchor restoration', () => {
+        function createScrollSimulation({ cardSpecs, viewportHeight = 400, panelWidth = 380, chromeBlock = 22, overflowAnchorSupported = true }) {
+            let scrollTop = 0;
+            let clientWidth = panelWidth;
+            let isOpen = false;
+            const listeners = new Map();
+            const windowListeners = new Map();
+            const resizeCallbacks = [];
+            const frames = new Map();
+            let nextFrameId = 1;
+            const timers = new Map();
+            let nextTimerId = 1;
+            let nowMs = 10000;
+            const cardChrome = {
+                paddingTop: `${(chromeBlock - 2) / 2}px`,
+                paddingBottom: `${(chromeBlock - 2) / 2}px`,
+                borderTopWidth: '1px',
+                borderBottomWidth: '1px',
+                getPropertyValue: () => '',
+            };
+
+            const buttons = {
+                'panel-scroll-top': { attrs: new Map(), getAttribute(n) { return this.attrs.get(n) ?? null; }, setAttribute(n, v) { this.attrs.set(n, String(v)); } },
+                'panel-scroll-bottom': { attrs: new Map(), getAttribute(n) { return this.attrs.get(n) ?? null; }, setAttribute(n, v) { this.attrs.set(n, String(v)); } },
+            };
+            const group = {
+                hidden: true,
+                offsetHeight: 94,
+                querySelector: jest.fn(selector => buttons[selector.match(/data-action="([^"]+)"/)?.[1]] ?? null),
+            };
+
+            let sections = [];
+            const makeSection = spec => {
+                const classes = new Set();
+                const inlineProps = new Map();
+                const attrs = new Map([
+                    ['data-agent-id', spec.id],
+                    ['data-hidden', spec.hidden ? 'true' : 'false'],
+                ]);
+                const section = {
+                    spec,
+                    isConnected: true,
+                    dataset: { agentId: spec.id, searchText: (spec.searchText ?? spec.id).toLowerCase() },
+                    classList: {
+                        add: name => classes.add(name),
+                        remove: name => classes.delete(name),
+                        contains: name => classes.has(name),
+                        toggle: (name, force) => {
+                            const next = force === undefined ? !classes.has(name) : Boolean(force);
+                            if (next) classes.add(name); else classes.delete(name);
+                            return next;
+                        },
+                    },
+                    style: {
+                        minHeight: '',
+                        setProperty: (prop, val) => inlineProps.set(prop, String(val)),
+                        getPropertyValue: prop => inlineProps.get(prop) ?? '',
+                        removeProperty: prop => inlineProps.delete(prop),
+                    },
+                    getAttribute: name => attrs.get(name) ?? null,
+                    setAttribute: (name, value) => attrs.set(name, String(value)),
+                    querySelector: selector => (selector === '.ica--companion-pending' && spec.pending ? {} : null),
+                    firstElementChild: {
+                        checkVisibility: ({ contentVisibilityAuto = false } = {}) => {
+                            if (!isOpen || classes.has('displayNone')) return false;
+                            if (!contentVisibilityAuto || classes.has('is-hydrated')) return true;
+                            const { top, bottom } = getSectionFlowBox(section);
+                            return bottom > scrollTop && top < scrollTop + viewportHeight;
+                        },
+                    },
+                    getBoundingClientRect: () => {
+                        if (!isOpen || classes.has('displayNone')) {
+                            return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+                        }
+                        const { top, height } = getSectionFlowBox(section);
+                        return { top: top - scrollTop, bottom: top - scrollTop + height, left: 0, right: clientWidth, width: clientWidth, height };
+                    },
+                };
+                return section;
+            };
+
+            function getSectionHeight(section) {
+                if (section.classList.contains('displayNone')) return 0;
+                if (section.getAttribute('data-hidden') === 'true') return 42;
+                if (section.classList.contains('is-hydrated') || section.spec.forceRendered) {
+                    return section.spec.realHeight;
+                }
+                const intrinsic = section.style.getPropertyValue('contain-intrinsic-block-size');
+                const match = intrinsic.match(/auto\s+([\d.]+)px/);
+                if (match) {
+                    return Number(match[1]) + chromeBlock;
+                }
+                return 220 + chromeBlock;
+            }
+
+            function getSectionFlowBox(target) {
+                let y = 0;
+                for (const s of sections) {
+                    const h = getSectionHeight(s);
+                    if (s === target) return { top: y, bottom: y + h, height: h };
+                    y += h;
+                }
+                return { top: 0, bottom: 0, height: 0 };
+            }
+
+            function getTotalScrollHeight() {
+                if (!isOpen) return 0;
+                let total = 0;
+                for (const s of sections) total += getSectionHeight(s);
+                if (!group.hidden) total += group.offsetHeight + 12;
+                return total;
+            }
+
+            const rebuildSections = (specs = cardSpecs) => {
+                sections = specs.map(makeSection);
+            };
+            rebuildSections();
+
+            const panelInlineStyle = new Map();
+            const panelNode = {
+                isConnected: true,
+                dataset: {},
+                style: {
+                    setProperty: (prop, val) => panelInlineStyle.set(prop, String(val)),
+                    getPropertyValue: prop => panelInlineStyle.get(prop) ?? '',
+                    removeProperty: prop => panelInlineStyle.delete(prop),
+                },
+                classList: { contains: name => name === 'is-open' && isOpen },
+                get clientWidth() { return isOpen ? clientWidth : 0; },
+                get clientHeight() { return isOpen ? viewportHeight : 0; },
+                get scrollHeight() { return getTotalScrollHeight(); },
+                get scrollTop() { return isOpen ? scrollTop : 0; },
+                set scrollTop(value) {
+                    const max = Math.max(0, getTotalScrollHeight() - viewportHeight);
+                    scrollTop = Math.max(0, Math.min(Number(value) || 0, max));
+                },
+                addEventListener: jest.fn((type, handler, options) => {
+                    const list = listeners.get(type) ?? [];
+                    list.push({ handler, options });
+                    listeners.set(type, list);
+                }),
+                querySelector: jest.fn(selector => {
+                    if (selector === '[data-role="panel-jump"]') return group;
+                    if (selector === '.ica--tpanel-body') return {};
+                    return null;
+                }),
+                querySelectorAll: jest.fn(selector => {
+                    if (selector.includes('.ica--tpanel-agent')) return sections;
+                    return [];
+                }),
+                getBoundingClientRect: () => (isOpen
+                    ? { top: 0, bottom: viewportHeight, left: 0, right: clientWidth, width: clientWidth, height: viewportHeight }
+                    : { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
+                scrollTo: jest.fn(({ top }) => {
+                    panelNode.scrollTop = top;
+                }),
+            };
+
+            const panelElement = {
+                0: panelNode,
+                length: 1,
+                on: jest.fn(() => panelElement),
+                html: jest.fn(() => {
+                    group.hidden = true;
+                    return panelElement;
+                }),
+                toggle: jest.fn(() => panelElement),
+                attr: jest.fn(() => panelElement),
+                addClass: jest.fn(name => {
+                    if (name === 'is-open') isOpen = true;
+                    return panelElement;
+                }),
+                removeClass: jest.fn(name => {
+                    if (name === 'is-open') {
+                        isOpen = false;
+                        scrollTop = 0;
+                    }
+                    return panelElement;
+                }),
+            };
+            const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
+
+            const savedGlobals = {
+                requestAnimationFrame: globalThis.requestAnimationFrame,
+                cancelAnimationFrame: globalThis.cancelAnimationFrame,
+                setTimeout: globalThis.setTimeout,
+                clearTimeout: globalThis.clearTimeout,
+                DateNow: Date.now,
+                performance: globalThis.performance,
+                getComputedStyle: globalThis.getComputedStyle,
+                ResizeObserver: globalThis.ResizeObserver,
+                CSS: globalThis.CSS,
+                addEventListener: globalThis.addEventListener,
+                removeEventListener: globalThis.removeEventListener,
+            };
+
+            Date.now = () => nowMs;
+            globalThis.performance = { now: () => nowMs };
+            globalThis.requestAnimationFrame = jest.fn(cb => {
+                const id = nextFrameId++;
+                frames.set(id, cb);
+                return id;
+            });
+            globalThis.cancelAnimationFrame = jest.fn(id => {
+                frames.delete(id);
+            });
+            globalThis.setTimeout = jest.fn((cb, delay = 0) => {
+                const id = nextTimerId++;
+                timers.set(id, { cb, due: nowMs + Number(delay) });
+                return id;
+            });
+            globalThis.clearTimeout = jest.fn(id => {
+                timers.delete(id);
+            });
+            globalThis.getComputedStyle = jest.fn(() => cardChrome);
+            globalThis.ResizeObserver = class {
+                constructor(cb) { resizeCallbacks.push(cb); }
+                observe() {}
+                disconnect() {}
+            };
+            globalThis.CSS = { supports: jest.fn((prop, val) => (prop === 'overflow-anchor' && val === 'auto' ? overflowAnchorSupported : true)) };
+            globalThis.addEventListener = jest.fn((type, handler) => {
+                const list = windowListeners.get(type) ?? [];
+                list.push(handler);
+                windowListeners.set(type, list);
+            });
+            globalThis.removeEventListener = jest.fn();
+            globalThis.document.getElementById = jest.fn(id => (id === 'ica--tracker-panel' ? panelNode : null));
+            globalThis.document.querySelector = jest.fn(() => null);
+            globalThis.$ = jest.fn(arg => {
+                if (arg === globalThis.document.body) return { append: jest.fn() };
+                if (arg === '#ica--tracker-panel') return panelElement;
+                if (arg === '#ica--tracker-panel-handle') return handleElement;
+                if (arg === '#ica_tracker_panel_wand_item') return { length: 1 };
+                return { length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() };
+            });
+
+            const advanceTime = ms => {
+                nowMs += ms;
+                const due = [...timers.entries()].filter(([, t]) => t.due <= nowMs);
+                for (const [id, t] of due) {
+                    timers.delete(id);
+                    t.cb();
+                }
+            };
+            const flushOneFrame = () => {
+                const batch = [...frames.entries()];
+                frames.clear();
+                nowMs += 16;
+                for (const [, cb] of batch) cb(nowMs);
+                return batch.length;
+            };
+            const drainAll = (maxSteps = 80) => {
+                for (let step = 0; step < maxSteps; step++) {
+                    if (frames.size > 0) {
+                        flushOneFrame();
+                    } else if (timers.size > 0) {
+                        const earliest = Math.min(...[...timers.values()].map(t => t.due));
+                        advanceTime(Math.max(1, earliest - nowMs));
+                    } else {
+                        break;
+                    }
+                }
+            };
+            const emitPanel = (type, event = {}) => {
+                for (const entry of listeners.get(type) ?? []) {
+                    entry.handler(event);
+                }
+            };
+            const emitWindow = (type, event = {}) => {
+                for (const handler of windowListeners.get(type) ?? []) {
+                    handler(event);
+                }
+            };
+
+            return {
+                panelNode,
+                group,
+                getSections: () => sections,
+                getSection: id => sections.find(s => s.dataset.agentId === id),
+                getScrollTop: () => scrollTop,
+                setScrollTop: value => { scrollTop = value; },
+                setClientWidth: w => { clientWidth = w; },
+                triggerResizeObserver: () => resizeCallbacks.forEach(cb => cb()),
+                rebuildSections,
+                replaceSection: (id, newSpec) => {
+                    const idx = sections.findIndex(s => s.dataset.agentId === id);
+                    if (idx !== -1) sections[idx] = makeSection(newSpec);
+                },
+                advanceTime,
+                flushOneFrame,
+                drainAll,
+                emitPanel,
+                emitWindow,
+                pendingFrameCount: () => frames.size,
+                pendingTimerCount: () => timers.size,
+                restore: () => {
+                    globalThis.requestAnimationFrame = savedGlobals.requestAnimationFrame;
+                    globalThis.cancelAnimationFrame = savedGlobals.cancelAnimationFrame;
+                    globalThis.setTimeout = savedGlobals.setTimeout;
+                    globalThis.clearTimeout = savedGlobals.clearTimeout;
+                    Date.now = savedGlobals.DateNow;
+                    globalThis.performance = savedGlobals.performance;
+                    globalThis.getComputedStyle = savedGlobals.getComputedStyle;
+                    globalThis.ResizeObserver = savedGlobals.ResizeObserver;
+                    globalThis.CSS = savedGlobals.CSS;
+                    globalThis.addEventListener = savedGlobals.addEventListener;
+                    globalThis.removeEventListener = savedGlobals.removeEventListener;
+                },
+            };
+        }
+
+        test('hydrates off-screen cards progressively after open delay, caches content-box heights, unhydrates on close, and restores reopen anchor without jump-bar clamping', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 522 },
+                { id: 'c1', realHeight: 622 },
+                { id: 'c2', realHeight: 422 },
+                { id: 'c3', realHeight: 522 },
+                { id: 'c4', realHeight: 322 },
+                { id: 'c5', realHeight: 422, hidden: true },
+                { id: 'c6', realHeight: 522 },
+            ];
+            agents = cardSpecs.map(spec => ({ id: spec.id, name: spec.id, execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 400, chromeBlock: 22 });
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+
+                // Opening frame keeps off-screen cards unhydrated so initial open stays fast.
+                expect(sim.getSections().every(s => !s.classList.contains('is-hydrated'))).toBe(true);
+                expect(sim.pendingTimerCount()).toBeGreaterThan(0);
+
+                // After open delay, hydration promotes visible cards and 1 below-viewport card per frame.
+                sim.advanceTime(500);
+                sim.flushOneFrame();
+                expect(sim.getSection('c0').classList.contains('is-hydrated')).toBe(true);
+                expect(sim.getSection('c6').classList.contains('is-hydrated')).toBe(false);
+
+                // Drain remaining slices: all non-filtered cards hydrate and cache content-box heights (borderBox - 22px chrome).
+                sim.drainAll();
+                expect(sim.getSections().every(s => s.classList.contains('is-hydrated'))).toBe(true);
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 500px');
+                expect(sim.getSection('c1').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 600px');
+                // Hidden [data-hidden="true"] card must never cache its collapsed header height or keep an intrinsic size.
+                expect(sim.getSection('c5').style.getPropertyValue('contain-intrinsic-block-size')).toBe('');
+
+                // Scroll to the very bottom, close the panel, and verify unhydration + exact intrinsic sizes.
+                const bottomBeforeClose = sim.panelNode.scrollHeight - sim.panelNode.clientHeight;
+                sim.panelNode.scrollTop = bottomBeforeClose;
+                const c6TopBeforeClose = sim.getSection('c6').getBoundingClientRect().top;
+
+                panel.closeCompanionPanel();
+                expect(sim.getSections().every(s => !s.classList.contains('is-hydrated'))).toBe(true);
+                expect(sim.getSection('c6').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 500px');
+                expect(sim.getSection('c5').style.getPropertyValue('contain-intrinsic-block-size')).toBe('');
+
+                // Reopen: jump group must unhide before setting scrollTop so bottom is not clamped short,
+                // off-screen cards stay unhydrated on frame 1, and card c6 lands at the exact viewport offset.
+                panel.openCompanionPanel();
+                expect(sim.group.hidden).toBe(false);
+                expect(sim.getSection('c0').classList.contains('is-hydrated')).toBe(false);
+                expect(sim.getScrollTop()).toBeCloseTo(bottomBeforeClose, 1);
+                expect(sim.getSection('c6').getBoundingClientRect().top).toBeCloseTo(c6TopBeforeClose, 1);
+
+                // Hydrating cards ABOVE the viewport keeps c6 pinned to the exact same offset (0px shift).
+                sim.advanceTime(500);
+                // Mutate c1's real height so hydrating it expands above c6.
+                sim.getSection('c1').spec.realHeight = 922;
+                sim.drainAll();
+                expect(sim.getSection('c6').getBoundingClientRect().top).toBeCloseTo(c6TopBeforeClose, 1);
+            } finally {
+                sim.restore();
+            }
+        });
+
+        test('stamps cached intrinsic heights on live-updated off-screen cards and clears cache on width change or CHAT_CHANGED', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 722 },
+                { id: 'c1', realHeight: 622 },
+                { id: 'c2', realHeight: 522 },
+                { id: 'c3', realHeight: 522 },
+            ];
+            agents = cardSpecs.map(spec => ({ id: spec.id, name: spec.id, execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 400, chromeBlock: 22 });
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+                sim.drainAll();
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 700px');
+
+                // Scroll down to c3 so c0 is off-screen above.
+                sim.panelNode.scrollTop = sim.panelNode.scrollHeight - sim.panelNode.clientHeight;
+                const c3TopBefore = sim.getSection('c3').getBoundingClientRect().top;
+
+                // Simulate patchCompanionView replacing off-screen card c0 with a fresh unhydrated DOM node during a live update.
+                panelElementHtmlReplace();
+                function panelElementHtmlReplace() {
+                    const prevHtml = globalThis.$('#ica--tracker-panel').html;
+                    globalThis.$('#ica--tracker-panel').html = jest.fn(() => {
+                        sim.replaceSection('c0', { id: 'c0', realHeight: 722 });
+                        return prevHtml();
+                    });
+                }
+
+                await eventSource.emit('in_chat_agents_companion_results_updated');
+                // Fresh off-screen node c0 immediately receives cached auto 700px instead of snapping to 220px.
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 700px');
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBeCloseTo(c3TopBefore, 1);
+
+                // Width change invalidates cached heights and clears inline intrinsic sizes.
+                sim.setClientWidth(520);
+                sim.triggerResizeObserver();
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('');
+
+                // Re-hydrate at new width, then CHAT_CHANGED clears cache and saved scroll/anchor.
+                sim.drainAll();
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 700px');
+                panel.closeCompanionPanel();
+                await eventSource.emit('chat_changed');
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('');
+                panel.openCompanionPanel();
+                expect(sim.getScrollTop()).toBe(0);
+            } finally {
+                sim.restore();
+            }
+        });
+
+        test('pauses hydration during pointer presses and user scrolling, and compensates manual overflow-anchor on WebKit only', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 822 },
+                { id: 'c1', realHeight: 822 },
+                { id: 'c2', realHeight: 522 },
+                { id: 'c3', realHeight: 522 },
+            ];
+            agents = cardSpecs.map(spec => ({ id: spec.id, name: spec.id, execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 400, chromeBlock: 22, overflowAnchorSupported: false });
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+
+                // Pointer active pauses hydration until pointerup.
+                sim.emitPanel('pointerdown');
+                sim.advanceTime(500);
+                sim.flushOneFrame();
+                expect(sim.getSections().every(s => !s.classList.contains('is-hydrated'))).toBe(true);
+                sim.emitWindow('pointerup');
+
+                // User scroll down to bottom establishes tracked anchor (c3) on WebKit while cards above are unhydrated.
+                sim.panelNode.scrollTop = sim.panelNode.scrollHeight - sim.panelNode.clientHeight;
+                sim.emitPanel('scroll');
+                const c3TopBefore = sim.getSection('c3').getBoundingClientRect().top;
+
+                // Simulate WebKit unlocking unhydrated card c1 above the viewport during a 200px upward scroll:
+                // c1 expands from 242px to 822px (+580px) while scrollTop steps up by 200px.
+                sim.getSection('c1').spec.forceRendered = true;
+                sim.setScrollTop(sim.getScrollTop() - 200);
+                sim.emitPanel('scroll');
+
+                // Manual WebKit overflow-anchor adds the +580px expansion back so c3 moves smoothly by +200px (0px jump).
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBeCloseTo(c3TopBefore + 200, 1);
+
+                // While user scrolled recently, hydration waits for the 160ms scroll idle window.
+                sim.flushOneFrame();
+                expect(sim.getSection('c0').classList.contains('is-hydrated')).toBe(false);
+                sim.advanceTime(200);
+                sim.drainAll();
+                expect(sim.getSections().every(s => s.classList.contains('is-hydrated'))).toBe(true);
+                expect(sim.panelNode.style.getPropertyValue('overflow-anchor')).toBe('');
+            } finally {
+                sim.restore();
+            }
+        });
+
+        test('tracks an in-viewport card edge and disables native overflow-anchor on Safari while unhydrated cards remain', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 522 },
+                { id: 'c1', realHeight: 522 },
+                { id: 'c2', realHeight: 922 },
+                { id: 'c3', realHeight: 360 },
+                { id: 'c4', realHeight: 360 },
+            ];
+            agents = cardSpecs.map(spec => ({ id: spec.id, name: spec.id, execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 400, chromeBlock: 22, overflowAnchorSupported: true });
+            const prevBodyClassList = globalThis.document.body.classList;
+            globalThis.document.body.classList = { contains: name => name === 'safari' };
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+
+                // Safari disables native overflow-anchor while unhydrated cards exist so manual anchoring does not conflict.
+                expect(sim.panelNode.style.getPropertyValue('overflow-anchor')).toBe('none');
+
+                // Position scrollTop so unhydrated c2 peeks across the top edge (top < 0, bottom > 0) and c3 starts inside the viewport.
+                // Unhydrated heights: c0=242, c1=242, c2=242 (484..726), c3=242 (726..968), c4=242 (968..1210).
+                sim.panelNode.scrollTop = 640;
+                sim.emitPanel('scroll');
+                expect(sim.getSection('c2').getBoundingClientRect().top).toBeLessThan(0);
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBeGreaterThan(0);
+                const c3TopBefore = sim.getSection('c3').getBoundingClientRect().top;
+
+                // Peeking card c2 expands from 242px to 922px (+680px) while the user scrolls up 100px.
+                sim.getSection('c2').spec.forceRendered = true;
+                sim.setScrollTop(sim.getScrollTop() - 100);
+                sim.emitPanel('scroll');
+
+                // Because c3's in-viewport top edge was tracked instead of peeking c2's off-screen top edge, c3 shifts cleanly by +100px (0px jump).
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBeCloseTo(c3TopBefore + 100, 1);
+
+                // Completing hydration clears the temporary overflow-anchor override.
+                sim.advanceTime(500);
+                sim.drainAll();
+                expect(sim.panelNode.style.getPropertyValue('overflow-anchor')).toBe('');
+            } finally {
+                globalThis.document.body.classList = prevBodyClassList;
+                sim.restore();
+            }
+        });
+    });
 });

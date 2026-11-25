@@ -8,7 +8,46 @@ const panelSource = read('../public/scripts/extensions/in-chat-agents/companion/
 const panelDeclarations = parse(panelSource, { ecmaVersion: 'latest', sourceType: 'module' }).body
     .map(node => node.declaration ?? node)
     .filter(node => node.type !== 'ImportDeclaration' && (node.type === 'VariableDeclaration'
-        || ['renderPanel', 'applyPanelSearch', 'applyPanelReorder', 'setupPanelSortable', 'armPanelSortable', 'refreshCompanionPanel', 'observePanelJumpSize', 'syncPanelJumpButtons', 'schedulePanelJumpSync'].includes(node.id?.name)))
+        || [
+            'renderPanel',
+            'applyPanelSearch',
+            'applyPanelReorder',
+            'setupPanelSortable',
+            'armPanelSortable',
+            'refreshCompanionPanel',
+            'observePanelJumpSize',
+            'syncPanelJumpButtons',
+            'schedulePanelJumpSync',
+            'getCompanionPanelNode',
+            'getPanelAgentSections',
+            'getPanelSectionAgentId',
+            'isPanelSectionFiltered',
+            'isPanelSectionHidden',
+            'isPanelSectionCacheable',
+            'isPanelSectionRendered',
+            'measureCardContentBlockSize',
+            'setCardIntrinsicBlockSize',
+            'clearCardIntrinsicBlockSize',
+            'clearPanelCardHeightCache',
+            'syncPanelHeightCacheWidth',
+            'cachePanelSectionHeight',
+            'flushPendingMeasuredCards',
+            'needsManualOverflowAnchor',
+            'setPanelOverflowAnchorDisabled',
+            'capturePanelScrollTrackAnchor',
+            'compensateManualScrollAnchor',
+            'snapshotRenderedPanelCardHeights',
+            'applyCachedCardIntrinsicHeights',
+            'restorePanelAnchor',
+            'cancelPanelAnchorSettle',
+            'schedulePanelAnchorSettle',
+            'pausePanelHydrationFrame',
+            'stopPanelHydration',
+            'isPanelHydrationPaused',
+            'hasUnhydratedPanelCards',
+            'schedulePanelHydration',
+            'runPanelHydrationSlice',
+        ].includes(node.id?.name)))
     .map(node => panelSource.slice(node.start, node.end)).join('\n');
 
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
@@ -31,6 +70,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 window.getStoredPanelLocked = () => false;
                 window.getStoredHandleHidden = () => false;
                 window.getStoredPanelLauncher = () => 'handle';
+                window.getStoredPanelWidth = () => 0;
+                window.foldSearchText = value => String(value ?? '').toLowerCase();
                 window.captureVisibleMessageAnchor = () => null;
                 window.restoreVisibleMessageAnchor = () => {};
                 // companion-panel.js imports this from companion-windows.js, which this fixture does not load.

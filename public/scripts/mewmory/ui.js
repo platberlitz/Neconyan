@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261211-scratchpad-talk-mode';
+        style.href = 'css/mewmory.css?v=20261212-companion-panel-scroll-hydration';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

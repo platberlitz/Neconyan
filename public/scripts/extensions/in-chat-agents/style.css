@@ -1771,6 +1771,12 @@ body.neconyan-companion-resizing {
     contain-intrinsic-size: auto 220px;
 }
 
+/* Once the panel is open, off-screen cards promote into full layout in small animation-frame
+   slices so scrolling back up never hits a 220px estimate or jumps in Safari/WebKit. */
+.ica--tpanel-agent.is-hydrated {
+    content-visibility: visible;
+}
+
 .ica--tpanel-agent[data-hidden="true"] {
     opacity: 0.55;
 }

@@ -115,12 +115,33 @@ const PANEL_ANCHOR_OPTIONS = {
     messageSelector: '.ica--tpanel-agent[data-agent-id]',
     keyAttribute: 'data-agent-id',
 };
+const HYDRATED_CARD_CLASS = 'is-hydrated';
+const PANEL_HYDRATION_FRAME_BUDGET_MS = 6;
+const PANEL_HYDRATION_MAX_CARDS_PER_FRAME = 2;
+const PANEL_HYDRATION_BELOW_CARDS_PER_FRAME = 1;
+const PANEL_HYDRATION_OPEN_DELAY_MS = 450;
+const PANEL_HYDRATION_SCROLL_IDLE_MS = 160;
 
 let panelInitialized = false;
 let livePreview = null;
 let previewResultsSignature = '';
 let panelOpen = false;
 let panelSavedScrollTop = 0;
+let panelSavedAnchor = null;
+let panelHeightCacheWidth = 0;
+const panelCardHeightCache = new Map();
+const panelPendingMeasuredCards = new Set();
+let panelHydrationGeneration = 0;
+let panelHydrationTimer = 0;
+let panelHydrationFrame = 0;
+let panelAnchorSettleFrame = 0;
+let panelHydrationScheduledAt = 0;
+let panelOpenHydrationEarliestAt = 0;
+let panelUserScrollUntil = 0;
+let panelPointerActive = false;
+let panelProgrammaticScrollTop = null;
+let panelScrollTrackAnchor = null;
+let panelHydrationMutating = false;
 let panelLocked = getStoredPanelLocked();
 let handleHidden = getStoredHandleHidden();
 let panelLauncher = getStoredPanelLauncher();
@@ -469,6 +490,7 @@ function startCompanionPanelResize(event, target) {
 
     panelResizeActive = true;
     pendingPanelRenderAfterResize = false;
+    pausePanelHydrationFrame();
     globalThis.document?.body?.classList?.add?.(COMPANION_RESIZING_CLASS);
     if (pointerId !== undefined) {
         handle.setPointerCapture?.(pointerId);
@@ -523,11 +545,14 @@ function startCompanionPanelResize(event, target) {
         suppressOutsideClickUntil = Date.now() + 250;
         globalThis.document?.body?.classList?.remove?.(COMPANION_RESIZING_CLASS);
         storePanelWidth(panelWidth);
+        syncPanelHeightCacheWidth(panel);
         if (pendingPanelRenderAfterResize) {
             pendingPanelRenderAfterResize = false;
             if (panelOpen) {
                 renderPanel();
             }
+        } else if (panelOpen) {
+            schedulePanelHydration();
         }
     };
 
@@ -561,6 +586,10 @@ function resizeCompanionPanelWithKeys(event) {
     panelWidth = clampCompanionPanelWidth(current + step, reserved);
     syncCompanionPanelDock();
     storePanelWidth(panelWidth);
+    if (panelOpen) {
+        syncPanelHeightCacheWidth(getCompanionPanelNode());
+        schedulePanelHydration();
+    }
 }
 
 /**
@@ -1291,6 +1320,646 @@ function shouldReducePanelMotion() {
         || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
 }
 
+function getCompanionPanelNode() {
+    return document.getElementById?.('ica--tracker-panel') ?? $('#ica--tracker-panel')[0] ?? null;
+}
+
+function getPanelAgentSections(panel) {
+    return Array.from(panel?.querySelectorAll?.(PANEL_ANCHOR_OPTIONS.messageSelector) ?? []);
+}
+
+function getPanelSectionAgentId(section) {
+    return section?.getAttribute?.(PANEL_ANCHOR_OPTIONS.keyAttribute) || section?.dataset?.agentId || '';
+}
+
+function isPanelSectionFiltered(section) {
+    return Boolean(section?.classList?.contains?.('displayNone'));
+}
+
+function isPanelSectionHidden(section) {
+    return section?.getAttribute?.('data-hidden') === 'true';
+}
+
+function isPanelSectionCacheable(section) {
+    if (!section || !getPanelSectionAgentId(section)) {
+        return false;
+    }
+    if (isPanelSectionFiltered(section) || isPanelSectionHidden(section)) {
+        return false;
+    }
+    if (section.querySelector?.('.ica--companion-pending')) {
+        return false;
+    }
+    return true;
+}
+
+function isPanelSectionRendered(section, panelRect) {
+    if (!section) {
+        return false;
+    }
+    if (section.classList?.contains?.(HYDRATED_CARD_CLASS)) {
+        return true;
+    }
+    const child = section.firstElementChild;
+    if (typeof child?.checkVisibility === 'function') {
+        try {
+            return child.checkVisibility({ contentVisibilityAuto: true });
+        } catch {
+            // Fall back to viewport geometry when the browser rejects the options object.
+        }
+    }
+    if (!panelRect || typeof section.getBoundingClientRect !== 'function') {
+        return true;
+    }
+    const rect = section.getBoundingClientRect();
+    if (!rect || !(rect.height > 0)) {
+        return false;
+    }
+    return rect.bottom > panelRect.top && rect.top < panelRect.bottom;
+}
+
+// contain-intrinsic-block-size sets the content-box block size (even under box-sizing: border-box),
+// so subtract vertical padding and borders to match the rendered border-box height exactly.
+function measureCardContentBlockSize(section) {
+    if (!section || typeof section.getBoundingClientRect !== 'function') {
+        return 0;
+    }
+    const rect = section.getBoundingClientRect();
+    const borderBoxHeight = Number(rect?.height) || 0;
+    if (!(borderBoxHeight > 0)) {
+        return 0;
+    }
+    let chromeBlock = 0;
+    if (typeof globalThis.getComputedStyle === 'function') {
+        try {
+            const style = globalThis.getComputedStyle(section);
+            if (style) {
+                chromeBlock = (Number.parseFloat(style.paddingTop) || 0)
+                    + (Number.parseFloat(style.paddingBottom) || 0)
+                    + (Number.parseFloat(style.borderTopWidth) || 0)
+                    + (Number.parseFloat(style.borderBottomWidth) || 0);
+            }
+        } catch {
+            // Ignore stubbed nodes that are not real DOM elements.
+        }
+    }
+    const contentHeight = borderBoxHeight - chromeBlock;
+    return contentHeight > 0 ? Math.round(contentHeight * 100) / 100 : 0;
+}
+
+function setCardIntrinsicBlockSize(section, contentHeight) {
+    if (!section?.style || !(contentHeight > 0)) {
+        return;
+    }
+    const value = `auto ${contentHeight}px`;
+    if (typeof section.style.setProperty === 'function') {
+        if (section.style.getPropertyValue?.('contain-intrinsic-block-size') !== value) {
+            section.style.setProperty('contain-intrinsic-block-size', value);
+        }
+    } else if (section.style.containIntrinsicBlockSize !== value) {
+        section.style.containIntrinsicBlockSize = value;
+    }
+}
+
+function clearCardIntrinsicBlockSize(section) {
+    if (!section?.style) {
+        return;
+    }
+    if (typeof section.style.removeProperty === 'function') {
+        if (section.style.getPropertyValue?.('contain-intrinsic-block-size')) {
+            section.style.removeProperty('contain-intrinsic-block-size');
+        }
+    } else if (section.style.containIntrinsicBlockSize !== undefined) {
+        delete section.style.containIntrinsicBlockSize;
+    }
+}
+
+function clearPanelCardHeightCache(panel = getCompanionPanelNode()) {
+    panelCardHeightCache.clear();
+    panelPendingMeasuredCards.clear();
+    panelHeightCacheWidth = 0;
+    panelScrollTrackAnchor = null;
+    setPanelOverflowAnchorDisabled(panel, false);
+    for (const section of getPanelAgentSections(panel)) {
+        clearCardIntrinsicBlockSize(section);
+    }
+}
+
+function syncPanelHeightCacheWidth(panel) {
+    const width = Number(panel?.clientWidth) || 0;
+    if (!(width > 0)) {
+        return false;
+    }
+    if (panelHeightCacheWidth > 0 && Math.abs(width - panelHeightCacheWidth) > 1) {
+        panelCardHeightCache.clear();
+        panelPendingMeasuredCards.clear();
+        panelScrollTrackAnchor = null;
+        for (const section of getPanelAgentSections(panel)) {
+            clearCardIntrinsicBlockSize(section);
+            if (panelOpen && section.classList?.contains?.(HYDRATED_CARD_CLASS) && isPanelSectionCacheable(section)) {
+                panelPendingMeasuredCards.add(section);
+            }
+        }
+        panelHeightCacheWidth = width;
+        return true;
+    }
+    panelHeightCacheWidth = width;
+    return false;
+}
+
+function cachePanelSectionHeight(section, { applyIntrinsic = true } = {}) {
+    if (!isPanelSectionCacheable(section)) {
+        return 0;
+    }
+    const agentId = getPanelSectionAgentId(section);
+    const contentHeight = measureCardContentBlockSize(section);
+    if (!(contentHeight > 0)) {
+        return 0;
+    }
+    panelCardHeightCache.set(agentId, contentHeight);
+    if (applyIntrinsic) {
+        setCardIntrinsicBlockSize(section, contentHeight);
+    }
+    return contentHeight;
+}
+
+function flushPendingMeasuredCards() {
+    if (panelPendingMeasuredCards.size === 0) {
+        return;
+    }
+    for (const section of panelPendingMeasuredCards) {
+        if (section?.isConnected !== false && isPanelSectionCacheable(section) && section.classList?.contains?.(HYDRATED_CARD_CLASS)) {
+            cachePanelSectionHeight(section, { applyIntrinsic: true });
+        }
+    }
+    panelPendingMeasuredCards.clear();
+}
+
+// Safari / WebKit either lacks CSS overflow-anchor or only partially anchors when
+// off-screen content-visibility: auto cards above the viewport unlock during scroll.
+function needsManualOverflowAnchor() {
+    if (globalThis.CSS?.supports && !globalThis.CSS.supports('overflow-anchor', 'auto')) {
+        return true;
+    }
+    if (globalThis.document?.body?.classList?.contains?.('safari')) {
+        return true;
+    }
+    const ua = String(globalThis.navigator?.userAgent || '');
+    return /AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg|Android/i.test(ua);
+}
+
+function setPanelOverflowAnchorDisabled(panel, disabled) {
+    if (!panel?.style) {
+        return;
+    }
+    if (disabled) {
+        if (typeof panel.style.setProperty === 'function') {
+            panel.style.setProperty('overflow-anchor', 'none');
+        } else {
+            panel.style.overflowAnchor = 'none';
+        }
+    } else if (typeof panel.style.removeProperty === 'function') {
+        panel.style.removeProperty('overflow-anchor');
+    } else {
+        delete panel.style.overflowAnchor;
+    }
+}
+
+function capturePanelScrollTrackAnchor(panel) {
+    if (!needsManualOverflowAnchor() || !panelOpen || !panel || !hasUnhydratedPanelCards(panel)) {
+        panelScrollTrackAnchor = null;
+        setPanelOverflowAnchorDisabled(panel, false);
+        return null;
+    }
+    setPanelOverflowAnchorDisabled(panel, true);
+    const panelRect = typeof panel.getBoundingClientRect === 'function' ? panel.getBoundingClientRect() : null;
+    if (!panelRect || !(panelRect.height > 0)) {
+        panelScrollTrackAnchor = null;
+        return null;
+    }
+    const scrollTop = Number(panel.scrollTop) || 0;
+    let firstVisible = null;
+    let firstFullyTopVisible = null;
+    for (const section of getPanelAgentSections(panel)) {
+        if (isPanelSectionFiltered(section) || typeof section.getBoundingClientRect !== 'function') {
+            continue;
+        }
+        const rect = section.getBoundingClientRect();
+        if (!rect || !(rect.height > 0) || rect.bottom <= panelRect.top || rect.top >= panelRect.bottom) {
+            continue;
+        }
+        if (!firstVisible) {
+            firstVisible = { section, rect };
+        }
+        if (rect.top >= panelRect.top) {
+            firstFullyTopVisible = { section, rect };
+            break;
+        }
+    }
+    // Prefer a card whose top edge starts inside the viewport so an expanding card peeking
+    // into the top edge cannot grow downward without shifting the tracked position.
+    const chosen = firstFullyTopVisible || firstVisible;
+    const messageId = chosen ? getPanelSectionAgentId(chosen.section) : '';
+    if (!messageId) {
+        panelScrollTrackAnchor = null;
+        return null;
+    }
+    const edge = firstFullyTopVisible ? 'top' : 'bottom';
+    const edgeOffset = edge === 'bottom'
+        ? chosen.rect.bottom - panelRect.top
+        : chosen.rect.top - panelRect.top;
+    panelScrollTrackAnchor = {
+        messageId,
+        edge,
+        contentPos: edgeOffset + scrollTop,
+        scrollTop,
+    };
+    return panelScrollTrackAnchor;
+}
+
+function compensateManualScrollAnchor(panel) {
+    if (!needsManualOverflowAnchor() || !panelOpen || !panel || panelHydrationMutating) {
+        return false;
+    }
+    if (stopPanelBottomFollow || panelDragActive || panelResizeActive) {
+        panelScrollTrackAnchor = null;
+        return false;
+    }
+    if (!hasUnhydratedPanelCards(panel)) {
+        panelScrollTrackAnchor = null;
+        setPanelOverflowAnchorDisabled(panel, false);
+        return false;
+    }
+    const scrollTop = Number(panel.scrollTop) || 0;
+    if (scrollTop <= 1) {
+        capturePanelScrollTrackAnchor(panel);
+        return false;
+    }
+    const tracked = panelScrollTrackAnchor;
+    if (!tracked?.messageId) {
+        capturePanelScrollTrackAnchor(panel);
+        return false;
+    }
+    const target = getPanelAgentSections(panel)
+        .find(section => getPanelSectionAgentId(section) === tracked.messageId);
+    if (!target || isPanelSectionFiltered(target) || typeof target.getBoundingClientRect !== 'function' || typeof panel.getBoundingClientRect !== 'function') {
+        capturePanelScrollTrackAnchor(panel);
+        return false;
+    }
+    const panelRect = panel.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    if (!panelRect || !targetRect || !(targetRect.height > 0)) {
+        capturePanelScrollTrackAnchor(panel);
+        return false;
+    }
+    // Skip compensation after large scrollbar teleports so distant cards do not pull the reader back.
+    const maxLocalDelta = Math.max((Number(panelRect.height) || 0) * 2.5, 1600);
+    if (Math.abs(scrollTop - tracked.scrollTop) > maxLocalDelta) {
+        capturePanelScrollTrackAnchor(panel);
+        return false;
+    }
+    const edgeOffset = tracked.edge === 'bottom'
+        ? targetRect.bottom - panelRect.top
+        : targetRect.top - panelRect.top;
+    const currentContentPos = edgeOffset + scrollTop;
+    const delta = currentContentPos - tracked.contentPos;
+    if (Math.abs(delta) >= 1) {
+        const maxScroll = Math.max(0, (Number(panel.scrollHeight) || 0) - (Number(panel.clientHeight) || 0));
+        const nextScrollTop = Math.max(0, Math.min(maxScroll, scrollTop + delta));
+        if (Math.abs(nextScrollTop - scrollTop) >= 0.5) {
+            panel.scrollTop = nextScrollTop;
+            panelProgrammaticScrollTop = Number(panel.scrollTop) || 0;
+            capturePanelScrollTrackAnchor(panel);
+            return true;
+        }
+    }
+    capturePanelScrollTrackAnchor(panel);
+    return false;
+}
+
+function snapshotRenderedPanelCardHeights(panel, { applyIntrinsic = true, unhydrate = false } = {}) {
+    if (!panel) {
+        return;
+    }
+    const panelRect = typeof panel.getBoundingClientRect === 'function' ? panel.getBoundingClientRect() : null;
+    for (const section of getPanelAgentSections(panel)) {
+        if (isPanelSectionCacheable(section) && isPanelSectionRendered(section, panelRect)) {
+            cachePanelSectionHeight(section, { applyIntrinsic });
+        } else if (applyIntrinsic && isPanelSectionHidden(section)) {
+            clearCardIntrinsicBlockSize(section);
+        } else if (applyIntrinsic) {
+            const cached = panelCardHeightCache.get(getPanelSectionAgentId(section));
+            if (cached > 0) {
+                setCardIntrinsicBlockSize(section, cached);
+            }
+        }
+        if (unhydrate) {
+            section.classList?.remove?.(HYDRATED_CARD_CLASS);
+        }
+    }
+}
+
+function applyCachedCardIntrinsicHeights(panel) {
+    if (!panel) {
+        return;
+    }
+    for (const section of getPanelAgentSections(panel)) {
+        if (isPanelSectionHidden(section)) {
+            clearCardIntrinsicBlockSize(section);
+            continue;
+        }
+        const cached = panelCardHeightCache.get(getPanelSectionAgentId(section));
+        if (cached > 0) {
+            setCardIntrinsicBlockSize(section, cached);
+        }
+    }
+}
+
+function restorePanelAnchor(panel, anchor) {
+    if (!panel || !anchor?.messageId) {
+        return false;
+    }
+    const target = getPanelAgentSections(panel)
+        .find(section => getPanelSectionAgentId(section) === anchor.messageId);
+    if (!target || isPanelSectionFiltered(target)) {
+        return false;
+    }
+    const before = Number(panel.scrollTop) || 0;
+    const restored = restoreVisibleMessageAnchor(panel, anchor, PANEL_ANCHOR_OPTIONS);
+    const after = Number(panel.scrollTop) || 0;
+    if (Math.abs(after - before) >= 0.5) {
+        panelProgrammaticScrollTop = after;
+    }
+    return restored;
+}
+
+function cancelPanelAnchorSettle() {
+    if (panelAnchorSettleFrame) {
+        globalThis.cancelAnimationFrame?.(panelAnchorSettleFrame);
+        panelAnchorSettleFrame = 0;
+    }
+}
+
+function schedulePanelAnchorSettle(panel, anchor) {
+    cancelPanelAnchorSettle();
+    if (!panel || !anchor?.messageId || typeof globalThis.requestAnimationFrame !== 'function') {
+        return;
+    }
+    const generation = panelHydrationGeneration;
+    const expectedScrollTop = Number(panel.scrollTop) || 0;
+    panelAnchorSettleFrame = globalThis.requestAnimationFrame(() => {
+        panelAnchorSettleFrame = 0;
+        if (!panelOpen || generation !== panelHydrationGeneration || !panel.isConnected) {
+            return;
+        }
+        if (panelPointerActive || panelDragActive || panelResizeActive || stopPanelBottomFollow) {
+            return;
+        }
+        if (Math.abs((Number(panel.scrollTop) || 0) - expectedScrollTop) > 1) {
+            return;
+        }
+        restorePanelAnchor(panel, anchor);
+        capturePanelScrollTrackAnchor(panel);
+        syncPanelJumpButtons();
+    });
+}
+
+function pausePanelHydrationFrame() {
+    if (panelHydrationTimer) {
+        globalThis.clearTimeout?.(panelHydrationTimer);
+        panelHydrationTimer = 0;
+    }
+    if (panelHydrationFrame) {
+        globalThis.cancelAnimationFrame?.(panelHydrationFrame);
+        panelHydrationFrame = 0;
+    }
+    panelHydrationScheduledAt = 0;
+}
+
+function stopPanelHydration() {
+    panelHydrationGeneration += 1;
+    pausePanelHydrationFrame();
+    cancelPanelAnchorSettle();
+    panelPendingMeasuredCards.clear();
+}
+
+function isPanelHydrationPaused() {
+    return Boolean(
+        !panelOpen
+        || panelDragActive
+        || pendingPanelReorders > 0
+        || panelResizeActive
+        || stopPanelBottomFollow
+        || panelPointerActive,
+    );
+}
+
+function hasUnhydratedPanelCards(panel) {
+    return getPanelAgentSections(panel).some(section =>
+        !isPanelSectionFiltered(section) && !section.classList?.contains?.(HYDRATED_CARD_CLASS));
+}
+
+function schedulePanelHydration({ delayMs = 0, resetDelay = false } = {}) {
+    if (isPanelHydrationPaused() || typeof globalThis.requestAnimationFrame !== 'function') {
+        return;
+    }
+    const panel = getCompanionPanelNode();
+    if (!panel || (!hasUnhydratedPanelCards(panel) && panelPendingMeasuredCards.size === 0)) {
+        return;
+    }
+
+    const now = Date.now();
+    if (resetDelay) {
+        panelOpenHydrationEarliestAt = 0;
+    }
+    const openWaitMs = Math.max(0, panelOpenHydrationEarliestAt - now);
+    const waitMs = Math.max(delayMs, panelUserScrollUntil - now, openWaitMs, 0);
+    const targetTime = now + waitMs;
+
+    if (!resetDelay) {
+        if (waitMs === 0 && panelHydrationFrame) {
+            return;
+        }
+        if (panelHydrationTimer && panelHydrationScheduledAt >= targetTime) {
+            return;
+        }
+    }
+
+    pausePanelHydrationFrame();
+    const generation = panelHydrationGeneration;
+
+    const queueFrame = () => {
+        if (!panelOpen || generation !== panelHydrationGeneration || isPanelHydrationPaused()) {
+            return;
+        }
+        panelHydrationFrame = globalThis.requestAnimationFrame(() => {
+            panelHydrationFrame = 0;
+            panelHydrationScheduledAt = 0;
+            runPanelHydrationSlice(generation);
+        });
+    };
+
+    if (waitMs > 0 && typeof globalThis.setTimeout === 'function') {
+        panelHydrationScheduledAt = targetTime;
+        panelHydrationTimer = globalThis.setTimeout(() => {
+            panelHydrationTimer = 0;
+            panelHydrationScheduledAt = 0;
+            queueFrame();
+        }, waitMs);
+    } else {
+        panelHydrationScheduledAt = now;
+        queueFrame();
+    }
+}
+
+function runPanelHydrationSlice(generation) {
+    if (generation !== panelHydrationGeneration || isPanelHydrationPaused()) {
+        return;
+    }
+    const now = Date.now();
+    if (now < panelUserScrollUntil) {
+        schedulePanelHydration({ delayMs: panelUserScrollUntil - now });
+        return;
+    }
+
+    const panel = getCompanionPanelNode();
+    if (!panel || !panel.isConnected) {
+        return;
+    }
+
+    syncPanelHeightCacheWidth(panel);
+    // Compensate any unanchored upward-scroll expansion before hydration reads or refreshes the tracked anchor.
+    compensateManualScrollAnchor(panel);
+    flushPendingMeasuredCards();
+
+    const panelRect = typeof panel.getBoundingClientRect === 'function' ? panel.getBoundingClientRect() : null;
+    if (!panelRect || !(panelRect.height > 0)) {
+        return;
+    }
+
+    const sections = getPanelAgentSections(panel);
+    const visible = [];
+    const below = [];
+    const above = [];
+
+    for (const section of sections) {
+        if (isPanelSectionFiltered(section) || section.classList?.contains?.(HYDRATED_CARD_CLASS)) {
+            continue;
+        }
+        const rect = typeof section.getBoundingClientRect === 'function' ? section.getBoundingClientRect() : null;
+        if (!rect) {
+            continue;
+        }
+        if (rect.bottom > panelRect.top && rect.top < panelRect.bottom) {
+            visible.push(section);
+        } else if (rect.top >= panelRect.bottom) {
+            below.push(section);
+        } else {
+            above.push(section);
+        }
+    }
+
+    // Hydrate closest-above first so scrolling upward meets already-measured cards.
+    above.reverse();
+
+    const perfNow = () => (typeof globalThis.performance?.now === 'function' ? globalThis.performance.now() : Date.now());
+    const sliceStart = perfNow();
+
+    panelHydrationMutating = true;
+    let promoted = 0;
+    let promotedBelow = 0;
+    try {
+        for (const section of visible) {
+            section.classList?.add?.(HYDRATED_CARD_CLASS);
+            cachePanelSectionHeight(section, { applyIntrinsic: true });
+        }
+
+        // Below-viewport promotions cause 0px scroll shift, so defer measuring them to the
+        // next frame to avoid forcing synchronous layout before paint.
+        while (below.length > 0 && promotedBelow < PANEL_HYDRATION_BELOW_CARDS_PER_FRAME && promoted < PANEL_HYDRATION_MAX_CARDS_PER_FRAME) {
+            if (promoted > 0 && perfNow() - sliceStart >= PANEL_HYDRATION_FRAME_BUDGET_MS) {
+                break;
+            }
+            const section = below.shift();
+            section.classList?.add?.(HYDRATED_CARD_CLASS);
+            panelPendingMeasuredCards.add(section);
+            promoted += 1;
+            promotedBelow += 1;
+        }
+
+        // Only run above-viewport work on frames with no deferred below-viewport mutation, so
+        // synchronous anchor measurement never forces layout on a newly promoted below card.
+        while (promotedBelow === 0 && above.length > 0 && promoted < PANEL_HYDRATION_MAX_CARDS_PER_FRAME) {
+            if (promoted > 0 && perfNow() - sliceStart >= PANEL_HYDRATION_FRAME_BUDGET_MS) {
+                break;
+            }
+            const section = above.shift();
+            const anchor = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
+            const scrollTopBefore = Number(panel.scrollTop) || 0;
+            section.classList?.add?.(HYDRATED_CARD_CLASS);
+            cachePanelSectionHeight(section, { applyIntrinsic: true });
+            restorePanelAnchor(panel, anchor);
+            const scrollTopAfter = Number(panel.scrollTop) || 0;
+            if (Math.abs(scrollTopAfter - scrollTopBefore) >= 0.5) {
+                panelProgrammaticScrollTop = scrollTopAfter;
+            }
+            promoted += 1;
+        }
+    } finally {
+        panelHydrationMutating = false;
+    }
+
+    if (below.length === 0 && above.length === 0) {
+        panelScrollTrackAnchor = null;
+        setPanelOverflowAnchorDisabled(panel, false);
+    } else if (promoted > 0) {
+        capturePanelScrollTrackAnchor(panel);
+    }
+
+    if (promoted > 0) {
+        schedulePanelJumpSync();
+    }
+
+    if (below.length > 0 || above.length > 0 || panelPendingMeasuredCards.size > 0) {
+        schedulePanelHydration();
+    }
+}
+
+function handlePanelScroll() {
+    schedulePanelJumpSync();
+    const panel = getCompanionPanelNode();
+    const currentScrollTop = Number(panel?.scrollTop) || 0;
+    if (panelProgrammaticScrollTop !== null && Math.abs(currentScrollTop - panelProgrammaticScrollTop) <= 1.5) {
+        panelProgrammaticScrollTop = null;
+        capturePanelScrollTrackAnchor(panel);
+        return;
+    }
+    panelProgrammaticScrollTop = null;
+    if (stopPanelBottomFollow) {
+        return;
+    }
+    compensateManualScrollAnchor(panel);
+    panelUserScrollUntil = Date.now() + PANEL_HYDRATION_SCROLL_IDLE_MS;
+    if (panelOpen && (hasUnhydratedPanelCards(panel) || panelPendingMeasuredCards.size > 0)) {
+        schedulePanelHydration({ delayMs: PANEL_HYDRATION_SCROLL_IDLE_MS });
+    }
+}
+
+function handlePanelPointerStart() {
+    panelPointerActive = true;
+    pausePanelHydrationFrame();
+}
+
+function handlePanelPointerEnd() {
+    if (!panelPointerActive) {
+        return;
+    }
+    panelPointerActive = false;
+    if (panelOpen) {
+        schedulePanelHydration();
+    }
+}
+
 /** Shows the jump buttons only while the panel scrolls, and marks the one already at its end. */
 function syncPanelJumpButtons() {
     const panel = document.getElementById?.('ica--tracker-panel');
@@ -1329,7 +1998,15 @@ function schedulePanelJumpSync() {
 // Expanding history, filtering and pending cards all change the body's height without a scroll.
 function observePanelJumpSize(panel) {
     if (!panel || typeof globalThis.ResizeObserver !== 'function') return;
-    panelJumpResizeObserver ??= new globalThis.ResizeObserver(schedulePanelJumpSync);
+    panelJumpResizeObserver ??= new globalThis.ResizeObserver(() => {
+        const currentPanel = getCompanionPanelNode();
+        if (panelOpen && !panelResizeActive && syncPanelHeightCacheWidth(currentPanel)) {
+            schedulePanelHydration();
+        } else if (panelOpen) {
+            compensateManualScrollAnchor(currentPanel);
+        }
+        schedulePanelJumpSync();
+    });
     panelJumpResizeObserver.disconnect();
     panelJumpResizeObserver.observe(panel);
     const body = panel.querySelector?.('.ica--tpanel-body');
@@ -1339,7 +2016,8 @@ function observePanelJumpSize(panel) {
 function jumpPanel(direction) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
-    stopPanelBottomFollow?.();
+    panelScrollTrackAnchor = null;
+    stopPanelBottomFollow?.({ resumeHydration: false });
     const behavior = shouldReducePanelMotion() ? 'auto' : 'smooth';
     if (direction !== 'top' && typeof globalThis.requestAnimationFrame === 'function') {
         followPanelBottom(panel, behavior === 'smooth');
@@ -1357,13 +2035,24 @@ function jumpPanel(direction) {
 function followPanelBottom(panel, smooth) {
     const controller = new AbortController();
     let frame = 0;
-    stopPanelBottomFollow = () => {
+    panelScrollTrackAnchor = null;
+    pausePanelHydrationFrame();
+    stopPanelBottomFollow = ({ resumeHydration = true, userAborted = false } = {}) => {
         globalThis.cancelAnimationFrame?.(frame);
         controller.abort();
         stopPanelBottomFollow = null;
+        if (panelOpen) {
+            capturePanelScrollTrackAnchor(panel);
+        }
+        if (resumeHydration && panelOpen) {
+            schedulePanelHydration({
+                delayMs: userAborted ? PANEL_HYDRATION_SCROLL_IDLE_MS : 0,
+                resetDelay: true,
+            });
+        }
     };
     for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
-        panel.addEventListener(type, () => stopPanelBottomFollow?.(), { passive: true, signal: controller.signal });
+        panel.addEventListener(type, () => stopPanelBottomFollow?.({ userAborted: true }), { passive: true, signal: controller.signal });
     }
     let started = 0;
     let lastTime = 0;
@@ -1389,6 +2078,7 @@ function followPanelBottom(panel, smooth) {
         if (remaining > 0) {
             const distance = smooth ? Math.max(remaining * (1 - Math.pow(0.8, elapsed / 16)), Math.min(remaining, 2)) : remaining;
             panel.scrollTop += distance;
+            panelProgrammaticScrollTop = panel.scrollTop;
         }
         frame = globalThis.requestAnimationFrame(step);
     };
@@ -1425,6 +2115,12 @@ function applyPanelSearch({ rendering = false } = {}) {
     const body = panel.querySelector('.ica--tpanel-body');
     if (body && typeof $(body).sortable === 'function' && $(body).sortable('instance')) $(body).sortable('refresh');
     notifyDiceCompanionHostsChanged();
+    if (!rendering && panelOpen) {
+        panelScrollTrackAnchor = null;
+        applyCachedCardIntrinsicHeights(panel);
+        capturePanelScrollTrackAnchor(panel);
+        schedulePanelHydration();
+    }
 }
 
 // Every forced style pass over the freshly inserted panel restyles most of the app, which costs
@@ -1444,15 +2140,28 @@ function renderPanel({ applyOpenState } = {}) {
 
     const panelElement = $('#ica--tracker-panel');
     const panel = panelElement[0];
+    const wasVisible = Boolean(!applyOpenState && panelOpen);
+    if (wasVisible) {
+        syncPanelHeightCacheWidth(panel);
+    }
+    const panelRect = wasVisible && typeof panel?.getBoundingClientRect === 'function'
+        ? panel.getBoundingClientRect()
+        : null;
     const anchor = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
-    const previousHeights = new Map(Array.from(panel?.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector) ?? [], section => [
-        section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute),
-        section.getBoundingClientRect().height,
-    ]));
+    const previousHeights = new Map();
+    for (const section of getPanelAgentSections(panel)) {
+        const agentId = getPanelSectionAgentId(section);
+        const rect = section.getBoundingClientRect();
+        previousHeights.set(agentId, rect.height);
+        if (wasVisible && isPanelSectionCacheable(section) && isPanelSectionRendered(section, panelRect)) {
+            cachePanelSectionHeight(section, { applyIntrinsic: false });
+        }
+    }
 
     // Before the new content, so an opening slide's visibility check meets the old, settled markup.
     applyOpenState?.();
 
+    panelScrollTrackAnchor = null;
     const scope = {};
     const target = captureMessageTargetState(scope);
     const liveDice = captureDiceCompanionWidget(panel);
@@ -1462,18 +2171,25 @@ function renderPanel({ applyOpenState } = {}) {
     });
     if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
     applyPanelSearch({ rendering: true });
+    applyCachedCardIntrinsicHeights(panel);
 
-    for (const section of panel?.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector) ?? []) {
-        const previousHeight = previousHeights.get(section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute));
-        if (previousHeight && section.querySelector('.ica--companion-pending')) {
+    for (const section of getPanelAgentSections(panel)) {
+        const previousHeight = previousHeights.get(getPanelSectionAgentId(section));
+        if (previousHeight && section.querySelector?.('.ica--companion-pending')) {
             section.style.minHeight = `${previousHeight}px`;
         }
     }
 
-    restoreVisibleMessageAnchor(panel, anchor, PANEL_ANCHOR_OPTIONS);
+    restorePanelAnchor(panel, anchor);
+    if (wasVisible) {
+        capturePanelScrollTrackAnchor(panel);
+    }
     armPanelSortable(panel);
     observePanelJumpSize(panel);
     schedulePanelJumpSync();
+    if (wasVisible) {
+        schedulePanelHydration();
+    }
 }
 
 const armedSortablePanels = new WeakSet();
@@ -1541,6 +2257,7 @@ function setupPanelSortable() {
         forcePlaceholderSize: true,
         start: function (_event, ui) {
             panelDragActive = true;
+            pausePanelHydrationFrame();
             ui.placeholder.height(ui.item.outerHeight());
         },
         stop: async function () {
@@ -1570,7 +2287,13 @@ function handlePanelHistoryToggle(event) {
 
     if (!details.open) {
         panelHistoryShown.delete(agentId);
+        panelScrollTrackAnchor = null;
+        const section = details.closest?.(PANEL_ANCHOR_OPTIONS.messageSelector);
+        if (panelOpen && section && isPanelSectionCacheable(section)) {
+            cachePanelSectionHeight(section, { applyIntrinsic: true });
+        }
     } else if (!panelHistoryShown.has(agentId)) {
+        panelScrollTrackAnchor = null;
         revealPanelHistory(agentId, PANEL_HISTORY_PAGE_SIZE);
     }
 }
@@ -1648,8 +2371,13 @@ export function openCompanionPanel() {
     }
 
     const wasOpen = panelOpen;
-    if (!wasOpen) returnFocus = document.activeElement;
+    if (!wasOpen) {
+        returnFocus = document.activeElement;
+        stopPanelHydration();
+        panelOpenHydrationEarliestAt = Date.now() + PANEL_HYDRATION_OPEN_DELAY_MS;
+    }
     const restoreScrollTop = !wasOpen ? panelSavedScrollTop : 0;
+    const restoreAnchor = !wasOpen ? panelSavedAnchor : null;
     if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
     }
@@ -1667,29 +2395,64 @@ export function openCompanionPanel() {
             globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
         },
     });
-    if (restoreScrollTop > 0) {
-        const panelNode = document.getElementById?.('ica--tracker-panel') ?? $('#ica--tracker-panel')[0];
+    if (restoreScrollTop > 0 || restoreAnchor) {
+        const panelNode = getCompanionPanelNode();
         if (panelNode) {
-            panelNode.scrollTop = restoreScrollTop;
+            syncPanelHeightCacheWidth(panelNode);
+            // Unhide the sticky jump group before setting scrollTop so its height is included
+            // in scrollHeight and does not clamp a saved bottom position short.
+            syncPanelJumpButtons();
+            const beforeScroll = Number(panelNode.scrollTop) || 0;
+            if (restoreScrollTop > 0) {
+                panelNode.scrollTop = restoreScrollTop;
+            }
+            if (restoreAnchor) {
+                if (restorePanelAnchor(panelNode, restoreAnchor)) {
+                    restorePanelAnchor(panelNode, restoreAnchor);
+                }
+                schedulePanelAnchorSettle(panelNode, restoreAnchor);
+            }
+            const afterScroll = Number(panelNode.scrollTop) || 0;
+            if (Math.abs(afterScroll - beforeScroll) >= 0.5) {
+                panelProgrammaticScrollTop = afterScroll;
+            }
+            capturePanelScrollTrackAnchor(panelNode);
+            syncPanelJumpButtons();
         }
+    } else if (needsManualOverflowAnchor()) {
+        const panelNode = getCompanionPanelNode();
+        setPanelOverflowAnchorDisabled(panelNode, hasUnhydratedPanelCards(panelNode));
     }
     notifyDiceCompanionHostsChanged();
     // The panel only gains its height once it is shown, so measure again on the next frame.
     schedulePanelJumpSync();
+    schedulePanelHydration({ delayMs: !wasOpen ? PANEL_HYDRATION_OPEN_DELAY_MS : 0 });
     document.querySelector('#ica--tracker-panel [data-action="panel-close"]')?.focus({ preventScroll: true });
 }
 
 export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
     const panel = $('#ica--tracker-panel');
+    const panelNode = panel[0];
+    stopPanelHydration();
+    panelOpenHydrationEarliestAt = 0;
+    panelPointerActive = false;
+    panelUserScrollUntil = 0;
+    panelScrollTrackAnchor = null;
+    setPanelOverflowAnchorDisabled(panelNode, false);
     if (panelOpen) {
-        panelSavedScrollTop = panel[0]?.scrollTop || 0;
+        panelSavedScrollTop = panelNode?.scrollTop || 0;
+        panelSavedAnchor = panelSavedScrollTop > 0
+            ? captureVisibleMessageAnchor(panelNode, PANEL_ANCHOR_OPTIONS)
+            : null;
+        syncPanelHeightCacheWidth(panelNode);
+        snapshotRenderedPanelCardHeights(panelNode, { applyIntrinsic: true, unhydrate: true });
     }
-    stopPanelBottomFollow?.();
+    stopPanelBottomFollow?.({ resumeHydration: false });
     panelOpen = false;
     activePanelResizeStop?.();
     syncCompanionPanelDock();
-    setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
+    setUiVisibility(panelNode, false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'false');
@@ -2180,8 +2943,16 @@ export function initCompanionPanel() {
         },
     });
     // 'toggle' does not bubble, so listen in the capture phase for every history list.
-    $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
-    $('#ica--tracker-panel')[0]?.addEventListener('scroll', schedulePanelJumpSync, { passive: true });
+    const panelNode = $('#ica--tracker-panel')[0];
+    panelNode?.addEventListener('toggle', handlePanelHistoryToggle, true);
+    panelNode?.addEventListener('scroll', handlePanelScroll, { passive: true });
+    panelNode?.addEventListener('pointerdown', handlePanelPointerStart, { passive: true });
+    panelNode?.addEventListener('touchstart', handlePanelPointerStart, { passive: true });
+    globalThis.addEventListener?.('pointerup', handlePanelPointerEnd, { passive: true });
+    globalThis.addEventListener?.('pointercancel', handlePanelPointerEnd, { passive: true });
+    globalThis.addEventListener?.('touchend', handlePanelPointerEnd, { passive: true });
+    globalThis.addEventListener?.('touchcancel', handlePanelPointerEnd, { passive: true });
+    globalThis.addEventListener?.('blur', handlePanelPointerEnd);
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)).catch(error => {
             console.error('[InChatAgents] Companion panel action failed:', error);
@@ -2320,7 +3091,14 @@ export function initCompanionPanel() {
     for (const eventName of refreshEvents) {
         eventSource.on(eventName, () => {
             if (eventName === event_types.CHAT_CHANGED) {
+                stopPanelHydration();
+                panelOpenHydrationEarliestAt = 0;
                 panelSavedScrollTop = 0;
+                panelSavedAnchor = null;
+                panelPointerActive = false;
+                panelUserScrollUntil = 0;
+                panelProgrammaticScrollTop = null;
+                clearPanelCardHeightCache(getCompanionPanelNode());
             }
             // Chat changes must reach the windows synchronously; a stale note is worse than a repaint.
             refreshCompanionWindows();
