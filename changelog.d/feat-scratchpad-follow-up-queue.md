@@ -1,1 +1,0 @@
-You don't have to wait for a **Scratchpad** reply to finish before writing the next message. Type it and press **Queue follow-up**: it waits in **Queued next** and goes out as soon as the reply is done, and pauses instead if you stop the reply or it fails.
