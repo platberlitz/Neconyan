@@ -451,6 +451,7 @@ import {
 import { configureCardScriptRuntime, initCardScriptRuntime, resetCardScriptSession, scheduleCardScriptReconcile, setCardScriptMessageStreaming, destroySandbox, getCardScriptChatScope } from './scripts/card-script-runtime.js';
 import { bindPortraitUrls } from './scripts/portrait-urls.js';
 import { installToastMinimumDuration } from './scripts/toast-duration.js';
+import { appendComposerSendAdditions, discardComposerSend, prepareComposerSend } from './scripts/composer-send-hooks.js';
 import { registerBackgroundMemoryHandler } from './scripts/background-memory-saver.js';
 
 const DEFERRED_STARTUP_STYLESHEETS = Object.freeze([
@@ -5515,6 +5516,10 @@ export async function sendTextareaMessage() {
         generateType = 'continue';
     }
 
+    if (textareaText && generateType === 'normal') {
+        prepareComposerSend(textareaText, { type: generateType });
+    }
+
     if (textareaText && !selected_group && this_chid === undefined && name2 !== neutralCharacterName) {
         await newAssistantChat({ temporary: false });
     }
@@ -5527,6 +5532,8 @@ export async function sendTextareaMessage() {
         // call without waiting for it, so rethrowing here would only add an unhandled rejection to the browser errors.
         if (isReportedGenerationFailure(error)) console.debug('The send failed', error);
         else if (!isReportedImageRefusal(error)) throw error;
+    } finally {
+        discardComposerSend();
     }
     showSwipeButtons();
     return generation;
@@ -9925,7 +9932,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             if (messageBias && !removeMacros(textareaText)) {
                 sendSystemMessage(system_message_types.GENERIC, ' ', { bias: messageBias });
             } else {
-                await sendMessageAsUser(textareaText, messageBias);
+                await sendMessageAsUser(appendComposerSendAdditions(textareaText), messageBias);
             }
         } else if (textareaText == '' && !automatic_trigger && !dryRun && [undefined, 'normal'].includes(type) && main_api == 'openai' && oai_settings.send_if_empty.trim().length > 0 && !depth && !suppressUserMessage && !selected_group) {
         // Use send_if_empty if set and the user message is empty. Only when sending messages normally

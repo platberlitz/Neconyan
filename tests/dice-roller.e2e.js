@@ -227,6 +227,92 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
     });
 }
 
+async function watchComposerWrites(page) {
+    await page.evaluate(() => {
+        const textarea = document.getElementById('send_textarea');
+        const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+        window.necoComposerWrites = [];
+        Object.defineProperty(textarea, 'value', {
+            configurable: true,
+            get() { return descriptor.get.call(this); },
+            set(value) {
+                window.necoComposerWrites.push(String(value));
+                descriptor.set.call(this, value);
+            },
+        });
+    });
+}
+
+async function sendAndSettle(page, app, text) {
+    const before = app.provider.calls.length;
+    await page.locator('#send_textarea').fill(text);
+    await page.locator('#send_but').click();
+    await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBeGreaterThan(before);
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
+    const lastUser = await page.evaluate(async () => (await import('/script.js')).chat.filter(message => message.is_user).at(-1)?.mes);
+    return { lastUser, lines: promptText(app.provider.calls.at(-1)) };
+}
+
+for (const [location, phone] of [['browser', false], ['server', true]]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} dice Auto roll and Auto send put a fresh roll after each message for the ${location} reply`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true,
+            configureSettings: saved => useReplyLocation(saved, location) });
+        const page = await openChat(account);
+        await waitForAgents(page);
+        await page.evaluate(() => { Math.random = () => 0.85; });
+        await enableDice(page);
+        const panel = await openCompanionPanel(page);
+        const widget = panel.locator('.neco-dice');
+        await expect(widget.locator('.neco-dice-outcome')).toContainText('Success');
+
+        // Both switches start off.
+        await widget.locator('.neco-dice-options summary').click();
+        const autoRoll = widget.getByRole('checkbox', { name: 'Auto roll' });
+        const autoSend = widget.getByRole('checkbox', { name: 'Auto send' });
+        await expect(autoRoll).not.toBeChecked();
+        await expect(autoSend).not.toBeChecked();
+        await autoRoll.check();
+        await autoSend.check();
+        await shot(page, `dice-${viewport}-auto-options.png`);
+        // A chat load focuses the composer with a code-fired click, which is not a tap outside the panel.
+        await page.evaluate(() => window.jQuery('#send_textarea').trigger('click'));
+        await expect(panel).toHaveClass(/\bis-open\b/);
+        await closeCompanionPanel(page);
+        await watchComposerWrites(page);
+        // The roll from opening the panel is already waiting; later rolls come out as 3.
+        await page.evaluate(() => { Math.random = () => 0.1; });
+
+        // The waiting roll lands after the typed text in the sent message, not in the message box.
+        const first = await sendAndSettle(page, app, 'I try the door.');
+        expect(first.lastUser).toBe('I try the door.\n🎲 Rolled 18 vs 12 (1d20: 18) - SUCCESS');
+        const userIndex = first.lines.findIndex(line => line.includes('I try the door.') && line.includes('🎲 Rolled 18 vs 12'));
+        const directiveIndex = first.lines.findIndex(line => line.startsWith('system: ') && line.includes(DIRECTIVE));
+        expect(userIndex, first.lines.join('\n')).toBeGreaterThanOrEqual(0);
+        expect(directiveIndex, first.lines.join('\n')).toBeGreaterThan(userIndex);
+        await expect(page.locator('#chat .mes[is_user="true"] .neco-dice-chip').last()).toHaveAttribute('data-outcome', 'success');
+
+        // Auto roll leaves a fresh roll waiting once the reply arrives, so the next message gets a new one.
+        await expect.poll(() => page.locator('#chat .mes').count(), { timeout: 60000 }).toBeGreaterThanOrEqual(3);
+        await openCompanionPanel(page);
+        await expect(widget.locator('.neco-dice-outcome')).toContainText('Failure');
+        await closeCompanionPanel(page);
+        const second = await sendAndSettle(page, app, 'Look around the room.');
+        expect(second.lastUser).toBe('Look around the room.\n🎲 Rolled 3 vs 12 (1d20: 3) - FAILURE');
+
+        // A CYOA or Doors skill tag gets its own d100 check against the tag's target.
+        await page.evaluate(() => { Math.random = () => 0.3; });
+        const third = await sendAndSettle(page, app, '[Speech 42/100] Talk the guard down');
+        expect(third.lastUser).toBe('[Speech 42/100] Talk the guard down\n🎲 Talk the guard down - rolled 31 vs 42 (Speech check, d100 roll under) - SUCCESS');
+        expect(third.lines.join('\n')).toContain(DIRECTIVE);
+
+        // The message box never held a roll.
+        expect(await page.evaluate(() => window.necoComposerWrites.filter(value => value.includes('🎲')))).toEqual([]);
+        await expect(page.locator('#send_textarea')).toHaveValue('');
+        await shot(page, `dice-${viewport}-auto-chat.png`);
+    });
+}
+
 test('dice companion switches notes, cards and the global switch through the real UI, and is seeded only once', async ({ app }) => {
     const account = await app.account({ phone: false, activeConnection: true });
     const page = await openChat(account);

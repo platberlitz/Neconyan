@@ -142,6 +142,7 @@ import { initGroupHeardEditor, refreshGroupHeardBadges } from './group-chat-hear
 import { importPresenceRecords } from './group-chat-heard-tools.js';
 import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
 import { renameGroupMemberFields, renameGroupSceneRecords } from './group-member-rename.js';
+import { appendComposerSendAdditions } from './composer-send-hooks.js';
 
 export {
     selected_group,
@@ -2503,7 +2504,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             if (bias.messageBias && !userInput.replace(/\{\{[\s\S]*?\}\}/gm, '').trim()) {
                 sendSystemMessage(system_message_types.GENERIC, ' ', { bias: bias.messageBias });
             } else {
-                await sendMessageAsUser(userInput, bias.messageBias);
+                await sendMessageAsUser(appendComposerSendAdditions(userInput), bias.messageBias);
             }
             didRenderUserMessage = true;
             $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));

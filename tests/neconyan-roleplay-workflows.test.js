@@ -1805,6 +1805,7 @@ function groupWrapperHarness({
         limitGroupSpeakersForControl: members => members,
         getBiasStrings: () => ({ messageBias: '' }),
         sendMessageAsUser,
+        appendComposerSendAdditions: text => text,
         getCurrentChatId: () => 'roleplay',
         deactivateSendButtons: () => {},
         activateSendButtons: () => {},

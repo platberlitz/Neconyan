@@ -189,6 +189,78 @@ export function rollDice(options = {}, random = Math.random) {
     };
 }
 
+const SKILL_TAG_PATTERN = /\[([^[\]\r\n]{1,60}?)\s+(\d{1,3})\s*\/\s*100\s*\]/u;
+
+/**
+ * The first skill tag in a message, as written by CYOA Choices with Skill
+ * Checks and Doors with Fate Checks: `[Speech 42/100] Talk the guard down`.
+ * @param {string} text Message text.
+ * @returns {{ skill: string, target: number, action: string }|null}
+ */
+export function parseSkillCheck(text) {
+    const source = String(text ?? '');
+    const match = SKILL_TAG_PATTERN.exec(source);
+    if (!match) {
+        return null;
+    }
+    const skill = cleanAction(match[1].replace(/[*_`]/g, ''));
+    if (!skill) {
+        return null;
+    }
+    const after = source.slice(match.index + match[0].length).split(/\r?\n/u)[0];
+    return {
+        skill,
+        target: clampInteger(match[2], 0, 100, 50),
+        action: cleanAction(after.replace(/[*_`]/g, '')),
+    };
+}
+
+/** The agents' rules: roll under the target on a d100; 1 and 100 are criticals. */
+export function getSkillCheckOutcome(roll, target) {
+    if (roll === 1) {
+        return OUTCOMES.CRITICAL_SUCCESS;
+    }
+    if (roll === 100) {
+        return OUTCOMES.CRITICAL_FAILURE;
+    }
+    const margin = target - roll;
+    if (margin >= 10) {
+        return OUTCOMES.SUCCESS;
+    }
+    if (margin >= -10) {
+        return OUTCOMES.PARTIAL_SUCCESS;
+    }
+    return OUTCOMES.FAILURE;
+}
+
+export function rollSkillCheck(check, random = Math.random) {
+    const target = clampInteger(check?.target, 0, 100, 50);
+    const [roll] = rollPool(100, 1, random);
+    return {
+        check: 'skill',
+        skill: cleanAction(check?.skill),
+        action: cleanAction(check?.action),
+        sides: 100,
+        count: 1,
+        modifier: 0,
+        mode: ROLL_MODES.NORMAL,
+        difficulty: 'custom',
+        target,
+        dice: [roll],
+        droppedDice: [],
+        natural: roll,
+        total: roll,
+        outcome: getSkillCheckOutcome(roll, target),
+    };
+}
+
+export function isSameSkillCheck(result, check) {
+    return result?.check === 'skill'
+        && Boolean(check)
+        && result.skill === cleanAction(check.skill)
+        && result.target === clampInteger(check.target, 0, 100, 50);
+}
+
 export function getOutcomeKey(outcome) {
     return OUTCOME_KEYS[String(outcome ?? '').toUpperCase()] ?? 'failure';
 }
@@ -227,8 +299,9 @@ function formatModeLabel(mode) {
 
 export function formatRollLine(result) {
     const action = cleanAction(result.action);
-    const notation = formatDiceNotation(result);
-    const details = `${notation}: ${result.dice.join(' + ')}${formatModeLabel(result.mode)}`;
+    const details = result.check === 'skill'
+        ? `${cleanAction(result.skill) || 'Skill'} check, d100 roll under`
+        : `${formatDiceNotation(result)}: ${result.dice.join(' + ')}${formatModeLabel(result.mode)}`;
     const lead = action ? `${action} - rolled` : 'Rolled';
     return `${ROLL_MARKER} ${lead} ${result.total} vs ${result.target} (${details}) - ${result.outcome}`;
 }

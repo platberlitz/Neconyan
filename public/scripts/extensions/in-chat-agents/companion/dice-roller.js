@@ -12,6 +12,7 @@ import {
     areAgentsGloballyEnabled,
     getAgentById,
     getCompanionConfig,
+    getEnabledAgents,
     isAgentEnabledForCurrentScope,
     isAgentHidden,
 } from '../agent-store.js';
@@ -30,10 +31,15 @@ import {
     normaliseMode,
     normaliseModifier,
     normaliseSides,
+    isSameSkillCheck,
     parseRollLines,
+    parseSkillCheck,
     resolveTarget,
     rollDice,
+    rollSkillCheck,
 } from './dice.js';
+import { registerComposerSendHook } from '../../../composer-send-hooks.js';
+import { isDiceRollerAgent } from './companion-shared.js';
 import { setDiceCompanionRunner } from './dice-companion-local.js';
 import {
     DICE_COMPANION_COMPOSER_REQUEST_EVENT,
@@ -59,6 +65,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     criticals: true,
     partials: true,
     rollOnOpen: true,
+    autoRoll: false,
+    autoSend: false,
 });
 
 const OUTCOME_LABELS = Object.freeze({
@@ -124,6 +132,8 @@ function normaliseSettings(stored = {}) {
     next.criticals = next.criticals !== false;
     next.partials = next.partials !== false;
     next.rollOnOpen = next.rollOnOpen !== false;
+    next.autoRoll = next.autoRoll === true;
+    next.autoSend = next.autoSend === true;
     return next;
 }
 
@@ -249,6 +259,8 @@ function buildWidget() {
     const state = {
         rolling: false,
         result: null,
+        pending: null,
+        spentRoll: null,
         timers: [],
         agentId: '',
     };
@@ -303,9 +315,16 @@ function buildWidget() {
     }, [el('i', { className: 'fa-solid fa-paper-plane', 'aria-hidden': 'true' }), el('span', { text: 'Send' })]);
     const actions = el('div', { className: 'neco-dice-actions' }, [addButton, sendButton]);
 
-    const renderTray = () => {
-        tray.replaceChildren(...Array.from({ length: settings.count }, (_, index) => createDie(settings.sides, index)));
-        tray.dataset.count = String(settings.count);
+    const renderTray = (sides = settings.sides, count = settings.count) => {
+        tray.replaceChildren(...Array.from({ length: count }, (_, index) => createDie(sides, index)));
+        tray.dataset.count = String(count);
+        tray.dataset.sides = String(sides);
+    };
+
+    const matchTray = (rolled) => {
+        if (tray.dataset.sides !== String(rolled.sides) || tray.dataset.count !== String(rolled.count)) {
+            renderTray(rolled.sides, rolled.count);
+        }
     };
 
     const syncTarget = () => {
@@ -327,6 +346,7 @@ function buildWidget() {
             return;
         }
         state.result = null;
+        matchTray(settings);
         root.dataset.outcome = '';
         outcome.textContent = 'Tap the dice to roll';
         breakdown.textContent = '';
@@ -406,6 +426,8 @@ function buildWidget() {
         createCheckbox('criticals', 'Critical rolls', 'All dice on their highest face is a critical success; all ones is a critical failure'),
         createCheckbox('partials', 'Partial successes', 'Just missing the target still succeeds, with a cost'),
         createCheckbox('rollOnOpen', 'Roll when the Companion panel opens', 'Roll straight away the first time the dice appear in a panel or window'),
+        createCheckbox('autoRoll', 'Auto roll', 'Roll fresh dice by themselves after every reply, so a roll is always waiting for your next message'),
+        createCheckbox('autoSend', 'Auto send', 'Put the waiting roll after each message you send, without adding it to the message box'),
     ]);
 
     const controls = el('div', { className: 'neco-dice-controls' }, [
@@ -428,6 +450,7 @@ function buildWidget() {
 
     const showResult = (rolled) => {
         state.result = rolled;
+        state.pending = null;
         state.rolling = false;
         root.classList.remove('is-rolling');
         const faces = tray.querySelectorAll('.neco-dice-face');
@@ -436,37 +459,50 @@ function buildWidget() {
                 faces[index].textContent = String(value);
             }
         });
+        const isSkillCheck = rolled.check === 'skill';
         const dice = tray.querySelectorAll('.neco-dice-die');
         dice.forEach((die, index) => {
             const value = rolled.dice[index];
-            die.dataset.face = value === rolled.sides ? 'max' : value === 1 ? 'min' : '';
+            const best = isSkillCheck ? 1 : rolled.sides;
+            const worst = isSkillCheck ? rolled.sides : 1;
+            die.dataset.face = value === best ? 'max' : value === worst ? 'min' : '';
         });
         root.dataset.outcome = getOutcomeKey(rolled.outcome);
         outcome.replaceChildren(
             el('i', { className: `fa-solid ${OUTCOME_ICONS[rolled.outcome]}`, 'aria-hidden': 'true' }),
             el('span', { text: OUTCOME_LABELS[rolled.outcome] ?? rolled.outcome }),
         );
-        const modifierText = rolled.modifier ? ` ${rolled.modifier > 0 ? '+' : '-'} ${Math.abs(rolled.modifier)}` : '';
-        const dropped = rolled.droppedDice.length ? ` (other roll ${rolled.droppedDice.join(' + ')})` : '';
-        breakdown.textContent = `${rolled.dice.join(' + ')}${modifierText} = ${rolled.total} vs ${rolled.target}${dropped}`;
+        if (isSkillCheck) {
+            breakdown.textContent = `${rolled.skill}: ${rolled.total}, needs ${rolled.target} or under`;
+        } else {
+            const modifierText = rolled.modifier ? ` ${rolled.modifier > 0 ? '+' : '-'} ${Math.abs(rolled.modifier)}` : '';
+            const dropped = rolled.droppedDice.length ? ` (other roll ${rolled.droppedDice.join(' + ')})` : '';
+            breakdown.textContent = `${rolled.dice.join(' + ')}${modifierText} = ${rolled.total} vs ${rolled.target}${dropped}`;
+        }
         sendButton.disabled = false;
         addButton.disabled = false;
     };
 
-    const roll = () => {
+    // A skill check comes from a CYOA or Doors choice: the tag passed in, or
+    // the one in the message box when the dice are tapped.
+    const roll = ({ check = parseSkillCheck(getComposer()?.value) } = {}) => {
         if (state.rolling) {
-            return state.result;
+            return state.pending ?? state.result;
         }
         clearTimers();
-        const rolled = rollDice({
-            ...settings,
-            action: actionInput.value,
-        });
+        const rolled = check
+            ? rollSkillCheck({ ...check, action: actionInput.value || check.action })
+            : rollDice({
+                ...settings,
+                action: actionInput.value,
+            });
+        matchTray(rolled);
         if (prefersReducedMotion()) {
             showResult(rolled);
             return rolled;
         }
         state.rolling = true;
+        state.pending = rolled;
         root.dataset.outcome = '';
         root.classList.remove('is-rolling');
         void root.offsetWidth;
@@ -489,9 +525,10 @@ function buildWidget() {
         return rolled;
     };
 
-    rollButton.addEventListener('click', roll);
+    rollButton.addEventListener('click', () => roll());
 
-    const getRollLine = () => (state.result ? formatRollLine({ ...state.result, action: actionInput.value }) : '');
+    const getRollAction = (rolled) => actionInput.value || (rolled.check === 'skill' ? rolled.action : '');
+    const getRollLine = () => (state.result ? formatRollLine({ ...state.result, action: getRollAction(state.result) }) : '');
 
     addButton.addEventListener('click', () => {
         const line = getRollLine();
@@ -534,10 +571,32 @@ function buildWidget() {
         getLine: getRollLine,
         focus: () => rollButton.focus({ preventScroll: true }),
         destroy: clearTimers,
+        // The roll that goes out with a message: the one waiting (or still
+        // spinning) unless it already went, otherwise a fresh one when asked.
+        takeForSend({ rollIfNeeded = false, check = null } = {}) {
+            const waiting = state.rolling ? state.pending : state.result;
+            const usable = waiting && waiting !== state.spentRoll
+                && (check ? isSameSkillCheck(waiting, check) : waiting.check !== 'skill');
+            const rolled = usable ? waiting : rollIfNeeded ? roll({ check }) : null;
+            if (!rolled) {
+                return null;
+            }
+            return { rolled, line: formatRollLine({ ...rolled, action: getRollAction(rolled) }) };
+        },
+        markSent(rolled = state.pending ?? state.result, { clearAction = false } = {}) {
+            state.spentRoll = rolled;
+            if (clearAction) {
+                actionInput.value = '';
+            }
+        },
+        needsRoll: () => !state.rolling && (!state.result || state.result === state.spentRoll),
         resetForChat() {
             clearTimers();
             state.rolling = false;
             state.result = null;
+            state.pending = null;
+            state.spentRoll = null;
+            renderTray();
             root.classList.remove('is-rolling');
             root.dataset.outcome = '';
             outcome.textContent = 'Tap the dice to roll';
@@ -549,6 +608,9 @@ function buildWidget() {
         onOptionsChanged: key => {
             if (key === 'criticals' || key === 'partials') {
                 resetResult();
+            }
+            if (key === 'autoRoll') {
+                ensureWaitingRoll();
             }
         },
         syncAvailability(agent) {
@@ -720,6 +782,58 @@ function handleLocalRun(agentId, messageIndex = -1) {
     return { agentId, messageIndex, changed: false, local: true, result: null };
 }
 
+function getActiveDiceAgent({ allowHidden = false } = {}) {
+    if (!areAgentsGloballyEnabled()) {
+        return null;
+    }
+    const current = getAgentById(widget?.state.agentId);
+    const agent = isDiceRollerAgent(current) ? current : getEnabledAgents().find(isDiceRollerAgent);
+    if (!agent || !isAgentEnabledForCurrentScope(agent) || (!allowHidden && isAgentHidden(agent.id))) {
+        return null;
+    }
+    return agent;
+}
+
+function ensureWaitingRoll() {
+    if (settings.autoRoll && widget?.needsRoll() && getActiveDiceAgent({ allowHidden: true })) {
+        widget.roll({ check: null });
+    }
+}
+
+function rollAfterReply(_messageId, type) {
+    if (type === 'first_message' || type === 'impersonate') {
+        return;
+    }
+    ensureWaitingRoll();
+}
+
+/**
+ * Auto send: the roll goes into the sent message after the typed text, and
+ * the message box is left alone. A message carrying a CYOA or Doors skill tag
+ * gets that check rolled.
+ */
+function addRollAfterMessage({ text, type }) {
+    if (!widget || type !== 'normal' || !String(text ?? '').trim()) {
+        return null;
+    }
+    if (parseRollLines(text).length) {
+        widget.markSent();
+        return null;
+    }
+    if (!settings.autoSend || !getActiveDiceAgent()) {
+        return null;
+    }
+    const check = parseSkillCheck(text);
+    const ready = widget.takeForSend({ rollIfNeeded: settings.autoRoll || Boolean(check), check });
+    if (!ready) {
+        return null;
+    }
+    return {
+        text: ready.line,
+        onSent: () => widget?.markSent(ready.rolled, { clearAction: true }),
+    };
+}
+
 function decorateTextNode(node) {
     const text = node.nodeValue ?? '';
     const rolls = parseRollLines(text);
@@ -802,6 +916,8 @@ export function initDiceRollerCompanion() {
             eventSource.on(eventName, scheduleDecorate);
         }
     }
+    registerComposerSendHook(addRollAfterMessage);
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, rollAfterReply);
     eventSource.on(event_types.CHAT_CHANGED, () => {
         autoRolled = false;
         widget?.resetForChat();
