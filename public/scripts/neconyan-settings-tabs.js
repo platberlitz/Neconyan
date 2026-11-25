@@ -6,6 +6,7 @@ import { t } from './i18n.js';
 import { createDefaultLowMemoryPreferences, getLowMemoryState } from './low-memory-mode.js';
 import { BUNDLED_MOVING_UI_NAMES, getEffectiveFastUiMode, getEffectiveLowMemoryPolicy, power_user, syncLowMemorySettingsUi } from './power-user.js';
 import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mode.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 
 /**
  * Neconyan Settings Tabs Overhaul
@@ -778,7 +779,7 @@ import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mod
     }
 
     function normalizeSettingsSearchText(value) {
-        return String(value ?? '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+        return foldSearchText(value).replace(/\s+/g, ' ').trim();
     }
 
     function clearSettingsSearch(searchInput) {

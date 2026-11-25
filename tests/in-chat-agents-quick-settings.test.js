@@ -1,6 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/quick-settings.js', import.meta.url), 'utf8');
 const index = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
@@ -70,6 +71,7 @@ describe('agent shortcuts', () => {
         const isCompanionAgent = agent => agent.execution === 'companion';
         const runtime = vm.createContext({
             $: selector => ({ val: () => values[selector] }),
+            foldSearchText,
             getActiveAgentListTab: () => tab,
             isCompanionAgent,
             isAgentEnabledForCurrentScope: agent => agent.enabled,

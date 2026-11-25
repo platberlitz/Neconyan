@@ -1,5 +1,6 @@
 import { debounce } from './utils.js';
 import { debounce_timeout } from './constants.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 
 /**
  * Search for settings that match the search string and highlight them.
@@ -29,7 +30,7 @@ function searchSettings() {
  * @returns {Set<HTMLElement>} Elements to highlight
  */
 function findMatchingElements(root, searchString) {
-    const needle = searchString.toLowerCase();
+    const needle = foldSearchText(searchString);
     const matches = new Set();
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
@@ -44,7 +45,7 @@ function findMatchingElements(root, searchString) {
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         const text = node.nodeValue;
         const parent = node.parentElement;
-        if (!parent || text.trim() === '' || !text.toLowerCase().includes(needle) || parent.closest('h4, h3')) {
+        if (!parent || text.trim() === '' || !foldSearchText(text).includes(needle) || parent.closest('h4, h3')) {
             continue;
         }
         matches.add(parent);

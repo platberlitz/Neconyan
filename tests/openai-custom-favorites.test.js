@@ -136,4 +136,25 @@ describe('OpenAI custom favorites wiring', () => {
         expect(block).toMatch(/const refreshCustomModelControls = \(\) => \{[\s\S]*refreshModelIdSearchControlsForSource\(chat_completion_sources\.CUSTOM\);[\s\S]*updateOpenAISettingsGroupVisibility\(\);/);
         expect(block).toMatch(/\$\('#custom_model_id'\)\.on\('change', function \(\) \{\s*if \(customModelControlsTimer !== null\) \{\s*refreshCustomModelControls\(\);/);
     });
+
+    test('createModelPickerGroupHeading sets lang="en" only on untranslated vendor/brand headings', () => {
+        const trMap = new Map([
+            ['Favorites', 'Favoriler'],
+            ['Current', 'Geçerli'],
+            ['From API', 'API\'den'],
+        ]);
+        const context = vm.createContext({
+            document: {
+                createElement: tag => ({ tag, className: '', textContent: '', lang: '' }),
+            },
+            translate: value => trMap.get(value) ?? value,
+        });
+        vm.runInContext(`${getFunctionSource('createModelPickerGroupHeading')}\nglobalThis.createModelPickerGroupHeading = createModelPickerGroupHeading;`, context);
+
+        expect(context.createModelPickerGroupHeading('Favoriler').lang).toBe('');
+        expect(context.createModelPickerGroupHeading('Geçerli').lang).toBe('');
+        expect(context.createModelPickerGroupHeading('API\'den').lang).toBe('');
+        expect(context.createModelPickerGroupHeading('Mistral').lang).toBe('en');
+        expect(context.createModelPickerGroupHeading('OpenAI').lang).toBe('en');
+    });
 });

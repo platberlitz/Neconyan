@@ -7,6 +7,7 @@ import {
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
 import { power_user } from '../power-user.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 import { selectConversationThread } from './chrome.js';
 import { AVAILABILITY_COPY, CHROME_IDS, DEFAULT_BRANCH_ID, WEEKDAY_LABELS } from './constants.js';
 import {
@@ -306,7 +307,7 @@ export function bindPartnerList(listId, searchId) {
     if (searchInput instanceof HTMLInputElement) {
         searchInput.addEventListener('input', () => {
             const options = list.querySelectorAll('.sb-conversation-partner-option');
-            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'charName');
+            filterConversationPickerRows(options, foldSearchText(searchInput.value).trim(), 'charName');
         });
     }
 }
@@ -364,7 +365,7 @@ export function toggleAddDmPicker() {
 
             const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
-                <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" data-search-name="${escapeHtmlAttribute(name.toLowerCase())}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
+                <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" data-search-name="${escapeHtmlAttribute(foldSearchText(name))}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
                     <img src="${escapeHtmlAttribute(thumb)}" alt="" style="inline-size: 24px; block-size: 24px; border-radius: 50%; object-fit: cover;" loading="lazy" decoding="async" />
                     <span${character.name ? ' translate="no"' : ''} style="font-size: var(--sb-type-caption);">${escapeHtmlText(name)}</span>
                 </button>
@@ -383,7 +384,7 @@ export function toggleAddDmPicker() {
         const options = listContainer.querySelectorAll('.sb-conversation-add-dm-option');
         const empty = listContainer.querySelector('[data-sb-picker-empty]');
         searchInput.addEventListener('input', () => {
-            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'searchName', empty);
+            filterConversationPickerRows(options, foldSearchText(searchInput.value).trim(), 'searchName', empty);
         });
     }
 }
@@ -663,7 +664,7 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
             const disabled = lockedMembers.has(character.avatar) ? ' disabled' : '';
             const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
-                <label class="sb-conversation-add-dm-option sb-conversation-group-member-option" data-search-name="${escapeHtmlAttribute(name.toLowerCase())}">
+                <label class="sb-conversation-add-dm-option sb-conversation-group-member-option" data-search-name="${escapeHtmlAttribute(foldSearchText(name))}">
                     <input type="checkbox" class="sb-conversation-group-member-checkbox" value="${escapeHtmlAttribute(character.avatar)}"${checked}${disabled} />
                     <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" width="24" height="24" loading="lazy" decoding="async" />
                     <span class="sb-conversation-group-member-name">${escapeHtmlText(name)}</span>
@@ -700,7 +701,7 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
         const options = listContainer.querySelectorAll('.sb-conversation-group-member-option');
         const empty = listContainer.querySelector('[data-sb-picker-empty]');
         searchInput.addEventListener('input', () => {
-            filterConversationPickerRows(options, searchInput.value.toLowerCase().trim(), 'searchName', empty);
+            filterConversationPickerRows(options, foldSearchText(searchInput.value).trim(), 'searchName', empty);
         });
     }
 }
@@ -724,7 +725,7 @@ export function renderConversationGroupMemberSummary(list, groupId) {
         const name = getCharacterForAvatar(avatar)?.name || 'Character';
         const row = document.createElement('div');
         row.className = 'sb-conversation-partner-option';
-        row.dataset.charName = name.toLowerCase();
+        row.dataset.charName = foldSearchText(name);
         const pick = document.createElement('span');
         pick.className = 'sb-conversation-partner-pick';
         const image = document.createElement('img');

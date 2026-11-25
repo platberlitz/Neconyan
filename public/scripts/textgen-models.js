@@ -6,6 +6,7 @@ import { renderTemplateAsync } from './templates.js';
 import { POPUP_TYPE, callGenericPopup } from './popup.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 import { debounce, localizePagination, PAGINATION_TEMPLATE } from './utils.js';
 import { debounce_timeout } from './constants.js';
 import { attachModelListSearch } from './model-list-search.js';
@@ -656,7 +657,7 @@ export async function loadFeatherlessModels(data) {
             !(categoriesSelect instanceof HTMLSelectElement)) {
             return;
         }
-        const searchQuery = searchBar.value.toLowerCase();
+        const searchQuery = foldSearchText(searchBar.value);
         const selectedSortOrder = sortOrderSelect.value;
         const selectedClass = classSelect.value;
         const selectedCategory = categoriesSelect.value;
@@ -674,7 +675,7 @@ export async function loadFeatherlessModels(data) {
         const featherlessNewIds = featherlessNew.map(stat => stat.id);
 
         let filteredModels = originalModels.filter(model => {
-            const matchesSearch = model.id.toLowerCase().includes(searchQuery);
+            const matchesSearch = foldSearchText(model.id).includes(searchQuery);
             const matchesClass = selectedClass ? model.model_class === selectedClass : true;
             const matchesTop = featherlessIds.includes(model.id);
             const matchesNew = featherlessNewIds.includes(model.id);

@@ -5,8 +5,8 @@ import { editCreatorDraft } from './model.js';
 export function inspectCreatorKeys(book, text) {
     return Object.values(book.data.entries).map(entry => {
         const keys = (entry.key ?? []).filter(key => typeof key === 'string' && !key.startsWith('/'));
-        const haystack = entry.caseSensitive ? text : text.toLocaleLowerCase();
-        const matched = keys.filter(key => key && haystack.includes(entry.caseSensitive ? key : key.toLocaleLowerCase()));
+        const haystack = entry.caseSensitive ? text : text.toLowerCase();
+        const matched = keys.filter(key => key && haystack.includes(entry.caseSensitive ? key : key.toLowerCase()));
         return { uid: entry.uid, title: entry.comment || `Entry ${entry.uid}`, matched,
             reason: entry.disable ? 'Disabled' : entry.constant ? 'Always included before other runtime rules' : matched.length ? 'Text contains a primary key' : 'No literal primary key found' };
     });

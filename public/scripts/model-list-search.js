@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import { groupByModelFamily } from './model-family.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 
 const lists = new WeakMap();
 
@@ -220,13 +221,13 @@ export function attachModelListSearch(select, options = {}) {
             available = [...select.options].filter(option => {
                 if (!isListed(option) || seen.has(option.value)) return false;
                 seen.add(option.value);
-                searchText.set(option, `${option.value} ${getText(option)}`.toLocaleLowerCase());
+                searchText.set(option, foldSearchText(`${option.value} ${getText(option)}`));
                 return true;
             });
         }
         list.value = select.value;
         const focusedValue = results.contains(document.activeElement) ? document.activeElement.dataset.modelId : null;
-        const terms = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+        const terms = foldSearchText(input.value).trim().split(/\s+/).filter(Boolean);
         const matches = available.filter(option => {
             const text = searchText.get(option);
             return terms.every(term => text.includes(term));

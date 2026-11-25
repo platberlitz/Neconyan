@@ -5,6 +5,7 @@ import { characters, eventSource, event_types, generateQuietPrompt, generateRaw,
 import { dragElement, isMobile } from '../../RossAscends-mods.js';
 import { getContext, extension_settings, ModuleWorkerWrapper, renderExtensionTemplateAsync } from '../../extensions.js';
 import { loadMovingUIState, performFuzzySearch, power_user } from '../../power-user.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 import { onlyUnique, debounce, download, escapeHtml, getCharaFilename, trimToEndSentence, trimToStartSentence, waitUntilCondition, findChar, isFalseBoolean, includesIgnoreCaseAndAccents } from '../../utils.js';
 import { hideMutedSprites, selected_group } from '../../group-chats.js';
 import { isJsonSchemaSupported } from '../../textgen-settings.js';
@@ -2216,13 +2217,13 @@ function onExpressionVisibilityClick() {
 }
 
 function filterExpressionImages() {
-    const query = String($('#expression_search').val() || '').trim().toLowerCase();
+    const query = foldSearchText($('#expression_search').val() || '').trim();
     const mode = getExpressionVisibility();
     let shown = 0;
     const items = $('#image_list .expression_list_item');
     items.each(function () {
         const missing = this.dataset.expressionType === 'failure';
-        const visible = this.dataset.expression.toLowerCase().includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
+        const visible = foldSearchText(this.dataset.expression).includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
         $(this).toggle(visible);
         if (visible) shown++;
     });

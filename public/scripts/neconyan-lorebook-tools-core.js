@@ -117,7 +117,7 @@ export function delimitLorebook(data, { style, nameSource = 'title', name = '', 
 export function lorebookMergeCandidates(current, incoming) {
     return Object.entries(incoming.entries).map(([uid, entry]) => {
         const byTitle = Object.entries(current.entries).filter(([, local]) =>
-            entry.comment && String(local.comment).trim().toLocaleLowerCase() === String(entry.comment).trim().toLocaleLowerCase());
+            entry.comment && String(local.comment).trim().toLowerCase() === String(entry.comment).trim().toLowerCase());
         const targetUid = byTitle.length === 1 ? byTitle[0][0] : Object.hasOwn(current.entries, uid) ? uid : null;
         return { uid, targetUid, incoming: entry, local: targetUid === null ? null : current.entries[targetUid] };
     });

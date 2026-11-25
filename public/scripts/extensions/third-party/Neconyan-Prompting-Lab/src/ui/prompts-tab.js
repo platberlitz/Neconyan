@@ -14,6 +14,7 @@ import { addPromptModule } from '../presets.js';
 import { createPromptDraft, validatePromptDraft } from '../schema.js';
 import * as storage from '../storage.js';
 import { debounce } from './debounce.js';
+import { foldSearchText } from '../../../../../util/fuzzy-search.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -52,12 +53,12 @@ export function createPromptsTab({ onChanged = null } = {}) {
     }
 
     function matches(prompt) {
-        const term = searchInput.value.trim().toLowerCase();
+        const term = foldSearchText(searchInput.value).trim();
         if (!term) {
             return true;
         }
         return [prompt.title, prompt.notes, ...prompt.tags]
-            .some(value => value.toLowerCase().includes(term));
+            .some(value => foldSearchText(value).includes(term));
     }
 
     function describePrompt(prompt) {

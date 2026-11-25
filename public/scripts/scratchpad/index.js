@@ -15,6 +15,7 @@ import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { buildTextDiffMarkup } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { getCurrentUserHandle } from '../user.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 import * as api from './api.js';
 import { addReplyVersion, prepareChange, replyVersionTarget } from './changes.js';
 import { needsSavedPersonaSelection, saveSelectedPersona } from './persona-changes.js';
@@ -3556,8 +3557,8 @@ function renderPreview() {
 
 function sessionMatches(session, query) {
     if (!query) return true;
-    const needle = query.toLowerCase();
-    return session.name.toLowerCase().includes(needle) || session.messages.some(item => item.text.toLowerCase().includes(needle));
+    const needle = foldSearchText(query);
+    return foldSearchText(session.name).includes(needle) || session.messages.some(item => foldSearchText(item.text).includes(needle));
 }
 
 function formatDate(value) {

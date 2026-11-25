@@ -295,7 +295,7 @@ export function getAvailableTokenizers() {
     const tokenizerOptions = $('#tokenizer').find('option').toArray();
     return tokenizerOptions.map(tokenizerOption => ({
         tokenizerId: Number(tokenizerOption.value),
-        tokenizerKey: Object.entries(tokenizers).find(([_, value]) => value === Number(tokenizerOption.value))[0].toLocaleLowerCase(),
+        tokenizerKey: Object.entries(tokenizers).find(([_, value]) => value === Number(tokenizerOption.value))[0].toLowerCase(),
         tokenizerName: tokenizerOption.text,
     }));
 }
@@ -354,7 +354,7 @@ export function getFriendlyTokenizerName(forApi) {
         ? tokenizers.OPENAI
         : tokenizerId;
 
-    const tokenizerKey = Object.entries(tokenizers).find(([_, value]) => value === tokenizerId)[0].toLocaleLowerCase();
+    const tokenizerKey = Object.entries(tokenizers).find(([_, value]) => value === tokenizerId)[0].toLowerCase();
 
     return { tokenizerName, tokenizerKey, tokenizerId };
 }

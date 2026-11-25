@@ -16,6 +16,7 @@ import { renderCreatorLiveReply } from './live-reply.js';
 import { creatorProposalDiff } from './proposal-diff.js';
 import { renderCreatorPurrks } from './purrks.js';
 import { creatorUsesServer, continueCreatorServerWriting, renderCreatorServerRequests } from './server-generation.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -219,7 +220,7 @@ class CreatorWorkspace {
         library.append(libHeader);
         const list = element('div', 'creator-library-grid');
         const search = textField('Find a character', '', value => {
-            for (const item of list.children) item.hidden = !item.textContent.toLocaleLowerCase().includes(value.toLocaleLowerCase());
+            for (const item of list.children) item.hidden = !foldSearchText(item.textContent).includes(foldSearchText(value));
         }, { rows: 1, placeholder: 'Type a name to filter...' });
         for (const card of characters) {
             const open = button(card.name || card.avatar, () => this.run(async () => { await this.session.create(card.avatar); this.render(); }), false, 'creator-library-item');

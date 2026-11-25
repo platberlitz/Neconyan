@@ -1,5 +1,6 @@
 import { online_status } from '../../script.js';
 import { t, translate } from '../i18n.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 import { imageInputIssueDetail, isImageInputIssue } from '../prompt-media-policy.js';
 import { setConversationInterfaceActive } from './chrome.js';
 import { CHROME_IDS, DEFAULT_BRANCH_ID, DEFAULT_SETTINGS, SETTINGS_FIELDS } from './constants.js';
@@ -146,11 +147,11 @@ function updateConversationConnectionNotice(settings, avatar) {
 }
 
 export function filterConversationPals() {
-    const query = String(document.getElementById('sb_conversation_pals_search')?.value || '').trim().toLowerCase();
+    const query = foldSearchText(document.getElementById('sb_conversation_pals_search')?.value).trim();
     const pals = document.querySelectorAll(`#${CHROME_IDS.palsList} .sb-conversation-pal`);
     let visible = 0;
     pals.forEach(pal => {
-        const matches = (pal.querySelector('.sb-conversation-pal-name')?.textContent || '').toLowerCase().includes(query);
+        const matches = foldSearchText(pal.querySelector('.sb-conversation-pal-name')?.textContent).includes(query);
         (pal.closest('.sb-conversation-pal-row') || pal).classList.toggle('sb-conversation-hidden', !matches);
         if (matches) visible++;
     });

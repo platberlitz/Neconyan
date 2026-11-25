@@ -26,6 +26,7 @@ import {
     getQuietSlashOverrides,
 } from "./lib/generation.js";
 import { revealUi, setUiVisibility } from "../../ui-motion.js";
+import { foldSearchText } from "../../util/fuzzy-search.js";
 import { GenerationRunManager, OwnedTransientValue, snapshotGenerationRunSettings, snapshotGenerationSettings } from "./lib/generation-run.js";
 import { normalizeProviderResult, sanitizeEffectiveRequest } from "./lib/provider-contract.js";
 import {
@@ -739,7 +740,7 @@ function setupSettingsSearch() {
     };
 
     const handleSearch = () => {
-        const query = String(searchInput.value || "").trim().toLowerCase();
+        const query = foldSearchText(searchInput.value).trim();
         if (clearBtn) {
             clearBtn.classList.toggle("hidden", query.length === 0);
         }
@@ -779,7 +780,7 @@ function setupSettingsSearch() {
                     if (el.title) textParts.push(el.title);
                     if (el.getAttribute("aria-label")) textParts.push(el.getAttribute("aria-label"));
                 });
-                const combinedText = textParts.join(" ").toLowerCase();
+                const combinedText = foldSearchText(textParts.join(" "));
 
                 if (combinedText.includes(query)) {
                     item.classList.remove("qig-search-hidden");
@@ -789,8 +790,8 @@ function setupSettingsSearch() {
                 }
             });
 
-            const kickerText = (section.querySelector(".qig-section-kicker")?.textContent || "").toLowerCase();
-            const subtitleText = (section.querySelector(".qig-section-subtitle")?.textContent || "").toLowerCase();
+            const kickerText = foldSearchText(section.querySelector(".qig-section-kicker")?.textContent);
+            const subtitleText = foldSearchText(section.querySelector(".qig-section-subtitle")?.textContent);
             const sectionHeaderMatch = kickerText.includes(query) || subtitleText.includes(query);
 
             if (sectionHeaderMatch) {

@@ -104,6 +104,7 @@ import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 import { COMETAPI_IGNORE_PATTERNS, IGNORE_SYMBOL, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
 import { setOpenRouterProviders, syncNanoGptProvidersForModel, syncOpenRouterProvidersForModel, updateNanoGptProvidersWarning, updateOpenRouterProvidersWarning } from './textgen-models.js';
 import { getNanoGptServiceTiers, isNanoGptPayg, updateServiceTierOptions } from './service-tiers.js';
@@ -2447,6 +2448,19 @@ function scrollElementIntoNearestPanelScroller(element, { block = 'nearest' } = 
     requestAnimationFrame(() => restoreLayoutViewportScroll(anchor));
 }
 
+function createModelPickerGroupHeading(label) {
+    const heading = document.createElement('div');
+    heading.className = 'sb-model-id-picker-group';
+    heading.textContent = label;
+    const translatedBuiltInLabels = new Set(['Favorites', 'Current', 'From API', 'External', 'Other']
+        .filter(key => translate(key) !== key)
+        .map(key => translate(key)));
+    if (label && !translatedBuiltInLabels.has(label) && translate(label) === label) {
+        heading.lang = 'en';
+    }
+    return heading;
+}
+
 function openInlineModelSelectPicker(select, { input = null, source = select.id } = {}) {
     const row = input instanceof HTMLInputElement && input.parentElement instanceof HTMLElement ? input.parentElement : null;
     const menuParent = row?.parentElement;
@@ -2482,10 +2496,7 @@ function openInlineModelSelectPicker(select, { input = null, source = select.id 
     for (const entry of entries) {
         if (entry.group && entry.group !== currentGroup) {
             currentGroup = entry.group;
-            const heading = document.createElement('div');
-            heading.className = 'sb-model-id-picker-group';
-            heading.textContent = entry.group;
-            menu.appendChild(heading);
+            menu.appendChild(createModelPickerGroupHeading(entry.group));
         }
 
         const button = document.createElement('button');
@@ -2602,10 +2613,7 @@ function openInlineSelectPicker(select, { source = select.id, label = select.id,
     for (const entry of entries) {
         if (entry.group && entry.group !== currentGroup) {
             currentGroup = entry.group;
-            const heading = document.createElement('div');
-            heading.className = 'sb-model-id-picker-group';
-            heading.textContent = entry.group;
-            menu.appendChild(heading);
+            menu.appendChild(createModelPickerGroupHeading(entry.group));
         }
 
         const button = document.createElement('button');
@@ -3074,12 +3082,13 @@ function createModelIdSearchOptionElement(option, { favorite = false } = {}) {
 }
 
 function modelIdSearchOptionMatches(option, query) {
-    if (!query) {
+    const needle = foldSearchText(query);
+    if (!needle) {
         return true;
     }
 
-    const haystack = `${option.value} ${option.text}`.toLowerCase();
-    return haystack.includes(query);
+    const haystack = foldSearchText(`${option.value} ${option.text}`);
+    return haystack.includes(needle);
 }
 
 function appendModelIdSearchOption(parent, option, renderedValues, { favorite = false } = {}) {
@@ -3152,7 +3161,7 @@ function rebuildModelIdSearchControl(control, { preserveQuery = false } = {}) {
 
     const state = getModelIdSearchState(control.source);
     const staticEntries = getModelIdSearchStaticEntries(control);
-    const query = preserveQuery ? normalizeModelIdSearchValue(state.query).toLowerCase() : '';
+    const query = preserveQuery ? foldSearchText(normalizeModelIdSearchValue(state.query)) : '';
     const selectedValue = normalizeModelIdSearchValue(oai_settings[control.setting] ?? input.value ?? select.value);
     const favorites = [...getModelFavoritesForSource(control.source)].sort((left, right) => left.localeCompare(right));
     const favoriteValues = new Set(favorites);

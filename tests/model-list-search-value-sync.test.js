@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const modelListSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'model-list-search.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -127,6 +128,7 @@ function createRuntime(globals = {}) {
         CSS: { escape: value => String(value).replace(/["\\]/g, '\\$&') },
         Event: FakeEvent,
         t: strings => strings[0],
+        foldSearchText,
         groupByModelFamily: items => [{ label: null, items }],
         globalThis: {},
         ...globals,

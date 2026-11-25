@@ -1,5 +1,6 @@
 import { element } from '../dom.js';
 import { getContext } from '../host.js';
+import { foldSearchText } from '../../../../../util/fuzzy-search.js';
 
 /**
  * Choosing a character by name alone stops working at about thirty cards, so
@@ -125,7 +126,7 @@ export function createCharacterPicker({
     }
 
     function filterOptions() {
-        const query = search.value.trim().toLocaleLowerCase();
+        const query = foldSearchText(search.value).trim();
         let visible = 0;
         for (const option of list.querySelectorAll('.sbpl-picker-option')) {
             option.hidden = Boolean(query) && !option.dataset.search.includes(query);
@@ -165,7 +166,7 @@ export function createCharacterPicker({
                 attributes: { type: 'button', 'aria-label': [choice.name, meta].filter(Boolean).join(', ') },
             });
             option.dataset.value = choice.value;
-            option.dataset.search = `${choice.name} ${choice.value}`.toLocaleLowerCase();
+            option.dataset.search = foldSearchText(`${choice.name} ${choice.value}`);
             option.append(
                 avatarThumbnail(choice.value, choice.name, 'sbpl-picker-avatar', thumbnailType),
                 choiceCopy({ ...choice, meta }),
