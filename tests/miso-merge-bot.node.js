@@ -17,8 +17,16 @@ function check(name, conclusion = 'success', overrides = {}) {
     return { id: 1, name, status: 'completed', conclusion, ...overrides };
 }
 
-function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, statuses = [], reviews = [], comments = [], commentsQueue, createdId = 100, onGet }) {
-    const calls = { created: [], updated: [], deleted: [], checks: 0, gets: 0, lists: 0, gotNumbers: [] };
+function workflowRun(name = '✅ Pull Request Checks', overrides = {}) {
+    return { id: 1, name, event: 'pull_request', head_sha: SHA, status: 'completed', conclusion: 'success', ...overrides };
+}
+
+function prChecksRuns(overrides = {}) {
+    return [...miso.REQUIRED_PR_CHECK_NAMES].map((name, index) => check(name, 'success', { id: index + 10, ...overrides }));
+}
+
+function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, workflowRuns = [], workflowRunsQueue, actionsError = null, omitActions = false, statuses = [], reviews = [], comments = [], commentsQueue, createdId = 100, onGet }) {
+    const calls = { created: [], updated: [], deleted: [], checks: 0, workflowRuns: 0, workflowRunArgs: [], gets: 0, lists: 0, gotNumbers: [] };
     const rest = {
         pulls: {
             list: () => {},
@@ -31,6 +39,7 @@ function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, stat
             listReviews: () => {},
         },
         checks: { listForRef: () => {} },
+        ...(omitActions ? {} : { actions: { listWorkflowRunsForRepo: () => {} } }),
         repos: { getCombinedStatusForRef: async () => ({ data: { statuses } }) },
         issues: {
             listComments: () => {},
@@ -43,9 +52,10 @@ function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, stat
         [rest.pulls.list, pulls],
         [rest.pulls.listReviews, reviews],
         [rest.checks.listForRef, checkRuns],
+        ...(rest.actions ? [[rest.actions.listWorkflowRunsForRepo, workflowRuns]] : []),
         [rest.issues.listComments, comments],
     ]);
-    const paginate = async method => {
+    const paginate = async (method, args) => {
         if (method === rest.pulls.list) {
             calls.lists += 1;
         }
@@ -53,6 +63,16 @@ function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, stat
             calls.checks += 1;
             if (checkRunsQueue) {
                 return checkRunsQueue.length > 1 ? checkRunsQueue.shift() : checkRunsQueue[0];
+            }
+        }
+        if (rest.actions && method === rest.actions.listWorkflowRunsForRepo) {
+            calls.workflowRuns += 1;
+            calls.workflowRunArgs.push(args);
+            if (actionsError) {
+                throw actionsError;
+            }
+            if (workflowRunsQueue) {
+                return workflowRunsQueue.length > 1 ? workflowRunsQueue.shift() : workflowRunsQueue[0];
             }
         }
         if (method === rest.issues.listComments && commentsQueue) {
@@ -68,7 +88,7 @@ const core = { info() {}, warning(message) { throw new Error(message); } };
 const sleep = async () => {};
 
 test('a clean pull request with finished checks is ready', () => {
-    const result = miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint'), check('tests', 'skipped'), check('PR Label Warning', 'neutral')] });
+    const result = miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint'), check('tests', 'skipped'), check('PR Label Warning', 'neutral')], workflowRuns: [workflowRun()] });
     assert.deepEqual(result, { state: 'ready', reasons: [] });
 });
 
@@ -85,13 +105,13 @@ test('Miso stays quiet while checks run or before any check exists', () => {
 });
 
 test('her own running check does not hold the verdict back', () => {
-    const result = miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint'), check('🐯 Miso merge check', null, { status: 'in_progress' })] });
+    const result = miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint'), check('🐯 Miso merge check', null, { status: 'in_progress' })], workflowRuns: [workflowRun()] });
     assert.equal(result.state, 'ready');
 });
 
 test('only the latest run of each check counts', () => {
     const checkRuns = [check('tests', 'failure', { id: 1 }), check('tests', 'success', { id: 2 })];
-    assert.equal(miso.evaluatePullRequest({ pr: pr(), checkRuns }).state, 'ready');
+    assert.equal(miso.evaluatePullRequest({ pr: pr(), checkRuns, workflowRuns: [workflowRun()] }).state, 'ready');
     const rerunFailed = [check('tests', 'success', { id: 1 }), check('tests', 'failure', { id: 2 })];
     assert.equal(miso.evaluatePullRequest({ pr: pr(), checkRuns: rerunFailed }).state, 'blocked');
 });
@@ -221,14 +241,14 @@ test('the comment keeps its picture while the state holds and redraws when it fl
 });
 
 test('run posts one comment and later edits it in place', async () => {
-    const fresh = fakeGitHub({ pull: pr(), checkRuns: [check('lint')] });
+    const fresh = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], workflowRuns: [workflowRun()] });
     assert.deepEqual(await miso.run({ ...fresh, context, core, sleep, random: () => 0 }), { 7: 'ready' });
     assert.equal(fresh.calls.created.length, 1);
     assert.equal(fresh.calls.created[0].issue_number, 7);
     assert.match(fresh.calls.created[0].body, /ready to merge/);
 
     const existing = { id: 99, user: { login: 'github-actions[bot]' }, body: fresh.calls.created[0].body };
-    const flipped = fakeGitHub({ pull: pr(), checkRuns: [check('lint', 'failure')], comments: [{ id: 5, user: { login: 'someone' }, body: miso.MARKER }, existing] });
+    const flipped = fakeGitHub({ pull: pr(), checkRuns: [check('lint', 'failure')], workflowRuns: [workflowRun()], comments: [{ id: 5, user: { login: 'someone' }, body: miso.MARKER }, existing] });
     assert.deepEqual(await miso.run({ ...flipped, context, core, sleep, random: () => 0 }), { 7: 'blocked' });
     assert.equal(flipped.calls.created.length, 0);
     assert.equal(flipped.calls.updated.length, 1);
@@ -244,7 +264,7 @@ test('run leaves drafts, running checks and unchanged comments alone', async () 
     assert.deepEqual(await miso.run({ ...running, context, core, sleep }), { 7: 'pending' });
 
     const body = miso.planComment({ evaluation: { state: 'ready', reasons: [] }, sha: SHA, random: () => 0 });
-    const same = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], comments: [{ id: 99, user: { login: 'github-actions[bot]' }, body }] });
+    const same = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], workflowRuns: [workflowRun()], comments: [{ id: 99, user: { login: 'github-actions[bot]' }, body }] });
     await miso.run({ ...same, context, core, sleep });
     for (const fake of [draft, running, same]) {
         assert.equal(fake.calls.created.length + fake.calls.updated.length, 0);
@@ -308,6 +328,7 @@ test('settleChecks waits, then re-reads the pull request before posting', async 
             [check('tests', null, { status: 'in_progress' })],
             [check('tests')],
         ],
+        workflowRuns: [workflowRun()],
     });
     assert.deepEqual(await miso.run({ ...fake, context, core, settleChecks: true, sleep: clock.sleep, now: clock.now, random: () => 0 }), { 7: 'ready' });
     assert.equal(fake.calls.created.length, 1);
@@ -364,7 +385,7 @@ test('a pull request run never waits on another pull request', async () => {
     const clock = fakeClock();
     const ready = pr({ number: 434 });
     const busy = pr({ number: 433, head: { sha: 'busy' } });
-    const fake = fakeGitHub({ pull: ready, pulls: [busy, ready], checkRuns: [check('lint')] });
+    const fake = fakeGitHub({ pull: ready, pulls: [busy, ready], checkRuns: [check('lint')], workflowRuns: [workflowRun()] });
     const results = await miso.run({ ...fake, context, core, ...miso.optionsForEvent({ payload: { pull_request: { number: 434 } } }), sleep: clock.sleep, now: clock.now, random: () => 0 });
     assert.deepEqual(results, { 434: 'ready' });
     assert.equal(fake.calls.lists, 0, 'the open pull request list is not read');
@@ -393,6 +414,7 @@ test('when two runs post at once the oldest comment is kept', async () => {
     const fake = fakeGitHub({
         pull: pr(),
         checkRuns: [check('lint')],
+        workflowRuns: [workflowRun()],
         createdId: 60,
         commentsQueue: [[], [earlier, { id: 60, user: { login: 'github-actions[bot]' }, body: 'ours' }]],
     });
@@ -402,7 +424,260 @@ test('when two runs post at once the oldest comment is kept', async () => {
     assert.equal(fake.calls.updated[0].comment_id, 50);
     assert.equal(fake.calls.updated[0].body, fake.calls.created[0].body);
 
-    const alone = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], createdId: 60, commentsQueue: [[], [{ id: 60, user: { login: 'github-actions[bot]' }, body: 'ours' }]] });
+    const alone = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], workflowRuns: [workflowRun()], createdId: 60, commentsQueue: [[], [{ id: 60, user: { login: 'github-actions[bot]' }, body: 'ours' }]] });
     await miso.run({ ...alone, context, core, sleep, random: () => 0 });
     assert.equal(alone.calls.deleted.length + alone.calls.updated.length, 0);
+});
+
+test('unapproved fork PR with only PR Label Warning and label checks stays pending', async () => {
+    const labelChecks = [
+        check('Check Merge Blocking Labels'),
+        check('Label PR by Title, Size and Files'),
+        check('PR Label Warning', 'neutral'),
+    ];
+    const unapprovedRuns = [
+        workflowRun('✅ Pull Request Checks', { id: 10, status: 'action_required', conclusion: null }),
+        workflowRun('🧾 PR Metadata', { id: 11, status: 'action_required', conclusion: null }),
+    ];
+    assert.deepEqual(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: labelChecks, workflowRuns: unapprovedRuns }),
+        { state: 'pending', reasons: [] },
+    );
+
+    const fake = fakeGitHub({ pull: pr(), checkRuns: labelChecks, workflowRuns: unapprovedRuns });
+    assert.deepEqual(await miso.run({ ...fake, context, core, sleep }), { 7: 'pending' });
+    assert.equal(fake.calls.created.length, 0);
+    assert.equal(fake.calls.workflowRuns, 1);
+    assert.equal(fake.calls.workflowRunArgs[0].head_sha, SHA);
+    assert.equal(fake.calls.workflowRunArgs[0].event, 'pull_request');
+});
+
+test('completed failing workflow with zero jobs blocks the pull request', () => {
+    const labelChecks = [
+        check('Check Merge Blocking Labels'),
+        check('Label PR by Title, Size and Files'),
+        check('PR Label Warning', 'neutral'),
+    ];
+    const failedResult = miso.evaluatePullRequest({
+        pr: pr(),
+        checkRuns: labelChecks,
+        workflowRuns: [workflowRun('✅ Pull Request Checks', { status: 'completed', conclusion: 'failure' })],
+    });
+    assert.deepEqual(failedResult, {
+        state: 'blocked',
+        reasons: ['The **✅ Pull Request Checks** workflow failed.'],
+    });
+
+    const approvalRejected = miso.evaluatePullRequest({
+        pr: pr(),
+        checkRuns: labelChecks,
+        workflowRuns: [workflowRun('✅ Pull Request Checks', { status: 'completed', conclusion: 'action_required' })],
+    });
+    assert.deepEqual(approvalRejected, {
+        state: 'blocked',
+        reasons: ['The **✅ Pull Request Checks** workflow is waiting for someone to approve it.'],
+    });
+});
+
+test('draft-to-ready fork PR is not deadlocked by own action_required workflow', async () => {
+    const fake = fakeGitHub({
+        pull: pr(),
+        checkRuns: [check('lint')],
+        workflowRuns: [
+            workflowRun('✅ Pull Request Checks', { id: 1 }),
+            workflowRun('🧾 PR Metadata', { id: 2 }),
+            workflowRun('🐯 Miso Merge Check', { id: 3, status: 'action_required', conclusion: null }),
+        ],
+    });
+    assert.deepEqual(await miso.run({ ...fake, context, core, sleep, random: () => 0 }), { 7: 'ready' });
+    assert.equal(fake.calls.created.length, 1);
+    assert.match(fake.calls.created[0].body, /ready to merge/);
+});
+
+test('positive workflow evidence and event/SHA isolation hold premature ready', () => {
+    assert.equal(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint')], workflowRuns: [] }).state,
+        'pending',
+    );
+    assert.equal(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: [check('lint')], workflowRuns: [workflowRun('🧾 PR Metadata')] }).state,
+        'pending',
+    );
+    assert.equal(
+        miso.evaluatePullRequest({
+            pr: pr(),
+            checkRuns: [check('Check Merge Blocking Labels'), check('Label PR by Title, Size and Files')],
+            workflowRuns: [workflowRun('✅ Pull Request Checks', { conclusion: 'skipped' })],
+        }).state,
+        'pending',
+    );
+
+    for (const status of ['queued', 'in_progress', 'waiting', 'pending', 'requested']) {
+        assert.equal(
+            miso.evaluatePullRequest({
+                pr: pr(),
+                checkRuns: [check('lint')],
+                workflowRuns: [workflowRun('✅ Pull Request Checks', { id: 1 }), workflowRun('🧾 PR Metadata', { id: 2, status, conclusion: null })],
+            }).state,
+            'pending',
+        );
+    }
+
+    assert.equal(
+        miso.evaluatePullRequest({
+            pr: pr(),
+            checkRuns: [check('lint')],
+            workflowRuns: [
+                workflowRun('✅ Pull Request Checks', { id: 1, head_sha: 'other-sha' }),
+                workflowRun('🧾 PR Metadata', { id: 2, event: 'pull_request_target' }),
+                workflowRun('Deploy', { id: 3, event: 'push' }),
+                workflowRun('Manual', { id: 4, event: 'workflow_dispatch' }),
+            ],
+        }).state,
+        'pending',
+    );
+
+    assert.equal(
+        miso.evaluatePullRequest({
+            pr: pr(),
+            checkRuns: [check('lint')],
+            workflowRuns: [
+                workflowRun('✅ Pull Request Checks', { id: undefined, status: 'queued', conclusion: null }),
+                workflowRun('✅ Pull Request Checks', { id: 5, status: 'completed', conclusion: 'success' }),
+            ],
+        }).state,
+        'ready',
+    );
+});
+
+test('own in-progress workflow on same-repo PR does not hold ready back', () => {
+    const result = miso.evaluatePullRequest({
+        pr: pr(),
+        checkRuns: [check('lint')],
+        workflowRuns: [
+            workflowRun('✅ Pull Request Checks', { id: 1 }),
+            workflowRun('🧾 PR Metadata', { id: 2 }),
+            workflowRun('🐯 Miso Merge Check', { id: 3, status: 'in_progress', conclusion: null }),
+        ],
+    });
+    assert.equal(result.state, 'ready');
+});
+
+test('unavailable workflow lookup requires all 7 PR checks and propagates non-403 errors', async () => {
+    const labelChecks = [
+        check('Check Merge Blocking Labels'),
+        check('Label PR by Title, Size and Files'),
+        check('PR Label Warning', 'neutral'),
+    ];
+    assert.equal(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: labelChecks, workflowRunsAvailable: false }).state,
+        'pending',
+    );
+    assert.equal(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: [...labelChecks, ...prChecksRuns()], workflowRunsAvailable: false }).state,
+        'ready',
+    );
+    assert.equal(
+        miso.evaluatePullRequest({ pr: pr(), checkRuns: [...labelChecks, ...prChecksRuns({ conclusion: 'skipped' })], workflowRunsAvailable: false }).state,
+        'pending',
+    );
+
+    const omittedPending = fakeGitHub({ pull: pr(), checkRuns: labelChecks, omitActions: true });
+    assert.deepEqual(await miso.run({ ...omittedPending, context, core, sleep }), { 7: 'pending' });
+    assert.equal(omittedPending.calls.created.length, 0);
+
+    const forbiddenPending = fakeGitHub({ pull: pr(), checkRuns: labelChecks, actionsError: { status: 403, message: 'Resource not accessible by integration' } });
+    assert.deepEqual(await miso.run({ ...forbiddenPending, context, core, sleep }), { 7: 'pending' });
+    assert.equal(forbiddenPending.calls.created.length, 0);
+
+    const omittedReady = fakeGitHub({ pull: pr(), checkRuns: prChecksRuns(), omitActions: true });
+    assert.deepEqual(await miso.run({ ...omittedReady, context, core, sleep, random: () => 0 }), { 7: 'ready' });
+    assert.equal(omittedReady.calls.created.length, 1);
+
+    const forbiddenReady = fakeGitHub({ pull: pr(), checkRuns: prChecksRuns(), actionsError: { status: 403, message: 'Forbidden' } });
+    assert.deepEqual(await miso.run({ ...forbiddenReady, context, core, sleep, random: () => 0 }), { 7: 'ready' });
+    assert.equal(forbiddenReady.calls.created.length, 1);
+
+    const warnings = [];
+    const serverError = fakeGitHub({ pull: pr(), checkRuns: prChecksRuns(), actionsError: { status: 500, message: 'Internal Server Error' } });
+    assert.deepEqual(await miso.run({ ...serverError, context, core: { info() {}, warning: msg => warnings.push(msg) }, sleep }), { 7: 'error' });
+    assert.equal(warnings.length, 1);
+});
+
+test('real blockers still block when fork PR is unapproved or has PR Label Warning', () => {
+    const labelChecks = [check('PR Label Warning', 'neutral')];
+    const unapprovedRuns = [workflowRun('✅ Pull Request Checks', { status: 'action_required', conclusion: null })];
+
+    assert.deepEqual(
+        miso.evaluatePullRequest({ pr: pr({ mergeable: false }), checkRuns: labelChecks, workflowRuns: unapprovedRuns }),
+        { state: 'blocked', reasons: ['This branch has merge conflicts with `staging`.'] },
+    );
+    assert.deepEqual(
+        miso.evaluatePullRequest({ pr: pr({ labels: [{ name: '🔨 Needs Work' }] }), checkRuns: labelChecks, workflowRuns: unapprovedRuns }),
+        { state: 'blocked', reasons: ['It has the **🔨 Needs Work** label.'] },
+    );
+});
+
+test('waitForFinishedChecks polls active workflows, skips stalling on action_required, and caches 403', async () => {
+    const clock = fakeClock();
+    const pollingFake = fakeGitHub({
+        pull: pr(),
+        checkRunsQueue: [
+            [check('✅ Validate PR Metadata')],
+            [check('✅ Validate PR Metadata'), check('lint')],
+        ],
+        workflowRunsQueue: [
+            [workflowRun('🧾 PR Metadata', { id: 1 }), workflowRun('✅ Pull Request Checks', { id: 2, status: 'queued', conclusion: null })],
+            [workflowRun('🧾 PR Metadata', { id: 1 }), workflowRun('✅ Pull Request Checks', { id: 2 })],
+        ],
+    });
+    await miso.waitForFinishedChecks({ ...pollingFake, owner: 'platberlitz', repo: 'Neconyan', sha: SHA, sleep: clock.sleep, core, now: clock.now });
+    assert.equal(pollingFake.calls.workflowRuns, 2);
+    assert.deepEqual(clock.naps, [15000]);
+
+    const approvalClock = fakeClock();
+    const approvalFake = fakeGitHub({
+        pull: pr(),
+        checkRuns: [check('PR Label Warning', 'neutral')],
+        workflowRuns: [workflowRun('✅ Pull Request Checks', { status: 'action_required', conclusion: null })],
+    });
+    await miso.waitForFinishedChecks({ ...approvalFake, owner: 'platberlitz', repo: 'Neconyan', sha: SHA, sleep: approvalClock.sleep, core, now: approvalClock.now });
+    assert.equal(approvalClock.time, 0);
+    assert.deepEqual(approvalClock.naps, []);
+
+    const settleClock = fakeClock();
+    const forbiddenSettle = fakeGitHub({
+        pull: pr(),
+        checkRunsQueue: [
+            [check('PR Label Warning', 'neutral')],
+            [check('PR Label Warning', 'neutral'), ...prChecksRuns()],
+        ],
+        actionsError: { status: 403, message: 'Forbidden' },
+    });
+    assert.deepEqual(
+        await miso.run({ ...forbiddenSettle, context, core, settleChecks: true, sleep: settleClock.sleep, now: settleClock.now, random: () => 0 }),
+        { 7: 'ready' },
+    );
+    assert.equal(forbiddenSettle.calls.workflowRuns, 1);
+    assert.equal(forbiddenSettle.calls.checks, 3);
+    assert.deepEqual(settleClock.naps, [15000]);
+});
+
+test('workflow names, permissions, and advisory checks stay synced with workflow files', () => {
+    const misoWorkflow = fs.readFileSync(new URL('../.github/workflows/pr-miso.yml', import.meta.url), 'utf8');
+    const misoName = misoWorkflow.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    assert.ok(miso.OWN_WORKFLOW_NAMES.has(misoName));
+    const permissions = misoWorkflow.match(/^permissions:\n((?:\s{2}.*\n)+)/m)?.[1] || '';
+    assert.match(permissions, /^\s{2}actions: read$/m);
+
+    const prChecksWorkflow = fs.readFileSync(new URL('../.github/workflows/pr-checks.yml', import.meta.url), 'utf8');
+    const prChecksName = prChecksWorkflow.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    assert.deepEqual([...miso.REQUIRED_WORKFLOW_NAMES], [prChecksName]);
+    const jobNames = [...prChecksWorkflow.matchAll(/^ {4}name:\s*(.+)$/gm)].map(match => match[1].trim());
+    assert.equal(jobNames.length, 7);
+    assert.deepEqual([...miso.REQUIRED_PR_CHECK_NAMES].sort(), [...jobNames].sort());
+
+    const autoManagerWorkflow = fs.readFileSync(new URL('../.github/workflows/pr-auto-manager.yml', import.meta.url), 'utf8');
+    const warningTitle = autoManagerWorkflow.match(/name:\s*'(PR Label Warning)'/)?.[1];
+    assert.ok(miso.ADVISORY_CHECK_NAMES.has(warningTitle));
 });
