@@ -43,6 +43,7 @@
 - Scratchpad's **Context** tab now opens with **What Scratchpad will read**, a live summary of what's shared with **Show preview** beside it, and splits its choices into **Sharing**, **Replies** and **Setup**, with story and lore as quick switches and rarer settings folded away until they're in use.
 - **CYOA Choices with Skill Checks** and **Doors with Fate Checks** work as Companions with the **Dice Roller**'s **Auto send**: tap a choice in the **Companion panel** or just type its number, such as 1 or 1, then 2, and each choice gets its own d100 roll for the reply, while the Companion versions stop asking for a hidden roll the reply never sees.
 - The closed **Roll options** box in the **Dice Roller** no longer has a big empty gap under its title on phones.
+- **Notes** opens again in the Docker image, whichever user the container runs as.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -251,6 +252,7 @@
 - PR #983 (2026-11-25) `feat(scratchpad): split the Context tab into Sharing, Replies and Setup`
 - PR #984 (2026-11-25) `feat(dice): roll CYOA and Doors choices picked by number or from the Companion panel`
 - PR #985 (2026-11-25) `fix(dice): drop the empty gap under Roll options on phones`
+- PR #986 (2026-11-25) `fix(docker): build the Notes editor when the image is built`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
