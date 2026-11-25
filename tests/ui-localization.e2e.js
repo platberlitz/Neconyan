@@ -1,4 +1,4 @@
-/* global window, document, globalThis */
+/* global window, document, globalThis, Element */
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
@@ -513,12 +513,23 @@ async function openSlicedRenderer(page, fileMap, lang) {
             sources[name] = decl;
         }
     }
-    const dictionary = await mergedDictionary(lang);
+    const readJson = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));
+    const [base, supplement, aliases] = await Promise.all([
+        readJson(`../public/locales/${lang}.json`),
+        readJson(`../public/locales/neconyan/${lang}.json`),
+        readJson('../public/locales/neconyan/en-aliases.json'),
+    ]);
     await page.setContent('<main id="root"></main>');
+    const assemblySource = await readFile(new URL('../public/scripts/locale-assembly.js', import.meta.url), 'utf8');
+    await page.addScriptTag({
+        type: 'module',
+        content: `${assemblySource}\nwindow.assembleLocaleData = assembleLocaleData;\nwindow.tableForKey = tableForKey;`,
+    });
     await page.addScriptTag({ type: 'module', content: `${await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8')}\nwindow.localizeControls = localizeControls;` });
-    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    await page.waitForFunction(() => typeof window.localizeControls === 'function' && typeof window.assembleLocaleData === 'function');
     await page.addScriptTag({ content: await readFile(new URL('../public/lib/jquery-3.5.1.min.js', import.meta.url), 'utf8') });
-    await page.evaluate(([slicedSources, dict]) => {
+    const assembled = await page.evaluate(([slicedSources, localeInputs]) => {
+        const { dictionary: dict, scoped } = window.assembleLocaleData(localeInputs);
         const target = {};
         const noop = () => undefined;
         const scope = new Proxy(target, {
@@ -535,33 +546,70 @@ async function openSlicedRenderer(page, fileMap, lang) {
                 scope[name] = new Function('scope', `with (scope) { return (${code}); }`)(scope);
             }
         }
-        const translate = (text, key = null) => dict[key || text] || text;
+        const translate = (text, key = null) => {
+            const lookupKey = key || text;
+            const table = window.tableForKey(lookupKey, dict, scoped);
+            return table?.[lookupKey] || text;
+        };
         const t = (strings, ...values) => translate(
             strings.reduce((result, part, i) => result + part + (values[i] !== undefined ? `\${${i}}` : ''), ''),
         ).replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
+        const translateElement = element => {
+            const keys = element.getAttribute('data-i18n')?.split(';') ?? [];
+            for (const key of keys) {
+                const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/s);
+                if (attributeMatch) {
+                    const localizedValue = window.tableForKey(attributeMatch[2], dict, scoped)?.[attributeMatch[2]];
+                    if (localizedValue || localizedValue === '') element.setAttribute(attributeMatch[1], localizedValue);
+                } else {
+                    const localizedValue = window.tableForKey(key, dict, scoped)?.[key];
+                    if (localizedValue || localizedValue === '') element.textContent = localizedValue;
+                }
+            }
+        };
+        const applyLocale = (root = document) => {
+            if (root instanceof Element && root.hasAttribute('data-i18n')) translateElement(root);
+            root.querySelectorAll('[data-i18n]').forEach(translateElement);
+            window.localizeControls(root, dict);
+        };
         scope.translate = translate;
         scope.t = t;
-        window.renderHarness = { scope, dictionary: dict, t };
-    }, [sources, dictionary]);
-    return dictionary;
+        window.renderHarness = { scope, dictionary: dict, scoped, t, translate, translateElement, applyLocale };
+        return dict;
+    }, [sources, { base, supplement, catalogue: aliases }]);
+    return assembled;
 }
 
 test('Meower real renderers protect user and model content while keeping UI fallbacks and composer frames translatable (tr-tr)', async ({ page }) => {
     const trDict = await openSlicedRenderer(page, {
+        '../public/scripts/extensions/third-party/Neconyan-Hopper/src/api.js': ['listPersonas'],
         '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': [
-            'el', 'icon', 'hostTag', 'button', 'bodyNode', 'pollNode', 'engagementNode',
+            'el', 'icon', 'hostTag', 'button', 'field', 'checkbox', 'settingsGroup',
+            'bodyNode', 'pollVotersNode', 'pollNode', 'imageNode', 'engagementNode',
             'replyNode', 'repostedReplyNode', 'postNode', 'quoteNode',
             'replyComposer', 'attachMentionPicker', 'timelineView',
-            'profileView', 'notificationsView', 'whoToFollow',
+            'profileView', 'notificationsView', 'whoToFollow', 'settingsView', 'sessionBar',
         ],
     }, 'tr-tr');
-    for (const key of ['Nice to meet you!', 'Summary', 'Image post', 'Post', 'you', 'Reply', 'Reply to @${0}', 'Reply as ${0}...', 'Reply as ${0}']) {
+    for (const key of [
+        'Nice to meet you!', 'Summary', 'Image post', 'Post', 'you', 'Reply',
+        'Reply to @${0}', 'Reply as ${0}...', 'Reply as ${0}',
+        'Voted by ${0}', 'Open image: ${0}', 'Open image', 'Write a round of posts about ${0}',
+        'Unnamed group', 'Use the current connection', 'Unassigned', 'Default', 'You',
+    ]) {
         expect(trDict[key], key).toBeTruthy();
     }
 
     const result = await page.evaluate(() => {
         const { scope, dictionary, t } = window.renderHarness;
-        globalThis.SillyTavern = { getContext: () => ({ t }) };
+        globalThis.SillyTavern = {
+            getContext: () => ({
+                t,
+                characters: [],
+                groups: [{ id: 'g1', name: 'Default', members: ['c1'] }, { id: 'g2', name: '', members: ['c1'] }],
+                powerUserSettings: { personas: { pe1: 'Default', pe2: 'You', pe3: '' } },
+            }),
+        };
 
         const persona = { key: 'persona:me', kind: 'persona', name: 'Summary', handle: 'default', bio: 'Nice to meet you!', location: 'Nice to meet you!' };
         const charAcc = { key: 'char:c1', kind: 'character', name: 'Summary', handle: 'default', bio: 'Nice to meet you!', location: 'Nice to meet you!' };
@@ -614,7 +662,44 @@ test('Meower real renderers protect user and model content while keeping UI fall
             searchOpen: false,
             mutationTask: null,
             pendingReplyFocus: null,
-            api: { updateSession: (_id, patch) => ({ ...scope.state.session, ...patch }) },
+            openSettingsGroups: new Set(['Generation']),
+            sessionEpoch: 0,
+            personaProfileRevision: 0,
+            listFilter: '',
+            inviteQuery: '',
+            promptSectionOpen: false,
+            isLive: () => true,
+            render: () => {},
+            report: () => {},
+            refreshAccounts: async () => null,
+            openImage: () => {},
+            avatarNode: () => scope.el('span'),
+            numberInput: value => scope.el('input', { attrs: { type: 'number', value: String(value) } }),
+            foldSearchText: value => String(value ?? '').toLowerCase(),
+            ctx: () => globalThis.SillyTavern.getContext(),
+            api: {
+                getSession: () => scope.state.session,
+                updateSession: (_id, patch) => ({ ...scope.state.session, ...patch }),
+                getSettings: () => ({
+                    profileId: 'p1',
+                    reasoningEffort: '',
+                    maxTokens: 4000,
+                    active: { mode: 'range', min: 1, max: 3 },
+                    quotas: { posts: 4, replies: 4, reposts: 2, likes: 8 },
+                    polls: true,
+                    incremental: false,
+                    concurrency: 2,
+                    images: { enabled: false, perRefresh: 0, instructions: '' },
+                    tone: '',
+                    history: { hours: 24, posts: 12, replies: 4 },
+                }),
+                listConnectionProfiles: () => [{ id: 'p1', name: 'Default' }],
+                listPersonas: () => scope.listPersonas(),
+                listSessions: () => [{ id: 's1', name: 'Default', personaId: 'missing' }, { id: 's2', name: 'Default', personaId: 'pe3' }],
+                getScenarioNotes: () => [],
+                reasoningConnection: () => ({ chat: false }),
+                reasoningChoiceSupported: () => true,
+            },
             formatCount: n => String(n),
             plural: (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`,
             followingKeys: () => new Set(),
@@ -645,8 +730,23 @@ test('Meower real renderers protect user and model content while keeping UI fall
                 busy: false,
                 draftReady: true,
                 timelineSearch: '',
+                characterSearch: '',
                 accounts: [persona, charAcc],
-                session: { id: 's1', trends: [{ topic: 'Nice to meet you!', posts: 3 }], follows: {}, timelineSeenAt: 0, notificationsSeenAt: 0 },
+                session: {
+                    id: 's1',
+                    name: 'Default',
+                    type: '',
+                    personaId: 'pe1',
+                    invited: [],
+                    scenarioNoteIds: [],
+                    strangers: [],
+                    ambient: false,
+                    personaProfile: { name: '', handle: '', bio: '', location: '' },
+                    trends: [{ topic: 'Default', posts: 3 }],
+                    follows: {},
+                    timelineSeenAt: 0,
+                    notificationsSeenAt: 0,
+                },
                 feed: { posts: [], interactions: [] },
             },
         });
@@ -669,6 +769,10 @@ test('Meower real renderers protect user and model content while keeping UI fall
         mount('profile', scope.profileView());
         mount('notifications', scope.notificationsView());
         mount('who', scope.whoToFollow());
+        mount('poll-voters', scope.pollVotersNode([{ actorKey: 'char:v1', actorSnapshot: { name: 'Default', handle: 'you' } }]));
+        mount('image-post', scope.imageNode({ id: 'img1', image: { url: '/img/x.png', prompt: 'Default' } }));
+        mount('session-bar', scope.sessionBar());
+        mount('settings', scope.settingsView());
 
         const mentionBox = mount('mentions', null);
         const mentionField = document.createElement('textarea');
@@ -712,6 +816,29 @@ test('Meower real renderers protect user and model content while keeping UI fall
             pollQuestion: root.querySelector('#post .sbtw-poll-question').textContent.trim(),
             pollText: root.querySelector('#post .sbtw-poll-text').textContent.trim(),
             trendTopic: root.querySelector('#timeline .sbtw-trend-topic').textContent.trim(),
+            trendButton: {
+                title: root.querySelector('#timeline .sbtw-trend').getAttribute('title'),
+                ignored: root.querySelector('#timeline .sbtw-trend').hasAttribute('data-i18n-ignore'),
+            },
+            pollVoters: {
+                ariaLabel: root.querySelector('#poll-voters .sbtw-poll-voters').getAttribute('aria-label'),
+                title: root.querySelector('#poll-voters .sbtw-poll-voters').getAttribute('title'),
+                ignored: root.querySelector('#poll-voters .sbtw-poll-voters').hasAttribute('data-i18n-ignore'),
+            },
+            imageButton: {
+                ariaLabel: root.querySelector('#image-post .sbtw-image').getAttribute('aria-label'),
+                title: root.querySelector('#image-post .sbtw-image').getAttribute('title'),
+                ignored: root.querySelector('#image-post .sbtw-image').hasAttribute('data-i18n-ignore'),
+            },
+            sessionOptions: [...root.querySelectorAll('#session-bar select option')].map(option => ({
+                text: option.textContent.trim(),
+                ignored: option.hasAttribute('data-i18n-ignore'),
+            })),
+            settingsSelects: [...root.querySelectorAll('#settings select')].map(select => [...select.options].map(option => ({
+                value: option.value,
+                text: option.textContent.trim(),
+                ignored: option.hasAttribute('data-i18n-ignore'),
+            }))),
             bio: root.querySelector('#profile .sbtw-bio').textContent.trim(),
             location: root.querySelector('#profile .sbtw-location span').textContent.trim(),
             names: texts('.sbtw-name'),
@@ -736,7 +863,39 @@ test('Meower real renderers protect user and model content while keeping UI fall
     });
     expect(result.pollQuestion).toBe('Nice to meet you!');
     expect(result.pollText).toBe('Nice to meet you!');
-    expect(result.trendTopic).toBe('Nice to meet you!');
+    expect(result.trendTopic).toBe('Default');
+    expect(result.trendButton).toEqual({
+        title: 'Default hakkında bir tur gönderi yazın',
+        ignored: true,
+    });
+    expect(result.pollVoters).toEqual({
+        ariaLabel: 'Oylayan: Default (@you)',
+        title: 'Oylayan: Default (@you)',
+        ignored: true,
+    });
+    expect(result.imageButton).toEqual({
+        ariaLabel: 'Görseli aç: Default',
+        title: 'Görseli aç',
+        ignored: true,
+    });
+    expect(result.sessionOptions).toEqual([
+        { text: 'Default · Atanmamış', ignored: true },
+        { text: `Default · ${trDict.You}`, ignored: true },
+    ]);
+    expect(result.settingsSelects[0]).toEqual([
+        { value: 'pe1', text: 'Default', ignored: true },
+        { value: 'pe2', text: 'You', ignored: true },
+        { value: 'pe3', text: trDict.You, ignored: false },
+    ]);
+    expect(result.settingsSelects[1]).toEqual([
+        { value: '', text: 'Bir grup seçin...', ignored: false },
+        { value: 'g1', text: 'Default', ignored: true },
+        { value: 'g2', text: 'Adsız grup', ignored: false },
+    ]);
+    expect(result.settingsSelects[2]).toEqual([
+        { value: '', text: 'Geçerli bağlantıyı kullanın', ignored: false },
+        { value: 'p1', text: 'Default', ignored: true },
+    ]);
     expect(result.bio).toBe('Nice to meet you!');
     expect(result.location).toBe('Nice to meet you!');
     expect(result.names.length).toBeGreaterThanOrEqual(9);
@@ -825,6 +984,141 @@ test('Scratchpad real renderers protect user text, reasoning, streaming, change 
         savedReasoning: 'Line 1',
         validChangeReason: 'Line 1',
         invalidChangeError: 'Gönder',
+    });
+});
+
+test('Scratchpad real renderers protect saved session names and web search sources while keeping generated session captions translatable (tr-tr)', async ({ page }) => {
+    const trDict = await openSlicedRenderer(page, {
+        '../public/scripts/notebooks/dom.js': ['h', 'append', 'clear'],
+        '../public/scripts/scratchpad/index.js': ['renderOverview', 'renderChat', 'renderSessions'],
+        '../public/scripts/scratchpad/web-search.js': ['safeWebUrl', 'renderWebSearchSources'],
+    }, 'tr-tr');
+    expect(trDict.Default).toBeTruthy();
+    expect(trDict['New session with ${0}']).toBeTruthy();
+
+    const result = await page.evaluate(() => {
+        const { scope, dictionary } = window.renderHarness;
+        const makeHost = () => {
+            const overview = document.createElement('div');
+            const overviewBar = document.createElement('div');
+            const summary = document.createElement('div');
+            const sessionsPanel = document.createElement('div');
+            return {
+                overview,
+                overviewBar,
+                summary,
+                pinnedNote: null,
+                panels: { sessions: sessionsPanel },
+            };
+        };
+
+        let currentSession = { id: 's1', name: 'Default', assistant: 'miso', messages: [], updated: 1000 };
+        const el = makeHost();
+        Object.assign(scope, {
+            DEFAULT_FEEDBACK_TONE: 'default',
+            app: {
+                source: { kind: 'general', key: 'general' },
+                assistant: 'miso',
+                overviewCollapsed: true,
+                sessionQuery: '',
+                bucket: { sessions: [currentSession] },
+                el,
+            },
+            activeSession: () => currentSession,
+            assistantInfo: () => ({ id: 'miso', name: 'Miso' }),
+            assistantPortrait: () => '/img/miso.png',
+            sessionAssistants: () => ['miso'],
+            randomReplyEnabled: () => false,
+            sharedFeedbackTone: () => 'default',
+            feedbackToneLabel: () => '',
+            contextSummary: () => 'Summary',
+            currentSettings: () => ({ roundTable: false }),
+            iconButton: label => scope.h('button', { text: label }),
+            historyCount: () => 0,
+            historyHeading: () => 'Change history',
+            sessionSearchInput: () => document.createElement('input'),
+            renderCleanup: () => null,
+            sessionMatches: () => true,
+            formatDate: () => 'now',
+        });
+
+        const root = document.getElementById('root');
+        const savedBox = document.createElement('section');
+        savedBox.id = 'saved';
+        savedBox.append(el.overviewBar, el.summary, el.panels.sessions);
+        scope.renderChat();
+        scope.renderSessions();
+
+        currentSession = null;
+        const fallbackEl = makeHost();
+        scope.app.el = fallbackEl;
+        const fallbackBox = document.createElement('section');
+        fallbackBox.id = 'fallback';
+        fallbackBox.append(fallbackEl.overviewBar, fallbackEl.summary);
+        scope.renderChat();
+
+        const webDetails = scope.renderWebSearchSources({
+            webSearch: {
+                query: 'Default',
+                sources: [
+                    { title: 'Default', url: 'https://example.com/Default' },
+                    { title: '', url: 'https://example.com/Source' },
+                ],
+            },
+        });
+        const webBox = document.createElement('section');
+        webBox.id = 'web';
+        webBox.append(webDetails);
+
+        root.append(savedBox, fallbackBox, webBox);
+        window.localizeControls(root, dictionary);
+
+        const savedOverview = savedBox.querySelector('.scratchpad-overview-name');
+        const savedSummary = el.summary.querySelector('span:first-child');
+        const savedList = savedBox.querySelector('.scratchpad-session strong');
+        const fallbackOverview = fallbackBox.querySelector('.scratchpad-overview-name');
+        const fallbackSummary = fallbackEl.summary.querySelector('span:first-child');
+        const sourceLinks = [...webBox.querySelectorAll('.scratchpad-web-source-list a')];
+        const sourceUrls = [...webBox.querySelectorAll('.scratchpad-web-source-list small.scratchpad-web-url')];
+
+        return {
+            saved: {
+                overview: { text: savedOverview.textContent.trim(), ignored: savedOverview.hasAttribute('data-i18n-ignore') },
+                summary: { text: savedSummary.textContent.trim(), ignored: savedSummary.hasAttribute('data-i18n-ignore') },
+                list: { text: savedList.textContent.trim(), ignored: savedList.hasAttribute('data-i18n-ignore') },
+            },
+            fallback: {
+                overview: { text: fallbackOverview.textContent.trim(), ignored: fallbackOverview.hasAttribute('data-i18n-ignore') },
+                summary: { text: fallbackSummary.textContent.trim(), ignored: fallbackSummary.hasAttribute('data-i18n-ignore') },
+            },
+            web: {
+                links: sourceLinks.map(node => ({ text: node.textContent.trim(), ignored: node.hasAttribute('data-i18n-ignore') })),
+                urls: sourceUrls.map(node => ({ text: node.textContent.trim(), ignored: node.hasAttribute('data-i18n-ignore') })),
+            },
+        };
+    });
+
+    const expectedFallback = trDict['New session with ${0}'].replace('${0}', 'Miso');
+    expect(result).toEqual({
+        saved: {
+            overview: { text: 'Default', ignored: true },
+            summary: { text: 'Default', ignored: true },
+            list: { text: 'Default', ignored: true },
+        },
+        fallback: {
+            overview: { text: expectedFallback, ignored: false },
+            summary: { text: expectedFallback, ignored: false },
+        },
+        web: {
+            links: [
+                { text: 'Default', ignored: true },
+                { text: 'https://example.com/Source', ignored: true },
+            ],
+            urls: [
+                { text: 'https://example.com/Default', ignored: true },
+                { text: 'https://example.com/Source', ignored: true },
+            ],
+        },
     });
 });
 
@@ -983,4 +1277,126 @@ test('Dialogue Colors showUndoToast renders escaped message and undo prompt in s
         escapedHtml: '<span class="dc-undo-message">Deleted &lt;script&gt; &amp; &quot;quotes&quot; &#39;here&#39;.</span> <span>Click this toast to undo.</span>',
         escapeHtmlFlag: false,
     });
+});
+
+test('Meower Follow button isolates ko-kr social Follow from the OpenAI instruction fragment', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': ['el', 'icon', 'translate', 'button', 'profileView', 'whoToFollow'],
+    }, 'ko-kr');
+
+    const result = await page.evaluate(() => {
+        const { scope, t, translate, applyLocale } = window.renderHarness;
+        globalThis.SillyTavern = { getContext: () => ({ t, translate }) };
+        const me = { key: 'persona:me', kind: 'persona', name: 'Me', handle: 'me' };
+        const charAcc = { key: 'char:c1', kind: 'character', name: 'Nori', handle: 'nori' };
+        Object.assign(scope, {
+            KIND_CHARACTER: 'character',
+            mutationTask: null,
+            followingKeys: () => new Set(),
+            personaAccount: () => me,
+            accountFor: key => (key === charAcc.key ? charAcc : key === me.key ? me : null),
+            avatarNode: () => document.createElement('div'),
+            avatarButton: () => document.createElement('div'),
+            plural: (n, word) => `${n} ${word}`,
+            section: () => document.createElement('section'),
+            state: {
+                profileKey: charAcc.key,
+                accounts: [me, charAcc],
+                session: { follows: {}, posts: [], interactions: [] },
+                feed: { posts: [], interactions: [] },
+                busy: false,
+            },
+        });
+        const root = document.getElementById('root');
+        root.append(scope.profileView(), scope.whoToFollow());
+        applyLocale(root);
+        const buttons = [...root.querySelectorAll('[data-focus-key="follow:char:c1"]')];
+        return buttons.map(btn => ({ text: btn.textContent.trim(), title: btn.title }));
+    });
+
+    expect(result).toEqual([
+        { text: '팔로우', title: '팔로우' },
+        { text: '팔로우', title: '팔로우' },
+    ]);
+});
+
+test('Scratchpad Change button uses verb scoped.action.change in tr-tr', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/notebooks/dom.js': ['h', 'append', 'clear'],
+        '../public/scripts/scratchpad/index.js': ['renderChat'],
+    }, 'tr-tr');
+
+    const buttonText = await page.evaluate(() => {
+        const { scope, applyLocale } = window.renderHarness;
+        const summary = document.createElement('div');
+        const pinnedNote = document.createElement('button');
+        pinnedNote.append(document.createElement('span'));
+        Object.assign(scope, {
+            app: { source: { kind: 'chat', key: 'c1' }, assistant: 'miso', el: { summary, pinnedNote } },
+            activeSession: () => null,
+            currentSettings: () => ({}),
+            assistantInfo: () => ({ id: 'miso', name: 'Miso' }),
+            sessionAssistants: () => ['miso'],
+            randomReplyEnabled: () => false,
+            contextSummary: () => 'Reading 10 messages',
+            historyCount: () => 0,
+            iconButton: (label, _onClick, { className = '' } = {}) => scope.h('button', { class: className, text: label }),
+            renderOverview: () => undefined,
+            renderMessages: () => undefined,
+            renderComposer: () => undefined,
+        });
+        document.getElementById('root').append(summary);
+        scope.renderChat();
+        applyLocale(summary);
+        return summary.querySelector('.scratchpad-link').textContent.trim();
+    });
+
+    expect(buttonText).toBe('Değiştir');
+});
+
+test('hotkeys.html (is-is), help.html (fr-fr) and Contrastive_search_txt [title] (de-de) render aligned scoped and tooltip translations', async ({ page }) => {
+    const [hotkeysHtml, helpHtml, indexHtml] = await Promise.all([
+        readFile(new URL('../public/scripts/templates/hotkeys.html', import.meta.url), 'utf8'),
+        readFile(new URL('../public/scripts/templates/help.html', import.meta.url), 'utf8'),
+        readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    ]);
+    const contrastiveMatch = indexHtml.match(/<div[^>]*data-i18n="\[title\]Contrastive_search_txt"[^>]*>/);
+    expect(contrastiveMatch).toBeTruthy();
+
+    await openSlicedRenderer(page, {}, 'is-is');
+    const isResult = await page.evaluate(html => {
+        const root = document.getElementById('root');
+        root.innerHTML = html;
+        window.renderHarness.applyLocale(root);
+        return {
+            key7: root.querySelector('[data-i18n="help_hotkeys_7"]').textContent.trim(),
+            key9: root.querySelector('[data-i18n="help_hotkeys_9"]').textContent.trim(),
+            key19_1: root.querySelector('[data-i18n="help_hotkeys_19_1"]').textContent.trim(),
+            key20: root.querySelector('[data-i18n="help_hotkeys_20"]').textContent.trim(),
+        };
+    }, hotkeysHtml);
+    expect(isResult).toEqual({
+        key7: 'Hægri',
+        key9: 'Enter',
+        key19_1: 'Skruna neðst í spjallið',
+        key20: 'Markdown flýtileiðir',
+    });
+
+    await openSlicedRenderer(page, {}, 'fr-fr');
+    const frKbd = await page.evaluate(html => {
+        const root = document.getElementById('root');
+        root.innerHTML = html;
+        window.renderHarness.applyLocale(root);
+        return [...root.querySelectorAll('.necoHelpList--keys kbd[data-i18n="scoped.key.enter"]')].map(node => node.textContent.trim());
+    }, helpHtml);
+    expect(frKbd).toEqual(['Entrée', 'Entrée', 'Entrée']);
+
+    await openSlicedRenderer(page, {}, 'de-de');
+    const deTitle = await page.evaluate(snippet => {
+        const root = document.getElementById('root');
+        root.innerHTML = `${snippet}</div>`;
+        window.renderHarness.applyLocale(root);
+        return root.querySelector('[data-i18n="[title]Contrastive_search_txt"]').getAttribute('title');
+    }, contrastiveMatch[0]);
+    expect(deTitle).toContain('Ein Sampler, der Vielfalt fördert');
 });

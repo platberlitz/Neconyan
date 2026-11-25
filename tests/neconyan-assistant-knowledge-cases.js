@@ -581,6 +581,9 @@ export const refreshedKnowledgeCases = [
     ['What does Save memory in the background do?', 'settings.background-memory', 'returning restores them and your reading position'],
     ['How do I copy one Markdown block from a Scratchpad reply?', 'scratchpad.replies', 'copies only that block, without fences or commentary'],
     ['Can Scratchpad edit my preset prompts?', 'scratchpad.preset-changes', 'Save change saves the current preset settings with that edit'],
+    ['Can Scratchpad edit preset in Conversation?', 'scratchpad.preset-changes', 'prompt order edits go to your account\'s prompt order'],
+    ['Scratchpad edit Conversation message: can it hide one?', 'scratchpad.changes', 'Conversation offers rewrite, insertion (also at the start) and deletion but never hiding'],
+    ['Can I share my current preset with Scratchpad in Conversation?', 'scratchpad.preset', 'Conversation shares the active preset with your account\'s prompt order'],
     ['Can Scratchpad edit my persona and Scenario Notes?', 'scratchpad.persona-changes', 'propose persona edits to name, description and title'],
     ['What happens if I press Undo change on an image change that was already undone?', 'images.undo-history', 'This change has already been undone.'],
     ['Why did View agent changes disappear after I continued a reply that ended early?', 'agents.history', 'Continuing a reply that ended early keeps the earlier changes linked'],
@@ -716,4 +719,8 @@ export const refreshedKnowledgeCases = [
     ['Where do I set the PixAI negative prompt?', 'images.pixai-loras', 'Advanced Prompt Options → Negative Prompt'],
     ['Why is there an Unknown macro warning under my character description?', 'tools.macro-field-warnings', 'Neconyan sends it as plain text'],
     ['What does Unclosed macro mean under a text box?', 'tools.macro-field-warnings', 'add the closing braces'],
+    ['Does the Companions panel cover the chat on desktop?', 'agents.companion-panel', 'docks beside the chat'],
+    ['What happens when Scratchpad opens while the Companions panel is open?', 'agents.companion-panel', 'yielding when Scratchpad or Notes opens'],
+    ['How do I resize the docked Companions panel?', 'agents.companion-panel', 'width is remembered'],
+    ['Can I resize the Companions panel with the keyboard?', 'agents.companion-panel', 'Left/Right arrow keys'],
 ];

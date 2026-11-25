@@ -535,6 +535,7 @@ function buildInsertedMessage(change, source, edited) {
 function chatPlan(change, source) {
     if (source.kind !== 'roleplay') fail('Scratchpad can only change messages in Roleplay chats.');
     if (change.action === 'insert') {
+        if (change.after < 0) fail('This new message does not say where it goes.');
         const anchor = messageSnapshot(change.after);
         if (anchor === null) fail(`Message #${change.after} is no longer in this chat.`);
         const speaker = change.speaker === 'user' ? name1 : (change.name || 'Character');
@@ -724,7 +725,7 @@ export async function prepareChange(change, source, options = {}) {
 async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', disabledEntriesListed = false, lorebookGuard } = {}) {
     if (change.type === 'preset') {
         const { preparePresetChange } = await import('./preset-changes.js');
-        return preparePresetChange(change, sharedPreset, () => { requireSource(source); presetGuard?.(); });
+        return preparePresetChange(change, sharedPreset, () => { requireSource(source); presetGuard?.(); }, { globalOnly: source.kind === 'conversation' });
     }
     if (['persona', 'persona-note'].includes(change.type) && change.action === 'create') {
         const { preparePersonaCreation } = await import('./persona-create.js');
@@ -818,6 +819,10 @@ async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, p
     if (change.type === 'character') {
         if (source.kind === 'general' && (!source.avatar || sharedAvatar !== source.avatar)) fail(t`Share the selected character card before requesting a change.`);
         return characterPlan(change, source);
+    }
+    if (change.type === 'chat' && source.kind === 'conversation') {
+        const { conversationChatPlan } = await import('./conversation-changes.js');
+        return conversationChatPlan(change, source, { conflict, isCurrentSource });
     }
     return chatPlan(change, source);
 }

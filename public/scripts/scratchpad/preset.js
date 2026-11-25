@@ -270,7 +270,8 @@ export function currentPresetTargets() {
     });
 }
 
-export function currentPromptOrderId() {
+export function currentPromptOrderId({ globalOnly = false } = {}) {
+    if (globalOnly) return promptManager.configuration.promptOrder.dummyId;
     const own = promptManager.getPromptOrderForCharacter(promptManager.activeCharacter);
     return own.length ? promptManager.activeCharacter.id : promptManager.configuration.promptOrder.dummyId;
 }

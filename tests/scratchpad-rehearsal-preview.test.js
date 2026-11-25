@@ -121,7 +121,7 @@ const STORY = ['roleplay', 'conversation'];
 const ROLEPLAY = ['roleplay'];
 const EXPECTED_MODES = {
     character: STORY, character_greetings: STORY, persona: STORY, lore_add: STORY, lore_edit: STORY, lore_toggle: STORY, lore_delete: STORY,
-    authors_note: ROLEPLAY, preset: ROLEPLAY, chat_edit: ROLEPLAY, chat_insert: ROLEPLAY, chat_hide: ROLEPLAY, chat_unhide: ROLEPLAY, chat_delete: ROLEPLAY,
+    authors_note: ROLEPLAY, preset: STORY, chat_edit: STORY, chat_insert: STORY, chat_hide: ROLEPLAY, chat_unhide: ROLEPLAY, chat_delete: STORY,
 };
 
 describe('which proposed changes can be tried first', () => {

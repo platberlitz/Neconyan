@@ -1,9 +1,18 @@
 const renderedScopes = new WeakMap();
 const renderedSources = new WeakMap();
 const contentSelector = '.ica--companion-body, .ica--tpanel-agent-body';
-const keptControlSelector = 'input[data-role], textarea[data-role], select[data-role], [data-ica-busy]';
-const freshControlSelector = 'input[data-role], textarea[data-role], select[data-role], [data-action]';
-const focusableSelector = 'input, textarea, button, summary, select';
+const keptControlSelector = 'input[data-role], textarea[data-role], select[data-role], [data-role="panel-resizer"], [data-ica-busy]';
+const freshControlSelector = 'input[data-role], textarea[data-role], select[data-role], [data-role="panel-resizer"], [data-action]';
+const focusableSelector = 'input, textarea, button, summary, select, [data-role="panel-resizer"]';
+const resizerSyncAttributes = ['aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-label'];
+
+function syncResizerAttributes(target, source) {
+    for (const attr of resizerSyncAttributes) {
+        const value = source.getAttribute(attr);
+        if (value === null) target.removeAttribute(attr);
+        else target.setAttribute(attr, value);
+    }
+}
 
 function controlKey(element) {
     const agent = element.closest('[data-agent-id]')?.dataset.agentId ?? '';
@@ -53,6 +62,9 @@ function restoreViewState(nodes, state) {
         const previous = state.controls.get(controlKey(control));
         if (previous && !control.closest(contentSelector)) {
             reconcilePlotObjective(previous, control);
+            if (previous.matches?.('[data-role="panel-resizer"]')) {
+                syncResizerAttributes(previous, control);
+            }
             control.replaceWith(previous);
         }
     }
@@ -134,16 +146,32 @@ export function patchCompanionView(root, html, isCurrent, { listSelector = '', i
 
     if (!patchable) {
         replaceCompanionView(root, content, isCurrent);
-        for (const unit of next) renderedSources.set(unit.node, unit.source);
+        const topUnits = next.filter(unit => !unit.key.startsWith('item:'));
+        [...element.children].forEach((node, index) => {
+            if (topUnits[index]) renderedSources.set(node, topUnits[index].source);
+        });
+        for (const unit of next) {
+            if (unit.key.startsWith('item:')) renderedSources.set(unit.node, unit.source);
+        }
         return;
     }
 
     renderedScopes.set(element, isCurrent);
     const changed = live.flatMap((unit, index) => !unit.list && unit.source !== next[index].source ? [{ previous: unit.node, fresh: next[index] }] : []);
     if (!changed.length) return;
-    const state = captureViewState(changed.map(({ previous }) => previous), true);
+    const replaced = [];
+    for (const item of changed) {
+        if (item.previous.matches?.('[data-role="panel-resizer"]')) {
+            syncResizerAttributes(item.previous, item.fresh.node);
+            renderedSources.set(item.previous, item.fresh.source);
+        } else {
+            replaced.push(item);
+        }
+    }
+    if (!replaced.length) return;
+    const state = captureViewState(replaced.map(({ previous }) => previous), true);
     const jQuery = globalThis.jQuery;
-    for (const { previous, fresh } of changed) {
+    for (const { previous, fresh } of replaced) {
         if (typeof jQuery === 'function') {
             jQuery(previous).replaceWith(fresh.node);
         } else {
@@ -151,7 +179,7 @@ export function patchCompanionView(root, html, isCurrent, { listSelector = '', i
         }
         renderedSources.set(fresh.node, fresh.source);
     }
-    restoreViewState(changed.map(({ fresh }) => fresh.node), state);
+    restoreViewState(replaced.map(({ fresh }) => fresh.node), state);
 }
 
 export async function runCompanionViewAction(button, action) {

@@ -1001,9 +1001,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     let preset = null;
     let presetSnapshot = null;
     let presetTargets = [];
-    if (include.preset && (general || source.kind === 'roleplay')) {
-        // General uses the account's prompt order, not the character behind Home.
-        const snapshot = readCurrentPreset({ globalOnly: general });
+    // General and Conversation use the account's prompt order, never the
+    // custom order of the Roleplay character that happens to be selected.
+    const globalOnly = source.kind !== 'roleplay';
+    if (include.preset) {
+        const snapshot = readCurrentPreset({ globalOnly });
         presetSnapshot = snapshot;
         const shown = trialKind === 'preset' ? applyPresetChangeToSnapshot(snapshot, trial.change, trial.value) : snapshot;
         if (shown !== snapshot) trialTarget = `preset '${trial.change.preset}'`;
@@ -1013,7 +1015,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
     } else if (trialKind === 'preset') {
         // The preset switch is off: share only the preset under rehearsal.
-        const snapshot = readCurrentPreset({ globalOnly: false });
+        const snapshot = readCurrentPreset({ globalOnly });
         const shown = applyPresetChangeToSnapshot(snapshot, trial.change, trial.value);
         if (shown !== snapshot) {
             trialTarget = `preset '${trial.change.preset}'`;
@@ -1269,7 +1271,7 @@ export async function buildContext({ source, settings, pendingText = '', session
             ...(sharedPersona ? { persona: sharedPersona } : {}),
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),
-            chat: source.kind === 'roleplay',
+            chat: source.kind === 'roleplay' || (source.kind === 'conversation' && Boolean(source.branchId)),
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
             ...(agentsShared ? { agents: true } : {}),
             ...(regexShared ? { regex: true } : {}),
