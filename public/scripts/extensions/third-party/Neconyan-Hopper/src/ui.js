@@ -184,10 +184,16 @@ function catIcon(className = '') {
     return node;
 }
 
-function button(label, className, onClick, { iconName = '', title = '', ariaLabel = '', pressed = null, disabled = false, focusKey = label } = {}) {
+function hostTag() {
+    return globalThis.SillyTavern?.getContext?.()?.t
+        ?? ((strings, ...values) => strings.reduce((out, part, i) => out + part + (values[i] ?? ''), ''));
+}
+
+function button(label, className, onClick, { iconName = '', title = '', ariaLabel = '', pressed = null, disabled = false, focusKey = label, attrs = {} } = {}) {
     const node = el('button', {
         className,
         attrs: {
+            ...attrs,
             type: 'button',
             title: title || label,
             'aria-label': ariaLabel || null,
@@ -965,14 +971,14 @@ function pollNode(post) {
             on: { click: () => vote(post, index) },
         }, [
             bar,
-            el('span', { className: 'sbtw-poll-text', text: option.text }),
+            el('span', { className: 'sbtw-poll-text', text: option.text, attrs: { 'data-i18n-ignore': '' } }),
             pollVotersNode(voters),
             el('span', { className: 'sbtw-poll-share', text: total ? `${share}%` : '' }),
         ]);
         return row;
     });
     return el('div', { className: 'sbtw-poll' }, [
-        post.poll.question ? el('div', { className: 'sbtw-poll-question', text: post.poll.question }) : null,
+        post.poll.question ? el('div', { className: 'sbtw-poll-question', text: post.poll.question, attrs: { 'data-i18n-ignore': '' } }) : null,
         ...rows,
         el('div', { className: 'sbtw-poll-total', text: total === 1 ? '1 vote' : `${total} votes` }),
     ]);
@@ -1147,10 +1153,10 @@ function engagementNode(ownerId, interactions) {
                 el('button', {
                     className: 'sbtw-name',
                     text: nameFor(item.actorKey, item.actorSnapshot),
-                    attrs: { type: 'button', 'data-focus-key': `name:${item.actorKey}` },
+                    attrs: { type: 'button', 'data-focus-key': `name:${item.actorKey}`, 'data-i18n-ignore': '' },
                     on: { click: () => showProfile(item.actorKey) },
                 }),
-                el('span', { className: 'sbtw-handle', text: `@${handleFor(item.actorKey, item.actorSnapshot)}` }),
+                el('span', { className: 'sbtw-handle', text: `@${handleFor(item.actorKey, item.actorSnapshot)}`, attrs: { 'data-i18n-ignore': '' } }),
             ]);
         }) : [el('div', { className: 'sbtw-hint', text: 'Nobody yet.' })]),
     ]);
@@ -1168,6 +1174,7 @@ function replyNode(reply) {
     const liked = Boolean(stats.mine.get('like'));
     const reposted = Boolean(stats.mine.get('repost'));
     const fresh = isNewToMe(reply, reply.actorKey);
+    const hostT = hostTag();
     return el('div', { className: `sbtw-reply${fresh ? ' sbtw-reply-new' : ''}`, attrs: { 'data-kind': reply.actorSnapshot?.kind ?? '', 'data-reply-id': reply.id, 'data-focus-key': `comment:${reply.id}`, tabindex: '-1' } }, [
         messageSleeper(account ?? reply.actorSnapshot),
         // The avatar shares a row with the name block so it stays centred on it even when the time wraps.
@@ -1178,10 +1185,10 @@ function replyNode(reply) {
                 el('button', {
                     className: 'sbtw-name',
                     text: nameFor(reply.actorKey, reply.actorSnapshot),
-                    attrs: { type: 'button', 'data-focus-key': `name:${reply.actorKey}` },
+                    attrs: { type: 'button', 'data-focus-key': `name:${reply.actorKey}`, 'data-i18n-ignore': '' },
                     on: { click: () => showProfile(reply.actorKey) },
                 }),
-                el('span', { className: 'sbtw-handle', text: `@${handle}` }),
+                el('span', { className: 'sbtw-handle', text: `@${handle}`, attrs: { 'data-i18n-ignore': '' } }),
                 el('span', { className: 'sbtw-time', text: dateFormat.format(new Date(reply.createdAt)) }),
             ]),
         ]),
@@ -1192,16 +1199,18 @@ function replyNode(reply) {
                     text: `${reply.type === 'repost' ? 'Quoting' : 'Replying to'} @${handleFor(parent.actorKey, parent.actorSnapshot)}`,
                 })
                 : null,
-            el('div', { className: 'sbtw-body' }, [bodyNode(reply.content)]),
+            el('div', { className: 'sbtw-body', attrs: { 'data-i18n-ignore': '' } }, [bodyNode(reply.content)]),
             el('div', { className: 'sbtw-reply-actions' }, [
                 actionButton(reply.id, me, 'fa-heart', stats.like, liked, () => toggle(reply.postId, 'like', reply), liked ? 'Unlike' : 'Like', 'like'),
                 actionButton(reply.id, me, 'fa-retweet', stats.repost, reposted, () => toggle(reply.postId, 'repost', reply), reposted ? 'Undo repost' : 'Repost', 'repost'),
-                me ? button('Reply', `sbtw-action${targeted ? ' sbtw-action-on' : ''}`,
+                me ? button(hostT`Reply`, `sbtw-action${targeted ? ' sbtw-action-on' : ''}`,
                     () => setReplyTarget(reply.postId, reply.id), {
                         iconName: 'fa-comment',
-                        ariaLabel: `Reply to @${handle}`,
+                        title: hostT`Reply`,
+                        ariaLabel: hostT`Reply to @${handle}`,
                         pressed: targeted,
                         focusKey: `reply:${reply.id}`,
+                        attrs: { 'data-i18n-ignore': '' },
                     }) : null,
                 me?.key === reply.actorKey
                     ? button('Delete', 'sbtw-action sbtw-action-danger', () => deleteReply(reply), {
@@ -1254,13 +1263,13 @@ function repostedReplyNode({ post, reply, repost }) {
                     el('button', {
                         className: 'sbtw-name',
                         text: nameFor(repost.actorKey, repost.actorSnapshot),
-                        attrs: { type: 'button', 'data-focus-key': `name:${repost.actorKey}` },
+                        attrs: { type: 'button', 'data-focus-key': `name:${repost.actorKey}`, 'data-i18n-ignore': '' },
                         on: { click: () => showProfile(repost.actorKey) },
                     }),
-                    el('span', { className: 'sbtw-handle', text: `@${handleFor(repost.actorKey, repost.actorSnapshot)}` }),
+                    el('span', { className: 'sbtw-handle', text: `@${handleFor(repost.actorKey, repost.actorSnapshot)}`, attrs: { 'data-i18n-ignore': '' } }),
                     el('span', { className: 'sbtw-time', text: dateFormat.format(new Date(repost.createdAt)) }),
                 ]),
-                el('div', { className: 'sbtw-body' }, [bodyNode(repost.content)]),
+                el('div', { className: 'sbtw-body', attrs: { 'data-i18n-ignore': '' } }, [bodyNode(repost.content)]),
             ]),
         ]) : null,
         replyNode(reply),
@@ -1300,10 +1309,10 @@ function postNode(post, repost = null, { compact = false } = {}) {
                     el('button', {
                         className: 'sbtw-name',
                         text: nameFor(post.authorKey, post.authorSnapshot),
-                        attrs: { type: 'button', 'data-focus-key': `name:${post.authorKey}` },
+                        attrs: { type: 'button', 'data-focus-key': `name:${post.authorKey}`, 'data-i18n-ignore': '' },
                         on: { click: () => showProfile(post.authorKey) },
                     }),
-                    el('span', { className: 'sbtw-handle', text: `@${handleFor(post.authorKey, post.authorSnapshot)}` }),
+                    el('span', { className: 'sbtw-handle', text: `@${handleFor(post.authorKey, post.authorSnapshot)}`, attrs: { 'data-i18n-ignore': '' } }),
                     el('span', { className: 'sbtw-time', text: dateFormat.format(new Date(post.createdAt)) }),
                     mine
                         ? el('button', {
@@ -1313,7 +1322,7 @@ function postNode(post, repost = null, { compact = false } = {}) {
                         }, [icon('fa-trash-can')])
                         : null,
                 ]),
-                el('div', { className: 'sbtw-body' }, [bodyNode(post.body)]),
+                el('div', { className: 'sbtw-body', attrs: { 'data-i18n-ignore': '' } }, [bodyNode(post.body)]),
                 pollNode(post),
                 imageNode(post),
                 compact ? null : actionsNode(post),
@@ -1346,13 +1355,13 @@ function quoteNode(post, repost) {
                     el('button', {
                         className: 'sbtw-name',
                         text: nameFor(repost.actorKey, repost.actorSnapshot),
-                        attrs: { type: 'button', 'data-focus-key': `name:${repost.actorKey}` },
+                        attrs: { type: 'button', 'data-focus-key': `name:${repost.actorKey}`, 'data-i18n-ignore': '' },
                         on: { click: () => showProfile(repost.actorKey) },
                     }),
-                    el('span', { className: 'sbtw-handle', text: `@${handleFor(repost.actorKey, repost.actorSnapshot)}` }),
+                    el('span', { className: 'sbtw-handle', text: `@${handleFor(repost.actorKey, repost.actorSnapshot)}`, attrs: { 'data-i18n-ignore': '' } }),
                     el('span', { className: 'sbtw-time', text: dateFormat.format(new Date(repost.createdAt)) }),
                 ]),
-                el('div', { className: 'sbtw-body' }, [bodyNode(repost.content)]),
+                el('div', { className: 'sbtw-body', attrs: { 'data-i18n-ignore': '' } }, [bodyNode(repost.content)]),
                 el('div', { className: 'sbtw-quote-card' }, [postNode(post, null, { compact: true })]),
                 // A quote is its own little post: it can be liked, reposted and answered like one.
                 el('div', { className: 'sbtw-actions' }, [
@@ -1377,16 +1386,19 @@ function replyComposer(post) {
     const parent = target.parentInteractionId ? answerableOn(post.id, target.parentInteractionId) : null;
     const key = replyTargetKey(target);
     const parentHandle = parent ? handleFor(parent.actorKey, parent.actorSnapshot) : '';
+    const hostT = hostTag();
+    const speaker = me?.name || hostT`you`;
     const field = el('textarea', {
         className: 'sbtw-input',
         attrs: {
             rows: '2',
             maxlength: String(REPLY_MAX_CHARS),
-            placeholder: parentHandle ? `Reply to @${parentHandle}...` : `Reply as ${me?.name ?? 'you'}...`,
+            placeholder: parentHandle ? hostT`Reply to @${parentHandle}...` : hostT`Reply as ${speaker}...`,
             'data-focus-key': `reply-composer:${key}`,
+            'data-i18n-ignore': '',
             'aria-label': parentHandle
-                ? `Reply to @${parentHandle} as ${me?.name ?? 'you'}`
-                : `Reply as ${me?.name ?? 'you'}`,
+                ? hostT`Reply to @${parentHandle} as ${speaker}`
+                : hostT`Reply as ${speaker}`,
         },
     });
     // The draft survives re-renders; focus is only claimed when the composer opens.
@@ -1494,8 +1506,8 @@ function attachMentionPicker(field) {
             },
         }, [
             avatarNode(account, 'sm'),
-            el('span', { className: 'sbtw-name', text: account.name }),
-            el('span', { className: 'sbtw-handle', text: `@${account.handle}` }),
+            el('span', { className: 'sbtw-name', text: account.name, attrs: { 'data-i18n-ignore': '' } }),
+            el('span', { className: 'sbtw-handle', text: `@${account.handle}`, attrs: { 'data-i18n-ignore': '' } }),
         ])));
     };
     field.addEventListener('compositionstart', () => { composing = true; close(); });
@@ -1805,7 +1817,7 @@ function timelineView() {
                 // A tap runs a refresh about the topic (same post cap as Refresh) and shows the matches in Main as they land.
                 on: { click: () => { if (state.busy || mutationTask) { return; } state.tab = 'main'; state.timelineSearch = trend.topic; state.revealTarget = null; void refresh({ topic: trend.topic, manual: true }); } },
             }, [
-                el('span', { className: 'sbtw-trend-topic', text: trend.topic }),
+                el('span', { className: 'sbtw-trend-topic', text: trend.topic, attrs: { 'data-i18n-ignore': '' } }),
                 el('span', { className: 'sbtw-trend-count', text: `${formatCount(trend.posts)} posts` }),
             ]))
             : [el('span', { className: 'sbtw-hint', text: 'Trending topics appear after the next Refresh.' })]);
@@ -1858,10 +1870,10 @@ function profileView() {
         el('div', { className: 'sbtw-profile-head' }, [
             avatarNode(account, 'lg'),
             el('div', { className: 'sbtw-profile-meta' }, [
-                el('div', { className: 'sbtw-name sbtw-name-big', text: account.name }),
-                el('div', { className: 'sbtw-handle', text: `@${account.handle}` }),
-                account.bio ? el('div', { className: 'sbtw-bio', text: account.bio }) : null,
-                account.location ? el('div', { className: 'sbtw-location' }, [icon('fa-location-dot'), el('span', { text: account.location })]) : null,
+                el('div', { className: 'sbtw-name sbtw-name-big', text: account.name, attrs: { 'data-i18n-ignore': '' } }),
+                el('div', { className: 'sbtw-handle', text: `@${account.handle}`, attrs: { 'data-i18n-ignore': '' } }),
+                account.bio ? el('div', { className: 'sbtw-bio', text: account.bio, attrs: { 'data-i18n-ignore': '' } }) : null,
+                account.location ? el('div', { className: 'sbtw-location', attrs: { 'data-i18n-ignore': '' } }, [icon('fa-location-dot'), el('span', { text: account.location })]) : null,
                 el('div', { className: 'sbtw-counts', text: `${(follows[account.key] ?? []).length} following  ·  ${plural(followerCount, 'follower')}` }),
             ]),
             el('div', { className: 'sbtw-profile-actions' }, [
@@ -2203,8 +2215,8 @@ function notificationsView() {
     const list = rows.map(item => {
         const target = notificationTarget(item);
         const post = postsById.get(item.postId);
-        const text = item.content || interactionsById.get(target.interactionId)?.content || post?.body || post?.poll?.question || (post?.image ? 'Image post' : 'Post');
-        const preview = text.replace(/\s+/g, ' ').trim();
+        const excerpt = (item.content || interactionsById.get(target.interactionId)?.content || post?.body || post?.poll?.question || '').replace(/\s+/g, ' ').trim();
+        const preview = excerpt || (post?.image ? 'Image post' : 'Post');
         return el('button', {
             className: `sbtw-notification${isNew(item) ? ' sbtw-notification-new' : ''}`,
             attrs: { type: 'button', 'data-focus-key': `notification:${state.notifTab}:${item.id}` },
@@ -2230,12 +2242,12 @@ function notificationsView() {
             avatarNode(accountFor(item.actorKey) ?? item.actorSnapshot ?? null, 'sm'),
             el('div', { className: 'sbtw-notification-main' }, [
                 el('div', { className: 'sbtw-meta' }, [
-                    el('span', { className: 'sbtw-name', text: nameFor(item.actorKey, item.actorSnapshot) }),
+                    el('span', { className: 'sbtw-name', text: nameFor(item.actorKey, item.actorSnapshot), attrs: { 'data-i18n-ignore': '' } }),
                     isNew(item) ? el('span', { className: 'sbtw-unread', text: 'Unread' }) : null,
                     el('span', { className: 'sbtw-time', text: dateFormat.format(new Date(item.createdAt)) }),
                 ]),
                 el('div', { text: NOTIFICATION_VERB[item.kind] ?? 'reacted' }),
-                el('div', { className: 'sbtw-notification-preview', text: preview.length > 240 ? `${preview.slice(0, 240)}...` : preview }),
+                el('div', { className: 'sbtw-notification-preview', text: preview.length > 240 ? `${preview.slice(0, 240)}...` : preview, attrs: excerpt ? { 'data-i18n-ignore': '' } : {} }),
             ]),
         ]);
     });
@@ -2776,8 +2788,8 @@ function whoToFollow() {
         ...suggestions.map(account => el('div', { className: 'sbtw-suggestion' }, [
             avatarButton(account, 'sm', account.key),
             el('div', { className: 'sbtw-suggestion-meta' }, [
-                el('button', { className: 'sbtw-name', text: account.name, attrs: { type: 'button', 'data-focus-key': `name:${account.key}` }, on: { click: () => showProfile(account.key) } }),
-                el('span', { className: 'sbtw-handle', text: `@${account.handle}` }),
+                el('button', { className: 'sbtw-name', text: account.name, attrs: { type: 'button', 'data-focus-key': `name:${account.key}`, 'data-i18n-ignore': '' }, on: { click: () => showProfile(account.key) } }),
+                el('span', { className: 'sbtw-handle', text: `@${account.handle}`, attrs: { 'data-i18n-ignore': '' } }),
             ]),
             button('Follow', 'sbtw-btn sbtw-btn-quiet', () => toggleFollow(account.key), { focusKey: `follow:${account.key}`, disabled: Boolean(mutationTask) }),
         ])),

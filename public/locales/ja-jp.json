@@ -1271,7 +1271,7 @@
     "Stop Image Generation": "画像生成を停止",
     "Generate Caption": "画像説明を生成",
     "sd_refine_mode": "プロンプトを生成 API に送信する前に手動で編集できるようにする",
-    "sd_refine_mode_txt": "生成前にプロンプ​​トを編集する",
+    "sd_refine_mode_txt": "生成前にプロンプトを編集する",
     "sd_interactive_mode": "「猫の写真を送ってください」のようなメッセージを送信するときに、画像を自動的に生成します。",
     "sd_interactive_mode_txt": "インタラクティブモード",
     "sd_multimodal_captioning": "マルチモーダル キャプションを使用して、アバターに基づいてユーザーとキャラクターのポートレートのプロンプトを生成します。",

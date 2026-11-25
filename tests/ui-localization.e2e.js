@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, globalThis */
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
@@ -44,7 +44,7 @@ test('interface text is localised everywhere except user-authored content', asyn
         rootTitle: 'Start',
         input: 'Neu',
         untouched: ['Recent', 'Recent', 'Recent', 'Recent', 'Recent', 'Recent'],
-        textareaPlaceholder: 'Recent',
+        textareaPlaceholder: 'Neu',
     });
 });
 
@@ -420,3 +420,493 @@ for (const [selector, attribute, where] of [
         expect(result.control, 'preservation: an unmarked control translates').toEqual([dictionary.Default, dictionary.Summary]);
     });
 }
+
+test('textarea attributes are localised unless marked ignored or inside protected user text', async ({ page }) => {
+    await openLocaliser(page, `
+        <textarea id="plain" placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        <textarea id="direct" placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        <textarea id="ignore-attr" data-i18n-ignore placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        <textarea id="translate-no" translate="no" placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        <textarea id="notranslate" class="notranslate" placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        <div data-i18n-ignore>
+            <textarea id="ancestor-ignore" placeholder="Recent" title="Home" aria-label="Connections">Recent</textarea>
+        </div>
+        <pre id="pre" title="Home">Recent</pre>`);
+    const result = await page.evaluate(() => {
+        const dictionary = { Recent: 'Neu', Home: 'Start', Connections: 'Verbindungen' };
+        const readAttrs = id => {
+            const el = document.getElementById(id);
+            return {
+                placeholder: el.getAttribute('placeholder'),
+                title: el.getAttribute('title'),
+                ariaLabel: el.getAttribute('aria-label'),
+                text: el.textContent,
+            };
+        };
+
+        // Direct-root pass on both an unmarked textarea and protected textareas before walking #root.
+        window.localizeControls(document.getElementById('direct'), dictionary);
+        for (const id of ['ignore-attr', 'translate-no', 'notranslate', 'ancestor-ignore', 'pre']) {
+            window.localizeControls(document.getElementById(id), dictionary);
+        }
+        const directOnly = {
+            direct: readAttrs('direct'),
+            ignoreAttr: readAttrs('ignore-attr'),
+            translateNo: readAttrs('translate-no'),
+            notranslate: readAttrs('notranslate'),
+            ancestorIgnore: readAttrs('ancestor-ignore'),
+            pre: readAttrs('pre'),
+        };
+
+        // TreeWalker pass from #root.
+        window.localizeControls(document.getElementById('root'), dictionary);
+        return {
+            directOnly,
+            walked: {
+                plain: readAttrs('plain'),
+                ignoreAttr: readAttrs('ignore-attr'),
+                translateNo: readAttrs('translate-no'),
+                notranslate: readAttrs('notranslate'),
+                ancestorIgnore: readAttrs('ancestor-ignore'),
+                pre: readAttrs('pre'),
+            },
+        };
+    });
+
+    const translated = { placeholder: 'Neu', title: 'Start', ariaLabel: 'Verbindungen', text: 'Recent' };
+    const untouched = { placeholder: 'Recent', title: 'Home', ariaLabel: 'Connections', text: 'Recent' };
+    const untouchedPre = { placeholder: null, title: 'Home', ariaLabel: null, text: 'Recent' };
+    expect(result).toEqual({
+        directOnly: {
+            direct: translated,
+            ignoreAttr: untouched,
+            translateNo: untouched,
+            notranslate: untouched,
+            ancestorIgnore: untouched,
+            pre: untouchedPre,
+        },
+        walked: {
+            plain: translated,
+            ignoreAttr: untouched,
+            translateNo: untouched,
+            notranslate: untouched,
+            ancestorIgnore: untouched,
+            pre: untouchedPre,
+        },
+    });
+});
+
+function sliceDeclaration(text, name) {
+    const match = text.match(new RegExp(`^(?:export )?(?:async )?(?:function|class) ${name}\\b[^]*?\\n}$`, 'm'));
+    if (match) return match[0].replace(/^export /, '');
+    const constant = text.match(new RegExp(`^const ${name}\\b[^\\n]*;`, 'm'));
+    return constant ? constant[0] : null;
+}
+
+async function openSlicedRenderer(page, fileMap, lang) {
+    const sources = {};
+    for (const [relativePath, names] of Object.entries(fileMap)) {
+        const text = await readFile(new URL(relativePath, import.meta.url), 'utf8');
+        for (const name of names) {
+            const decl = sliceDeclaration(text, name);
+            expect(decl, `declaration ${name} in ${relativePath}`).toBeTruthy();
+            sources[name] = decl;
+        }
+    }
+    const dictionary = await mergedDictionary(lang);
+    await page.setContent('<main id="root"></main>');
+    await page.addScriptTag({ type: 'module', content: `${await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8')}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    await page.addScriptTag({ content: await readFile(new URL('../public/lib/jquery-3.5.1.min.js', import.meta.url), 'utf8') });
+    await page.evaluate(([slicedSources, dict]) => {
+        const target = {};
+        const noop = () => undefined;
+        const scope = new Proxy(target, {
+            has: (object, key) => typeof key === 'string' && (key in object || !(key in globalThis)),
+            get: (object, key) => {
+                if (typeof key !== 'string' || key in object) return object[key];
+                return noop;
+            },
+        });
+        for (const [name, code] of Object.entries(slicedSources)) {
+            if (code.startsWith('const ')) {
+                scope[name] = new Function('scope', `with (scope) { ${code}\nreturn ${name}; }`)(scope);
+            } else {
+                scope[name] = new Function('scope', `with (scope) { return (${code}); }`)(scope);
+            }
+        }
+        const translate = (text, key = null) => dict[key || text] || text;
+        const t = (strings, ...values) => translate(
+            strings.reduce((result, part, i) => result + part + (values[i] !== undefined ? `\${${i}}` : ''), ''),
+        ).replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
+        scope.translate = translate;
+        scope.t = t;
+        window.renderHarness = { scope, dictionary: dict, t };
+    }, [sources, dictionary]);
+    return dictionary;
+}
+
+test('Meower real renderers protect user and model content while keeping UI fallbacks and composer frames translatable (tr-tr)', async ({ page }) => {
+    const trDict = await openSlicedRenderer(page, {
+        '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': [
+            'el', 'icon', 'hostTag', 'button', 'bodyNode', 'pollNode', 'engagementNode',
+            'replyNode', 'repostedReplyNode', 'postNode', 'quoteNode',
+            'replyComposer', 'attachMentionPicker', 'timelineView',
+            'profileView', 'notificationsView', 'whoToFollow',
+        ],
+    }, 'tr-tr');
+    for (const key of ['Nice to meet you!', 'Summary', 'Image post', 'Post', 'you', 'Reply', 'Reply to @${0}', 'Reply as ${0}...', 'Reply as ${0}']) {
+        expect(trDict[key], key).toBeTruthy();
+    }
+
+    const result = await page.evaluate(() => {
+        const { scope, dictionary, t } = window.renderHarness;
+        globalThis.SillyTavern = { getContext: () => ({ t }) };
+
+        const persona = { key: 'persona:me', kind: 'persona', name: 'Summary', handle: 'default', bio: 'Nice to meet you!', location: 'Nice to meet you!' };
+        const charAcc = { key: 'char:c1', kind: 'character', name: 'Summary', handle: 'default', bio: 'Nice to meet you!', location: 'Nice to meet you!' };
+        const accountsByKey = new Map([[persona.key, persona], [charAcc.key, charAcc]]);
+
+        const mainPost = {
+            id: 'p1',
+            authorKey: charAcc.key,
+            authorSnapshot: charAcc,
+            body: 'Nice to meet you!',
+            createdAt: 1000,
+            poll: { question: 'Nice to meet you!', options: [{ text: 'Nice to meet you!' }] },
+        };
+        const imgPost = { id: 'p2', authorKey: charAcc.key, body: '', image: { url: '/img/x.png' }, createdAt: 1001 };
+        const emptyPost = { id: 'p3', authorKey: charAcc.key, body: '', createdAt: 1002 };
+        const replyItem = { id: 'r1', postId: 'p1', type: 'reply', actorKey: charAcc.key, actorSnapshot: charAcc, content: 'Nice to meet you!', createdAt: 1003 };
+        const repostReplyItem = { id: 'rr1', postId: 'p1', type: 'repost', parentInteractionId: 'r1', actorKey: charAcc.key, actorSnapshot: charAcc, content: 'Nice to meet you!', createdAt: 1004 };
+        const quoteRepostItem = { id: 'q1', postId: 'p1', type: 'repost', actorKey: charAcc.key, actorSnapshot: charAcc, content: 'Nice to meet you!', createdAt: 1005 };
+
+        let currentPersona = persona;
+        const postsById = new Map([[mainPost.id, mainPost], [imgPost.id, imgPost], [emptyPost.id, emptyPost]]);
+        const interactionsById = new Map([[replyItem.id, replyItem], [repostReplyItem.id, repostReplyItem], [quoteRepostItem.id, quoteRepostItem]]);
+        const notifGroups = {
+            likes: [
+                { id: 'n1', kind: 'like', postId: 'p1', actorKey: charAcc.key, actorSnapshot: charAcc, content: 'Nice to meet you!', createdAt: 2000 },
+                { id: 'n2', kind: 'like', postId: 'p2', actorKey: charAcc.key, actorSnapshot: charAcc, content: '', createdAt: 2001 },
+                { id: 'n3', kind: 'like', postId: 'p3', actorKey: charAcc.key, actorSnapshot: charAcc, content: '', createdAt: 2002 },
+            ],
+            replies: [],
+            posts: [],
+        };
+
+        Object.assign(scope, {
+            KIND_CHARACTER: 'character',
+            REPLY_MAX_CHARS: 500,
+            FEED_LIMIT: 160,
+            REPLY_LIMIT: 12,
+            NOTIFICATION_LIMIT: 50,
+            SEARCH_DEBOUNCE_MS: 150,
+            NOTIFICATION_TABS: [['likes', 'Likes'], ['replies', 'Replies'], ['posts', 'Posts']],
+            NOTIFICATION_VERB: { like: 'liked your post', reply: 'replied to you', post: 'posted' },
+            NOTIFICATION_EMPTY: { likes: 'No likes', replies: 'No replies', posts: 'No posts' },
+            dateFormat: { format: () => 'now' },
+            accountsByHandle: new Map(),
+            postsById,
+            interactionsById,
+            replyDrafts: new Map(),
+            listLimits: new Map(),
+            mentionPickerId: 0,
+            searchOpen: false,
+            mutationTask: null,
+            pendingReplyFocus: null,
+            api: { updateSession: (_id, patch) => ({ ...scope.state.session, ...patch }) },
+            formatCount: n => String(n),
+            plural: (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`,
+            followingKeys: () => new Set(),
+            isNewToMe: () => false,
+            isReplyTarget: () => false,
+            replyTargetKey: target => JSON.stringify([target.postId, target.parentInteractionId ?? null]),
+            answerableOn: () => null,
+            interactionsFor: () => [],
+            myInteraction: () => null,
+            replyStatsFor: () => ({ like: 0, repost: 0, reply: 0, mine: new Map(), items: [] }),
+            accountFor: key => accountsByKey.get(key) ?? null,
+            nameFor: (key, snap) => accountsByKey.get(key)?.name ?? snap?.name ?? 'Summary',
+            handleFor: (key, snap) => accountsByKey.get(key)?.handle ?? snap?.handle ?? 'default',
+            personaAccount: () => currentPersona,
+            visibleTimelineEntries: () => ({ entries: [], total: 0 }),
+            notificationTarget: item => ({ postId: item.postId, interactionId: item.interactionId ?? null }),
+            notificationGroups: () => notifGroups,
+            mentionQueryAt: value => (value.startsWith('@') ? { start: 0, query: value.slice(1) } : null),
+            matchMentionAccounts: accounts => accounts,
+            state: {
+                tab: 'trending',
+                notifTab: 'likes',
+                notifSeenBefore: 0,
+                timelineSeenBefore: 0,
+                engagementFor: 'eng:like',
+                profileKey: charAcc.key,
+                replyingTo: null,
+                busy: false,
+                draftReady: true,
+                timelineSearch: '',
+                accounts: [persona, charAcc],
+                session: { id: 's1', trends: [{ topic: 'Nice to meet you!', posts: 3 }], follows: {}, timelineSeenAt: 0, notificationsSeenAt: 0 },
+                feed: { posts: [], interactions: [] },
+            },
+        });
+
+        const root = document.getElementById('root');
+        const mount = (id, node) => {
+            const box = document.createElement('section');
+            box.id = id;
+            if (node) box.append(node);
+            root.append(box);
+            return box;
+        };
+
+        mount('post', scope.postNode(mainPost));
+        mount('reply', scope.replyNode(replyItem));
+        mount('reposted-reply', scope.repostedReplyNode({ post: mainPost, reply: replyItem, repost: repostReplyItem }));
+        mount('quote', scope.quoteNode(mainPost, quoteRepostItem));
+        mount('engagement', scope.engagementNode('eng', [{ type: 'like', actorKey: charAcc.key, actorSnapshot: charAcc, createdAt: 1000 }]));
+        mount('timeline', scope.timelineView());
+        mount('profile', scope.profileView());
+        mount('notifications', scope.notificationsView());
+        mount('who', scope.whoToFollow());
+
+        const mentionBox = mount('mentions', null);
+        const mentionField = document.createElement('textarea');
+        mentionBox.append(mentionField);
+        scope.attachMentionPicker(mentionField);
+        mentionField.value = '@def';
+        mentionField.dispatchEvent(new Event('input'));
+
+        mount('composer-named', scope.replyComposer(mainPost));
+        currentPersona = null;
+        mount('composer-anon', scope.replyComposer(mainPost));
+
+        window.localizeControls(root, dictionary);
+
+        currentPersona = persona;
+        const youReplyBox = document.createElement('section');
+        youReplyBox.id = 'reply-you';
+        youReplyBox.append(scope.replyNode({
+            id: 'r-you',
+            postId: 'p1',
+            type: 'reply',
+            actorKey: 'char:you',
+            actorSnapshot: { kind: 'character', name: 'Summary', handle: 'you' },
+            content: 'Nice to meet you!',
+            createdAt: 1006,
+        }));
+        document.body.append(youReplyBox);
+        window.localizeControls(youReplyBox, dictionary);
+        const youReplyButton = youReplyBox.querySelector('[data-focus-key="reply:r-you"]');
+
+        const texts = selector => [...root.querySelectorAll(selector)].map(node => node.textContent.trim());
+        const namedComposer = root.querySelector('#composer-named textarea');
+        const anonComposer = root.querySelector('#composer-anon textarea');
+        return {
+            bodies: {
+                post: root.querySelector('#post .sbtw-body').textContent.trim(),
+                reply: root.querySelector('#reply .sbtw-body').textContent.trim(),
+                repostedReply: root.querySelector('#reposted-reply .sbtw-post-main > .sbtw-body').textContent.trim(),
+                quote: root.querySelector('#quote .sbtw-post-main > .sbtw-body').textContent.trim(),
+            },
+            pollQuestion: root.querySelector('#post .sbtw-poll-question').textContent.trim(),
+            pollText: root.querySelector('#post .sbtw-poll-text').textContent.trim(),
+            trendTopic: root.querySelector('#timeline .sbtw-trend-topic').textContent.trim(),
+            bio: root.querySelector('#profile .sbtw-bio').textContent.trim(),
+            location: root.querySelector('#profile .sbtw-location span').textContent.trim(),
+            names: texts('.sbtw-name'),
+            handles: texts('.sbtw-handle'),
+            notificationPreviews: texts('#notifications .sbtw-notification-preview'),
+            namedComposer: [namedComposer.getAttribute('placeholder'), namedComposer.getAttribute('aria-label')],
+            anonComposer: [anonComposer.getAttribute('placeholder'), anonComposer.getAttribute('aria-label')],
+            youReplyButton: {
+                ariaLabel: youReplyButton.getAttribute('aria-label'),
+                title: youReplyButton.getAttribute('title'),
+                text: youReplyButton.textContent.trim(),
+                ignored: youReplyButton.hasAttribute('data-i18n-ignore'),
+            },
+        };
+    });
+
+    expect(result.bodies).toEqual({
+        post: 'Nice to meet you!',
+        reply: 'Nice to meet you!',
+        repostedReply: 'Nice to meet you!',
+        quote: 'Nice to meet you!',
+    });
+    expect(result.pollQuestion).toBe('Nice to meet you!');
+    expect(result.pollText).toBe('Nice to meet you!');
+    expect(result.trendTopic).toBe('Nice to meet you!');
+    expect(result.bio).toBe('Nice to meet you!');
+    expect(result.location).toBe('Nice to meet you!');
+    expect(result.names.length).toBeGreaterThanOrEqual(9);
+    expect(result.names.every(name => name === 'Summary')).toBe(true);
+    expect(result.handles.length).toBeGreaterThanOrEqual(8);
+    expect(result.handles.every(handle => handle === '@default')).toBe(true);
+    expect(result.notificationPreviews).toEqual(['Nice to meet you!', 'Görselli gönderi', 'Gönder']);
+    expect(result.namedComposer).toEqual(['Summary olarak yanıt verin...', 'Summary olarak yanıt verin']);
+    expect(result.anonComposer).toEqual(['siz olarak yanıt verin...', 'siz olarak yanıt verin']);
+    expect(result.youReplyButton).toEqual({
+        ariaLabel: '@you hesabına yanıt ver',
+        title: 'Yanıtla',
+        text: 'Yanıtla',
+        ignored: true,
+    });
+    expect(result.youReplyButton.ariaLabel).not.toContain('@siz');
+});
+
+test('Scratchpad real renderers protect user text, reasoning, streaming, change reasons and user names while keeping fallbacks translatable (tr-tr)', async ({ page }) => {
+    const trDict = await openSlicedRenderer(page, {
+        '../public/scripts/notebooks/dom.js': ['h', 'append'],
+        '../public/scripts/scratchpad/index.js': ['renderMessage', 'renderChangeCard'],
+    }, 'tr-tr');
+    expect(trDict.You).toBeTruthy();
+    expect(trDict.You).not.toBe('You');
+    expect(trDict.Post).toBe('Gönder');
+
+    const result = await page.evaluate(() => {
+        const { scope, dictionary } = window.renderHarness;
+        let currentUserName = 'Summary';
+        Object.assign(scope, {
+            app: {
+                source: { kind: 'general', key: 'general' },
+                editing: null,
+                foldedThinking: new Set(),
+                openMenus: new Set(),
+                imageAvailability: null,
+                imageJobs: new Map(),
+                imageErrors: new Map(),
+            },
+            sourceUserName: () => currentUserName,
+            busyChanges: new Set(),
+            assistantInfo: () => ({ id: 'miso', name: 'Miso' }),
+            assistantPortrait: () => '/img/miso.png',
+            replyPreview: message => message._preview,
+            stageLabel: () => 'Thinking',
+            iconButton: label => scope.h('button', { text: label }),
+            renderReply: (_session, message) => scope.h('div', { class: 'mes_text', text: message.text }),
+            renderAttachments: () => [],
+            renderReplySwipes: () => null,
+            renderMessageActions: () => document.createElement('div'),
+            describeChange: () => 'Update field',
+        });
+
+        const session = { id: 's1', assistant: 'miso', settings: {} };
+        const root = document.getElementById('root');
+        const userNamed = scope.renderMessage(session, { id: 'm1', role: 'user', text: 'Line 1' }, { latest: false, retry: false });
+        currentUserName = '';
+        const userFallback = scope.renderMessage(session, { id: 'm2', role: 'user', text: 'Line 1' }, { latest: false, retry: false });
+        const pendingAssistant = scope.renderMessage(session, { id: 'm3', role: 'assistant', state: 'pending', _preview: { reasoning: 'Line 1', text: 'Line 1' } }, { latest: true, retry: false });
+        const savedAssistant = scope.renderMessage(session, { id: 'm4', role: 'assistant', reasoning: 'Line 1', text: 'Line 1' }, { latest: true, retry: false });
+        const validChange = scope.renderChangeCard(session, { id: 'm4', proposals: {} }, { index: 0, change: { type: 'field', reason: 'Line 1' } });
+        const invalidChange = scope.renderChangeCard(session, { id: 'm4', proposals: {} }, { index: 1, change: null, error: 'Post' });
+
+        root.append(userNamed, userFallback, pendingAssistant, savedAssistant, validChange, invalidChange);
+        window.localizeControls(root, dictionary);
+
+        return {
+            namedAuthor: userNamed.querySelector('.scratchpad-author span').textContent,
+            namedUserText: userNamed.querySelector('p.scratchpad-plain').textContent,
+            fallbackAuthor: userFallback.querySelector('.scratchpad-author span').textContent,
+            pendingReasoning: pendingAssistant.querySelector('.scratchpad-reasoning p.scratchpad-plain').textContent,
+            pendingStream: pendingAssistant.querySelector('p.scratchpad-stream').textContent,
+            savedReasoning: savedAssistant.querySelector('.scratchpad-reasoning p.scratchpad-plain').textContent,
+            validChangeReason: validChange.querySelector('p.scratchpad-change-reason').textContent,
+            invalidChangeError: invalidChange.querySelector('p.scratchpad-change-reason').textContent,
+        };
+    });
+
+    expect(result).toEqual({
+        namedAuthor: 'Summary',
+        namedUserText: 'Line 1',
+        fallbackAuthor: trDict.You,
+        pendingReasoning: 'Line 1',
+        pendingStream: 'Line 1',
+        savedReasoning: 'Line 1',
+        validChangeReason: 'Line 1',
+        invalidChangeError: 'Gönder',
+    });
+});
+
+test('TTS VoiceMapEntry keeps option values intact when German localises the disabled label (de-de)', async ({ page }) => {
+    const deDict = await openSlicedRenderer(page, {
+        '../public/scripts/extensions/tts/index.js': ['LOCALIZED_DISABLED_VOICE_LABELS', 'normalizeSavedVoiceId', 'VoiceMapEntry'],
+    }, 'de-de');
+    expect(deDict.disabled).toBe('deaktiviert');
+
+    const result = await page.evaluate(() => {
+        const { scope, dictionary } = window.renderHarness;
+        let voiceMapUpdates = 0;
+        Object.assign(scope, {
+            DEFAULT_VOICE_MARKER: '[Default Voice]',
+            DISABLED_VOICE_MARKER: 'disabled',
+            sanitizeId: input => String(input).replace(/[^a-zA-Z0-9_-]/g, '_'),
+            updateVoiceMap: () => { voiceMapUpdates += 1; },
+        });
+
+        const voices = [{ name: 'Voice A' }];
+        const recoveredGerman = scope.normalizeSavedVoiceId('deaktiviert', voices);
+        const recoveredAllLocales = ['معطّل', '已停用', 'uitgeschakeld', 'deaktiviert', 'óvirkt', 'disabilitato', '비활성화됨', 'deshabilitado', 'вимкнено', 'đã tắt']
+            .map(label => scope.normalizeSavedVoiceId(label, voices));
+        const realVoice = scope.normalizeSavedVoiceId('Voice A', voices);
+        const realProviderNamedDeaktiviert = scope.normalizeSavedVoiceId('deaktiviert', [{ name: 'deaktiviert' }]);
+        const markerValues = [
+            scope.normalizeSavedVoiceId('disabled', voices),
+            scope.normalizeSavedVoiceId('[Default Voice]', voices),
+        ];
+
+        document.getElementById('root').innerHTML = '<div id="tts_voicemap_block"></div>';
+        const alice = new scope.VoiceMapEntry('Alice', recoveredGerman);
+        const defaultEntry = new scope.VoiceMapEntry('[Default Voice]', 'disabled');
+        alice.addUI(voices);
+        defaultEntry.addUI(voices);
+
+        window.localizeControls(document.getElementById('root'), dictionary);
+
+        const aliceOptions = [...alice.selectElement[0].options].map(option => ({ value: option.value, text: option.textContent.trim() }));
+        const defaultOptions = [...defaultEntry.selectElement[0].options].map(option => ({ value: option.value, text: option.textContent.trim() }));
+        const aliceInitialVal = alice.selectElement.val();
+        const defaultInitialVal = defaultEntry.selectElement.val();
+
+        alice.selectElement.val('Voice A').trigger('change');
+        alice.selectElement.val('disabled').trigger('change');
+        defaultEntry.selectElement.trigger('change');
+
+        return {
+            recoveredGerman,
+            recoveredAllLocales,
+            realVoice,
+            realProviderNamedDeaktiviert,
+            markerValues,
+            aliceOptions,
+            defaultOptions,
+            aliceInitialVal,
+            defaultInitialVal,
+            aliceVoiceIdAfterChange: alice.voiceId,
+            defaultVoiceIdAfterChange: defaultEntry.voiceId,
+            voiceMapUpdates,
+        };
+    });
+
+    expect(result).toEqual({
+        recoveredGerman: 'disabled',
+        recoveredAllLocales: Array(10).fill('disabled'),
+        realVoice: 'Voice A',
+        realProviderNamedDeaktiviert: 'deaktiviert',
+        markerValues: ['disabled', '[Default Voice]'],
+        aliceOptions: [
+            { value: '[Default Voice]', text: '[Default Voice]' },
+            { value: 'disabled', text: 'deaktiviert' },
+            { value: 'Voice A', text: 'Voice A' },
+        ],
+        defaultOptions: [
+            { value: 'disabled', text: 'deaktiviert' },
+            { value: 'Voice A', text: 'Voice A' },
+        ],
+        aliceInitialVal: 'disabled',
+        defaultInitialVal: 'disabled',
+        aliceVoiceIdAfterChange: 'disabled',
+        defaultVoiceIdAfterChange: 'disabled',
+        voiceMapUpdates: 3,
+    });
+});

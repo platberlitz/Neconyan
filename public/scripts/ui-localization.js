@@ -12,6 +12,7 @@ const userText = [
     '.sbca-filename', '.sbca-owner', '.sbca-owner-choice-name', '.an-note-name', '.neconyan-lorebook-book-name',
     '.neconyan-folder-tab', '.neconyan-folder-tabs-current',
 ].join(',');
+const nonTextareaUserText = userText.split(',').filter(selector => selector !== 'textarea').join(',');
 const attributes = ['title', 'placeholder', 'aria-label'];
 const nonEmptyDictionaries = new WeakSet();
 
@@ -107,12 +108,17 @@ export function localizeControls(root, dictionary) {
         if (!Object.keys(dictionary).length) return;
         nonEmptyDictionaries.add(dictionary);
     }
-    if (root.closest?.(userText)) return;
+    if (root.closest?.(userText)) {
+        if (root.tagName === 'TEXTAREA' && !root.closest(nonTextareaUserText)) localizeAttributes(root, dictionary);
+        return;
+    }
     if (root.nodeType === Node.ELEMENT_NODE) localizeAttributes(root, dictionary);
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
             if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-            return node.matches(userText) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+            if (!node.matches(userText)) return NodeFilter.FILTER_ACCEPT;
+            if (node.tagName === 'TEXTAREA' && !node.matches(nonTextareaUserText)) localizeAttributes(node, dictionary);
+            return NodeFilter.FILTER_REJECT;
         },
     });
     let node;

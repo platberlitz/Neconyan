@@ -1842,9 +1842,10 @@ function renderMessage(session, message, { latest, retry }) {
         class: `scratchpad-message is-${message.role}${message.state ? ` is-${message.state}` : ''}`,
         dataset: { messageId: message.id, ...(message.jobId ? { jobId: message.jobId } : {}) },
     });
+    const userName = assistant ? '' : sourceUserName(app.source);
     const author = assistant
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: assistantPortrait(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: message.assistantName || assistant.name, 'data-i18n-ignore': '' }))
-        : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
+        : h('div', { class: 'scratchpad-author' }, h('span', userName ? { text: userName, 'data-i18n-ignore': '' } : { text: t`You` }));
     article.append(author);
     if (message.rehearsal) {
         const trial = message.rehearsalLabel ? String(message.rehearsalLabel) : '';
@@ -1865,7 +1866,7 @@ function renderMessage(session, message, { latest, retry }) {
     }
 
     if (message.role === 'user') {
-        article.append(h('p', { class: 'scratchpad-plain', text: message.text }));
+        article.append(h('p', { class: 'scratchpad-plain', text: message.text, 'data-i18n-ignore': '' }));
         append(article, renderAttachments(message.attachments ?? []));
     } else if (message.state === 'pending') {
         const preview = replyPreview(message);
@@ -1877,8 +1878,8 @@ function renderMessage(session, message, { latest, retry }) {
             h('p', { class: 'scratchpad-stage', text: stageLabel(preview) }),
             h('details', thinking,
                 h('summary', { text: t`Thinking` }),
-                h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '' })),
-            h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
+                h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '', 'data-i18n-ignore': '' })),
+            h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '', 'data-i18n-ignore': '' }),
             iconButton(session.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
         append(article, [renderReplySwipes(session, message, { latest })]);
         return article;
@@ -1886,7 +1887,7 @@ function renderMessage(session, message, { latest, retry }) {
         if (message.reasoning) {
             article.append(h('details', { class: 'scratchpad-reasoning' },
                 h('summary', { text: t`Thinking` }),
-                h('p', { class: 'scratchpad-plain', text: message.reasoning })));
+                h('p', { class: 'scratchpad-plain', text: message.reasoning, 'data-i18n-ignore': '' })));
         }
         if (message.text) article.append(renderReply(session, message));
         const sources = message.role === 'assistant' ? renderWebSearchSources(message) : null;
@@ -2116,7 +2117,7 @@ function renderChangeCard(session, message, part) {
     const state = message.proposals?.[String(part.index)] ?? '';
     const card = h('div', { class: `scratchpad-change${state ? ` is-${state}` : ''}` },
         h('p', { class: 'scratchpad-change-title' }, h('i', { class: 'fa-solid fa-wand-magic-sparkles', 'aria-hidden': 'true' }), h('span', { text: describeChange(part.change) })),
-        part.change.reason ? h('p', { class: 'scratchpad-change-reason', text: part.change.reason }) : null);
+        part.change.reason ? h('p', { class: 'scratchpad-change-reason', text: part.change.reason, 'data-i18n-ignore': '' }) : null);
     if (state === 'applied') return renderSavedChange(card, session, message, part);
     if (state === 'undone') {
         card.append(h('div', { class: 'scratchpad-change-actions' },

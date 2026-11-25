@@ -26,6 +26,7 @@
 - Turn on **Companion notes** in **Scratchpad**'s **Context** tab and it reads the finished notes your Companions wrote on the shared messages, like trackers, **Plot Compass** and **Memory Shard**. It's off by default in Roleplay, and **Scratchpad** can ask for it with a **Share with the assistant** card.
 - Fixed non-English alerts that dropped singular counts or cut off save warnings in **Dialogue Colors**.
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
+- Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
