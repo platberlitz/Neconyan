@@ -44,6 +44,7 @@
 - **CYOA Choices with Skill Checks** and **Doors with Fate Checks** work as Companions with the **Dice Roller**'s **Auto send**: tap a choice in the **Companion panel** or just type its number, such as 1 or 1, then 2, and each choice gets its own d100 roll for the reply, while the Companion versions stop asking for a hidden roll the reply never sees.
 - The closed **Roll options** box in the **Dice Roller** no longer has a big empty gap under its title on phones.
 - **Notes** opens again in the Docker image, whichever user the container runs as.
+- When a chat cannot be named automatically, an error toast now says why instead of the chat silently keeping its dated name.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -253,6 +254,7 @@
 - PR #984 (2026-11-25) `feat(dice): roll CYOA and Doors choices picked by number or from the Companion panel`
 - PR #985 (2026-11-25) `fix(dice): drop the empty gap under Roll options on phones`
 - PR #986 (2026-11-25) `fix(docker): build the Notes editor when the image is built`
+- PR #987 (2026-11-25) `feat(chats): show a toast when automatic chat naming fails`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
