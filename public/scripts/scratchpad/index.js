@@ -80,7 +80,7 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261213-scratchpad-context-tabs';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261214-dice-options-padding';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
