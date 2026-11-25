@@ -37,6 +37,7 @@
 - General **Scratchpad** can share up to 8 lorebooks at once now. Pick each one from **Add a lorebook** under **Share a lorebook**, press **Remove** to drop one, and assistants can suggest edits to any of them.
 - **Scratchpad** can ask one assistant the same thing on two connections at once now. Pick a second one in **Compare with a second connection** under **Assistant connections**, read both replies side by side with their connection badges, and press **Keep only this reply** on the one you prefer.
 - **Scratchpad** can hold a spoken conversation now. Press **Talk mode** beside **Dictate**, speak, and your turn is sent when you pause; replies are read aloud and it listens again, with **Send now**, **Interrupt** and **End talk** in a bar above the message box and **Talk mode pause** under **Context → Dictation**.
+- The **Companions** panel keeps your place steady while you scroll up, reopen it or get live updates, loading off-screen cards in the background so opening stays fast.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -239,6 +240,7 @@
 - PR #977 (2026-11-25) `feat(scratchpad): compare one assistant on two connections`
 - PR #978 (2026-11-25) `test: clear the nightly browser check failures`
 - PR #979 (2026-11-25) `feat(scratchpad): add hands-free talk mode`
+- PR #980 (2026-11-25) `fix(companions): render panel cards in background to stop scroll jumps`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
