@@ -164,8 +164,13 @@ for (const phone of [true, false]) {
         app.provider.mode.streamReply = FIRST;
         const firstJob = await sendHeld(app, page, 'Where does the path lead?');
 
-        // Typing turns Stop into Queue follow-up; an empty composer keeps Stop.
+        // Typing or picking a quick prompt turns Stop into Queue follow-up; an empty composer keeps Stop.
         await expect(composer).toHaveValue('');
+        await expectButton(send, 'Stop', 'fa-stop');
+        await page.locator('.scratchpad-quick .scratchpad-chip:not(.scratchpad-chip-edit)').first().click();
+        await expect(composer).not.toHaveValue('');
+        await expectButton(send, 'Queue follow-up', 'fa-clock');
+        await composer.fill('');
         await expectButton(send, 'Stop', 'fa-stop');
         await composer.pressSequentially('<b>after</b>');
         await expectButton(send, 'Queue follow-up', 'fa-clock');

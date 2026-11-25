@@ -488,7 +488,7 @@ function reconcileFollowUps() {
     if (isPending && app.open) app.followUpAway.delete(key);
     const visible = app.open && !app.followUpAway.has(key);
     const sameSource = isCurrentSource(state.items[0].source);
-    if (!isPending && state.held === 'context' && visible && sameSource) {
+    if (!isPending && state.held === 'context' && visible && sameSource && !app.sending && !app.swiping) {
         clearHold(app.followUps, key);
         void sendNextFollowUp();
         return;
@@ -1690,6 +1690,7 @@ function fitComposer() {
 function usePrompt(text) {
     app.el.composer.value = text;
     fitComposer();
+    renderSendButton();
     app.el.composer.focus();
 }
 
