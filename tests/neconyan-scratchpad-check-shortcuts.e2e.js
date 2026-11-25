@@ -5,6 +5,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 // Set NECONYAN_SCRATCHPAD_SHORTCUT_BASELINE_ROOT to run the no-shortcut checks against another checkout (the one before the change),
 // and NECONYAN_SCRATCHPAD_SHORTCUT_RECORD to a file path to keep what was sent, for comparing two checkouts.
@@ -71,7 +72,8 @@ function pad(page, account, app) {
             await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
         },
         async connect(assistants = ['miso']) {
-            await tab('Context').click();
+            await openScratchpadContext(page, 'replies');
+            if (assistants.some(id => id !== 'miso')) await openContextDrawer(page, 'other-assistants');
             for (const id of assistants) await page.locator(`#scratchpad-connection-${id}`).selectOption('durable');
             await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
             await tab('Chat').click();
@@ -199,7 +201,7 @@ for (const phone of [false, true]) {
         await expect(list).toContainText('/check card');
         await expect(list).toContainText('General Scratchpad has no character card to share here.');
         await expect(list).toContainText('/check preset');
-        await expect(list).toContainText('No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.');
+        await expect(list).toContainText('No preset is shared. Turn on Current preset under Story and lore in Context → Sharing, then try again.');
         await expect(list).toContainText('/check lorebook, /why <entry>');
         await expect(list).toContainText('No lorebook is picked. Pick one under Share a lorebook in the Context tab, then try again.');
         await expect(composer).toHaveValue('/check');
@@ -212,7 +214,7 @@ for (const phone of [false, true]) {
         // Anything that cannot be checked is refused, with the text left in the box.
         const refusals = [];
         refusals.push(await pad_.refuse('/check card', 'General Scratchpad has no character card to share here.'));
-        refusals.push(await pad_.refuse('/check preset', 'No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.'));
+        refusals.push(await pad_.refuse('/check preset', 'No preset is shared. Turn on Current preset under Story and lore in Context → Sharing, then try again.'));
         refusals.push(await pad_.refuse('/check lorebook', 'No lorebook is picked. Pick one under Share a lorebook in the Context tab, then try again.'));
         refusals.push(await pad_.refuse('/why Harbourmaster', 'No lorebook is picked.'));
         refusals.push(await pad_.refuse('/check carrd', 'Scratchpad can\'t check \'carrd\'. Use /check card, /check preset, /check lorebook, /check app, /check source or /check prompt'));
@@ -306,7 +308,7 @@ for (const phone of [false, true]) {
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Checked.' } }] };
 
         // Start with everything the checks can switch on turned off, so every notice has something to name.
-        await pad_.tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         for (const key of ['card', 'lore', 'problems', 'appEvidence', 'preset']) await page.getByRole('checkbox', { name: SWITCHES[key] }).setChecked(false);
         await pad_.tab('Chat').click();
         const untouched = await pad_.include();
@@ -482,7 +484,7 @@ async function restoreSwitches(pad_, page, wanted) {
     const now = await pad_.include();
     const different = Object.keys(SWITCHES).filter(key => now[key] !== wanted[key]);
     if (!different.length) return;
-    await pad_.tab('Context').click();
+    await openScratchpadContext(page, 'sharing');
     for (const key of different) {
         await page.getByRole('checkbox', { name: SWITCHES[key] }).setChecked(wanted[key]);
     }
@@ -491,7 +493,7 @@ async function restoreSwitches(pad_, page, wanted) {
 }
 
 async function tabPrepare(pad_, page, what, value) {
-    await pad_.tab('Context').click();
+    await openScratchpadContext(page, 'sharing');
     if (what === 'preset') await page.getByRole('checkbox', { name: /^Current preset:/ }).check();
     else await page.locator('#scratchpad-lorebook').selectOption(value);
     await expect.poll(async () => what === 'preset' ? (await pad_.include())?.preset : (await pad_.settings())?.lorebook).toBe(what === 'preset' ? true : value);

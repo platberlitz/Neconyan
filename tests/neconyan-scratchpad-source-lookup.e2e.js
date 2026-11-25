@@ -5,6 +5,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const CHECKOUT = path.resolve('..');
 const PROMPT = 'Use the app diagnostics and Neconyan\'s source code to find what causes this bug. Cite the files and lines you used, say what I can do about it for now, and draft a bug report if it is a bug in Neconyan.';
@@ -58,9 +59,10 @@ async function openScratchpad(page) {
 }
 
 async function useDurableConnection(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
+    await showContextSection(page, 'sharing');
 }
 
 async function send(account, page, text) {
@@ -132,11 +134,13 @@ for (const phone of [false, true]) {
 
         // The quick prompt turns on App diagnostics and Neconyan source code together.
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        const quickToggle = page.locator('.scratchpad-quick-toggle');
+        if (await quickToggle.isVisible() && await quickToggle.getAttribute('aria-expanded') === 'false') await quickToggle.click();
         await page.getByRole('button', { name: 'Check Neconyan\'s code for this bug', exact: true }).click();
         await expect(page.locator('#toast-container .toast').filter({ hasText: 'Turned on App diagnostics and Neconyan source code for this session.' }).first()).toBeVisible();
         await expect(page.locator('.scratchpad-composer')).toHaveValue(PROMPT);
         await page.evaluate(() => window.toastr.clear());
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(toggle).toBeChecked();
         await expect(evidence).toBeChecked();
         const row = toggle.locator('..');
@@ -268,7 +272,7 @@ for (const phone of [false, true]) {
         }
 
         // Switching it off again goes back to the ordinary request.
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await toggle.uncheck();
         await expect(toggle).not.toBeChecked();
         await previewButton.click();

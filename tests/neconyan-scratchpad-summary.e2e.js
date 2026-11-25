@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) test.use({ initialServerOptions: { checkoutRoot: '/srv/projects/Neconyan' } });
@@ -35,7 +36,9 @@ for (const phone of [false, true]) {
             await page.screenshot({ path: `${prefix}-before.png` });
             return;
         }
-        const checkbox = section.locator('input[type="checkbox"]');
+        await showContextSection(page, 'replies');
+        await openContextDrawer(page, 'summary');
+        const checkbox = section.locator('input[type="checkbox"]').first();
         await expect(checkbox).not.toBeChecked();
         const updated = page.waitForResponse('**/api/scratchpad/session/update');
         await checkbox.check();
@@ -72,8 +75,9 @@ for (const phone of [false, true]) {
         expect(saved.messages.slice(0, 60).map(message => message.text)).toEqual(messages.map(message => message.text));
         expect(saved.messages).toHaveLength(62);
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
-        await section.locator('summary').click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'summary');
+        await section.locator('details > summary', { hasText: 'Last saved summary' }).click();
         await expect(section.locator('pre')).toHaveText(SUMMARY);
         await section.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${prefix}-summary.png` });

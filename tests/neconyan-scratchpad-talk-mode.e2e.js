@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { expect } from '@playwright/test';
 import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before && !process.env.NECONYAN_SCRATCHPAD_BASELINE_ROOT) throw new Error('Set NECONYAN_SCRATCHPAD_BASELINE_ROOT for before captures.');
@@ -73,6 +74,8 @@ async function picture(page, name, phone) {
 }
 
 async function showDictation(page) {
+    await showContextSection(page, 'setup');
+    await openContextDrawer(page, 'dictation');
     await page.locator('.scratchpad-dictation').evaluate(section => section.scrollIntoView({ block: 'start' }));
     await settle(page);
 }
@@ -317,6 +320,7 @@ for (const phone of [false, true]) {
 
         // The pause is chosen under Context, beside the transcription service, and remembered.
         await open('context');
+        await showDictation(page);
         const pause = page.locator('#scratchpad-talk-pause');
         await expect(pause).toHaveValue('normal');
         await expect(pause.locator('option')).toHaveText(['Short (1.0 s)', 'Normal (1.6 s)', 'Patient (2.5 s)']);

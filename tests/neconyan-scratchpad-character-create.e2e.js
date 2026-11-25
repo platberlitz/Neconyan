@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 const cases = [
     { phone: false, textProfile: false }, { phone: true, textProfile: false }, { phone: false, textProfile: true },
@@ -68,7 +69,8 @@ for (const { phone, textProfile, recovered = false } of cases) {
             await expect(page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true })).toBeEnabled();
         };
         await open();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'other-assistants');
         await page.locator('#scratchpad-connection-taro').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Taro', exact: true }).click();

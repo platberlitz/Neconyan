@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const OLD_NOTE = 'Keep {{char}} calm.';
 const NEW_NOTE = 'Keep {{char}} calm and brief.';
@@ -79,7 +80,7 @@ for (const phone of [false, true]) {
         expect(await note()).toBe('Changed elsewhere.');
         await expect(cards.nth(1)).not.toContainText('Saved');
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         const share = page.getByRole('checkbox', { name: 'Author\'s Note', exact: true });
         let updated = page.waitForResponse('**/api/scratchpad/session/update');
         await share.uncheck();
@@ -90,10 +91,11 @@ for (const phone of [false, true]) {
         await expect(dialog).toHaveCount(0);
         expect(await note()).toBe('Changed elsewhere.');
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         updated = page.waitForResponse('**/api/scratchpad/session/update');
         await share.check();
         expect((await updated).ok()).toBe(true);
+        await showContextSection(page, 'replies');
         await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

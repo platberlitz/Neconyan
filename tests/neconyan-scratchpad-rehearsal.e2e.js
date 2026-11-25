@@ -4,6 +4,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) test.use({ initialServerOptions: { checkoutRoot: '/srv/projects/Neconyan' } });
@@ -27,6 +28,7 @@ for (const phone of [false, true]) {
             const story = () => page.evaluate(() => JSON.stringify(window.SillyTavern.getContext().chat));
             const original = await story();
             await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+            await showContextSection(page, 'replies');
             if (phone) await applyIOSOnlyCss(page);
             await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
             await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();

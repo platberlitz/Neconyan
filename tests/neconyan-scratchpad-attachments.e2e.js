@@ -2,6 +2,7 @@
 /* eslint-disable playwright/no-conditional-in-test -- Both viewport sizes exercise the same attachment flow. */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 function pdfFile(text) {
     const stream = `BT /F1 12 Tf 50 740 Td (${text}) Tj ET`;
@@ -27,7 +28,7 @@ for (const phone of [false, true]) {
         let page = await account.open();
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
         await expect(page.locator('.scratchpad-composer')).toBeEnabled();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

@@ -4,6 +4,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { fillSource, revealNoteTools, sourceText } from './notebooks-browser-fixture.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 async function openScratchpad(page, options = { tab: 'context' }) {
     await page.evaluate(async options => (await import('/scripts/scratchpad/index.js')).openScratchpad(options), options);
@@ -46,6 +47,8 @@ for (const phone of [false, true]) {
         const page = await account.open();
         const source = await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
+        await showContextSection(page, 'sharing');
+        await openContextDrawer(page, 'notes');
         await page.getByRole('button', { name: 'Add saved note', exact: true }).click();
         const picker = page.locator('.scratchpad-review');
         await expect(picker.locator('.scratchpad-note-result')).toHaveCount(1);
@@ -211,6 +214,7 @@ async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
     await expect(page.locator('.scratchpad-note')).toContainText('Selected text only');
     await expect(page.locator('#scratchpad-depth')).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Context', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await showContextSection(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('button', { name: 'Show preview', exact: true }).click();
     const preview = page.locator('.scratchpad-preview-text');
@@ -223,7 +227,8 @@ async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
     expect(prompt).toContain('Shared passage.');
     expect(prompt).not.toContain('Private beginning.');
     expect(prompt).not.toContain('Original question.');
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'sharing');
+    await openContextDrawer(page, 'notes');
     await page.getByRole('button', { name: 'Stop sharing', exact: true }).click();
     await expect(page.locator('.scratchpad-notes')).toContainText('No saved notes are shared');
     await finishReply(page, account, app, 'Anything left to share?', ' Nothing is shared now.');

@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 // Account boot uses the durable fixture's startup limits, not the interaction budget.
 const test = base.extend({
@@ -57,6 +58,7 @@ for (const phone of [false, true]) {
         await page.evaluate(() => window.dispatchEvent(new Event('neconyan:navigate-home')));
         await open('context');
         await expect(page.locator('#scratchpad-setup')).toHaveValue('Quiet replies');
+        await showContextSection(page, 'replies');
         await expect(page.locator('#neconyan-scratchpad').getByRole('checkbox', { name: 'Stream replies' })).not.toBeChecked();
         await create(false);
     });
@@ -133,7 +135,9 @@ for (const phone of [false, true]) {
 
         // Choices worth keeping: seven messages, and wait for the finished reply.
         await setDepth(7);
+        await showContextSection(page, 'replies');
         await saved(() => stream.uncheck());
+        await showContextSection(page, 'sharing');
 
         await button('Save current choices').click();
         const dialog = page.locator('dialog[open]');
@@ -170,13 +174,19 @@ for (const phone of [false, true]) {
         expect((await created).ok()).toBe(true);
         await openContext();
         await expect(depth).toHaveValue('7');
+        await showContextSection(page, 'replies');
         await expect(stream).not.toBeChecked();
+        await showContextSection(page, 'sharing');
         await setDepth(3);
+        await showContextSection(page, 'replies');
         if (!await stream.isChecked()) await saved(() => stream.check());
+        await showContextSection(page, 'sharing');
         await expect(select).toHaveValue('Quick look');
         await saved(() => button('Apply setup').click());
         await expect(depth).toHaveValue('7');
+        await showContextSection(page, 'replies');
         await expect(stream).not.toBeChecked();
+        await showContextSection(page, 'sharing');
         await expect(page.locator('#toast-container')).toContainText('Setup applied to this session.');
         await section.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${prefix}-applied.png` });

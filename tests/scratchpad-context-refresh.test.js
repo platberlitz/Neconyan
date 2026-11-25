@@ -4,8 +4,11 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { sameSourceBucket, sameSourceContext } from '../public/scripts/scratchpad/source.js';
 
 const source = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes', 'checkSource', 'shareGeneralLorebooks', 'renderGeneralLorebooks'];
-const code = [source.match(/^const MAX_GENERAL_LOREBOOKS = .*$/m)[0], ...functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0])].join('\n');
+const contextHelpers = ['liveContextSettings', 'refreshContextLive', 'patchContext', 'contextToolNames', 'countLabel', 'contextPillLabels', 'renderContextPills',
+    'contextDrawer', 'untitled', 'chipToggle', 'presetChoice', 'contextSubTabLabel', 'selectContextSubTab', 'onContextTabKey', 'renderContextTabs', 'contextPane',
+    'webSearchBadge', 'renderContextSetupPane'];
+const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes', 'checkSource', 'shareGeneralLorebooks', 'renderGeneralLorebooks', ...contextHelpers];
+const code = [source.match(/^const MAX_GENERAL_LOREBOOKS = .*$/m)[0], source.match(/^const CONTEXT_SUB_TABS = .*$/m)[0], ...functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0])].join('\n');
 const defaults = { notes: [], picked: [], include: {}, assistantConnections: {}, depth: 15, maxTokens: 16000 };
 const ref = id => ({ notebookId: 'book', noteId: id });
 
@@ -22,8 +25,27 @@ class Element {
     get childElementCount() { return this.children.length; }
     contains(node) { return node === this || this.children.some(child => child.contains(node)); }
     get textContent() { return [this.attributes.text || '', ...this.children.map(child => child.textContent)].join(' '); }
+    set textContent(text) { this.attributes.text = text; this.replaceChildren(); }
+    get open() { return Boolean(this.attributes.open); }
+    set open(value) { this.attributes.open = value; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    getBoundingClientRect() { return { top: 0 }; }
+    focus() {}
+    remove() {
+        if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this);
+        this.parent = null;
+    }
+    querySelector(selector) {
+        const all = this.children.flatMap(child => [child, ...child.descendants()]);
+        if (selector.startsWith('#')) return all.find(child => child.attributes.id === selector.slice(1)) ?? null;
+        if (selector.startsWith(':scope > .')) return this.children.find(child => child.attributes.class?.split(' ').includes(selector.slice(10))) ?? null;
+        if (selector.startsWith('.')) return all.find(child => child.attributes.class?.split(' ').includes(selector.slice(1))) ?? null;
+        return null;
+    }
+    descendants() { return this.children.flatMap(child => [child, ...child.descendants()]); }
     append(...children) {
-        for (const child of children.flat(Infinity).filter(Boolean)) {
+        for (const item of children.flat(Infinity).filter(Boolean)) {
+            const child = typeof item === 'string' ? new Element('#text', { text: item }) : item;
             child.parent = this;
             this.children.push(child);
         }
@@ -48,15 +70,26 @@ function fixture(kind = 'roleplay') {
     const scope = { kind, key: kind === 'general' ? 'general' : 'chat' };
     const preset = { name: 'Lantern' };
     const app = { built: true, open: true, tab: 'context', source: scope, bucket: null, contextKey: '', ticket: 1,
+        contextSubTab: 'sharing', contextDrawers: new Map(), contextPatch: {}, contextLive: [], connections: {}, assistant: 'miso',
         library: { assistants: [] }, el: { panels: { context: panel } } };
+    const saves = [];
+    const writePrefs = jest.fn();
     const h = (tag, attributes, ...children) => new Element(tag, attributes, children);
     const runtime = vm.createContext({ markFollowUpsAway() {}, endTalk() {}, checkTalkSession() {}, reconcileFollowUps() {}, app, structuredClone, DEFAULT_SETTINGS: defaults, ASSISTANTS: [],
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(), document: {},
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         renderHeader() {}, renderChat() {}, renderSessions() {}, renderHistoryView() {}, syncDraft() {}, syncWatchers() {}, announceReplyChange() {},
         sessionInput: () => ({ settings: { assistantConnections: {} } }), connectionProfiles: () => [], renderCompareConnectionField: () => null,
-        checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
-        currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
+        checkbox: (label, checked, onChange) => h('label', { class: 'scratchpad-check' }, h('input', { type: 'checkbox', checked, 'data-context-control': label, onchange: event => onChange(event.currentTarget.checked) })),
+        currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'),
+        renderPreview: ({ notice, pills } = {}) => h('section', { class: 'scratchpad-context-summary' }, notice, pills),
+        writePrefs, CSS: { escape: value => value },
+        picksMatchSource: (settings, value) => !settings.pickedSource || settings.pickedSource === value?.key,
+        sessionCompareConnection: settings => settings.compareConnection ?? null,
+        assistantConnection: (settings, id) => settings.assistantConnections?.[id] ?? { kind: 'current' },
+        updateSettings: patch => new Promise(resolve => saves.push({ patch, resolve })),
+        saveNumberSetting: async () => {}, editAssistantPrompt() {}, editUserInstructions() {}, saveWebSearchSettings() {}, refreshWebSearchConfig() {},
+        dictationServiceLabel: id => id,
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
         renderWebSearchSettings: () => h('section', { class: 'scratchpad-web-settings' }),
         world_names: [],
@@ -75,7 +108,7 @@ function fixture(kind = 'roleplay') {
     const rows = () => panel.find('scratchpad-note').map(row => row.textContent);
     const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
     const reply = (request, notes) => request.resolve({ notes: notes.map(reference => ({ reference, title: reference.noteId, nextOffset: null })) });
-    return { app, panel, preset, requests, runtime, apply, rows, settle, reply };
+    return { app, panel, preset, requests, runtime, apply, rows, settle, reply, saves, writePrefs };
 }
 
 function imageJobFixture({ markers = [], card } = {}) {
@@ -432,6 +465,128 @@ describe('Scratchpad Context refresh lifecycle', () => {
         await f.settle();
         expect(f.rows()).toHaveLength(1);
         expect(f.panel.find('scratchpad-error')).toHaveLength(0);
+    });
+
+    /* A new session redraws Context, as switching sessions does in the app. */
+    let sessionCount = 0;
+    const withSettings = (f, settings, session = {}) => {
+        const id = `session-${++sessionCount}`;
+        f.runtime.applyBucket({ source: f.app.source, activeSessionId: id, limits: { notes: 12 },
+            sessions: [{ id, assistant: 'miso', settings: { ...structuredClone(defaults), ...settings }, messages: [], ...session }] });
+    };
+    const pills = f => f.panel.find('scratchpad-context-pill').map(pill => pill.attributes.text);
+    const control = (f, name) => f.panel.descendants().find(item => item.attributes['data-context-control'] === name);
+    const drawer = (f, id) => f.panel.descendants().find(item => item.attributes['data-context-drawer'] === id);
+    const badge = (f, id) => drawer(f, id).find('scratchpad-drawer-badge')[0].attributes.text;
+    const pane = (f, key) => f.panel.querySelector(`#scratchpad-context-pane-${key}`);
+
+    test('the summary pills follow a toggle at once, before and after its save settles', async () => {
+        const f = fixture();
+        withSettings(f, { include: { card: true, persona: false, lore: true } });
+        expect(pills(f)).toEqual(['15 msgs', 'Card', 'Lorebooks']);
+        control(f, 'Your persona and Scenario Notes').attributes.onchange({ currentTarget: { checked: true } });
+        expect(pills(f)).toEqual(['15 msgs', 'Card', 'Persona', 'Lorebooks']);
+        expect(f.saves).toHaveLength(1);
+        expect(f.saves[0].patch).toEqual({ include: { persona: true } });
+        control(f, 'Agents').attributes.onchange({ currentTarget: { checked: true } });
+        expect(pills(f)).toContain('1 tool');
+        expect(badge(f, 'tools')).toBe('1 shared');
+        f.app.bucket.sessions[0].settings.include = { card: true, persona: true, lore: true, agents: true };
+        for (const save of f.saves) save.resolve({});
+        await f.settle();
+        expect(f.app.contextPatch.include).toEqual({});
+        expect(pills(f)).toEqual(['15 msgs', 'Card', 'Persona', 'Lorebooks', '1 tool']);
+    });
+
+    test('picked messages, notes and a compare connection show in the pills; picks from another chat share nothing', () => {
+        const f = fixture();
+        withSettings(f, { picked: ['a', 'b', 'c'], pickedSource: 'chat', notes: [ref('one'), ref('two')], compareConnection: { kind: 'current' } });
+        expect(pills(f)).toEqual(['3 picked', '2 notes', 'Compare: 2 connections']);
+        expect(badge(f, 'picks')).toBe('3 picked');
+        expect(drawer(f, 'picks').open).toBe(true);
+        expect(drawer(f, 'notes').open).toBe(true);
+        withSettings(f, { picked: ['a'], pickedSource: 'other' });
+        expect(pills(f)).toEqual(['No messages']);
+        expect(badge(f, 'picks')).toBe('Another chat');
+        expect(f.panel.find('scratchpad-picks-warning')).toHaveLength(1);
+    });
+
+    test('the chosen sub-tab survives a redraw after a save, and a manually opened drawer stays open', () => {
+        const f = fixture();
+        withSettings(f, {});
+        expect(pane(f, 'sharing').hidden).toBe(false);
+        expect(pane(f, 'replies').hidden).toBe(true);
+        f.panel.querySelector('#scratchpad-context-tab-replies').attributes.onclick();
+        expect(f.app.contextSubTab).toBe('replies');
+        expect(f.writePrefs).toHaveBeenCalledTimes(1);
+        expect(pane(f, 'replies').hidden).toBe(false);
+        expect(pane(f, 'sharing').hidden).toBe(true);
+        expect(drawer(f, 'prefills').open).toBe(false);
+        drawer(f, 'prefills').querySelector('.scratchpad-drawer-summary').attributes.onclick();
+        f.panel.scrollTop = 420;
+        f.runtime.renderContext();
+        expect(f.panel.scrollTop).toBe(420);
+        expect(pane(f, 'replies').hidden).toBe(false);
+        expect(f.panel.querySelector('#scratchpad-context-tab-replies').attributes['aria-selected']).toBe('true');
+        expect(drawer(f, 'prefills').open).toBe(true);
+        const keys = f.panel.querySelector('.scratchpad-context-tabs').attributes.onkeydown;
+        const event = key => ({ key, preventDefault: jest.fn(), stopPropagation: jest.fn() });
+        const end = event('End');
+        keys(end);
+        expect(end.stopPropagation).toHaveBeenCalled();
+        expect(f.app.contextSubTab).toBe('setup');
+        keys(event('ArrowRight'));
+        expect(f.app.contextSubTab).toBe('sharing');
+        keys(event('ArrowLeft'));
+        expect(f.app.contextSubTab).toBe('setup');
+        keys(event('Home'));
+        expect(f.app.contextSubTab).toBe('sharing');
+    });
+
+    test('Round Table shows every participant, and a customised inactive assistant opens Other assistants', () => {
+        const f = fixture();
+        f.app.library.assistants = ['miso', 'taro', 'nori'].map(id => ({ id, name: id[0].toUpperCase() + id.slice(1) }));
+        const selects = () => pane(f, 'replies').descendants().filter(item => item.tag === 'select').map(item => item.attributes.id);
+        withSettings(f, { roundTable: false });
+        expect(selects()).toEqual(['scratchpad-connection-miso', 'scratchpad-connection-taro', 'scratchpad-connection-nori']);
+        expect(drawer(f, 'other-assistants').find('scratchpad-drawer-title')[0].attributes.text).toBe('Other assistants (2)');
+        expect(drawer(f, 'other-assistants').open).toBe(false);
+        expect(drawer(f, 'other-assistants').descendants().some(item => item.attributes.id === 'scratchpad-connection-miso')).toBe(false);
+        withSettings(f, { roundTable: false, assistantConnections: { nori: { kind: 'profile', profileId: 'fast' } } });
+        expect(drawer(f, 'other-assistants').open).toBe(true);
+        expect(badge(f, 'other-assistants')).toBe('1 custom');
+        withSettings(f, { roundTable: true, participants: ['miso', 'taro', 'nori'] });
+        expect(drawer(f, 'other-assistants')).toBeUndefined();
+        expect(selects()).toEqual(['scratchpad-connection-miso', 'scratchpad-connection-taro', 'scratchpad-connection-nori']);
+    });
+
+    test('lore overrides, an automatic summary and prefills open their drawers', () => {
+        const f = fixture();
+        withSettings(f, {});
+        expect(['lore', 'summary', 'prefills', 'tools'].map(id => drawer(f, id).open)).toEqual([false, false, false, false]);
+        expect([badge(f, 'lore'), badge(f, 'summary'), badge(f, 'prefills'), badge(f, 'tools')]).toEqual(['Auto', 'Off', 'Empty', '0 shared']);
+        withSettings(f, { loreOverrides: { a: 'always', b: 'never' }, autoSummary: true, prefill: 'Sure.', include: { regex: true } });
+        expect(['lore', 'summary', 'prefills', 'tools'].map(id => drawer(f, id).open)).toEqual([true, true, true, true]);
+        expect([badge(f, 'lore'), badge(f, 'summary'), badge(f, 'prefills'), badge(f, 'tools')]).toEqual(['2 overrides', 'On', 'Active', '1 shared']);
+    });
+
+    test('without a chat, Sharing and Replies explain why and Setup still works', () => {
+        const f = fixture();
+        f.app.source = null;
+        f.runtime.renderContext();
+        expect(pane(f, 'sharing').textContent).toContain('Open a chat to choose what Scratchpad reads.');
+        expect(pane(f, 'replies').textContent).toContain('Open a chat to choose what Scratchpad reads.');
+        expect(pane(f, 'setup').textContent).toContain('Edit user instructions');
+        expect(f.panel.find('scratchpad-context-summary')).toHaveLength(0);
+    });
+
+    test('a notebook Scratchpad keeps its note notice in the summary and hides story sharing', () => {
+        const f = fixture('notebook');
+        withSettings(f, { notes: [ref('one')] });
+        expect(f.panel.find('scratchpad-context-summary')[0].textContent).toContain('This Scratchpad belongs to the note');
+        expect(pills(f)).toEqual(['Note discussion', '1 note']);
+        expect(f.panel.find('scratchpad-context-story')).toHaveLength(0);
+        expect(f.panel.find('scratchpad-context-diagnostics')).toHaveLength(0);
     });
 
     test('preserves open message menus across same-session settings saves without carrying them to closed or other sessions', async () => {

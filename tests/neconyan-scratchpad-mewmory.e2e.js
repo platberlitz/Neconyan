@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) test.use({ initialServerOptions: { checkoutRoot: '/srv/projects/Neconyan' } });
@@ -31,8 +32,9 @@ for (const phone of [false, true]) {
         }
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
         if (phone) await applyIOSOnlyCss(page);
-        const section = page.locator('.scratchpad-section').filter({ has: page.getByRole('heading', { name: 'Also share', exact: true }) });
-        const checkbox = section.locator('label.scratchpad-check').filter({ hasText: 'Reads saved memories from this Roleplay chat' }).locator('input');
+        await showContextSection(page, 'sharing');
+        const section = page.locator('#scratchpad-panel-context .scratchpad-context-story');
+        const checkbox = section.getByRole('checkbox', { name: 'Mewmory', exact: true });
         // Context refreshes once its saved connection and note choices arrive.
         await expect(async () => { await section.scrollIntoViewIfNeeded(); }).toPass({ timeout: 10000 });
         await page.evaluate(() => window.toastr.remove());
@@ -63,6 +65,7 @@ for (const phone of [false, true]) {
         await preview.scrollIntoViewIfNeeded();
         await preview.evaluate(element => { element.scrollTop = element.scrollHeight; });
         await page.screenshot({ path: `${prefix}-preview.png` });
+        await showContextSection(page, 'replies');
         await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
@@ -84,7 +87,7 @@ for (const phone of [false, true]) {
         expect(after.revision).toBe(archive.revision);
         expect(after.records).toEqual(archive.records);
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         const off = page.waitForResponse('**/api/scratchpad/session/update');
         await checkbox.uncheck();
         expect((await off).ok()).toBe(true);

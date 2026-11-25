@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const ACCENTS = [null, 'rgba(110,231,183,1)', 'rgba(126,34,206,1)'];
 
@@ -38,7 +39,7 @@ for (const phone of [false, true]) {
         await open();
         const width = phone ? 393 : 1280;
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('compare-alpha');
         const compare = page.locator('#scratchpad-compare-connection');
         await expect(compare).toBeEnabled();
@@ -159,7 +160,7 @@ for (const phone of [false, true]) {
         await page.locator('.scratchpad-round-table').click();
         await expect(page.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('.scratchpad-summary .scratchpad-compare-badge')).toHaveCount(0);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await expect(page.locator('#scratchpad-compare-connection')).toBeDisabled();
         await expect(page.locator('.scratchpad-compare-note')).toHaveText('Turn off Round Table to compare one assistant on two connections.');
     });

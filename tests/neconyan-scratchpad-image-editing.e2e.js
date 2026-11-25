@@ -7,6 +7,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const baseline = process.env.NECONYAN_SCRATCHPAD_EDIT_BASELINE_ROOT;
 if (baseline) test.use({ initialServerOptions: { checkoutRoot: baseline } });
@@ -71,7 +72,7 @@ for (const phone of [true, false]) {
             if (phone) await applyIOSOnlyCss(page);
         };
         await open();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await send(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'A moonlit observatory with a red roof.' }), 'Draw a moonlit observatory.');
@@ -175,6 +176,7 @@ for (const phone of [true, false]) {
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
         await expect.poll(() => page.evaluate(async () => (await import('/scripts/scratchpad/context.js')).currentSource().avatar)).toBe(account.avatar);
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         if (phone) await applyIOSOnlyCss(page);
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

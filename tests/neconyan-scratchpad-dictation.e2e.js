@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 // A test browser has no microphone, so the recorder and the audio decoder are stand-ins.
 function installMicrophone() {
@@ -112,6 +113,8 @@ for (const phone of [false, true]) {
 
         // The service is chosen under Context and remembered on this device.
         await open('context');
+        await showContextSection(page, 'setup');
+        await openContextDrawer(page, 'dictation');
         const service = page.locator('#scratchpad-dictation-service');
         await expect(service).toHaveValue('local');
         await expect(service.locator('option')).toHaveText(['This server (Whisper, no key needed)', 'OpenAI', 'Groq', 'Mistral']);

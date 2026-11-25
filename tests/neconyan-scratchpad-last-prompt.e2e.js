@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, send as sendConversation, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) {
@@ -89,14 +90,15 @@ async function hideScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).hideScratchpad());
 }
 
-async function contextTab(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+async function contextTab(page, section = 'sharing') {
+    await openScratchpadContext(page, section);
 }
 
 async function useDurableConnection(page) {
-    await contextTab(page);
+    await contextTab(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
+    await showContextSection(page, 'sharing');
 }
 
 const lastPromptSwitch = page => page.getByRole('checkbox', { name: /^Last prompt sent/ });

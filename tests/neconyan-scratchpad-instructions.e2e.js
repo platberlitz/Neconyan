@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} global Scratchpad instructions save, select assistants and survive reopening`, async ({ app }) => {
@@ -12,6 +13,7 @@ for (const phone of [false, true]) {
         const open = async () => {
             await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
             if (phone) await applyIOSOnlyCss(page);
+            await showContextSection(page, 'setup');
         };
         const edit = page.getByRole('button', { name: 'Edit user instructions', exact: true });
         const save = page.getByRole('button', { name: 'Save instructions', exact: true });

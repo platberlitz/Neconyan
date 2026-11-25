@@ -80,12 +80,13 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261212-scratchpad-compact-quick';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261213-scratchpad-context-tabs';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
 const SOURCE_POLL_MS = 1500;
 const PICK_PAGE = 30;
+const CONTEXT_SUB_TABS = ['sharing', 'replies', 'setup'];
 const SESSION_TEXT_MESSAGES = 6;
 const ACK_ATTEMPTS = 4;
 
@@ -148,8 +149,8 @@ function checkAvailability() {
     const presetShared = source.kind === 'roleplay' || source.kind === 'conversation' || (general && Boolean(include.preset));
     let presetProblem = '';
     if (notebook) presetProblem = noNotes;
-    else if (!presetShared && !presetName) presetProblem = t`No preset is shared and none is equipped. Equip a preset, then turn on Current preset under Also share in the Context tab.`;
-    else if (!presetShared) presetProblem = t`No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.`;
+    else if (!presetShared && !presetName) presetProblem = t`No preset is shared and none is equipped. Equip a preset, then turn on Current preset under Story and lore in Context → Sharing.`;
+    else if (!presetShared) presetProblem = t`No preset is shared. Turn on Current preset under Story and lore in Context → Sharing, then try again.`;
     else if (!presetName) presetProblem = t`No preset is equipped, so there is nothing to check. Equip a preset, then try again.`;
     let bookProblem = '';
     if (notebook) bookProblem = noNotes;
@@ -285,6 +286,10 @@ const app = {
     sessionQuery: '',
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
     contextKey: '',
+    contextSubTab: 'sharing',
+    contextDrawers: new Map(),
+    contextPatch: {},
+    contextLive: [],
     timer: 0,
     recoveryTimer: null,
     recoveryAttempt: 0,
@@ -306,6 +311,7 @@ function readPrefs() {
         if (typeof saved.contextSetup === 'string') app.contextSetup = saved.contextSetup;
         if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
         if (TALK_PAUSES.some(pause => pause.id === saved.talkPause)) app.talkPause = saved.talkPause;
+        if (CONTEXT_SUB_TABS.includes(saved.contextSubTab)) app.contextSubTab = saved.contextSubTab;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
             if (connection?.kind === 'current') app.connections[id] = { kind: 'current' };
@@ -328,6 +334,7 @@ function writePrefs() {
         dictation: app.dictation,
         talkPause: app.talkPause,
         contextSetup: app.contextSetup,
+        contextSubTab: app.contextSubTab,
     }));
 }
 
@@ -1296,6 +1303,9 @@ async function refreshWebSearchConfig(options = {}) {
 }
 
 function openWebSearchSettings(message = '') {
+    app.contextSubTab = 'setup';
+    app.contextDrawers.set('web-search', true);
+    writePrefs();
     selectTab('context');
     renderContext({ force: true });
     const section = document.getElementById('scratchpad-web-search-settings');
@@ -1845,6 +1855,7 @@ function render() {
     renderHeader();
     renderChat();
     if (app.tab === 'context' && contextKey() !== app.contextKey) renderContext({ force: true });
+    else if (app.tab === 'context') refreshContextLive();
     if (app.tab === 'sessions') renderSessions();
 }
 
@@ -1978,7 +1989,11 @@ function renderChat() {
             randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
-            iconButton(translate('Change', 'scoped.action.change'), () => selectTab('context'), { className: 'scratchpad-link' }),
+            iconButton(translate('Change', 'scoped.action.change'), () => {
+                app.contextSubTab = 'sharing';
+                writePrefs();
+                selectTab('context');
+            }, { className: 'scratchpad-link' }),
             historyCount() ? iconButton(t`History`, () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-link scratchpad-history-button', title: t`Change history (${historyCount()})` }) : null,
         ]);
     }
@@ -3255,9 +3270,9 @@ function dictationProblem(error) {
         case 'unsupported': return t`This browser cannot record from the microphone here.`;
         case 'microphone': return t`The microphone could not be used. Allow microphone access for this site, then try again.`;
         case 'audio': return t`That recording could not be read. Try again.`;
-        case 'key': return t`No API key is saved for ${service}. Add one in API Connections, or pick another service under Context → Dictation.`;
+        case 'key': return t`No API key is saved for ${service}. Add one in API Connections, or pick another service under Context → Setup → Dictation and voice.`;
         case 'empty': return t`No speech was heard. Try again, a little closer to the microphone.`;
-        default: return t`${service} could not transcribe that recording. Try again, or pick another service under Context → Dictation.`;
+        default: return t`${service} could not transcribe that recording. Try again, or pick another service under Context → Setup → Dictation and voice.`;
     }
 }
 
@@ -3337,6 +3352,7 @@ function renderDictationSettings() {
     if (!app.el.dictate) return null;
     const select = h('select', { id: 'scratchpad-dictation-service', class: 'text_pole', onchange: () => {
         app.dictation = dictationService(select.value).id;
+        refreshContextLive();
         writePrefs();
     } }, DICTATION_SERVICES.map(service => h('option', { value: service.id, text: dictationServiceLabel(service.id) })));
     select.value = app.dictation;
@@ -3672,14 +3688,6 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
-function presetCheckbox(checked, onChange, { general, conversation } = {}) {
-    const name = currentPresetName();
-    return checkbox(name ? t`Current preset: ${name}` : t`Current preset`, checked, onChange,
-        general ? t`Shares the equipped preset for reference only. This doesn't change your preset or the assistant's instructions.`
-            : conversation ? t`Shares the active preset with your account's prompt order, not a character's own order. Off by default.`
-                : t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
-}
-
 let instructionsEditorOpen = false;
 
 async function editUserInstructions() {
@@ -3779,6 +3787,222 @@ function contextKey() {
     return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, kind && kind !== 'notebook' ? currentPresetName() : '']);
 }
 
+function liveContextSettings() {
+    const settings = currentSettings();
+    const patch = app.contextPatch;
+    return { ...settings, ...patch, include: { ...settings.include, ...patch.include } };
+}
+
+function refreshContextLive() {
+    if (!app.contextLive.length) return;
+    const settings = liveContextSettings();
+    for (const update of app.contextLive) update(settings);
+}
+
+/* Shows a change in the summary and badges at once; the saved bucket takes over when the save settles. */
+function patchContext(patch, save) {
+    app.contextPatch = { ...app.contextPatch, ...patch, include: { ...app.contextPatch.include, ...patch.include } };
+    refreshContextLive();
+    if (!save) return;
+    const settle = () => {
+        const current = app.contextPatch;
+        const include = { ...current.include };
+        for (const name of Object.keys(patch.include ?? {})) if (include[name] === patch.include[name]) delete include[name];
+        const next = { ...current, include };
+        for (const name of Object.keys(patch)) if (name !== 'include' && next[name] === patch[name]) delete next[name];
+        app.contextPatch = next;
+        refreshContextLive();
+    };
+    void Promise.resolve(save()).then(settle, settle);
+}
+
+function contextToolNames(kind) {
+    return [kind === 'roleplay' ? 'companionNotes' : '', 'agents', 'regex', 'cssSnippets', 'dialogueColors'].filter(Boolean);
+}
+
+function countLabel(count, one, many) {
+    return count === 1 ? one : many;
+}
+
+function contextPillLabels(settings, source = app.source) {
+    if (!source) return [];
+    const kind = source.kind;
+    const include = settings.include ?? {};
+    const pills = [];
+    if (kind === 'notebook') {
+        pills.push(t`Note discussion`);
+    } else if (kind === 'general') {
+        const books = generalLorebooks(source, settings).length;
+        if (books) pills.push(countLabel(books, t`1 lorebook`, t`${books} lorebooks`));
+    } else if (settings.picked?.length) {
+        pills.push(picksMatchSource(settings, source) ? t`${settings.picked.length} picked` : t`No messages`);
+    } else {
+        const depth = Number(settings.depth) || 0;
+        pills.push(depth ? countLabel(depth, t`1 msg`, t`${depth} msgs`) : t`No messages`);
+    }
+    if (kind !== 'notebook') {
+        if (include.card && (kind !== 'general' || source.avatar)) pills.push(t`Card`);
+        if (include.persona) pills.push(t`Persona`);
+        if (kind === 'roleplay' && include.authorsNote) pills.push(t`Author's Note`);
+        if (kind === 'roleplay' && include.mewmory === true) pills.push(t`Mewmory`);
+        if (kind !== 'general' && include.lore) pills.push(t`Lorebooks`);
+        if (include.preset) pills.push(t`Preset`);
+        if (include.problems === true) pills.push(t`Checks`);
+        if ((kind === 'roleplay' || kind === 'conversation') && include.lastPrompt === true) pills.push(t`Last prompt`);
+        if (include.appEvidence === true) pills.push(t`Diagnostics`);
+        if (include.appSource === true) pills.push(t`Source code`);
+        const tools = contextToolNames(kind).filter(name => include[name] === true).length;
+        if (tools) pills.push(countLabel(tools, t`1 tool`, t`${tools} tools`));
+    }
+    const notes = settings.notes?.length ?? 0;
+    if (notes) pills.push(countLabel(notes, t`1 note`, t`${notes} notes`));
+    if (sessionCompareConnection(settings)) pills.push(t`Compare: 2 connections`);
+    return pills;
+}
+
+function renderContextPills() {
+    const list = h('ul', { class: 'scratchpad-context-pills', 'aria-label': t`Shared with the assistants` });
+    const update = settings => {
+        list.replaceChildren(...contextPillLabels(settings).map(text => h('li', { class: 'scratchpad-context-pill', text })));
+    };
+    update(liveContextSettings());
+    app.contextLive.push(update);
+    return list;
+}
+
+/* Remembers a drawer the user opened or closed, so a redraw after a save keeps it as they left it. */
+function contextDrawer(id, title, { badge, open = false, className = '' } = {}, ...children) {
+    const badgeText = badge ? h('span', { class: 'scratchpad-badge scratchpad-drawer-badge' }) : null;
+    const details = h('details', {
+        class: ['scratchpad-drawer', className].filter(Boolean).join(' '),
+        'data-context-drawer': id,
+        open: app.contextDrawers.get(id) ?? open,
+    });
+    details.append(h('summary', {
+        class: 'scratchpad-drawer-summary',
+        'data-context-control': `drawer:${id}`,
+        onclick: () => { app.contextDrawers.set(id, !details.open); },
+    }, h('span', { class: 'scratchpad-drawer-title', text: title }), badgeText));
+    append(details, [h('div', { class: 'scratchpad-drawer-body' }, ...children.flat().filter(Boolean))]);
+    if (badge) {
+        const update = settings => {
+            badgeText.textContent = badge(settings);
+            badgeText.title = badgeText.textContent;
+        };
+        update(liveContextSettings());
+        app.contextLive.push(update);
+    }
+    return details;
+}
+
+/* Drawers carry the title, so the section inside drops its own heading. */
+function untitled(section) {
+    section?.querySelector?.(':scope > .scratchpad-section-title')?.remove();
+    return section;
+}
+
+function chipToggle(label, checked, onChange, hintId = '') {
+    return h('label', { class: 'scratchpad-chip-toggle' },
+        h('input', {
+            type: 'checkbox', checked, 'data-context-control': label, 'aria-describedby': hintId || undefined,
+            onchange: event => onChange(event.currentTarget.checked),
+        }),
+        h('span', { text: label }));
+}
+
+function presetChoice({ general, conversation } = {}) {
+    const name = currentPresetName();
+    return {
+        label: name ? t`Current preset: ${name}` : t`Current preset`,
+        hint: general ? t`Shares the equipped preset for reference only. This doesn't change your preset or the assistant's instructions.`
+            : conversation ? t`Shares the active preset with your account's prompt order, not a character's own order. Off by default.`
+                : t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`,
+    };
+}
+
+function contextSubTabLabel(key) {
+    return key === 'replies' ? t`Replies` : key === 'setup' ? t`Setup` : t`Sharing`;
+}
+
+function selectContextSubTab(key, { focus = false } = {}) {
+    if (!CONTEXT_SUB_TABS.includes(key)) return;
+    if (app.contextSubTab !== key) {
+        app.contextSubTab = key;
+        writePrefs();
+    }
+    const panel = app.el.panels.context;
+    for (const name of CONTEXT_SUB_TABS) {
+        const tab = panel.querySelector(`#scratchpad-context-tab-${name}`);
+        const pane = panel.querySelector(`#scratchpad-context-pane-${name}`);
+        if (tab) {
+            tab.setAttribute('aria-selected', String(name === key));
+            tab.tabIndex = name === key ? 0 : -1;
+        }
+        if (pane) pane.hidden = name !== key;
+    }
+    if (focus) panel.querySelector(`#scratchpad-context-tab-${key}`)?.focus({ preventScroll: true });
+    const bar = panel.querySelector('.scratchpad-context-tabs');
+    const offset = bar ? bar.getBoundingClientRect().top - panel.getBoundingClientRect().top : 0;
+    if (offset < 0) panel.scrollTop += offset;
+}
+
+function onContextTabKey(event) {
+    const index = CONTEXT_SUB_TABS.indexOf(app.contextSubTab);
+    const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: CONTEXT_SUB_TABS.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectContextSubTab(CONTEXT_SUB_TABS[(next + CONTEXT_SUB_TABS.length) % CONTEXT_SUB_TABS.length], { focus: true });
+}
+
+function renderContextTabs() {
+    return h('div', { class: 'scratchpad-context-tabs', role: 'tablist', 'aria-label': t`Context sections`, onkeydown: onContextTabKey },
+        CONTEXT_SUB_TABS.map(key => h('button', {
+            type: 'button', role: 'tab', class: 'scratchpad-context-tab',
+            id: `scratchpad-context-tab-${key}`, 'aria-controls': `scratchpad-context-pane-${key}`,
+            'aria-selected': String(key === app.contextSubTab), tabindex: key === app.contextSubTab ? '0' : '-1',
+            text: contextSubTabLabel(key),
+            onclick: () => selectContextSubTab(key),
+        })));
+}
+
+function contextPane(key, ...children) {
+    const pane = h('div', {
+        class: `scratchpad-context-pane scratchpad-context-pane-${key}`, role: 'tabpanel',
+        id: `scratchpad-context-pane-${key}`, 'aria-labelledby': `scratchpad-context-tab-${key}`,
+    }, ...children.flat().filter(Boolean));
+    pane.hidden = key !== app.contextSubTab;
+    return pane;
+}
+
+function webSearchBadge() {
+    const config = app.webSearch?.config;
+    const readiness = app.webSearch?.readiness;
+    return config && config.provider !== 'off' && readiness?.configured && readiness.provider === config.provider ? t`Ready` : t`Off`;
+}
+
+function renderContextSetupPane() {
+    const dictation = renderDictationSettings();
+    return [
+        h('section', { class: 'scratchpad-section' },
+            h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
+            h('p', { class: 'scratchpad-muted', text: t`Your preferences across all Scratchpads, for all assistants or just the ones you choose.` }),
+            iconButton(t`Edit user instructions`, () => void editUserInstructions(), { icon: 'fa-pen' })),
+        contextDrawer('web-search', t`Web search`, { badge: webSearchBadge, open: Boolean(app.webSearch?.error) },
+            untitled(renderWebSearchSettings({
+                config: app.webSearch?.config ?? null,
+                draft: app.webSearchDraft,
+                readiness: app.webSearch?.readiness ?? null,
+                error: app.webSearch?.error || '',
+                saving: app.webSearchSaving,
+                onSave: values => void saveWebSearchSettings(values),
+                onRefresh: () => void refreshWebSearchConfig({ quiet: false }),
+                onDraft: draft => { app.webSearchDraft = draft; },
+            }))),
+        dictation ? contextDrawer('dictation', t`Dictation and voice`, { badge: () => dictationServiceLabel(app.dictation) }, untitled(dictation)) : null,
+    ];
+}
+
 function renderContext({ force = true } = {}) {
     const panel = app.el.panels.context;
     const key = contextKey();
@@ -3798,36 +4022,35 @@ function renderContext({ force = true } = {}) {
         renderedScrollTop = panel.scrollTop;
     };
     clear(panel);
-    panel.append(h('section', { class: 'scratchpad-section' },
-        h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
-        h('p', { class: 'scratchpad-muted', text: t`Your preferences across all Scratchpads, for all assistants or just the ones you choose.` }),
-        iconButton(t`Edit user instructions`, () => void editUserInstructions(), { icon: 'fa-pen' })));
-    panel.append(renderWebSearchSettings({
-        config: app.webSearch?.config ?? null,
-        draft: app.webSearchDraft,
-        readiness: app.webSearch?.readiness ?? null,
-        error: app.webSearch?.error || '',
-        saving: app.webSearchSaving,
-        onSave: values => void saveWebSearchSettings(values),
-        onRefresh: () => void refreshWebSearchConfig({ quiet: false }),
-        onDraft: draft => { app.webSearchDraft = draft; },
-    }));
-    panel.append(...[renderDictationSettings()].filter(Boolean));
+    app.contextLive = [];
+    app.contextPatch = {};
     if (!app.source) {
-        panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
+        const empty = () => h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` });
+        panel.append(renderContextTabs(), contextPane('sharing', empty()), contextPane('replies', empty()), contextPane('setup', renderContextSetupPane()));
         restore();
         return;
     }
     const settings = currentSettings();
+    const session = activeSession();
     const limits = app.bucket?.limits ?? { depth: 200, maxTokens: 32000 };
-    const roleplay = app.source.kind === 'roleplay';
-    const notebook = app.source.kind === 'notebook';
-    const general = app.source.kind === 'general';
+    const kind = app.source.kind;
+    const roleplay = kind === 'roleplay';
+    const notebook = kind === 'notebook';
+    const general = kind === 'general';
 
     const depth = h('input', {
         type: 'number', class: 'text_pole', min: '0', max: String(limits.depth), step: '1', value: String(settings.depth),
         id: 'scratchpad-depth',
-        onchange: event => void saveNumberSetting(event.currentTarget, 'depth'),
+        oninput: event => {
+            const value = Number(event.currentTarget.value);
+            if (event.currentTarget.value !== '' && Number.isInteger(value) && value >= 0) patchContext({ depth: value });
+        },
+        onchange: event => {
+            void saveNumberSetting(event.currentTarget, 'depth').finally(() => {
+                delete app.contextPatch.depth;
+                refreshContextLive();
+            });
+        },
     });
     const maxTokens = h('input', {
         type: 'number', class: 'text_pole', min: '64', max: String(limits.maxTokens), step: '64', value: String(settings.maxTokens),
@@ -3835,7 +4058,7 @@ function renderContext({ force = true } = {}) {
         onchange: event => void saveNumberSetting(event.currentTarget, 'maxTokens'),
     });
     const profiles = connectionProfiles();
-    const connections = allAssistants().map(assistant => {
+    const connectionField = assistant => {
         const id = `scratchpad-connection-${assistant.id}`;
         const selected = assistantConnection(settings, assistant.id);
         const value = selected.kind === 'profile' ? selected.profileId : '';
@@ -3854,85 +4077,162 @@ function renderContext({ force = true } = {}) {
             connection.append(h('option', { value, text: t`Unavailable profile: ${value}` }));
         }
         connection.value = value;
-        return h('div', { class: 'scratchpad-field' }, h('label', { for: id, text: t`${assistant.name}'s connection` }), connection);
-    });
+        return h('div', { class: 'scratchpad-assistant-setup' },
+            h('div', { class: 'scratchpad-field' }, h('label', { for: id, text: t`${assistant.name}'s connection` }), connection),
+            iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' }));
+    };
     const compareField = renderCompareConnectionField(settings, profiles, general);
 
     const include = settings.include;
-    const setInclude = (name, value) => void updateSettings({ include: { [name]: value } });
+    const setInclude = (name, value) => patchContext({ include: { [name]: value } }, () => updateSettings({ include: { [name]: value } }));
+    const rows = (...items) => items.filter(Boolean);
 
-    append(panel, [
-        renderContextSetups(),
-        renderNotes(settings),
-        h('section', { class: 'scratchpad-section scratchpad-summary-settings' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Automatic summary` }),
-            checkbox(t`Summarise older discussion`, settings.autoSummary === true,
-                value => void updateSettings({ autoSummary: value }, { rerenderContext: true }),
-                t`Summarise older discussion when it exceeds 50 messages or the history size limit. Uses the first replying assistant's connection and may make extra model calls. All saved messages and the 400-message limit stay.`),
-            activeSession()?.summary ? h('details', {},
-                h('summary', { text: t`Last saved summary` }),
-                h('p', { class: 'scratchpad-muted', text: t`Covers ${activeSession().summary.count} earlier messages. Checked against the conversation before each use; rebuilt if those messages change.` }),
-                h('pre', { class: 'scratchpad-preview-text', text: activeSession().summary.text, 'data-i18n-ignore': '' }))
-                : h('p', { class: 'scratchpad-muted', text: t`No summary saved yet. Recent messages are kept in full alongside the summary.` })),
-        general ? renderGeneralLorebooks(settings) : notebook ? h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Note discussion` }),
-            h('p', { class: 'scratchpad-muted', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })) : h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
-            h('div', { class: 'scratchpad-field' },
-                h('label', { for: 'scratchpad-depth', text: t`Recent messages to read` }),
-                depth,
-                h('small', { text: settings.picked.length ? t`Ignored while you have picked messages below.` : t`Use 0 to share no messages.` })),
-            checkbox(t`Include hidden messages`, include.hidden, value => setInclude('hidden', value))),
-        notebook ? null : h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Also share` }),
-            !general || app.source.avatar ? checkbox(t`Character cards`, include.card, value => setInclude('card', value)) : null,
-            checkbox(t`Your persona and Scenario Notes`, include.persona, value => setInclude('persona', value)),
-            roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
-            roleplay ? checkbox(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.`) : null,
-            general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
-            presetCheckbox(include.preset, value => setInclude('preset', value), { general, conversation: app.source.kind === 'conversation' }),
-            checkbox(t`Problem checks`, include.problems === true, value => setInclude('problems', value),
-                t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
-            checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
-                t`Shares Neconyan's recent errors, failed model requests and your failed requests and jobs, so the assistant can explain what went wrong. Admins also share server crash reports and error log lines.`),
-            checkbox(t`Neconyan source code`, include.appSource === true, value => setInclude('appSource', value),
-                t`Before replying, the server looks up the parts of Neconyan's own code (public/scripts, public/script.js and src) that match your question and the app diagnostics, read-only. Your config, secrets and data folder are never read, and the assistant can't change Neconyan's code.`),
-            roleplay || app.source.kind === 'conversation' ? checkbox(t`Last prompt sent`, include.lastPrompt === true, value => setInclude('lastPrompt', value),
-                t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`) : null,
-            checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
-            roleplay ? checkbox(t`Companion notes`, include.companionNotes === true, value => setInclude('companionNotes', value), t`Shares the finished notes Companion agents wrote on the shared messages, such as trackers, Plot Compass and Memory Shards. Notes on hidden messages are shared only when their Companion keeps them in chat history.`) : null,
-            checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
-            checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
-            checkbox(t`Dialogue Colors`, include.dialogueColors === true, value => setInclude('dialogueColors', value), t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`)),
+    const summaryNotice = notebook
+        ? h('p', { class: 'scratchpad-muted scratchpad-context-notice', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })
+        : null;
+    panel.append(renderPreview({ notice: summaryNotice, pills: renderContextPills() }));
+
+    const picksMatch = picksMatchSource(settings, app.source);
+    const messages = general ? renderGeneralLorebooks(settings) : notebook ? null : h('section', { class: 'scratchpad-section scratchpad-context-messages' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
+        h('div', { class: 'scratchpad-field scratchpad-depth-field' },
+            h('label', { for: 'scratchpad-depth', text: t`Recent messages to read` }),
+            depth,
+            h('small', { text: settings.picked.length ? t`Ignored while you have picked messages below.` : t`Use 0 to share no messages.` })),
+        h('div', { class: 'scratchpad-chip-row' }, chipToggle(t`Include hidden messages`, include.hidden, value => setInclude('hidden', value))),
+        !picksMatch && settings.picked.length
+            ? h('p', { class: 'scratchpad-muted scratchpad-picks-warning', role: 'status', text: t`These picks belong to another chat. Clear them or pick messages here.` }) : null,
+        contextDrawer('picks', t`Pick specific messages and swipes`, {
+            badge: live => !live.picked?.length ? t`Using recent` : picksMatchSource(live, app.source) ? t`${live.picked.length} picked` : t`Another chat`,
+            open: settings.picked.length > 0,
+        }, untitled(renderPicks(settings))));
+
+    const preset = presetChoice({ general, conversation: kind === 'conversation' });
+    const storyHints = rows(
+        roleplay ? { id: 'scratchpad-chip-hint-mewmory', label: t`Mewmory`, hint: t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.` } : null,
+        general ? null : { id: 'scratchpad-chip-hint-lore', label: t`Lorebook entries`, hint: t`Entries are shared when their keywords appear, or when you set them to Always below.` },
+        { id: 'scratchpad-chip-hint-preset', label: preset.label, hint: preset.hint });
+    const showLore = !notebook && !(general && !generalLorebooks(app.source, settings).length);
+    const story = notebook ? null : h('section', { class: 'scratchpad-section scratchpad-context-story' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Story and lore` }),
+        h('div', { class: 'scratchpad-chip-row', role: 'group', 'aria-label': t`Story and lore` }, rows(
+            !general || app.source.avatar ? chipToggle(t`Character cards`, include.card, value => setInclude('card', value)) : null,
+            chipToggle(t`Your persona and Scenario Notes`, include.persona, value => setInclude('persona', value)),
+            roleplay ? chipToggle(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
+            roleplay ? chipToggle(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), 'scratchpad-chip-hint-mewmory') : null,
+            general ? null : chipToggle(t`Lorebook entries`, include.lore, value => setInclude('lore', value), 'scratchpad-chip-hint-lore'),
+            chipToggle(preset.label, include.preset, value => setInclude('preset', value), 'scratchpad-chip-hint-preset'))),
+        h('ul', { class: 'scratchpad-chip-hints' }, storyHints.map(({ id, label, hint }) => h('li', { id }, h('strong', { text: label }), ' ', h('span', { text: hint })))),
+        showLore ? contextDrawer('lore', t`Lorebook entries`, {
+            badge: live => {
+                const count = Object.keys(live.loreOverrides ?? {}).length;
+                return count ? countLabel(count, t`1 override`, t`${count} overrides`) : t`Auto`;
+            },
+            open: Object.keys(settings.loreOverrides ?? {}).length > 0,
+        }, untitled(renderLore(settings, () => restore(true)))) : null);
+
+    const notes = contextDrawer('notes', t`Saved notes`, {
+        badge: live => {
+            const count = live.notes?.length ?? 0;
+            return count ? countLabel(count, t`1 note`, t`${count} notes`) : t`None`;
+        },
+        open: (settings.notes?.length ?? 0) > 0,
+    }, untitled(renderNotes(settings)));
+
+    const diagnostics = notebook ? null : h('section', { class: 'scratchpad-section scratchpad-context-diagnostics' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Diagnostics` }),
+        checkbox(t`Problem checks`, include.problems === true, value => setInclude('problems', value),
+            t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
+        roleplay || kind === 'conversation' ? checkbox(t`Last prompt sent`, include.lastPrompt === true, value => setInclude('lastPrompt', value),
+            t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`) : null,
+        checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
+            t`Shares Neconyan's recent errors, failed model requests and your failed requests and jobs, so the assistant can explain what went wrong. Admins also share server crash reports and error log lines.`),
+        checkbox(t`Neconyan source code`, include.appSource === true, value => setInclude('appSource', value),
+            t`Before replying, the server looks up the parts of Neconyan's own code (public/scripts, public/script.js and src) that match your question and the app diagnostics, read-only. Your config, secrets and data folder are never read, and the assistant can't change Neconyan's code.`));
+
+    const toolNames = contextToolNames(kind);
+    const tools = notebook ? null : contextDrawer('tools', t`Tools and styling`, {
+        badge: live => {
+            const count = toolNames.filter(name => live.include?.[name] === true).length;
+            return t`${count} shared`;
+        },
+        open: toolNames.some(name => include[name] === true),
+    }, rows(
+        roleplay ? checkbox(t`Companion notes`, include.companionNotes === true, value => setInclude('companionNotes', value), t`Shares the finished notes Companion agents wrote on the shared messages, such as trackers, Plot Compass and Memory Shards. Notes on hidden messages are shared only when their Companion keeps them in chat history.`) : null,
+        checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
+        checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
+        checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
+        checkbox(t`Dialogue Colors`, include.dialogueColors === true, value => setInclude('dialogueColors', value), t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`)));
+
+    const activeIds = new Set(settings.roundTable ? settings.participants : [session?.assistant ?? app.assistant]);
+    const assistants = allAssistants();
+    const replying = assistants.filter(assistant => activeIds.has(assistant.id));
+    const others = assistants.filter(assistant => !activeIds.has(assistant.id));
+    const customisedIn = live => others.filter(assistant => assistantConnection(live, assistant.id).kind === 'profile').length;
+    const customised = customisedIn(settings);
+    const connections = h('section', { class: 'scratchpad-section scratchpad-context-assistants' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
+        h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
+        replying.map(connectionField),
+        compareField,
+        others.length ? contextDrawer('other-assistants', t`Other assistants (${others.length})`, {
+            badge: live => {
+                const count = customisedIn(live);
+                return count ? t`${count} custom` : t`Default`;
+            },
+            open: customised > 0,
+        }, others.map(connectionField)) : null);
+
+    const prefillText = live => (live.prefill || live.partialPrefill) ? t`Active` : t`Empty`;
+    const replies = [
+        connections,
         renderFeedbackToneSettings(settings),
-        h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
-            h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
-            ...connections,
-            compareField,
-            h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
-            ...allAssistants().map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
+        h('section', { class: 'scratchpad-section scratchpad-context-length' },
+            h('h3', { class: 'scratchpad-section-title', text: t`Length and streaming` }),
             checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
                 t`Show the reply and any thinking as they arrive. Turn off to wait for the finished reply.`),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
-        h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Reply prefills` }),
+        contextDrawer('summary', t`Automatic summary`, {
+            className: 'scratchpad-summary-settings',
+            badge: live => live.autoSummary === true ? t`On` : t`Off`,
+            open: settings.autoSummary === true || Boolean(session?.summary),
+        },
+        checkbox(t`Summarise older discussion`, settings.autoSummary === true,
+            value => void updateSettings({ autoSummary: value }, { rerenderContext: true }),
+            t`Summarise older discussion when it exceeds 50 messages or the history size limit. Uses the first replying assistant's connection and may make extra model calls. All saved messages and the 400-message limit stay.`),
+        session?.summary ? h('details', {},
+            h('summary', { text: t`Last saved summary` }),
+            h('p', { class: 'scratchpad-muted', text: t`Covers ${session.summary.count} earlier messages. Checked against the conversation before each use; rebuilt if those messages change.` }),
+            h('pre', { class: 'scratchpad-preview-text', text: session.summary.text, 'data-i18n-ignore': '' }))
+            : h('p', { class: 'scratchpad-muted', text: t`No summary saved yet. Recent messages are kept in full alongside the summary.` })),
+        contextDrawer('prefills', t`Reply prefills`, { badge: prefillText, open: Boolean(settings.prefill || settings.partialPrefill) },
             h('p', { class: 'scratchpad-muted', text: t`A prefill starts the assistant's reply for it. The model continues from that text. These settings apply to every assistant in this session, including new reply versions. Leave them empty for normal replies; your connection must support prefills.` }),
             h('div', { class: 'scratchpad-field' },
                 h('label', { for: 'scratchpad-prefill', text: t`Reply prefill` }),
                 h('textarea', { id: 'scratchpad-prefill', class: 'text_pole', rows: 3, value: settings.prefill || '', placeholder: t`Here are three ideas:`,
-                    onchange: event => void updateSettings({ prefill: event.currentTarget.value }) })),
+                    oninput: event => patchContext({ prefill: event.currentTarget.value }),
+                    onchange: event => {
+                        const value = event.currentTarget.value;
+                        patchContext({ prefill: value }, () => updateSettings({ prefill: value }));
+                    } })),
             h('div', { class: 'scratchpad-field' },
                 h('label', { for: 'scratchpad-partial-prefill', text: t`Kimi K3 / K3.1 partial prefill` }),
                 h('textarea', { id: 'scratchpad-partial-prefill', class: 'text_pole', rows: 4, value: settings.partialPrefill || '', placeholder: '<think>Let me consider the scene carefully.',
-                    onchange: event => void updateSettings({ partialPrefill: event.currentTarget.value }) }),
+                    oninput: event => patchContext({ partialPrefill: event.currentTarget.value }),
+                    onchange: event => {
+                        const value = event.currentTarget.value;
+                        patchContext({ partialPrefill: value }, () => updateSettings({ partialPrefill: value }));
+                    } }),
                 h('small', { text: t`Used instead of the reply prefill for Kimi K3 and K3.1. Start with <think> to seed thinking; close it with </think> before any visible reply text. An unclosed <think> seeds only thinking and is not added to the saved reply.` }))),
-        notebook || general ? null : renderPicks(settings),
-        notebook || (general && !generalLorebooks(app.source, settings).length) ? null : renderLore(settings, () => restore(true)),
-        renderPreview(),
-    ]);
+    ];
+
+    panel.append(renderContextTabs(),
+        contextPane('sharing', messages, story, notes, diagnostics, tools, renderContextSetups()),
+        contextPane('replies', replies),
+        contextPane('setup', renderContextSetupPane()));
     restore();
 }
+
 
 function shareGeneralLorebooks(change) {
     return updateSettings(latest => {
@@ -4125,6 +4425,7 @@ function renderNotes(settings) {
         h('p', { class: 'scratchpad-muted', text: t`Add notes or sections for this session. Notebook's AI access still applies. Share private notes or selected text from Notes.` }),
         h('div', { class: 'scratchpad-note-actions' },
             iconButton(t`Add saved note`, async () => {
+                app.contextDrawers.set('notes', true);
                 try {
                     const ref = await chooseNote({ isCurrent });
                     if (ref && isCurrent()) await updateSettings(latest => ({ notes: [...(latest.notes ?? []), ref] }), { rerenderContext: true });
@@ -4188,9 +4489,6 @@ function renderPicks(settings) {
     const messages = sourceMessages(app.source);
     const matches = picksMatchSource(settings, app.source);
     const picked = new Set(matches ? settings.picked : []);
-    if (!matches && settings.picked.length) {
-        section.append(h('p', { class: 'scratchpad-muted', text: t`These picks belong to another chat. Clear them or pick messages here.` }));
-    }
     section.append(h('p', { class: 'scratchpad-muted', text: t`Picked messages and swipes replace the recent messages above. Expand Swipes to compare versions without changing the story.` }));
     if (settings.picked.length) {
         section.append(iconButton(t`Clear picks (${settings.picked.length})`, () => void updateSettings({ picked: [] }, { rerenderContext: true }), { icon: 'fa-eraser' }));
@@ -4324,7 +4622,7 @@ function renderLoreEntry(entry) {
         choices);
 }
 
-function renderPreview() {
+function renderPreview({ notice = null, pills = null } = {}) {
     const run = async () => {
         const source = app.source;
         const sessionAtClick = activeSession()?.id;
@@ -4351,6 +4649,7 @@ function renderPreview() {
             if (!output.isConnected || !loading.isConnected) return;
             clear(output);
             append(output, [
+                h('p', { class: 'scratchpad-muted', text: t`This is the reference material for your next message. Saved notes and shared Mewmory records are read on the server and checked again when you send.` }),
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
                 context.leftOut ? h('p', { text: t`Older messages left out to fit: ${context.leftOut}. They are not sent at all.` }) : null,
                 context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
@@ -4366,11 +4665,13 @@ function renderPreview() {
             output.append(h('p', { class: 'scratchpad-error', text: error?.message || t`The preview could not be built.` }));
         }
     };
-    return h('section', { class: 'scratchpad-section' },
-        h('h3', { class: 'scratchpad-section-title', text: t`What Scratchpad will read` }),
-        h('p', { class: 'scratchpad-muted', text: t`This is the reference material for your next message. Saved notes and shared Mewmory records are read on the server and checked again when you send.` }),
-        iconButton(t`Show preview`, () => void run(), { icon: 'fa-magnifying-glass' }),
-        h('div', { class: 'scratchpad-preview' }));
+    return h('section', { class: 'scratchpad-section scratchpad-context-summary' },
+        h('div', { class: 'scratchpad-context-summary-head' },
+            h('h3', { class: 'scratchpad-section-title', text: t`What Scratchpad will read` }),
+            iconButton(t`Show preview`, () => void run(), { icon: 'fa-magnifying-glass', className: 'scratchpad-preview-button' })),
+        notice,
+        pills,
+        h('div', { class: 'scratchpad-preview', 'aria-live': 'polite' }));
 }
 
 /* Sessions tab */
@@ -4746,6 +5047,9 @@ export async function openScratchpad({ tab = '', note = null, canOpen = () => tr
         // A saved reference keeps its grant even if the panel closed during the write.
         if (!isLatest()) return Boolean(saved);
         if (!saved) throw new Error(t`The note could not be added to Scratchpad. Return to Notes and try sharing it again.`);
+        app.contextSubTab = 'sharing';
+        app.contextDrawers.set('notes', true);
+        writePrefs();
         selectTab('context');
     }
     if (!isPhone() && app.tab === 'chat' && document.activeElement === app.el.heading && !app.el.composer.disabled) {

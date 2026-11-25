@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Random sends one selected assistant per turn and preserves the speaker on retry`, async ({ app }) => {
@@ -20,7 +21,8 @@ for (const phone of [false, true]) {
         };
         await open();
         await expect(page.locator('.scratchpad-random')).toBeHidden();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'other-assistants');
         for (const id of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${id}`).selectOption(`random-${id}`);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await page.locator('.scratchpad-round-table').click();
@@ -36,7 +38,7 @@ for (const phone of [false, true]) {
         const rect = await page.locator('.scratchpad-random').boundingBox();
         expect(Math.min(rect.width, rect.height)).toBeGreaterThanOrEqual(phone ? 44 : 32);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.getByRole('button', { name: 'View or edit Miso\'s prompt', exact: true }).click();
         await expect(page.getByRole('textbox', { name: 'Assistant prompt', exact: true })).toHaveValue(/You are the only assistant replying to this message/);
         await page.getByRole('button', { name: 'Save prompt', exact: true }).click();

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const SNIPPET = {
     id: 'tidy-snippet',
@@ -74,7 +75,8 @@ for (const phone of [false, true]) {
         await expect(toasts).toContainText('Share CSS Snippets under Context before saving a change to one.');
         await expect(dialog).toHaveCount(0);
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
+        await openContextDrawer(page, 'tools');
         const share = page.locator('label.scratchpad-check', { hasText: 'Shares the name and CSS of every saved snippet' });
         await share.scrollIntoViewIfNeeded();
         const box = await share.boundingBox();
@@ -90,6 +92,7 @@ for (const phone of [false, true]) {
         await expect(preview).toContainText('## CSS Snippets');
         await expect(preview).toContainText('ID: tidy-snippet');
         await expect(preview).toContainText('letter-spacing: 0.01em');
+        await showContextSection(page, 'replies');
         await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
 
