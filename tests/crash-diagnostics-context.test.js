@@ -80,3 +80,32 @@ test('a dormant Roleplay chat is not measured as the current Conversation', () =
     expect(getChat).not.toHaveBeenCalled();
     expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({ chat: expect.objectContaining({ messageCount: null, estimatedTextBytes: null }) }));
 });
+
+test('localizeMessage translates server crash notice title, missing-time fallback, errorPreview and reader option', async () => {
+    const showNotice = jest.fn(() => ({ remove() {} }));
+    const fetchFn = jest.fn(async () => response({
+        schema: 1,
+        runId: 'run-tr',
+        latest: {
+            id: 'report-tr',
+            errorPreview: 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.',
+        },
+    }));
+    const translations = new Map([
+        ['A saved server crash report is available', 'Kaydedilmiş bir sunucu çökme raporu var'],
+        ['Time unavailable', 'Zaman bilgisi yok'],
+        ['The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.', 'Önceki işlem çıkış işleyicisini çalıştırmadan sona erdi. İşletim sistemi bir neden bildirmedi; güç kesintisi, zorla sonlandırma ve yerel çökmeler birbirinden ayırt edilemiyor.'],
+    ]);
+    const localizeMessage = jest.fn(text => translations.get(text) ?? text);
+    const observer = createServerCrashObserver(options({ fetchFn, showNotice, localizeMessage }));
+    observer.start();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(showNotice).toHaveBeenCalledTimes(1);
+    const call = showNotice.mock.calls[0][0];
+    expect(call.title).toBe('Kaydedilmiş bir sunucu çökme raporu var');
+    expect(call.message).toBe('Zaman bilgisi yok. Önceki işlem çıkış işleyicisini çalıştırmadan sona erdi. İşletim sistemi bir neden bildirmedi; güç kesintisi, zorla sonlandırma ve yerel çökmeler birbirinden ayırt edilemiyor.');
+    expect(localizeMessage).toHaveBeenCalledWith('A saved server crash report is available');
+    expect(localizeMessage).toHaveBeenCalledWith('Time unavailable');
+    expect(localizeMessage).toHaveBeenCalledWith('The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.');
+    observer.stop();
+});

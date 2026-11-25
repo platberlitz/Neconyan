@@ -88,8 +88,13 @@ const {
 const {
     formatCleanedMessagesToast,
     formatColorizedMessagesToast,
+    formatConflictRepairToast,
+    formatDeletedCharactersToast,
+    formatDomVerificationToast,
     formatRandomizedColorsToast,
+    formatRestoredTablesToast,
     formatSetGroupToast,
+    formatVerificationStoppedToast,
 } = await import(`${EXTENSION}/utils.js`);
 hooks.deregister();
 
@@ -179,4 +184,41 @@ test('Dialogue Colors toast formatters emit exact singular and plural messages a
     assert.equal(formatCleanedMessagesToast(2, 1), 'Cleaned 2 messages (1 swipe).');
     assert.equal(formatCleanedMessagesToast(1, 2), 'Cleaned 1 message (2 swipes).');
     assert.equal(formatCleanedMessagesToast(2, 2), 'Cleaned 2 messages (2 swipes).');
+});
+
+test('Dialogue Colors M102b toast formatters emit exact singular and plural messages across all 30 branches', () => {
+    assert.equal(formatConflictRepairToast(1, 1), 'Recolored 1 character; 1 conflict remains.');
+    assert.equal(formatConflictRepairToast(1, 3), 'Recolored 1 character; 3 conflicts remain.');
+    assert.equal(formatConflictRepairToast(2, 1), 'Recolored 2 characters; 1 conflict remains.');
+    assert.equal(formatConflictRepairToast(2, 3), 'Recolored 2 characters; 3 conflicts remain.');
+
+    assert.equal(formatRestoredTablesToast(1, 0), 'Restored 1 stored color table.');
+    assert.equal(formatRestoredTablesToast(2, 0), 'Restored 2 stored color tables.');
+    assert.equal(formatRestoredTablesToast(1, 1), 'Restored 1 stored color table. Skipped 1 key that now exists.');
+    assert.equal(formatRestoredTablesToast(2, 1), 'Restored 2 stored color tables. Skipped 1 key that now exists.');
+    assert.equal(formatRestoredTablesToast(1, 3), 'Restored 1 stored color table. Skipped 3 keys that now exist.');
+    assert.equal(formatRestoredTablesToast(2, 3), 'Restored 2 stored color tables. Skipped 3 keys that now exist.');
+
+    assert.equal(formatDeletedCharactersToast(1, 0), 'Deleted 1 selected character.');
+    assert.equal(formatDeletedCharactersToast(2, 0), 'Deleted 2 selected characters.');
+    assert.equal(formatDeletedCharactersToast(1, 1), 'Deleted 1 selected character. Kept 1 pinned character.');
+    assert.equal(formatDeletedCharactersToast(2, 1), 'Deleted 2 selected characters. Kept 1 pinned character.');
+    assert.equal(formatDeletedCharactersToast(1, 3), 'Deleted 1 selected character. Kept 3 pinned characters.');
+    assert.equal(formatDeletedCharactersToast(2, 3), 'Deleted 2 selected characters. Kept 3 pinned characters.');
+
+    assert.equal(formatDomVerificationToast(1, 1), 'Verified DOM colors: applied 1 correction, queued 1 suggestion for review.');
+    assert.equal(formatDomVerificationToast(1, 2), 'Verified DOM colors: applied 1 correction, queued 2 suggestions for review.');
+    assert.equal(formatDomVerificationToast(2, 1), 'Verified DOM colors: applied 2 corrections, queued 1 suggestion for review.');
+    assert.equal(formatDomVerificationToast(2, 2), 'Verified DOM colors: applied 2 corrections, queued 2 suggestions for review.');
+
+    assert.equal(formatVerificationStoppedToast(1, 0, 0), 'Verification stopped after 1 message: the provider request failed.');
+    assert.equal(formatVerificationStoppedToast(3, 0, 0), 'Verification stopped after 3 messages: the provider request failed.');
+    assert.equal(formatVerificationStoppedToast(1, 1, 1), 'Verification stopped after 1 message: the provider request failed. Applied 1 correction and queued 1 suggestion before stopping.');
+    assert.equal(formatVerificationStoppedToast(1, 1, 2), 'Verification stopped after 1 message: the provider request failed. Applied 1 correction and queued 2 suggestions before stopping.');
+    assert.equal(formatVerificationStoppedToast(1, 2, 1), 'Verification stopped after 1 message: the provider request failed. Applied 2 corrections and queued 1 suggestion before stopping.');
+    assert.equal(formatVerificationStoppedToast(1, 2, 2), 'Verification stopped after 1 message: the provider request failed. Applied 2 corrections and queued 2 suggestions before stopping.');
+    assert.equal(formatVerificationStoppedToast(3, 1, 1), 'Verification stopped after 3 messages: the provider request failed. Applied 1 correction and queued 1 suggestion before stopping.');
+    assert.equal(formatVerificationStoppedToast(3, 1, 2), 'Verification stopped after 3 messages: the provider request failed. Applied 1 correction and queued 2 suggestions before stopping.');
+    assert.equal(formatVerificationStoppedToast(3, 2, 1), 'Verification stopped after 3 messages: the provider request failed. Applied 2 corrections and queued 1 suggestion before stopping.');
+    assert.equal(formatVerificationStoppedToast(3, 2, 2), 'Verification stopped after 3 messages: the provider request failed. Applied 2 corrections and queued 2 suggestions before stopping.');
 });

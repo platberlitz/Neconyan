@@ -7,7 +7,7 @@ import { getActiveGenerationAcknowledgement, messageFormatting, saveSettings } f
 import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { event_types, eventSource } from '../events.js';
 import { extension_settings } from '../extensions.js';
-import { t } from '../i18n.js';
+import { t, translate } from '../i18n.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { append, clear, h, formatBytes } from '../notebooks/dom.js';
@@ -72,7 +72,7 @@ import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261206-companion-panel-beside';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261207-companion-panel-open';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -137,10 +137,9 @@ function checkAvailability() {
     const noNotes = t`Checks aren't offered in a note discussion. Open General Scratchpad or a chat to run one.`;
     const books = notebook ? [] : general ? [settings.lorebook].filter(Boolean) : sourceLorebookNames(source);
     const presetName = notebook ? '' : currentPresetName();
-    const presetShared = source.kind === 'roleplay' || (general && Boolean(include.preset));
+    const presetShared = source.kind === 'roleplay' || source.kind === 'conversation' || (general && Boolean(include.preset));
     let presetProblem = '';
     if (notebook) presetProblem = noNotes;
-    else if (!general && source.kind !== 'roleplay') presetProblem = t`Conversation chats can't share a preset. Open a Roleplay chat, or General Scratchpad with your preset shared, to check one.`;
     else if (!presetShared && !presetName) presetProblem = t`No preset is shared and none is equipped. Equip a preset, then turn on Current preset under Also share in the Context tab.`;
     else if (!presetShared) presetProblem = t`No preset is shared. Turn on Current preset under Also share in the Context tab, then try again.`;
     else if (!presetName) presetProblem = t`No preset is equipped, so there is nothing to check. Equip a preset, then try again.`;
@@ -1608,7 +1607,7 @@ function renderOverview() {
     append(el.overviewBar, [
         h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
         ...sessionAssistants(session).map(id => h('img', { src: assistantPortrait(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
-        h('span', { class: 'scratchpad-overview-name', text: name }),
+        h('span', { class: 'scratchpad-overview-name', text: name, ...(app.source && session?.name ? { 'data-i18n-ignore': '' } : {}) }),
         randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
         sharedFeedbackTone() === DEFAULT_FEEDBACK_TONE ? null : h('span', { class: 'scratchpad-badge scratchpad-tone-badge', text: feedbackToneLabel(sharedFeedbackTone()) }),
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
@@ -1638,12 +1637,12 @@ function renderChat() {
         const settings = currentSettings();
         const assistant = assistantInfo(session?.assistant ?? app.assistant);
         append(el.summary, [
-            h('span', { text: session ? session.name : t`New session with ${assistant.name}` }),
+            h('span', { text: session ? session.name : t`New session with ${assistant.name}`, ...(session?.name ? { 'data-i18n-ignore': '' } : {}) }),
             settings.roundTable ? h('span', { class: 'scratchpad-badge', text: t`Round table: ${sessionAssistants(session).length}` }) : null,
             randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
-            iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
+            iconButton(translate('Change', 'scoped.action.change'), () => selectTab('context'), { className: 'scratchpad-link' }),
             historyCount() ? iconButton(t`History`, () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-link scratchpad-history-button', title: t`Change history (${historyCount()})` }) : null,
         ]);
     }
@@ -2485,7 +2484,7 @@ async function prepareReviewPlan(source, session, message, part, picture) {
         sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part),
         sharedPreset: message.sharedPreset, presetGuard: () => {
             requireScope(source, session.id);
-            if (source.kind !== 'roleplay' || !currentSettings().include.preset || !sameChat(message.contextSource, source)) {
+            if ((source.kind !== 'roleplay' && source.kind !== 'conversation') || !currentSettings().include.preset || !sameChat(message.contextSource, source)) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
@@ -3057,11 +3056,12 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
-function presetCheckbox(checked, onChange, { general } = {}) {
+function presetCheckbox(checked, onChange, { general, conversation } = {}) {
     const name = currentPresetName();
     return checkbox(name ? t`Current preset: ${name}` : t`Current preset`, checked, onChange,
         general ? t`Shares the equipped preset for reference only. This doesn't change your preset or the assistant's instructions.`
-            : t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
+            : conversation ? t`Shares the active preset with your account's prompt order, not a character's own order. Off by default.`
+                : t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
 }
 
 let instructionsEditorOpen = false;
@@ -3160,7 +3160,7 @@ async function editAssistantPrompt(assistant) {
 
 function contextKey() {
     const kind = app.source?.kind;
-    return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, kind === 'roleplay' || kind === 'general' ? currentPresetName() : '']);
+    return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, kind && kind !== 'notebook' ? currentPresetName() : '']);
 }
 
 function renderContext({ force = true } = {}) {
@@ -3280,7 +3280,7 @@ function renderContext({ force = true } = {}) {
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
             roleplay ? checkbox(t`Mewmory`, include.mewmory === true, value => setInclude('mewmory', value), t`Reads saved memories from this Roleplay chat on the server. Pinned memories come first, followed by recent ones; unavailable or excluded memories are left out.`) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
-            roleplay || general ? presetCheckbox(include.preset, value => setInclude('preset', value), { general }) : null,
+            presetCheckbox(include.preset, value => setInclude('preset', value), { general, conversation: app.source.kind === 'conversation' }),
             checkbox(t`Problem checks`, include.problems === true, value => setInclude('problems', value),
                 t`Checks shared cards, presets and lorebooks for likely problems, and shares fuller activation and sampler details.`),
             checkbox(t`App diagnostics`, include.appEvidence === true, value => setInclude('appEvidence', value),
@@ -3988,7 +3988,7 @@ function renderSessions() {
         list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}`, 'data-session': session.id },
             h('img', { src: assistantPortrait(assistant.id, session), alt: '', width: 32, height: 32 }),
             h('div', { class: 'scratchpad-session-info' },
-                h('strong', { text: session.name }),
+                h('strong', { text: session.name, ...(session.name ? { 'data-i18n-ignore': '' } : {}) }),
                 h('small', { text: [assistant.name, t`${session.messages.length} messages`, formatDate(session.updated), session.temporary ? t`Temporary` : '', session.pinned ? t`Pinned` : ''].filter(Boolean).join(' · ') })),
             h('div', { class: 'scratchpad-session-actions' },
                 active

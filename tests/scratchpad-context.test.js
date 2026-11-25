@@ -668,12 +668,22 @@ describe('Scratchpad current preset', () => {
         expect(text).not.toContain('Editable preset target');
     });
 
-    test('stays out of Conversation chats, which do not use the preset', async () => {
+    test('stays out of Conversation chats unless chosen', async () => {
         conversationState.conversationWorkspaceOpen = true;
-        const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
+        const result = await buildContext({ source: currentSource(), settings });
         expect(result.text).not.toContain('Current preset');
         expect(result.capabilities.preset).toBeUndefined();
         expect(readCurrentPreset).not.toHaveBeenCalled();
+    });
+
+    test('Conversation shares the active preset with the account prompt order and editable targets', async () => {
+        conversationState.conversationWorkspaceOpen = true;
+        const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
+        expect(readCurrentPreset).toHaveBeenLastCalledWith({ globalOnly: true });
+        expect(result.text).toContain('## Current preset: Lantern');
+        expect(result.text).toContain('Editable preset target: {"api":"openai","name":"Lantern"}');
+        expect(result.capabilities.preset).toEqual([{ api: 'openai', name: 'Lantern' }]);
+        expect(result.capabilities.chat).toBe(true);
     });
 });
 

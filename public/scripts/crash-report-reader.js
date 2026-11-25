@@ -101,7 +101,7 @@ function serverMemoryLine(report) {
     return parts.join(' ');
 }
 export function openCrashReportReader({ browserReports = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [] }, selectedReportId,
-    popup = showRetainedReportPopup, loadServerReports, nativeReader = typeof globalThis.NeconyanExport?.showCrashReports === 'function' ? openAndroidCrashReports : undefined } = {}) {
+    popup = showRetainedReportPopup, loadServerReports, nativeReader = typeof globalThis.NeconyanExport?.showCrashReports === 'function' ? openAndroidCrashReports : undefined, localizeMessage = text => text } = {}) {
     const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
     if (stylesheet) stylesheet.rel = 'stylesheet';
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
@@ -120,9 +120,9 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     const render = () => {
         selected = reports[Number(select.value)] ?? null;
         textarea.value = selected ? redact(JSON.stringify(selected, null, 2)) : 'No saved browser crash reports.';
-        const parts = selected ? [selected.summary, selected.error?.message].filter(Boolean) : [];
+        const parts = selected ? [selected.summary, selected.error?.message].filter(Boolean).map(part => localizeMessage(part)) : [];
         const combined = parts.reduce((text, part) => !text ? part : text + (/[.!?]$/.test(text) ? ' ' : '. ') + part, '');
-        summary.textContent = selected ? redact(combined || 'Saved crash report').slice(0, 400) : 'No saved browser crash reports.';
+        summary.textContent = selected ? redact(combined || localizeMessage('Saved crash report')).slice(0, 400) : 'No saved browser crash reports.';
         const sample = selected?.lastKnownActivity?.snapshot;
         const safe = sample && globalThis.NeconyanCrashDiagnostics?.validateActivity?.(sample);
         activity.textContent = safe ? `Last known activity: ${safe.mode}${safe.chat.messageCount !== null ? `, ${safe.chat.messageCount} messages` : ''}.`

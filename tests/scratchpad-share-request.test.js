@@ -67,10 +67,11 @@ describe('Scratchpad share requests', () => {
         expect(unshared).toMatchObject({ canIncreaseDepth: true, currentDepth: 15 });
     });
 
-    test('Conversation has no Author\'s Note, Mewmory or preset', () => {
+    test('Conversation has no Author\'s Note or Mewmory, but can share the preset', () => {
         const items = availableShareItems(CONVERSATION);
-        expect(items).toEqual(['card', 'persona', 'lore', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'regex', 'cssSnippets', 'dialogueColors', 'hidden']);
-        for (const key of ['authorsNote', 'mewmory', 'preset']) expect(isShareItemAvailable(key, CONVERSATION)).toBe(false);
+        expect(items).toEqual(['card', 'persona', 'lore', 'preset', 'problems', 'appEvidence', 'appSource', 'lastPrompt', 'agents', 'regex', 'cssSnippets', 'dialogueColors', 'hidden']);
+        for (const key of ['authorsNote', 'mewmory']) expect(isShareItemAvailable(key, CONVERSATION)).toBe(false);
+        expect(isShareItemAvailable('preset', CONVERSATION)).toBe(true);
         expect(unsharedShareItems(CONVERSATION, settings()).canIncreaseDepth).toBe(true);
     });
 

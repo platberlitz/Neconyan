@@ -340,6 +340,28 @@ describe('Scratchpad Undo', () => {
         await expect(undoChange(edit, source)).rejects.toThrow('Open the chat this change was made in');
     });
 
+    test('Conversation message undo requires the original branch to be open', async () => {
+        const entry = {
+            status: 'applied',
+            undoable: true,
+            undo: {
+                kind: 'conversation-edit',
+                chatKey: 'conversation:t:b1',
+                avatar: 'Nova.png',
+                branchId: 'b1',
+                groupId: '',
+                personaId: 'sam.png',
+                id: 'm1',
+                index: 1,
+                before: 'Old.',
+                after: 'New.',
+            },
+        };
+        liveKey = 'conversation:t:b2';
+        await expect(undoChange(entry, { kind: 'conversation', key: 'conversation:t:b2' }))
+            .rejects.toThrow('Open the chat this change was made in');
+    });
+
     test('chat undo refuses when the message or its neighbours changed', async () => {
         const edit = await save({ type: 'chat', action: 'edit', message: 0, text: 'Rewritten.' });
         chat[0].mes = 'Edited by hand.';

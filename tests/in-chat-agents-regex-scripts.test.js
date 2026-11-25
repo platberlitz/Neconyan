@@ -1,6 +1,6 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
-import { regexFromString } from '../public/scripts/regex-utils.js';
+import { regexFromString, replaceWithRegex } from '../public/scripts/regex-utils.js';
 import { SAMPLES } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js';
 
 await jest.unstable_mockModule('../public/scripts/slash-commands/SlashCommandRuntimeUtils.js', () => ({
@@ -105,5 +105,81 @@ describe('the message speaker overrides the selected character in every macro pa
         for (const [, options] of substituteParamsFn.mock.calls) {
             expect(options?.name2Override).toBe('Alice');
         }
+    });
+});
+
+describe('replaceWithRegex matches native String.prototype.replace for leading prefix lookbehinds', () => {
+    const plotCompassTemplate = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/plot-compass-companion.json', import.meta.url), 'utf8'));
+    const compare = (input, regex, replacer) => {
+        const nativeCalls = [];
+        const fastCalls = [];
+        const nativeOut = input.replace(new RegExp(regex.source, regex.flags), (...args) => {
+            nativeCalls.push(args);
+            return replacer(...args);
+        });
+        const fastOut = replaceWithRegex(input, regex, (...args) => {
+            fastCalls.push(args);
+            return replacer(...args);
+        });
+        return { fastOut, nativeOut, fastCalls, nativeCalls };
+    };
+
+    test.each([
+        ['global multiline after HTML marker', '<style>body{a:1}</style><div data-pc-card="1">\nfoo\nbar\nfoo', /(?<=data-pc-card="1"[\s\S]*)^foo$/gm, m => `[${m}]`],
+        ['non-global stops after first match', 'xx data-pc-card="1" aa aa', /(?<=data-pc-card="1"[\s\S]*)aa/, m => m.toUpperCase()],
+        ['case-insensitive marker', 'prefix DATA-PC-CARD="1" **bold** and *italic*', /(?<=data-pc-card="1"[\s\S]*)\*\*([^*\n]+)\*\*/gi, (_, inner) => `<strong>${inner}</strong>`],
+        ['named capture groups preserve groups argument shape', 'pre data-pc-card="1" hello world', /(?<=data-pc-card="1"[\s\S]*)(?<w>\w+)/g, (m, _g1, _off, _src, groups) => `<${groups.w}>`],
+        ['inner lookbehind and word boundaries see the full string', 'pre data-pc-card="1"word *ok* **bold**', /(?<=data-pc-card="1"[\s\S]*)(?<!\*)\*([^*\n]+)\*(?!\*)/g, (_, inner) => `<em>${inner}</em>`],
+        ['dotAll leading .* prefix', 'head\nMARK\nline1\nline2', /(?<=MARK.*)line\d/gs, m => m.toUpperCase()],
+        ['lazy [\\s\\S]*? prefix', 'MARK a b', /(?<=MARK[\s\S]*?)[ab]/g, m => m.toUpperCase()],
+        ['zero-length matches advance identically', 'MARK ab', /(?<=MARK[\s\S]*)(?=[ab]|$)/g, () => '|'],
+        ['surrogate pairs with unicode flag advance by code point', '😀MARK😀x', /(?<=😀MARK[\s\S]*)(?:)/gu, () => '.'],
+        ['escaped literal characters in marker', 'a/b.c(1)+2 tail foo', /(?<=a\/b\.c\(1\)\+2[\s\S]*)foo/g, () => 'BAR'],
+        ['marker absent skips all matches', 'no marker here foo bar', /(?<=data-pc-card="1"[\s\S]*)foo/g, () => 'BAR'],
+        ['repeated marker still anchors at earliest occurrence', 'MARK one MARK two', /(?<=MARK[\s\S]*)\b\w+\b/g, m => `(${m})`],
+    ])('%s', (_name, input, regex, replacer) => {
+        const { fastOut, nativeOut, fastCalls, nativeCalls } = compare(input, regex, replacer);
+        expect(fastOut).toBe(nativeOut);
+        expect(fastCalls).toEqual(nativeCalls);
+    });
+
+    test.each([
+        ['top-level alternation must still match outside the marker', 'foo MARK bar', /(?<=MARK[\s\S]*)bar|foo/g],
+        ['dot without dotAll flag does not cross newlines', 'MARK\nfoo', /(?<=MARK.*)foo/g],
+        ['quantified atom in marker falls back cleanly', 'MRK foo', /(?<=MA?RK[\s\S]*)foo/g],
+        ['character class in marker falls back cleanly', 'X foo', /(?<=[A-Z][\s\S]*)foo/g],
+        ['character class escape in marker falls back cleanly', '9 foo', /(?<=\d[\s\S]*)foo/g],
+        ['sticky regex obeys lastIndex without rewriting', 'MARK foo', /(?<=MARK[\s\S]*)foo/y],
+    ])('falls back safely when pattern is not a pure literal prefix: %s', (_name, input, regex) => {
+        const { fastOut, nativeOut, fastCalls, nativeCalls } = compare(input, regex, m => `[${m}]`);
+        expect(fastOut).toBe(nativeOut);
+        expect(fastCalls).toEqual(nativeCalls);
+    });
+
+    test('re-entrant replacer using the same RegExp does not corrupt outer iteration', () => {
+        const re = /(?<=MARK[\s\S]*)\w+/g;
+        const input = 'MARK one two';
+        const out = replaceWithRegex(input, re, match => {
+            if (match === 'one') {
+                return replaceWithRegex('MARK inner', re, inner => inner.toUpperCase());
+            }
+            return match.toUpperCase();
+        });
+        expect(out).toBe('MARK MARK INNER TWO');
+        expect(re.lastIndex).toBe(0);
+    });
+
+    test('bundled Plot Compass regex scripts produce identical HTML to native replace', () => {
+        const sample = SAMPLES['plot-compass'].full;
+        const fast = applyRegexScriptList(sample, plotCompassTemplate.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true });
+        let nativeOut = sample;
+        for (const item of plotCompassTemplate.regexScripts) {
+            const compiled = regexFromString(item.findRegex);
+            nativeOut = nativeOut.replace(compiled, item.replaceString);
+        }
+        expect(fast).toBe(nativeOut);
+        expect(fast).toContain('data-pc-card="1"');
+        expect(fast).toContain('<strong>brass token</strong>');
+        expect(fast).toContain('<em>limping courier</em>');
     });
 });

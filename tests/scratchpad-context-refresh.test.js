@@ -499,6 +499,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             append: (element, children) => element.append(children),
             clear: element => element.replaceChildren(),
             t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
+            translate: text => text,
             sameSourceBucket,
             sameSourceContext,
             isCurrentSource: value => sameSourceContext(value, app.source),

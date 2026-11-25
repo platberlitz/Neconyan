@@ -94,11 +94,19 @@ const PANEL_LOCK_STORAGE_KEY = 'ica--tracker-panel-locked';
 const PANEL_HANDLE_HIDDEN_STORAGE_KEY = 'ica--tracker-panel-handle-hidden';
 // Which control opens the panel: the floating side button or a top bar button, never both.
 const PANEL_LAUNCHER_STORAGE_KEY = 'ica--tracker-panel-launcher';
+const PANEL_WIDTH_STORAGE_KEY = 'ica--tracker-panel-width';
+const DEFAULT_PANEL_WIDTH = 420;
+const MIN_PANEL_WIDTH = 320;
+const MIN_CHAT_WIDTH = 360;
+const PANEL_WIDTH_STEP = 32;
 const PANEL_LAUNCHERS = ['handle', 'topbar'];
 const TOPBAR_LAUNCHER_ID = 'ica--tracker-panel-topbar';
 const HANDLE_DRAG_THRESHOLD_PX = 6;
 const HANDLE_EDGES = ['right', 'left', 'top', 'bottom'];
+const PHONE_VIEWPORT_QUERY = '(max-width: 768px)';
+const COMPANION_WIDTH_CSS_VAR = '--neco-companion-width';
 const COMPANION_BESIDE_CLASS = 'neconyan-companion-beside';
+const COMPANION_RESIZING_CLASS = 'neconyan-companion-resizing';
 const COMPANION_BESIDE_EDGE_CLASSES = {
     left: 'neconyan-companion-beside-left',
     right: 'neconyan-companion-beside-right',
@@ -112,15 +120,23 @@ let panelInitialized = false;
 let livePreview = null;
 let previewResultsSignature = '';
 let panelOpen = false;
+let panelSavedScrollTop = 0;
 let panelLocked = getStoredPanelLocked();
 let handleHidden = getStoredHandleHidden();
 let panelLauncher = getStoredPanelLauncher();
+let panelWidth = getStoredPanelWidth();
 let panelOpenedAt = 0;
 let suppressHandleClickUntil = 0;
+let suppressOutsideClickUntil = 0;
 let handleNode = null;
 let conversationModeObserver = null;
+let rightNavObserver = null;
+let phoneViewportMedia = null;
 let returnFocus = null;
 let panelDragActive = false;
+let panelResizeActive = false;
+let pendingPanelRenderAfterResize = false;
+let activePanelResizeStop = null;
 let pendingPanelReorders = 0;
 let panelReorderChain = Promise.resolve();
 let panelSearchQuery = '';
@@ -297,6 +313,29 @@ function storePanelLauncher(launcher) {
     }
 }
 
+function getStoredPanelWidth() {
+    try {
+        const raw = accountStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+        if (raw === null || raw === undefined || raw === '') {
+            return DEFAULT_PANEL_WIDTH;
+        }
+        const numeric = Number(raw);
+        return Number.isFinite(numeric) && numeric >= MIN_PANEL_WIDTH ? Math.round(numeric) : DEFAULT_PANEL_WIDTH;
+    } catch {
+        return DEFAULT_PANEL_WIDTH;
+    }
+}
+
+function storePanelWidth(width) {
+    try {
+        const numeric = Number(width);
+        const value = Number.isFinite(numeric) ? Math.round(Math.max(MIN_PANEL_WIDTH, numeric)) : DEFAULT_PANEL_WIDTH;
+        accountStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(value));
+    } catch {
+        // Persistence failure leaves the in-memory width active for this session.
+    }
+}
+
 export function getCompanionPanelLauncher() {
     return panelLauncher;
 }
@@ -319,22 +358,209 @@ function getPanelEdge() {
     return edge;
 }
 
+function getLayoutViewportWidth() {
+    const inner = Number(globalThis.innerWidth);
+    if (Number.isFinite(inner) && inner > 0) {
+        return inner;
+    }
+    const visual = Number(globalThis.visualViewport?.width);
+    if (Number.isFinite(visual) && visual > 0) {
+        return visual;
+    }
+    return 1280;
+}
+
+function getCompanionReservedWidth() {
+    const body = globalThis.document?.body;
+    const sidebar = body && typeof globalThis.getComputedStyle === 'function'
+        ? Number.parseFloat(globalThis.getComputedStyle(body).getPropertyValue('--neco-sidebar-offset')) || 0
+        : 0;
+    const pinned = globalThis.document?.querySelector?.('#right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)');
+    const pinnedWidth = pinned && typeof pinned.getBoundingClientRect === 'function'
+        ? (pinned.getBoundingClientRect().width || 0)
+        : 0;
+    return Math.max(0, sidebar + pinnedWidth);
+}
+
+export function clampCompanionPanelWidth(width, reserved = 0, viewportWidth = getLayoutViewportWidth()) {
+    const numeric = Number(width);
+    const candidate = Number.isNaN(numeric) || numeric <= 0 ? DEFAULT_PANEL_WIDTH : numeric;
+    const safeReserved = Math.max(0, Number(reserved) || 0);
+    const safeViewport = Number.isFinite(Number(viewportWidth)) && Number(viewportWidth) > 0 ? Number(viewportWidth) : 1280;
+    return Math.round(Math.max(MIN_PANEL_WIDTH, Math.min(candidate, safeViewport - safeReserved - MIN_CHAT_WIDTH)));
+}
+
+function getCompanionPanelWidthMetrics() {
+    const reserved = getCompanionReservedWidth();
+    const maxWidth = clampCompanionPanelWidth(Infinity, reserved);
+    const width = clampCompanionPanelWidth(panelWidth, reserved);
+    return {
+        minWidth: MIN_PANEL_WIDTH,
+        maxWidth,
+        width,
+        reserved,
+    };
+}
+
+function getCompanionPanelResizeEdge(edge = getPanelEdge(), phone = isPhonePanelLayout()) {
+    if (!panelOpen || phone) {
+        return null;
+    }
+    return edge === 'left' || edge === 'right' ? edge : null;
+}
+
 /**
  * Carries the panel's dock state to the shell. A body class lets CSS fit the chat beside
  * the open panel without a body-level :has() restyling the page on every DOM change.
  * Phones keep the panel as an overlay, and top/bottom docks remain sheets.
  */
 export function syncCompanionPanelDock({ open = panelOpen, edge = getPanelEdge(), phone = isPhonePanelLayout() } = {}) {
-    const classList = globalThis.document?.body?.classList;
+    const body = globalThis.document?.body;
+    const classList = body?.classList;
     if (typeof classList?.toggle !== 'function') {
         return;
     }
 
-    const beside = open && !phone && (edge === 'left' || edge === 'right');
+    const beside = Boolean(open && !phone && (edge === 'left' || edge === 'right'));
     classList.toggle(COMPANION_BESIDE_CLASS, beside);
     for (const [candidate, className] of Object.entries(COMPANION_BESIDE_EDGE_CLASSES)) {
         classList.toggle(className, beside && candidate === edge);
     }
+
+    const { minWidth, maxWidth, width } = getCompanionPanelWidthMetrics();
+    if (typeof body?.style?.setProperty === 'function') {
+        if (beside) {
+            body.style.setProperty(COMPANION_WIDTH_CSS_VAR, `${width}px`);
+        } else {
+            body.style.removeProperty?.(COMPANION_WIDTH_CSS_VAR);
+        }
+    }
+    if (!beside) {
+        classList.toggle(COMPANION_RESIZING_CLASS, false);
+    }
+
+    const resizer = globalThis.document?.querySelector?.('#ica--tracker-panel .ica--tpanel-resizer');
+    if (resizer && typeof resizer.setAttribute === 'function') {
+        resizer.setAttribute('aria-valuemin', String(minWidth));
+        resizer.setAttribute('aria-valuemax', String(maxWidth));
+        resizer.setAttribute('aria-valuenow', String(width));
+    }
+}
+
+function startCompanionPanelResize(event, target) {
+    const edge = getCompanionPanelResizeEdge();
+    if (!edge) {
+        return;
+    }
+    if (typeof event?.button === 'number' && event.button !== 0) {
+        return;
+    }
+    const handle = target?.closest?.('.ica--tpanel-resizer') ?? target;
+    const panel = globalThis.document?.getElementById?.('ica--tracker-panel') ?? $('#ica--tracker-panel')[0];
+    if (!handle || !panel || typeof panel.getBoundingClientRect !== 'function') {
+        return;
+    }
+
+    event?.preventDefault?.();
+    const rect = panel.getBoundingClientRect();
+    const anchorCoord = edge === 'left' ? rect.left : rect.right;
+    const pointerId = event?.pointerId;
+    const seenEvents = new WeakSet();
+
+    panelResizeActive = true;
+    pendingPanelRenderAfterResize = false;
+    globalThis.document?.body?.classList?.add?.(COMPANION_RESIZING_CLASS);
+    if (pointerId !== undefined) {
+        handle.setPointerCapture?.(pointerId);
+    }
+
+    const updateFromClientX = clientX => {
+        if (!Number.isFinite(clientX)) {
+            return;
+        }
+        const reserved = getCompanionReservedWidth();
+        const rawWidth = edge === 'left' ? clientX - anchorCoord : anchorCoord - clientX;
+        panelWidth = clampCompanionPanelWidth(rawWidth, reserved);
+        syncCompanionPanelDock();
+    };
+
+    const onMove = moveEvent => {
+        if (seenEvents.has(moveEvent)) {
+            return;
+        }
+        if (pointerId !== undefined && moveEvent?.pointerId !== undefined && moveEvent.pointerId !== pointerId) {
+            return;
+        }
+        seenEvents.add(moveEvent);
+        updateFromClientX(moveEvent?.clientX);
+    };
+
+    const stop = endEvent => {
+        if (endEvent && seenEvents.has(endEvent)) {
+            return;
+        }
+        if (pointerId !== undefined && endEvent?.pointerId !== undefined && endEvent.pointerId !== pointerId) {
+            return;
+        }
+        if (endEvent) {
+            seenEvents.add(endEvent);
+        }
+        activePanelResizeStop = null;
+        handle.removeEventListener?.('pointermove', onMove);
+        handle.removeEventListener?.('pointerup', stop);
+        handle.removeEventListener?.('pointercancel', stop);
+        globalThis.removeEventListener?.('pointermove', onMove);
+        globalThis.removeEventListener?.('pointerup', stop);
+        globalThis.removeEventListener?.('pointercancel', stop);
+        if (pointerId !== undefined && (!handle.hasPointerCapture || handle.hasPointerCapture(pointerId))) {
+            try {
+                handle.releasePointerCapture?.(pointerId);
+            } catch {
+                // Ignore if capture was already released by the browser.
+            }
+        }
+        panelResizeActive = false;
+        suppressOutsideClickUntil = Date.now() + 250;
+        globalThis.document?.body?.classList?.remove?.(COMPANION_RESIZING_CLASS);
+        storePanelWidth(panelWidth);
+        if (pendingPanelRenderAfterResize) {
+            pendingPanelRenderAfterResize = false;
+            if (panelOpen) {
+                renderPanel();
+            }
+        }
+    };
+
+    activePanelResizeStop = () => stop(null);
+    handle.addEventListener?.('pointermove', onMove);
+    handle.addEventListener?.('pointerup', stop);
+    handle.addEventListener?.('pointercancel', stop);
+    globalThis.addEventListener?.('pointermove', onMove);
+    globalThis.addEventListener?.('pointerup', stop);
+    globalThis.addEventListener?.('pointercancel', stop);
+}
+
+function resizeCompanionPanelWithKeys(event) {
+    const edge = getCompanionPanelResizeEdge();
+    if (!edge) {
+        return;
+    }
+    const key = event?.key ?? event?.originalEvent?.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') {
+        return;
+    }
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.originalEvent?.preventDefault?.();
+    event?.originalEvent?.stopPropagation?.();
+    const step = edge === 'left'
+        ? (key === 'ArrowRight' ? PANEL_WIDTH_STEP : -PANEL_WIDTH_STEP)
+        : (key === 'ArrowLeft' ? PANEL_WIDTH_STEP : -PANEL_WIDTH_STEP);
+    const reserved = getCompanionReservedWidth();
+    const current = clampCompanionPanelWidth(panelWidth, reserved);
+    panelWidth = clampCompanionPanelWidth(current + step, reserved);
+    syncCompanionPanelDock();
+    storePanelWidth(panelWidth);
 }
 
 /**
@@ -495,6 +721,10 @@ function bindHandleDrag(handleElement) {
 
         // Cancelled drags re-place from storage; completed ones apply the new dock.
         placeDockedHandle();
+        if (!cancelled && panelOpen && panelLauncher === 'handle') {
+            $('#ica--tracker-panel').attr('data-edge', getPanelEdge());
+            syncCompanionPanelDock();
+        }
     };
 
     handleElement.addEventListener('touchstart', event => {
@@ -1015,11 +1245,15 @@ function buildPanelRunButtonsHtml(states = []) {
 
 export function buildPanelHtml() {
     const states = collectPanelAgentStates();
+    const { minWidth, maxWidth, width } = typeof getCompanionPanelWidthMetrics === 'function'
+        ? getCompanionPanelWidthMetrics()
+        : { minWidth: 320, maxWidth: 920, width: 420 };
     const body = states.length > 0
         ? states.map(buildPanelAgentSection).join('')
         : '<div class="ica--cdash-empty">No companion agents are enabled and no tracked state is stored in this chat yet. Convert a tracker to companion execution or enable a companion to see its state here.</div>';
 
     return `
+        <div class="ica--tpanel-resizer" data-role="panel-resizer" role="separator" aria-orientation="vertical" aria-label="${escapeHtml(t`Resize Companions`)}" tabindex="0" aria-valuemin="${minWidth}" aria-valuemax="${maxWidth}" aria-valuenow="${width}"></div>
         <div class="ica--tpanel-header">
             <span class="ica--tpanel-title"><i class="fa-solid fa-cat"></i> Companions</span>
             <span class="ica--tpanel-agent-actions">
@@ -1050,6 +1284,7 @@ export function buildPanelHtml() {
 const PANEL_JUMP_EDGE_SLACK = 4;
 let panelJumpFrame = 0;
 let panelJumpResizeObserver = null;
+let stopPanelBottomFollow = null;
 
 function shouldReducePanelMotion() {
     return Boolean(document.body?.classList?.contains('reduced-motion')
@@ -1104,14 +1339,60 @@ function observePanelJumpSize(panel) {
 function jumpPanel(direction) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
-    const top = direction === 'top' ? 0 : panel.scrollHeight;
+    stopPanelBottomFollow?.();
     const behavior = shouldReducePanelMotion() ? 'auto' : 'smooth';
-    if (typeof panel.scrollTo === 'function') {
-        panel.scrollTo({ top, behavior });
+    if (direction !== 'top' && typeof globalThis.requestAnimationFrame === 'function') {
+        followPanelBottom(panel, behavior === 'smooth');
+    } else if (typeof panel.scrollTo === 'function') {
+        panel.scrollTo({ top: direction === 'top' ? 0 : panel.scrollHeight, behavior });
     } else {
-        panel.scrollTop = top;
+        panel.scrollTop = direction === 'top' ? 0 : panel.scrollHeight;
     }
     schedulePanelJumpSync();
+}
+
+// Cards that have not drawn yet only estimate their height, so the bottom moves away as the
+// last ones appear, and a native smooth scroll stops short at the bottom it saw when it began.
+// Aim at the current bottom every frame instead, until it holds still or the reader takes over.
+function followPanelBottom(panel, smooth) {
+    const controller = new AbortController();
+    let frame = 0;
+    stopPanelBottomFollow = () => {
+        globalThis.cancelAnimationFrame?.(frame);
+        controller.abort();
+        stopPanelBottomFollow = null;
+    };
+    for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        panel.addEventListener(type, () => stopPanelBottomFollow?.(), { passive: true, signal: controller.signal });
+    }
+    let started = 0;
+    let lastTime = 0;
+    let lastHeight = -1;
+    let settled = 0;
+    const step = time => {
+        if (controller.signal.aborted) return;
+        started ||= time;
+        const elapsed = lastTime ? Math.min(time - lastTime, 100) : 16;
+        lastTime = time;
+        if (!panelOpen || !panel.isConnected || time - started > 4000) {
+            stopPanelBottomFollow?.();
+            return;
+        }
+        const remaining = panel.scrollHeight - panel.clientHeight - panel.scrollTop;
+        // Newly reached cards draw a frame or two after the scroll, so the bottom has to stay put a while.
+        settled = remaining <= 1 && panel.scrollHeight === lastHeight ? settled + 1 : 0;
+        lastHeight = panel.scrollHeight;
+        if (settled >= 6) {
+            stopPanelBottomFollow?.();
+            return;
+        }
+        if (remaining > 0) {
+            const distance = smooth ? Math.max(remaining * (1 - Math.pow(0.8, elapsed / 16)), Math.min(remaining, 2)) : remaining;
+            panel.scrollTop += distance;
+        }
+        frame = globalThis.requestAnimationFrame(step);
+    };
+    frame = globalThis.requestAnimationFrame(step);
 }
 
 /** Filter existing sections so private drafts and expanded notes survive each keystroke. */
@@ -1153,7 +1434,10 @@ function applyPanelSearch({ rendering = false } = {}) {
 function renderPanel({ applyOpenState } = {}) {
     // Replacing the sortable DOM cancels a live drag. Until its saves finish, the
     // store also still contains the previous order, so keep the dropped rows visible.
-    if (panelDragActive || pendingPanelReorders > 0) {
+    if (panelDragActive || pendingPanelReorders > 0 || panelResizeActive) {
+        if (panelResizeActive) {
+            pendingPanelRenderAfterResize = true;
+        }
         applyOpenState?.();
         return;
     }
@@ -1363,7 +1647,9 @@ export function openCompanionPanel() {
         globalThis.NeconyanNotes?.hide?.();
     }
 
-    if (!panelOpen) returnFocus = document.activeElement;
+    const wasOpen = panelOpen;
+    if (!wasOpen) returnFocus = document.activeElement;
+    const restoreScrollTop = !wasOpen ? panelSavedScrollTop : 0;
     if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
     }
@@ -1381,6 +1667,12 @@ export function openCompanionPanel() {
             globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
         },
     });
+    if (restoreScrollTop > 0) {
+        const panelNode = document.getElementById?.('ica--tracker-panel') ?? $('#ica--tracker-panel')[0];
+        if (panelNode) {
+            panelNode.scrollTop = restoreScrollTop;
+        }
+    }
     notifyDiceCompanionHostsChanged();
     // The panel only gains its height once it is shown, so measure again on the next frame.
     schedulePanelJumpSync();
@@ -1389,9 +1681,14 @@ export function openCompanionPanel() {
 
 export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
-    panelOpen = false;
-    syncCompanionPanelDock();
     const panel = $('#ica--tracker-panel');
+    if (panelOpen) {
+        panelSavedScrollTop = panel[0]?.scrollTop || 0;
+    }
+    stopPanelBottomFollow?.();
+    panelOpen = false;
+    activePanelResizeStop?.();
+    syncCompanionPanelDock();
     setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
@@ -1895,6 +2192,10 @@ export function initCompanionPanel() {
         applyPanelSearch();
     });
     $('#ica--tracker-panel').on('keydown', '[data-role="plot-compass-objective"]', submitPlotCompassOnEnter);
+    $('#ica--tracker-panel').on('pointerdown', '.ica--tpanel-resizer', event => {
+        startCompanionPanelResize(event?.originalEvent ?? event, event?.currentTarget ?? event?.target);
+    });
+    $('#ica--tracker-panel').on('keydown', '.ica--tpanel-resizer', resizeCompanionPanelWithKeys);
     $('#ica--tracker-panel').on('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();
@@ -1992,7 +2293,7 @@ export function initCompanionPanel() {
     // Keep the panel open while a popup dialog or fullscreen textarea overlay is active,
     // or when the clicked control belonged to a popup or was detached by its own handler.
     $(document).on('click', event => {
-        if (!panelOpen || panelLocked || Date.now() - panelOpenedAt < 250) {
+        if (!panelOpen || panelLocked || panelResizeActive || Date.now() < suppressOutsideClickUntil || Date.now() - panelOpenedAt < 250) {
             return;
         }
         if (document?.querySelector?.('dialog.popup[open], .ica--textarea-fullscreen-overlay')) {
@@ -2018,6 +2319,9 @@ export function initCompanionPanel() {
     const refreshEvents = [event_types.CHAT_CHANGED, event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED].filter(Boolean);
     for (const eventName of refreshEvents) {
         eventSource.on(eventName, () => {
+            if (eventName === event_types.CHAT_CHANGED) {
+                panelSavedScrollTop = 0;
+            }
             // Chat changes must reach the windows synchronously; a stale note is worse than a repaint.
             refreshCompanionWindows();
             if (panelOpen) {
@@ -2039,6 +2343,20 @@ export function initCompanionPanel() {
     // The story's handle must not cover Scratchpad messages, and one side workspace owns the width.
     document.addEventListener('neconyan:scratchpad-visibility', handleSideWorkspaceVisibilityChange);
     document.addEventListener('neconyan:notes-visibility', handleSideWorkspaceVisibilityChange);
+    phoneViewportMedia?.removeEventListener?.('change', syncCompanionPanelDock);
+    phoneViewportMedia = globalThis.matchMedia?.(PHONE_VIEWPORT_QUERY) ?? null;
+    phoneViewportMedia?.addEventListener?.('change', syncCompanionPanelDock);
+    rightNavObserver?.disconnect?.();
+    rightNavObserver = null;
+    const rightNavPanel = globalThis.document?.getElementById?.('right-nav-panel');
+    if (rightNavPanel && typeof MutationObserver === 'function') {
+        rightNavObserver = new MutationObserver(() => {
+            if (panelOpen) {
+                syncCompanionPanelDock();
+            }
+        });
+        rightNavObserver.observe(rightNavPanel, { attributes: true, attributeFilter: ['class'] });
+    }
     globalThis.addEventListener?.('resize', syncCompanionPanelDock);
     globalThis.visualViewport?.addEventListener?.('resize', syncCompanionPanelDock);
     syncConversationModePanelVisibility();

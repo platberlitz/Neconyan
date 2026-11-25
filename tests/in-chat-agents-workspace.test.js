@@ -266,6 +266,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => state.enabled,
             getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            t: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
             updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
@@ -298,6 +299,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => true,
             getGlobalSettings: () => ({ enabled: true, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            t: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
             updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
@@ -309,6 +311,19 @@ describe('agent workbench state', () => {
         expect(elements.get('#ica--run-status').textContent).toBe('No automatic agents enabled');
         expect(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/settings.html', import.meta.url), 'utf8'))
             .toContain('<strong id="ica--run-status" role="status">Loading your agents...</strong>');
+    });
+
+    test('companion panel cards skip painting while far off-screen', () => {
+        const rule = styleSource.match(/^\.ica--tpanel-agent \{[^}]*\}/m)?.[0] ?? '';
+        expect(rule).toContain('content-visibility: auto;');
+        expect(rule).toMatch(/contain-intrinsic-size: auto \d+px;/);
+    });
+
+    test('closed companion panel uses display none instead of inherited visibility', () => {
+        const rule = styleSource.match(/^\.ica--tpanel:not\(\.is-open\) \{[^}]*\}/m)?.[0] ?? '';
+        expect(rule).toContain('display: none;');
+        expect(rule).not.toContain('visibility:');
+        expect(rule).not.toContain('pointer-events:');
     });
 
     test('the master switch persists off even when recovery blocks Agent execution', () => {

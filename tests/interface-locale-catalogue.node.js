@@ -25,8 +25,11 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     // Helper argument inside an exported function, folder fallback, Home speaker, template, tab array,
     // the In-Chat Agents bulk-edit popup, which sits inside a <template> element, and a filter label that
     // BotSearcher declares in its server folder and its client puts on the page.
-    for (const caption of ['Test keys', 'Unfiled', 'All books', 'Miso, Taro and Nori', 'Close ${0}', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Scan World Info', 'Don\'t change', 'Has all of these tags']) {
+    for (const caption of ['Test keys', 'Unfiled', 'All books', 'Miso, Taro and Nori', 'Close ${0}', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Scan World Info', 'Don\'t change', 'Has all of these tags', 'Contrastive_search_txt', 'help_hotkeys_19_1', 'help_hotkeys_20', 'scoped.connections.openai_follow', 'scoped.hopper.follow', 'scoped.horde.enter_anonymous', 'scoped.key.enter', 'scoped.action.change']) {
         assert.ok(keys.has(caption), `missing ${caption}`);
+    }
+    for (const deadKey of ['bg_chat_hint_2', 'openai_reasoning_effort_auto', 'welcome_message_part_3']) {
+        assert.ok(!keys.has(deadKey), `retired dead symbolic key still listed: ${deadKey}`);
     }
     const english = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
     for (const caption of ['Vectorize all', 'Mark entries in this lorebook for Vectorization', 'Entries in \'${0}\' will also match by meaning with Vectorization. Their keywords are kept and still work.', 'Keyword entries to change: ${0}', 'Include constant entries (${0})', 'Turn on lorebook retrieval in replies', 'Changes the Vectorization setting for every active lorebook, not just this one.', 'Entries marked for Vectorization: ${0}', 'Could not save the lorebook, so no entries were changed. Reload it and try again.']) {
@@ -57,6 +60,79 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     ]) {
         assert.ok(!keys.has(retired), `retired M102a key still collected: ${retired}`);
         assert.ok(!Object.hasOwn(english, retired), `retired M102a key still in en.json: ${retired}`);
+    }
+    for (const caption of [
+        'Click this toast to undo.',
+        'Recolored ${0} message.',
+        'Recolored ${0} messages.',
+        'Recolored ${0} character; ${1} conflicts remain.',
+        'Restored ${0} stored color tables. Skipped ${1} keys that now exist.',
+        'Deleted ${0} selected characters. Kept ${1} pinned characters.',
+        'Verified DOM colors: applied ${0} corrections, queued ${1} suggestions for review.',
+        'Verification stopped after ${0} messages: the provider request failed. Applied ${1} corrections and queued ${2} suggestions before stopping.',
+    ]) {
+        assert.ok(keys.has(caption), `missing M102b caption: ${caption}`);
+        assert.equal(english[caption], caption, `missing M102b English caption: ${caption}`);
+    }
+    for (const retired of [
+        'Recolored ${0} message${1}.',
+        'Recolored ${0} character${1}; ${2} conflict${3} remain.',
+        'Restored ${0} stored color table${1}.${2}',
+        'Skipped ${0} key${1} that now exist.',
+        'Deleted ${0} selected character${1}.${2}',
+        'Kept ${0} pinned character${1}.',
+        'Verified DOM colors: applied ${0} correction${1}, queued ${2} suggestion${3} for review.',
+        'Verification stopped after ${0} message${1}: the provider request failed.${2}',
+    ]) {
+        assert.ok(!keys.has(retired), `retired M102b key still collected: ${retired}`);
+        assert.ok(!Object.hasOwn(english, retired), `retired M102b key still in en.json: ${retired}`);
+    }
+    const group5Captions = [
+        'A **macro** is a short instruction inside double braces, such as **{{char}}**. It becomes text when a prompt is built. This page lets you look up the syntax, try it and keep macros of your own.',
+        'The syntax switches control comparisons in **{{if}}** and repairs for macros written for other apps. Their help buttons explain exactly what changes.',
+        'These settings appear for **Main API** and **WebLLM**. **LLM Prompt** is the instruction the model gets when it picks a feeling; the **{{labels}}** macro becomes the list of feelings it may choose from.',
+        'Describe the picture you want. You can use **{{char}}** and **{{user}}** for the character and your persona names.',
+        'The **Context Template** puts the pieces in order, using a **story string** with placeholders such as **{{description}}** and **{{persona}}**. Pick a ready-made template for your model.',
+        '**What it does** holds the name, **Where results go** and the agent’s instructions. **Prompt or reply** lets it work on the request or the reply; **Companion note** makes it a companion that writes its own note. **Macros** such as {{char}} and {{user}} are filled in when it runs, and the refine button asks a model to improve the instructions before anything changes.',
+        'A **persona** is you, in the story. Its name replaces **{{user}}** in cards and prompts, and its description tells the model what you look like and how you act.',
+        '**Outlet Name** names the outlet for the **Outlet** position: write {{outlet::Name}} in a prompt and the entry appears there. **Automation ID** can run a Quick Reply when the entry joins in.',
+        'This bug report draft is not a JSON object.',
+        'This bug report draft has no title.',
+        'This bug report draft does not say what went wrong.',
+        '${0}\'s ${1} tour',
+        'Start ${0}\'s ${1} tour',
+        'all chats',
+        'group chats',
+        'individual chats',
+        'Agent switches apply to ${0}.',
+        '<None>',
+        'Not found',
+        'This page does not exist. Check the address for typos, or go back to the main Neconyan page.',
+        'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.',
+    ];
+    for (const caption of group5Captions) {
+        assert.ok(keys.has(caption), `missing ${caption}`);
+        assert.equal(english[caption], caption, `missing English caption: ${caption}`);
+    }
+    const group5Scoped = {
+        'scoped.story_mode.word_count_one': '${0} word',
+        'scoped.story_mode.word_count_many': '${0} words',
+        'scoped.hopper.timeline_default': 'Timeline',
+        'scoped.hopper.timeline_numbered': 'Timeline ${0}',
+    };
+    for (const [scopedKey, englishText] of Object.entries(group5Scoped)) {
+        assert.ok(keys.has(scopedKey), `missing ${scopedKey}`);
+        assert.equal(english[scopedKey], englishText, `missing English scoped value: ${scopedKey}`);
+    }
+    for (const excluded of [
+        '${0} word',
+        '${0} words',
+        'Timeline ${0}',
+        'Agent switches apply to ${0}.${1}',
+        'This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.',
+        'This Neconyan is behind a login. Here is how to get back in.',
+    ]) {
+        assert.ok(!keys.has(excluded), `unexpected ${excluded}`);
     }
     // Developer-facing errors and identifiers never reach the page.
     for (const text of ['Server is not ready yet.', 'Could not close Meower.', 'BatchConflictError']) {
@@ -112,6 +188,7 @@ test('the catalogue can be written and listed without a translator, and one lang
             : statSync(source).isDirectory() || (/\.(html|js|json)$/.test(source) && !/[\\/]locales[\\/]neconyan[\\/]en\.json$/.test(source));
         cpSync(join(root, 'public'), join(scratch, 'public'), { recursive: true, filter: wanted });
         cpSync(join(root, 'default', 'content', 'assistants', 'manifest.json'), join(scratch, 'default', 'content', 'assistants', 'manifest.json'));
+        cpSync(join(root, 'default', 'content', 'errors', 'url-not-found.html'), join(scratch, 'default', 'content', 'errors', 'url-not-found.html'));
         const script = join(root, 'scripts', 'build-interface-locales.js');
 
         // --write-catalogue and --list never reach the translator.
