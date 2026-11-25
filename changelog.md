@@ -27,6 +27,7 @@
 - Fixed non-English alerts that dropped singular counts or cut off save warnings in **Dialogue Colors**.
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
 - Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
+- Non-English languages now keep your persona, group, connection profile and session names, **Scratchpad** web search sources, and **Meower** voter and trend tooltips as written.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

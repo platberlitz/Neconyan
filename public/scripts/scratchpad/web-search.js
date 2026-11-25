@@ -204,8 +204,19 @@ export function renderWebSearchSources(message) {
         const list = h('ol', { class: 'scratchpad-web-source-list scratchpad-source-list' });
         for (const [index, source] of sources.entries()) {
             list.append(h('li', {},
-                h('a', { href: source.url, target: '_blank', rel: 'noopener noreferrer', referrerpolicy: 'no-referrer', text: source.title || t`Source ${index + 1}` }),
-                h('small', { class: 'scratchpad-web-url', text: source.url.length > 160 ? `${source.url.slice(0, 157)}...` : source.url })));
+                h('a', {
+                    href: source.url,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    referrerpolicy: 'no-referrer',
+                    ...(source.title ? { 'data-i18n-ignore': '' } : {}),
+                    text: source.title || t`Source ${index + 1}`,
+                }),
+                h('small', {
+                    class: 'scratchpad-web-url',
+                    'data-i18n-ignore': '',
+                    text: source.url.length > 160 ? `${source.url.slice(0, 157)}...` : source.url,
+                })));
         }
         body.append(list);
     } else if (!error) {

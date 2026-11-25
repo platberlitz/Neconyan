@@ -1608,7 +1608,7 @@ function renderOverview() {
     append(el.overviewBar, [
         h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
         ...sessionAssistants(session).map(id => h('img', { src: assistantPortrait(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
-        h('span', { class: 'scratchpad-overview-name', text: name }),
+        h('span', { class: 'scratchpad-overview-name', text: name, ...(app.source && session?.name ? { 'data-i18n-ignore': '' } : {}) }),
         randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
         sharedFeedbackTone() === DEFAULT_FEEDBACK_TONE ? null : h('span', { class: 'scratchpad-badge scratchpad-tone-badge', text: feedbackToneLabel(sharedFeedbackTone()) }),
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
@@ -1638,7 +1638,7 @@ function renderChat() {
         const settings = currentSettings();
         const assistant = assistantInfo(session?.assistant ?? app.assistant);
         append(el.summary, [
-            h('span', { text: session ? session.name : t`New session with ${assistant.name}` }),
+            h('span', { text: session ? session.name : t`New session with ${assistant.name}`, ...(session?.name ? { 'data-i18n-ignore': '' } : {}) }),
             settings.roundTable ? h('span', { class: 'scratchpad-badge', text: t`Round table: ${sessionAssistants(session).length}` }) : null,
             randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
@@ -3988,7 +3988,7 @@ function renderSessions() {
         list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}`, 'data-session': session.id },
             h('img', { src: assistantPortrait(assistant.id, session), alt: '', width: 32, height: 32 }),
             h('div', { class: 'scratchpad-session-info' },
-                h('strong', { text: session.name }),
+                h('strong', { text: session.name, ...(session.name ? { 'data-i18n-ignore': '' } : {}) }),
                 h('small', { text: [assistant.name, t`${session.messages.length} messages`, formatDate(session.updated), session.temporary ? t`Temporary` : '', session.pinned ? t`Pinned` : ''].filter(Boolean).join(' · ') })),
             h('div', { class: 'scratchpad-session-actions' },
                 active
