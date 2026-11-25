@@ -1,5 +1,8 @@
 import { MOBILE_SWIPE_RAIL_SELECTOR, resolveMobileShellNavScrollIndicators } from './mobile-shell-lifecycle/index.js';
 
+/** Rails that keep their arrows on desktop as well as on phones. */
+const DESKTOP_RAIL_SELECTOR = '#sb_character_creator_panel .creator-sections, #HotSwapWrapper .hotswap, #neconyan-scratchpad .scratchpad-quick';
+
 /** Add shared overflow cues without wrapping, moving or inserting children into a rail. */
 export function initMobileSwipeRails({ leftLabel, rightLabel }) {
     const phone = window.matchMedia('(max-width: 768px)');
@@ -157,7 +160,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             if (record.containers[0] !== rail.parentElement) watchContainers(record, containersFor(rail, null));
             if (chrome.parentElement !== rail.parentElement) rail.parentElement.append(chrome);
             const style = getComputedStyle(rail);
-            const visible = (phone.matches || rail.matches('#sb_character_creator_panel .creator-sections, #HotSwapWrapper .hotswap')) && rail.getClientRects().length > 0
+            const visible = (phone.matches || rail.matches(DESKTOP_RAIL_SELECTOR)) && rail.getClientRects().length > 0
                 && style.visibility !== 'hidden' && /auto|scroll/.test(style.overflowX);
             // Modern browsers use negative scrollLeft for RTL. Map to physical left/right.
             const scrollLeft = style.direction === 'rtl' ? rail.scrollWidth - rail.clientWidth + rail.scrollLeft : rail.scrollLeft;

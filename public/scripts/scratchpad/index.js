@@ -68,6 +68,7 @@ import { expandTypedTools, MAX_ROLL_DICE, MAX_ROLL_SIDES, TypedToolError } from 
 import { canReadAloud, isReadingAloud, speakReplies, spokenText, stopReadAloud, toggleReadAloud } from './read-aloud.js';
 import { createAudioContext, createTalkMode, monitorStream, TALK_PAUSES, talkPause } from './talk-mode.js';
 import { editQuickPrompts } from './quick-prompts.js';
+import { createQuickBarState, quickBarExpanded, toggleQuickBar, wheelScrollDelta } from './quick-bar.js';
 import { findShortcuts, parseShortcut, replaceShortcut } from './check-shortcuts.js';
 import { MAX_PINNED_NOTE_BYTES, pinnedNoteContext } from './pinned-note.js';
 import { canRehearse, normaliseRehearsalLabel } from './rehearsal.js';
@@ -79,7 +80,7 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261212-companion-panel-scroll-hydration';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261212-scratchpad-compact-quick';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -228,6 +229,8 @@ const app = {
     libraryOpen: false,
     tab: 'chat',
     overviewCollapsed: false,
+    quickBar: createQuickBarState(),
+    quickWheel: null,
     source: null,
     personaWarning: false,
     bucket: null,
@@ -832,6 +835,23 @@ function buildChatPanel() {
     el.replyStatus = h('div', { class: 'sr-only', role: 'status' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
         quickPromptChips());
+    el.quick.addEventListener('scrollend', () => { app.quickWheel = null; });
+    el.quickToggle = h('button', {
+        type: 'button',
+        class: 'scratchpad-quick-toggle',
+        'aria-controls': 'scratchpad-quick-rail',
+        'aria-expanded': 'true',
+        'aria-label': t`Quick prompts`,
+        title: t`Hide quick prompts`,
+        onclick: onQuickToggle,
+    }, h('i', { class: 'fa-solid fa-chevron-down', 'aria-hidden': 'true' }), h('span', { text: t`Quick prompts` }));
+    el.quickEdit = iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' });
+    const quickRail = h('div', { id: 'scratchpad-quick-rail', class: 'scratchpad-quick-rail' }, el.quick);
+    quickRail.addEventListener('wheel', onQuickWheel, { passive: false });
+    el.quickBar = h('div', { class: 'scratchpad-quick-bar', 'data-expanded': 'true' },
+        el.quickToggle,
+        quickRail,
+        el.quickEdit);
     el.composer = h('textarea', {
         class: 'text_pole scratchpad-composer',
         rows: '1',
@@ -907,7 +927,7 @@ function buildChatPanel() {
         el.overview,
         el.replyStatus,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, el.talkBar, el.queue, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.talk, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quickBar, el.attachments, el.fileStatus, el.talkBar, el.queue, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.talk, el.send)),
     ]);
 }
 
@@ -1718,7 +1738,7 @@ function usePrompt(text) {
     app.el.composer.focus();
 }
 
-/** The user's own prompts come first, then the built-in ones for this kind of Scratchpad, then the editor button. */
+/** The user's own prompts come first, then the built-in ones for this kind of Scratchpad. The editor button stays pinned beside the row. */
 function quickPromptChips() {
     const chip = prompt => iconButton(prompt.label, () => void takePrompt(prompt), { className: 'scratchpad-chip' });
     const saved = app.quickPrompts.prompts.map(prompt => {
@@ -1727,8 +1747,54 @@ function quickPromptChips() {
         element.setAttribute('data-i18n-ignore', '');
         return element;
     });
-    return [...saved, ...quickPrompts().map(chip),
-        iconButton('', () => void openQuickPromptEditor(), { icon: 'fa-pen', title: t`Edit quick prompts`, className: 'scratchpad-chip scratchpad-chip-edit' })];
+    return [...saved, ...quickPrompts().map(chip)];
+}
+
+function quickBarKey(session = activeSession()) {
+    return session ? followUpKey(app.source, session.id) : '';
+}
+
+/** Shows the quick prompts row in an empty session and folds it to one toggle once the session has messages. */
+function renderQuickBar(session = activeSession()) {
+    const el = app.el;
+    const expanded = quickBarExpanded(app.quickBar, quickBarKey(session), session?.messages.length ?? 0);
+    if (el.quickBar.dataset.expanded === String(expanded)) return;
+    el.quickBar.dataset.expanded = String(expanded);
+    el.quickToggle.setAttribute('aria-expanded', String(expanded));
+    el.quickToggle.title = expanded ? t`Hide quick prompts` : t`Show quick prompts`;
+    el.quick.parentElement.hidden = !expanded;
+}
+
+function onQuickToggle() {
+    const stick = nearBottom(app.el.messages);
+    const session = activeSession();
+    toggleQuickBar(app.quickBar, quickBarKey(session), session?.messages.length ?? 0);
+    renderQuickBar(session);
+    if (stick) scrollMessages(true);
+}
+
+/** Lets a vertical mouse wheel glide the quick prompts row sideways on desktop. */
+function onQuickWheel(event) {
+    const rail = app.el.quick;
+    const delta = wheelScrollDelta(event, rail);
+    if (!delta) return;
+    event.preventDefault();
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.body.classList.contains('reduced-motion');
+    // Trackpads send many small steps that already feel smooth; a mouse wheel's large notches glide.
+    const smooth = !still && (event.deltaMode !== 0 || Math.abs(delta) >= 40);
+    const now = Date.now();
+    const current = rail.scrollLeft;
+    const prev = app.quickWheel;
+    const gliding = smooth && prev !== null
+        && now - prev.at < 500
+        && Math.abs(prev.target - current) > 1
+        && Math.sign(delta) === Math.sign(prev.target - prev.from)
+        && current >= Math.min(prev.from, prev.target) - 2
+        && current <= Math.max(prev.from, prev.target) + 2;
+    const room = rail.scrollWidth - rail.clientWidth;
+    const target = Math.max(0, Math.min(room, (gliding ? prev.target : current) + delta));
+    app.quickWheel = smooth ? { from: current, target, at: now } : null;
+    rail.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'instant' });
 }
 
 /** Switches on the sharing a check prompt needs for this session and says what changed. Resolves to null when that could not be saved. */
@@ -1794,7 +1860,10 @@ function renderHeader() {
         app.el.quick.dataset.imagesAvailable = String(app.imageAvailability.image);
         app.el.quick.dataset.savedPrompts = savedPrompts;
         app.el.quick.dataset.quickState = quickState;
+        // A chip that switches sharing on redraws the row; keep it where the user scrolled it.
+        const scrolled = app.el.quick.scrollLeft;
         app.el.quick.replaceChildren(...quickPromptChips());
+        app.el.quick.scrollLeft = scrolled;
     }
     const session = activeSession();
     const assistant = session?.assistant ?? app.assistant;
@@ -1914,6 +1983,7 @@ function renderChat() {
         ]);
     }
     renderOverview();
+    renderQuickBar(session);
     renderMessages();
     renderComposer();
 }

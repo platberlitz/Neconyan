@@ -526,6 +526,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
             renderMessageActions: () => node('div', { class: 'scratchpad-message-actions' }, node('button', { title: 'Try again' })),
             renderHeader() {},
             renderOverview() {},
+            renderQuickBar() {},
             renderComposer() {},
             renderContext() {},
             renderSessions() {},
