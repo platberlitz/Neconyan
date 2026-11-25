@@ -12,8 +12,19 @@ const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${fi
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
 const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
+const EXTRA_SCOPED_KEYS = [
+    NANO_REASONING_SCOPED_KEY,
+    SCRATCHPAD_HISTORY_SCOPED_KEY,
+    'scoped.connections.openai_follow',
+    'scoped.hopper.follow',
+    'scoped.horde.enter_anonymous',
+    'scoped.key.enter',
+    'scoped.action.change',
+];
+const ALL_LOCALES = readJson('lang.json').filter(entry => entry.lang !== 'en').map(entry => entry.lang);
 const catalogue = readJson('neconyan/en.json');
 const files = Object.fromEntries(LANGUAGES.map(language => [language, { base: readJson(`${language}.json`), supplement: readJson(`neconyan/${language}.json`), catalogue }]));
+const allFiles = Object.fromEntries(ALL_LOCALES.map(language => [language, { base: readJson(`${language}.json`), supplement: readJson(`neconyan/${language}.json`), catalogue }]));
 
 // A copy of the assembly getLocaleData() did before scoped keys existed. The new function must match it exactly.
 function todaysAssembly({ base, supplement, catalogue: source }) {
@@ -46,23 +57,28 @@ const withSynthetic = ({ base, supplement, catalogue: source }) => ({ base, supp
 const PROBES = ['Message 3, image 1', 'Message 3, alternative 2, image 1', 'Message too long for this model', 'Completed'];
 const render = (dictionary, probes = PROBES) => Object.fromEntries(probes.map(text => [text, localizeString(text, dictionary)]));
 
-test('every real scoped key is a catalogued image choice or the Nano reasoning label', () => {
+test('every real scoped key is a catalogued image choice or an explicit collision-isolated label', () => {
     assert.ok(Object.keys(catalogue).length > 10000);
-    for (const language of LANGUAGES) {
-        const { base, supplement } = files[language];
+    for (const language of ALL_LOCALES) {
+        const { base, supplement } = allFiles[language];
         for (const [name, table] of [['base', base], ['supplement', supplement]]) {
             for (const key of Object.keys(table).filter(isScopedKey)) {
-                assert.ok(key.startsWith('scoped.prompt_media.') || [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY].includes(key), `${language} ${name} holds an uncatalogued scoped namespace`);
+                assert.ok(key.startsWith('scoped.prompt_media.') || EXTRA_SCOPED_KEYS.includes(key), `${language} ${name} holds an uncatalogued scoped namespace: ${key}`);
                 assert.ok(Object.hasOwn(catalogue, key), `${language} ${name}: ${key} is not a key of the catalogue`);
             }
         }
     }
-    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label and Scratchpad's Change history heading.
+    // The catalogue carries 51 image-choice entries plus the explicit non-image scoped keys.
     const catalogued = Object.keys(catalogue).filter(isScopedKey);
     assert.equal(catalogued.filter(key => key.startsWith('scoped.prompt_media.')).length, 51);
-    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY]);
+    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), EXTRA_SCOPED_KEYS);
     assert.equal(catalogue[NANO_REASONING_SCOPED_KEY], '${0} (unavailable)');
     assert.equal(catalogue[SCRATCHPAD_HISTORY_SCOPED_KEY], 'Change history');
+    assert.equal(catalogue['scoped.connections.openai_follow'], 'Follow');
+    assert.equal(catalogue['scoped.hopper.follow'], 'Follow');
+    assert.equal(catalogue['scoped.horde.enter_anonymous'], 'Enter');
+    assert.equal(catalogue['scoped.key.enter'], 'Enter');
+    assert.equal(catalogue['scoped.action.change'], 'Change');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -179,4 +195,76 @@ test('tableForKey sends a scoped key to the scoped table and every other key to 
     assert.equal(tableForKey('scoped.x', dictionary, undefined), undefined);
     assert.equal(tableForKey('Open', undefined, scoped), undefined);
     assert.equal(tableForKey('scoped.x', undefined, undefined), undefined);
+});
+
+test('all 17 non-English locales isolate Follow, Enter, Change, Contrastive_search_txt and align hotkeys', () => {
+    assert.equal(ALL_LOCALES.length, 17);
+    const badHopperFollow = new Set(['OpenAI API 키를 얻으려면', '按照', '遵循', 'Следуйте', 'Дотримуйтесь', 'اتبع']);
+    const expectedFollow = { 'ar-sa': 'متابعة', 'zh-cn': '关注', 'zh-tw': '追蹤', 'ko-kr': '팔로우', 'ru-ru': 'Подписаться', 'uk-ua': 'Підписатися' };
+    const expectedKeyEnter = { 'fr-fr': 'Entrée', 'it-it': 'Invio' };
+    const expectedCtrlEnter = { 'de-de': 'Strg+Enter', 'fr-fr': 'Ctrl+Entrée', 'it-it': 'Ctrl+Invio' };
+    const expectedChangeNoun = { 'nl-nl': 'Wijziging', 'de-de': 'Änderung', 'is-is': 'Breyting', 'uk-ua': 'Зміна', 'tr-tr': 'Değişiklik' };
+    const expectedActionChange = { 'nl-nl': 'Wijzigen', 'de-de': 'Ändern', 'is-is': 'Breyta', 'uk-ua': 'Змінити', 'tr-tr': 'Değiştir', 'it-it': 'Cambia', 'fr-fr': 'Modifier', 'zh-cn': '更改' };
+
+    for (const language of ALL_LOCALES) {
+        const { dictionary, scoped } = assembleLocaleData(allFiles[language]);
+
+        // Follow isolation (L10N-43)
+        assert.ok(scoped['scoped.hopper.follow'], `${language}: missing scoped.hopper.follow`);
+        assert.ok(scoped['scoped.connections.openai_follow'], `${language}: missing scoped.connections.openai_follow`);
+        assert.ok(!badHopperFollow.has(scoped['scoped.hopper.follow']), `${language}: scoped.hopper.follow leaked ${scoped['scoped.hopper.follow']}`);
+        assert.ok(!Object.hasOwn(dictionary, 'scoped.hopper.follow'), `${language}: scoped.hopper.follow in dictionary`);
+        assert.ok(!Object.hasOwn(dictionary, 'scoped.connections.openai_follow'), `${language}: scoped.connections.openai_follow in dictionary`);
+        if (expectedFollow[language]) {
+            assert.equal(scoped['scoped.hopper.follow'], expectedFollow[language], `${language}: scoped.hopper.follow`);
+            assert.equal(dictionary.Follow, expectedFollow[language], `${language}: dictionary.Follow`);
+        }
+
+        // Enter isolation (L10N-43)
+        assert.equal(scoped['scoped.key.enter'], expectedKeyEnter[language] || 'Enter', `${language}: scoped.key.enter`);
+        assert.equal(typeof scoped['scoped.horde.enter_anonymous'], 'string', `${language}: scoped.horde.enter_anonymous type`);
+        if (language === 'tr-tr') {
+            assert.equal(scoped['scoped.horde.enter_anonymous'], '');
+        } else {
+            assert.ok(scoped['scoped.horde.enter_anonymous'].length > 0, `${language}: empty scoped.horde.enter_anonymous`);
+        }
+
+        // Hotkeys alignment & help_hotkeys_19_1 / _20 split (L10N-45)
+        for (const key of ['help_hotkeys_7', 'help_hotkeys_8', 'help_hotkeys_9', 'help_hotkeys_10_1', 'help_hotkeys_11', 'help_hotkeys_19_1', 'help_hotkeys_20']) {
+            assert.ok(dictionary[key], `${language}: missing ${key}`);
+        }
+        assert.equal(dictionary.help_hotkeys_9, expectedKeyEnter[language] || 'Enter', `${language}: help_hotkeys_9`);
+        assert.equal(dictionary.help_hotkeys_11, expectedCtrlEnter[language] || 'Ctrl+Enter', `${language}: help_hotkeys_11`);
+        assert.notEqual(dictionary.help_hotkeys_10_1, dictionary.help_hotkeys_11, `${language}: help_hotkeys_10_1 collided with Ctrl+Enter`);
+        assert.notEqual(dictionary.help_hotkeys_19_1, dictionary.help_hotkeys_20, `${language}: help_hotkeys_19_1 equals help_hotkeys_20`);
+        assert.notEqual(dictionary.help_hotkeys_20, dictionary.help_hotkeys_21, `${language}: help_hotkeys_20 shifted into _21`);
+
+        // Contrastive_search_txt tooltip (L10N-44)
+        assert.ok(dictionary.Contrastive_search_txt, `${language}: empty Contrastive_search_txt`);
+        assert.notEqual(dictionary.Contrastive_search_txt, 'Contrastive_search_txt', `${language}: raw Contrastive_search_txt`);
+
+        // Change verb vs noun isolation (L10N-55)
+        assert.ok(scoped['scoped.action.change'], `${language}: missing scoped.action.change`);
+        assert.ok(dictionary.Change, `${language}: missing dictionary.Change`);
+        if (expectedChangeNoun[language]) assert.equal(dictionary.Change, expectedChangeNoun[language], `${language}: dictionary.Change`);
+        if (expectedActionChange[language]) assert.equal(scoped['scoped.action.change'], expectedActionChange[language], `${language}: scoped.action.change`);
+    }
+
+    // Spot-check the 4 shifted hotkey supplements (ko-kr, th-th, is-is, uk-ua) and zh-cn _20
+    const assembled = Object.fromEntries(ALL_LOCALES.map(language => [language, assembleLocaleData(allFiles[language]).dictionary]));
+    assert.equal(assembled['ko-kr'].help_hotkeys_7, '오른쪽');
+    assert.match(assembled['ko-kr'].help_hotkeys_8, /^오른쪽으로 스와이프/);
+    assert.equal(assembled['zh-cn'].help_hotkeys_19_1, '滚动聊天到底部');
+    assert.equal(assembled['zh-cn'].help_hotkeys_20, 'Markdown 快捷键');
+    assert.equal(assembled['th-th'].help_hotkeys_7, 'ขวา');
+    assert.equal(assembled['th-th'].help_hotkeys_19_1, 'เลื่อนแชทไปด้านล่าง');
+    assert.equal(assembled['th-th'].help_hotkeys_20, 'ปุ่มลัด Markdown');
+    assert.equal(assembled['is-is'].help_hotkeys_7, 'Hægri');
+    assert.equal(assembled['is-is'].help_hotkeys_19_1, 'Skruna neðst í spjallið');
+    assert.equal(assembled['is-is'].help_hotkeys_20, 'Markdown flýtileiðir');
+    assert.notEqual(assembled['is-is']['Prompt Itemization'], assembled['is-is']['Show Raw Prompt']);
+    assert.equal(assembled['uk-ua'].help_hotkeys_7, 'Праворуч');
+    assert.equal(assembled['uk-ua'].help_hotkeys_19_1, 'Прокрутити чат донизу');
+    assert.equal(assembled['uk-ua'].help_hotkeys_20, 'Гарячі клавіші Markdown');
+    assert.notEqual(assembled['uk-ua']['Prompt Itemization'], assembled['uk-ua']['Show Raw Prompt']);
 });
