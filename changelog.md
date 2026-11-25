@@ -198,6 +198,7 @@
 - PR #954 (2026-11-24) `fix(mewmory): stop counting hidden reply data as prompt text`
 - PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
+- PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
