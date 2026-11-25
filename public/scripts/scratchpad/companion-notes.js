@@ -1,6 +1,7 @@
 import {
     getActiveCompanionResults,
     holdsReadableCompanionResults,
+    isRetainedCompanionResult,
     isSuppressedCompanionResult,
 } from '../extensions/in-chat-agents/companion/companion-shared.js';
 
@@ -52,6 +53,12 @@ function speakerName(message, fallback) {
     return String(fallback || message?.name || (message?.is_user ? 'User' : 'Character'));
 }
 
+function chatIndexOf(item) {
+    const raw = item?.messageRef ?? item?.ref;
+    if (raw === undefined || raw === null) return Number.isInteger(item?.number) ? item.number : -1;
+    return /^\d+$/.test(String(raw)) ? Number(raw) : -1;
+}
+
 /**
  * Lists the completed Companion notes on the messages a Roleplay context
  * shares. Only the current version of a message counts, so notes on an
@@ -59,32 +66,48 @@ function speakerName(message, fallback) {
  * notes their Companion keeps in chat history while the message is hidden, and
  * never their story text.
  */
-export function collectCompanionNotes(chat, kept, { includeHidden = false, picked = false } = {}) {
+export function collectCompanionNotes(chat, kept, { includeHidden = false, picked = false, all = null } = {}) {
     const list = Array.isArray(chat) ? chat : [];
     const shared = new Map();
     for (const item of Array.isArray(kept) ? kept : []) {
         if (!Number.isInteger(item?.number) || (item.swipe && !item.current)) continue;
-        if (!shared.has(item.number)) shared.set(item.number, item);
+        const chatIndex = chatIndexOf(item);
+        if (chatIndex < 0) continue;
+        if (!shared.has(chatIndex)) shared.set(chatIndex, { chatIndex, number: item.number, name: item.name, hiddenOnly: false });
     }
-    const sources = [...shared.values()].map(item => ({ number: item.number, name: item.name, hiddenOnly: false }));
+    const sources = [...shared.values()];
     if (!includeHidden && !picked && shared.size) {
-        const numbers = [...shared.keys()];
+        const numbers = [...shared.values()].map(item => item.number);
         const earliest = Math.min(...numbers);
-        const visibleBefore = list.slice(0, earliest).some(message => message && !message.is_system);
-        const start = visibleBefore ? earliest : 0;
-        for (let number = start; number < list.length; number++) {
-            if (list[number]?.is_system && !shared.has(number)) sources.push({ number, name: '', hiddenOnly: true });
+        if (Array.isArray(all)) {
+            const visibleBefore = all.some(item => Number.isInteger(item?.number) && item.number < earliest && !item.hidden);
+            const start = visibleBefore ? earliest : 0;
+            for (const item of all) {
+                if (!item?.hidden || !Number.isInteger(item.number) || item.number < start) continue;
+                const chatIndex = chatIndexOf(item);
+                if (chatIndex >= 0 && !shared.has(chatIndex)) {
+                    sources.push({ chatIndex, number: item.number, name: '', hiddenOnly: true });
+                }
+            }
+        } else {
+            const visibleBefore = list.slice(0, earliest).some(message => message && !message.is_system);
+            const start = visibleBefore ? earliest : 0;
+            for (let number = start; number < list.length; number++) {
+                if (list[number]?.is_system && !shared.has(number)) {
+                    sources.push({ chatIndex: number, number, name: '', hiddenOnly: true });
+                }
+            }
         }
     }
     sources.sort((a, b) => a.number - b.number);
 
     const notes = [];
     for (const source of sources) {
-        const message = list[source.number];
+        const message = list[source.chatIndex];
         if (!holdsReadableCompanionResults(message)) continue;
         for (const [agentId, result] of Object.entries(getActiveCompanionResults(message))) {
             if (!isCompletedNote(agentId, result)) continue;
-            if (source.hiddenOnly && result.keepInChatHistoryWhenHostHidden !== true) continue;
+            if (source.hiddenOnly && !(isRetainedCompanionResult(result) && result.keepInChatHistoryWhenHostHidden === true)) continue;
             const content = cleanCompanionNote(result.content);
             if (!content) continue;
             notes.push({

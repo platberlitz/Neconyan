@@ -66,7 +66,8 @@ function storyChat() {
         {
             name: 'Aria', is_system: true, mes: 'Hidden story text: the keeper is a ghost.',
             extra: { [KEY]: {
-                shard: note('Memory Shard', 'Kept shard: the lamp was lit in 1890.', { keepInChatHistoryWhenHostHidden: true, agentCategory: 'memory' }),
+                shard: note('Memory Shard', 'Kept shard: the lamp was lit in 1890.', { includeInChatHistory: true, keepInChatHistoryWhenHostHidden: true, agentCategory: 'memory' }),
+                disabledShard: note('Paused Shard', 'Paused shard: must stay out when includeInChatHistory is off.', { includeInChatHistory: false, keepInChatHistoryWhenHostHidden: true, agentCategory: 'memory' }),
                 compass: note('Plot Compass', 'Ordinary note on a hidden message.'),
             } },
         },
@@ -131,6 +132,35 @@ describe('Scratchpad Companion notes', () => {
         expect(text).toContain('### Aria: Memory Shard [memory] (on hidden message #2)\nKept shard: the lamp was lit in 1890.');
         expect(text).not.toContain('Hidden story text');
         expect(text).not.toContain('Ordinary note on a hidden message.');
+        expect(text).not.toContain('Paused shard');
+    });
+
+    test('chat rehearsals map notes by original message ref after insert, delete and hide', async () => {
+        const inserted = await buildContext({
+            source: currentSource(),
+            settings: { depth: 15, include: { companionNotes: true } },
+            rehearsalChange: { change: { type: 'chat', action: 'insert', after: 0, speaker: 'user', text: 'Wait a moment.' } },
+        });
+        expect(inserted.text).toContain('### #2 Aria: Plot Compass [tracker]\nActive swipe note: Aria reaches the lamp room.');
+        expect(inserted.text).toContain('### Aria: Memory Shard [memory] (on hidden message #3)\nKept shard: the lamp was lit in 1890.');
+        expect(inserted.text).not.toContain('### #1 Aria: Plot Compass');
+
+        const deleted = await buildContext({
+            source: currentSource(),
+            settings: { depth: 15, include: { companionNotes: true } },
+            rehearsalChange: { change: { type: 'chat', action: 'delete', message: 1 } },
+        });
+        expect(deleted.text).not.toContain('Active swipe note');
+        expect(deleted.text).toContain('### Aria: Memory Shard [memory] (on hidden message #1)\nKept shard: the lamp was lit in 1890.');
+        expect(deleted.text).toContain('### #2 Aria: inbox\nInbox: a letter from the mainland.');
+
+        const hidden = await buildContext({
+            source: currentSource(),
+            settings: { depth: 15, include: { companionNotes: true } },
+            rehearsalChange: { change: { type: 'chat', action: 'hide', message: 1 } },
+        });
+        expect(hidden.text).not.toContain('Active swipe note');
+        expect(hidden.text).toContain('Kept shard: the lamp was lit in 1890.');
     });
 
     test('with hidden messages shared, every completed note on them is read with the message', async () => {

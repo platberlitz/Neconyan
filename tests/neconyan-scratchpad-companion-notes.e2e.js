@@ -56,7 +56,7 @@ async function seedChat(page, avatar) {
         context.chat.push({
             name: 'Durable Nova', is_user: false, is_system: true, send_date: '', mes: notes.hiddenStory,
             extra: { inChatAgentCompanionResults: {
-                'memory-shard': note('Memory Shard', notes.kept, { agentCategory: 'memory', keepInChatHistoryWhenHostHidden: true }),
+                'memory-shard': note('Memory Shard', notes.kept, { agentCategory: 'memory', includeInChatHistory: true, keepInChatHistoryWhenHostHidden: true }),
                 'plot-compass': note('Plot Compass', notes.hiddenOrdinary),
             } },
         });

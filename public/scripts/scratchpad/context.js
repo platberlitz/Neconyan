@@ -1239,7 +1239,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     let companionNotesShared = false;
     if (source.kind === 'roleplay' && include.companionNotes === true) {
         const room = MAX_CONTEXT_BYTES - byteLength(sections.join('\n\n')) - 2;
-        const notes = formatCompanionNotes(collectCompanionNotes(chat, kept, { includeHidden: include.hidden === true, picked: selection.picked }), room);
+        const notes = formatCompanionNotes(collectCompanionNotes(chat, kept, {
+            includeHidden: include.hidden === true,
+            picked: selection.picked,
+            all,
+        }), room);
         if (notes.text) {
             sections.push(notes.text);
             companionNotesShared = true;
