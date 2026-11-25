@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 async function equipPreset(page, name, prompt) {
     await page.evaluate(async ({ name, prompt }) => {
@@ -15,6 +16,7 @@ async function equipPreset(page, name, prompt) {
 }
 
 async function expectSharedPreset(page, app, account, tab, rawPrompt) {
+    await showContextSection(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
     await tab('Chat').click();
@@ -33,7 +35,7 @@ async function expectSharedPreset(page, app, account, tab, rawPrompt) {
     expect(sent).toContain('## Current preset: Harbour');
     expect(sent).toContain(rawPrompt);
     expect(sent).not.toMatch(/Garden|Latest messages|## Author's Note|Editable preset target|"type":"preset"/);
-    await tab('Context').click();
+    await openScratchpadContext(page, 'sharing');
 }
 
 async function expectPresetPreview(button, preview, prompt) {
@@ -59,7 +61,7 @@ for (const phone of [false, true]) {
         const tab = name => page.getByRole('tab', { name, exact: true });
         await equipPreset(page, 'Garden', 'Garden prompt with {{char}}.');
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         if (phone) await applyIOSOnlyCss(page);
         await expect(page.locator('.scratchpad-source')).toContainText('General Scratchpad');
         const preset = () => page.getByRole('checkbox', { name: /^Current preset:/ });
@@ -91,7 +93,7 @@ for (const phone of [false, true]) {
         await expect(preview).toContainText('## Current preset: Garden');
         await expect(preview).toContainText('Garden prompt with {{char}}.');
         if (process.env.NECONYAN_SCRATCHPAD_SCREENSHOTS === '1') {
-            await page.getByRole('heading', { name: 'Also share', exact: true }).scrollIntoViewIfNeeded();
+            await page.getByRole('heading', { name: 'Story and lore', exact: true }).scrollIntoViewIfNeeded();
             await page.evaluate(() => window.toastr.clear());
             await page.screenshot({ path: `../screenshots/scratchpad-general-preset/${phone ? 'phone' : 'desktop'}-after.png` });
         }

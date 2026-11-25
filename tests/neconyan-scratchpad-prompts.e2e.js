@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} unchanged default prompts stay default on the next request and custom prompts are preserved`, async ({ app }, testInfo) => {
@@ -13,6 +14,7 @@ for (const phone of [false, true]) {
         const page = await account.open();
         const openEditor = async () => {
             await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+            await showContextSection(page, 'replies');
             // eslint-disable-next-line playwright/no-conditional-in-test -- Chromium needs the iOS-only CSS for the phone fixture.
             if (phone) await applyIOSOnlyCss(page);
             await page.getByRole('button', { name: 'View or edit Miso\'s prompt', exact: true }).click();
@@ -100,6 +102,7 @@ for (const phone of [false, true]) {
         const page = await account.open();
         const open = async () => {
             await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+            await showContextSection(page, 'replies');
             if (phone) await applyIOSOnlyCss(page);
         };
         await open();

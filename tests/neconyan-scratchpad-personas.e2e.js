@@ -7,6 +7,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
 import { shareScenarioNotes } from '../public/scripts/scratchpad/scenario-note-references.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const baseline = process.env.NECONYAN_SCRATCHPAD_PERSONAS_BASELINE_ROOT;
 if (baseline) test.use({ initialServerOptions: { checkoutRoot: baseline } });
@@ -33,6 +34,7 @@ for (const phone of [false, true]) {
         await fs.writeFile(path.join(app.dataRoot, 'default-user', 'User Avatars', avatarId), picture([190, 130, 95]));
         const page = await account.open({ workspace: true, timeout: 60000 });
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         const settings = async () => JSON.parse((await account.post('/api/settings/get')).settings);
@@ -130,6 +132,7 @@ for (const phone of [false, true]) {
         await fs.writeFile(avatarPath, original);
         const page = await account.open({ workspace: true, timeout: 60000 });
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         const send = async text => {

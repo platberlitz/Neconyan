@@ -7,6 +7,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const REFUSED = 'This address is private, local or not allowed, so it was not read.';
 
@@ -24,7 +25,7 @@ for (const phone of [false, true]) {
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
         let page = await account.open();
         await openScratchpad(page, phone);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 async function openScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
@@ -57,7 +58,7 @@ for (const phone of [false, true]) {
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
         let page = await account.open();
         const source = await openScratchpad(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await expect(page.locator('#scratchpad-max-tokens')).toHaveValue('32000');
         await expect(page.getByRole('checkbox', { name: 'Stream replies' })).toBeChecked();
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
@@ -66,7 +67,7 @@ for (const phone of [false, true]) {
         page = await account.open();
         await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await expect(page.getByRole('checkbox', { name: 'Stream replies' })).not.toBeChecked();
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         app.provider.mode.hold = MODEL;
@@ -87,7 +88,7 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
         await expect(page.locator('.scratchpad-reasoning .scratchpad-plain')).toHaveText('The finished thinking.');
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.getByRole('checkbox', { name: 'Stream replies' }).check();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.stream).toBe(true);
         await page.locator('#scratchpad-max-tokens').scrollIntoViewIfNeeded();

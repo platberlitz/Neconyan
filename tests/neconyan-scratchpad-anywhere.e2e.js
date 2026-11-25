@@ -4,6 +4,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) {
@@ -50,9 +51,10 @@ for (const phone of [true, false]) {
         const general = await source(page);
         expect(general.kind).toBe('general');
         expect(general.avatar).toBeUndefined();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(page.locator('#scratchpad-depth')).toHaveCount(0);
         await expect(page.getByRole('checkbox', { name: 'Lorebook entries', exact: true })).toHaveCount(0);
+        await showContextSection(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source: general })).bucket.sessions[0]?.settings.assistantConnections.miso.profileId).toBe('durable');
         await page.screenshot({ path: `../screenshots/item1-${size}-context-after.png` });

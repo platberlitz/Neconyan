@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 async function openScratchpad(page, tab = 'chat') {
     await page.evaluate(async tab => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab }), tab);
@@ -65,7 +66,7 @@ for (const phone of [false, true]) {
         await page.getByRole('button', { name: 'Try again', exact: true }).click();
         await expect(page.locator('#toast-container')).toContainText('Open the original chat');
         expect(await page.evaluate(() => window.SillyTavern.getContext().chat[0].mes)).not.toBe('Do not write this into another chat.');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(page.locator('#scratchpad-panel-context')).toContainText('These picks belong to another chat.');
         await page.getByRole('button', { name: 'Show preview', exact: true }).click();
         await expect(page.locator('.scratchpad-preview-text')).toContainText('## Picked messages (0 of');

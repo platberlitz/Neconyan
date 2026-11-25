@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test, send } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const reasoning = 'I should keep the plan simple and leave room for a break.';
 const first = 'We can start with a short walk.';
@@ -38,7 +39,7 @@ for (const phone of [false, true]) {
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
         const page = await account.open();
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         if (phone) await applyIOSOnlyCss(page);

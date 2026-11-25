@@ -4,6 +4,7 @@
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 async function openScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
@@ -34,9 +35,10 @@ for (const phone of [false, true]) {
             return context.wireSource(context.currentSource());
         });
         expect(source.kind).toBe('roleplay');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections?.miso?.profileId).toBe('durable');
+        await showContextSection(page, 'sharing');
         await page.getByRole('checkbox', { name: /^Current preset: Scratchpad Garden/ }).check();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.include.preset).toBe(true);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

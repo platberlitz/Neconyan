@@ -8,6 +8,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_IMAGES_BEFORE === '1';
 if (before) {
@@ -79,7 +80,7 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
         if (before) await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
         else await openRail(page, phone);
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, before ? 'We can talk through your illustration idea here.'
@@ -94,6 +95,8 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
         const plain = page.locator('.scratchpad-image-card').first();
         expect(imageProvider.calls).toHaveLength(0);
         if (!textProfile) await checkImageControlContrast(page, ['.scratchpad-image-card button.menu_button_primary'], phone);
+        const quickToggle = page.locator('.scratchpad-quick-toggle');
+        if (await quickToggle.isVisible() && await quickToggle.getAttribute('aria-expanded') === 'false') await quickToggle.click();
         await expect(page.getByRole('button', { name: 'Image idea', exact: true })).toBeVisible();
         const original = await fs.readFile(path.join(app.dataRoot, 'default-user', 'characters', account.avatar));
         await generate(plain, page, account);
@@ -124,6 +127,7 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
         await page.locator('.scratchpad-close').click();
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'avatar', character: 'Durable Nova', prompt: 'A new portrait for Durable Nova.' }));
@@ -201,7 +205,7 @@ for (const phone of [false, true]) {
             Array.from({ length: 12 }, (_, index) => ({ role: 'user', text: `Earlier discussion ${index + 1}.\n` + 'Keep the portrait consistent with the story.\n'.repeat(4) })) } });
         await open();
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'avatar', character: 'Durable Nova', prompt: 'A new portrait for Durable Nova.' }));
@@ -257,7 +261,7 @@ for (const phone of [false, true]) {
         if (before) await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
         else await openRail(page, phone);
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'A little observatory below a moonlit sky.', reason: 'An illustration of the idea.' }));
@@ -312,7 +316,7 @@ for (const phone of [true, false]) {
         const page = await account.open({ workspace: false });
         await openRail(page, phone);
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'A little observatory below a moonlit sky.', reason: 'An illustration of the idea.' }));
@@ -369,6 +373,7 @@ for (const phone of [true, false]) {
         if (phone) await applyIOSOnlyCss(page);
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'avatar', character: 'Durable Nova', prompt: 'A new portrait for Durable Nova.' }));
@@ -439,7 +444,7 @@ test('an accepted image finishes after closing the page and remains in its origi
     } });
     let page = await account.open({ workspace: false });
     await openRail(page, false);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
     await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'Keep this image in General.' }));

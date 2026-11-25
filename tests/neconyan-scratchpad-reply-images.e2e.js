@@ -1,6 +1,7 @@
 import { PNG } from 'pngjs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
 
@@ -27,7 +28,7 @@ test('a reply with a finished image keeps its regenerate and swipe controls, whi
     } });
     const page = await account.open({ workspace: false });
     await openRail(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
 

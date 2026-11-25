@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 async function scrollPreviewTo(preview, marker) {
     await preview.evaluate((element, marker) => {
@@ -40,7 +41,7 @@ for (const phone of [false, true]) {
         const prompt = name => page.getByRole('button', { name, exact: true });
         await expect(prompt('Check my preset')).toHaveCount(0);
         await expect(prompt('Check my lorebook')).toHaveCount(0);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         if (phone) await applyIOSOnlyCss(page);
         const generalSource = await page.evaluate(async () => {
             const context = await import('/scripts/scratchpad/context.js');
@@ -92,7 +93,7 @@ for (const phone of [false, true]) {
             return context.wireSource(context.currentSource());
         });
         expect(source.kind).toBe('roleplay');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         if (phone) await applyIOSOnlyCss(page);
         const checks = page.getByRole('checkbox', { name: /^Problem checks/ });
         await expect(checks).not.toBeChecked();
@@ -136,7 +137,7 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-composer')).toHaveValue('Check the shared card for problems and explain how to fix them.');
         await expect(page.locator('#toast-container .toast').filter({ hasText: 'Turned on Problem checks for this session.' }).first()).toBeVisible();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.include.problems).toBe(true);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(checks).toBeChecked();
         if (process.env.NECONYAN_SCRATCHPAD_SCREENSHOTS === '1') {
             await page.getByRole('tab', { name: 'Chat', exact: true }).click();

@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) test.use({ initialServerOptions: { checkoutRoot: process.env.NECONYAN_SCRATCHPAD_BASELINE_ROOT || '/srv/projects/Neconyan-worktrees/scratchpad-baseline' } });
@@ -36,7 +37,7 @@ function readSource(page) {
 }
 
 async function connect(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
     await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
@@ -280,7 +281,7 @@ for (const phone of [false, true]) {
         const presetBox = page.getByRole('checkbox', { name: /^Current preset/ });
 
         if (before) {
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
+            await openScratchpadContext(page, 'sharing');
             await expect(page.getByRole('checkbox', { name: /^Character cards/ })).toBeVisible();
             await page.getByRole('checkbox', { name: /^Character cards/ }).scrollIntoViewIfNeeded();
             await expect(presetBox).toHaveCount(0);
@@ -320,7 +321,7 @@ for (const phone of [false, true]) {
         await share.scrollIntoViewIfNeeded();
         await shot('share-request');
         await share.locator('.scratchpad-share-only').click();
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(presetBox).toBeChecked();
         await expect(page.getByText(HINT, { exact: true })).toBeVisible();
         await presetBox.scrollIntoViewIfNeeded();

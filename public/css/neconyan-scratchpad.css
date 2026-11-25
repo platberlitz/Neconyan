@@ -2829,9 +2829,315 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
     }
 }
 
+.scratchpad-context-summary-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.scratchpad-context-summary-head .scratchpad-section-title {
+    margin: 0;
+}
+
+.scratchpad-context-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scratchpad-context-pill {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.scratchpad-preview:empty {
+    display: none;
+}
+
+.scratchpad-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.scratchpad-context-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-raised);
+}
+
+.scratchpad-context-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 36px;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.scratchpad-context-tab:hover {
+    border-color: color-mix(in srgb, var(--neco-ginger) 35%, var(--neco-border));
+}
+
+.scratchpad-context-tab[aria-selected="true"] {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 22%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-weight: 700;
+}
+
+.scratchpad-context-tab:focus-visible,
+.scratchpad-drawer-summary:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.scratchpad-context-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.scratchpad-context-pane > * {
+    min-width: 0;
+}
+
+.scratchpad-depth-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 10px;
+}
+
+.scratchpad-depth-field .text_pole {
+    width: 6.5em;
+}
+
+.scratchpad-depth-field small {
+    grid-column: 1 / -1;
+}
+
+.scratchpad-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.scratchpad-chip-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.25;
+    cursor: pointer;
+}
+
+.scratchpad-chip-toggle input[type="checkbox"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.scratchpad-chip-toggle span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-chip-toggle span::before {
+    flex: none;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--neco-muted);
+    border-radius: 50%;
+    content: '';
+}
+
+.scratchpad-chip-toggle:hover {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+}
+
+.scratchpad-chip-toggle:has(input:checked) {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 20%, var(--neco-surface));
+}
+
+.scratchpad-chip-toggle:has(input:checked) span::before {
+    width: 6px;
+    height: 11px;
+    margin: -3px 3px 0;
+    border-width: 0 2px 2px 0;
+    border-color: var(--neco-ink);
+    border-radius: 0;
+    rotate: 45deg;
+}
+
+.scratchpad-chip-toggle:has(input:focus-visible) {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.scratchpad-chip-hints {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--neco-muted);
+    font-size: 0.8rem;
+}
+
+.scratchpad-chip-hints strong {
+    color: var(--neco-ink);
+}
+
+.scratchpad-drawer {
+    min-width: 0;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+
+.scratchpad-section .scratchpad-drawer {
+    background: var(--neco-raised);
+}
+
+.scratchpad-drawer > .scratchpad-drawer-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 12px;
+    list-style: none;
+    cursor: pointer;
+}
+
+.scratchpad-drawer > .scratchpad-drawer-summary::-webkit-details-marker {
+    display: none;
+}
+
+.scratchpad-drawer > .scratchpad-drawer-summary::before {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    content: '';
+    rotate: -45deg;
+}
+
+.scratchpad-drawer[open] > .scratchpad-drawer-summary::before {
+    rotate: 45deg;
+}
+
+.scratchpad-drawer-title {
+    flex: 1 1 0;
+    min-width: 0;
+    font-weight: 700;
+}
+
+.scratchpad-drawer-badge {
+    display: block;
+    flex: 0 0 auto;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scratchpad-drawer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 12px 12px;
+}
+
+.scratchpad-drawer-body > .scratchpad-section {
+    padding: 0;
+    border: 0;
+    background: none;
+}
+
+.scratchpad-assistant-setup {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.scratchpad-assistant-setup > .scratchpad-field {
+    align-self: stretch;
+}
+
+.scratchpad-assistant-setup + .scratchpad-assistant-setup {
+    padding-top: 8px;
+    border-top: 1px solid var(--neco-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scratchpad-context-tab,
+    .scratchpad-chip-toggle,
+    .scratchpad-drawer > .scratchpad-drawer-summary::before {
+        transition-duration: 0s;
+    }
+}
+
+body.reduced-motion .scratchpad-context-tab,
+body.reduced-motion .scratchpad-chip-toggle,
+body.reduced-motion .scratchpad-drawer > .scratchpad-drawer-summary::before {
+    transition-duration: 0s;
+}
+
 @media (max-width: 768px) {
     .scratchpad-app .scratchpad-button,
     .scratchpad-app .scratchpad-chip,
+    .scratchpad-context-tab,
+    .scratchpad-chip-toggle,
     .scratchpad-app .scratchpad-link,
     .scratchpad-app .scratchpad-overview-toggle,
     .scratchpad-app .scratchpad-overview-bar,
@@ -2884,7 +3190,12 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
         transition: background-color 120ms ease-out, border-color 120ms ease-out;
     }
 
-    body:not(.reduced-motion) .scratchpad-quick-toggle i {
+    body:not(.reduced-motion) :is(.scratchpad-context-tab, .scratchpad-chip-toggle) {
+        transition: background-color 120ms ease-out, border-color 120ms ease-out;
+    }
+
+    body:not(.reduced-motion) .scratchpad-quick-toggle i,
+    body:not(.reduced-motion) .scratchpad-drawer > .scratchpad-drawer-summary::before {
         transition: rotate 120ms ease-out;
     }
 

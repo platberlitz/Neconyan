@@ -5,6 +5,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { openScratchpadContext, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const REFUSAL = 'Share that lorebook under Context before saving a change to it.';
 const ACCENTS = [null, 'rgba(110,231,183,1)', 'rgba(126,34,206,1)'];
@@ -113,7 +114,7 @@ for (const phone of [false, true]) {
         await expect(dialog).toHaveCount(0);
         await clearToasts();
 
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         await expect(picker).toHaveValue('');
         await expect(chips).toHaveCount(0);
         await expect(page.getByText('Shared in this session only. Entries hidden from assistants stay hidden.')).toBeVisible();
@@ -143,6 +144,7 @@ for (const phone of [false, true]) {
         await expect(preview).not.toContainText('hidden cellar');
         await expect(preview).not.toContainText('secret gnome');
         await expect(preview).not.toContainText('strongroom');
+        await showContextSection(page, 'replies');
         await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
 
@@ -173,7 +175,7 @@ for (const phone of [false, true]) {
         expect(sent).not.toContain('strongroom');
         await noSidewaysScroll();
 
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         const removed = page.waitForResponse('**/api/scratchpad/session/update');
         await page.getByRole('button', { name: 'Remove Harbour', exact: true }).click();
         expect((await removed).ok()).toBe(true);
@@ -206,7 +208,7 @@ for (const phone of [false, true]) {
         expect(later).toContain('The roses are red.');
         expect(later).not.toContain('ferry leaves');
 
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         await share('Vault');
         await account.post('/api/worldinfo/delete', { name: 'Vault' });
         await page.reload({ waitUntil: 'domcontentloaded' });
@@ -215,7 +217,7 @@ for (const phone of [false, true]) {
         if (await skip.isVisible()) await skip.click();
         await open();
         if (phone) await applyIOSOnlyCss(page);
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         await expect(chips).toHaveText([/Garden/, /Vault/]);
         await expect(chips.nth(1)).toContainText('Not found. It may have been renamed or deleted.');
         await expect(picker.locator('option[value="Vault"]')).toHaveCount(0);
@@ -289,7 +291,7 @@ for (const phone of [false, true]) {
         const created = page.waitForResponse('**/api/scratchpad/session/create');
         await page.locator('.scratchpad-header .scratchpad-new-session').click();
         expect((await created).ok()).toBe(true);
-        await tab('Context').click();
+        await openScratchpadContext(page, 'sharing');
         await expect(picker).toHaveValue('');
         await expect(chips).toHaveCount(0);
         await expect(picker.locator('option[value="Garden"]')).toHaveCount(1);

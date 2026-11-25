@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 const QUESTION = 'Is my opening line any good?';
 
@@ -36,7 +37,8 @@ for (const phone of [false, true]) {
         await expect(chatTone).toHaveAttribute('aria-valuetext', 'Harsher');
         await expect.poll(async () => (await savedSettings())?.feedbackTone).toBe('harsher');
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'other-assistants');
         for (const id of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${id}`).selectOption(`tone-${id}`);
         const contextTone = page.locator('#scratchpad-context-tone');
         await expect(contextTone).toHaveAttribute('aria-valuetext', 'Harsher');

@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 const REQUEST = 'Read each other\'s answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.';
 
@@ -20,7 +21,8 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         const prefix = `../screenshots/scratchpad-discuss/${phone ? 'phone' : 'desktop'}`;
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'other-assistants');
         for (const id of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${id}`).selectOption(`discuss-${id}`);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await page.locator('.scratchpad-round-table').click();

@@ -5,6 +5,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-scratchpad-search-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 async function openScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
@@ -16,9 +17,11 @@ async function openScratchpad(page) {
 }
 
 async function configureSearch(page, url) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
+    await showContextSection(page, 'setup');
+    await openContextDrawer(page, 'web-search');
     await page.locator('#scratchpad-web-search-provider').selectOption('searxng');
     await page.locator('#scratchpad-web-search-searxng').fill(url);
     const saving = page.waitForResponse('**/api/scratchpad/web-search/update');
@@ -166,7 +169,8 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('.scratchpad-web-sources summary')).toHaveText('Sources (2)');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'setup');
+        await openContextDrawer(page, 'web-search');
         await expect(page.locator('#scratchpad-web-search-provider')).toHaveValue('searxng');
         await expect(page.locator('#scratchpad-web-search-searxng')).toHaveValue(search.url);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
@@ -210,6 +214,8 @@ test('a round table searches once and gives every assistant the same sources', a
     const page = await account.open();
     await openScratchpad(page);
     await configureSearch(page, search.url);
+    await showContextSection(page, 'replies');
+    await openContextDrawer(page, 'other-assistants');
     for (const assistant of ['taro', 'nori']) await page.locator(`#scratchpad-connection-${assistant}`).selectOption('durable');
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
     await page.locator('.scratchpad-plus').click();
@@ -261,7 +267,8 @@ test('failed saves and background refreshes preserve the web search form draft',
     const account = await app.account();
     const page = await account.open();
     await openScratchpad(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'setup');
+    await openContextDrawer(page, 'web-search');
     await page.locator('#scratchpad-web-search-provider').selectOption('searxng');
     await page.locator('#scratchpad-web-search-searxng').fill(search.url);
     await page.locator('#scratchpad-web-search-results').selectOption('7');
@@ -304,9 +311,11 @@ test('a custom address searches the chosen service and sends its key in the chos
     const account = await app.account();
     const page = await account.open();
     await openScratchpad(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
+    await showContextSection(page, 'setup');
+    await openContextDrawer(page, 'web-search');
     await page.locator('#scratchpad-web-search-provider').selectOption('custom');
     await expect(page.locator('#scratchpad-web-search-searxng')).toBeHidden();
     await page.locator('#scratchpad-web-search-custom').fill(`${search.url}/custom?q={query}&n={count}`);
@@ -342,7 +351,8 @@ test('Brave, NanoGPT, Exa and Tavily keys can be added through Scratchpad and sa
     const account = await app.account();
     const page = await account.open();
     await openScratchpad(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'setup');
+    await openContextDrawer(page, 'web-search');
     const providers = [['brave', 'api_key_brave_search', 'Brave Search'], ['nanogpt', 'api_key_nanogpt', 'NanoGPT'], ['exa', 'api_key_exa', 'Exa'], ['tavily', 'api_key_tavily', 'Tavily']];
     for (const [provider, key, label] of providers) {
         await page.locator('#scratchpad-web-search-provider').selectOption(provider);

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, showContextSection, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) {
@@ -81,15 +82,16 @@ async function openRoleplay(app, phone, tab = 'context') {
 }
 
 async function useDurableConnection(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
 }
 
 async function alsoShare(page) {
-    const section = page.locator('.scratchpad-section').filter({ has: page.getByRole('heading', { name: 'Also share', exact: true }) });
-    await expect(async () => { await section.scrollIntoViewIfNeeded(); }).toPass({ timeout: 10000 });
-    return section;
+    await showContextSection(page, 'sharing');
+    const drawer = await openContextDrawer(page, 'tools');
+    await drawer.scrollIntoViewIfNeeded();
+    return drawer;
 }
 
 async function previewText(page) {
@@ -172,7 +174,7 @@ for (const phone of [false, true]) {
         expect(sent).toContain('- companionNotes: Companion notes (Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards))');
 
         // On: the active swipe's note and the kept Memory Shard note, nothing else.
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         const updated = page.waitForResponse('**/api/scratchpad/session/update');
         await (await alsoShare(page)).locator(SWITCH).check();
         expect((await updated).ok()).toBe(true);
@@ -233,7 +235,7 @@ for (const phone of [false, true]) {
         expect(followUp.messages.at(-1).content).toBe('I shared Companion notes. Please continue.');
         expectOnlySharedNotes(textOf(followUp));
         expect((await savedSettings(account, source)).include.companionNotes).toBe(true);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect((await alsoShare(page)).locator(SWITCH)).toBeChecked();
         await expectNoOverflow(page, width);
     });

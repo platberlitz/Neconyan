@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const output = '/tmp/opencode/app-evidence-text-backends';
 const PRELOAD = path.join(path.dirname(fileURLToPath(import.meta.url)), 'novelai-redirect-preload.mjs');
@@ -235,7 +236,7 @@ function noPlanted(label, text) {
 /** Shows the evidence the way Scratchpad does with the switch on, then sends a real question and returns what the model received. */
 async function shareEvidence({ page, app, account, phone, size, label, expectedLines }) {
     await openScratchpad(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'sharing');
     if (phone) await applyIOSOnlyCss(page);
     const toggle = page.getByRole('checkbox', { name: /^App diagnostics/ });
     await toggle.check();
@@ -249,7 +250,7 @@ async function shareEvidence({ page, app, account, phone, size, label, expectedL
     // A failed request leaves nothing extra in the browser errors.
     expect(section).not.toContain('### Browser errors and crash reports');
 
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();

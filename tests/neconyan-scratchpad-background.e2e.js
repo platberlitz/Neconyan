@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 for (const stream of [true, false]) {
     test(`phone replies finish on the server with streaming ${stream ? 'on' : 'off'} while the page is frozen or closed`, async ({ app }) => {
@@ -10,6 +11,7 @@ for (const stream of [true, false]) {
         await installIPhoneSafari(account.context, { standalone: true });
         let page = await account.open();
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await showContextSection(page, 'replies');
         await applyIOSOnlyCss(page);
         await page.getByRole('checkbox', { name: 'Stream replies' }).setChecked(stream);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();

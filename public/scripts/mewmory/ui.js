@@ -2977,7 +2977,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261212-scratchpad-compact-quick';
+        style.href = 'css/mewmory.css?v=20261213-scratchpad-context-tabs';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

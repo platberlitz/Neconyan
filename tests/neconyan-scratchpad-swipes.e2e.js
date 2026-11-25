@@ -5,6 +5,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
+import { openScratchpadContext, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
 
 async function open(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
@@ -92,7 +93,8 @@ for (const phone of [false, true]) {
         const saved = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0];
         expect(saved.messages).toHaveLength(2);
         expect(saved.messages[1].swipes[0].text).toContain('garden gate left open');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'prefills');
         const prefill = page.getByLabel('Reply prefill', { exact: true });
         await prefill.fill('Opening: ');
         await prefill.press('Tab');
@@ -100,7 +102,7 @@ for (const phone of [false, true]) {
         await partial.fill('<think>Consider the scene.</think>Opening: ');
         await partial.press('Tab');
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].settings.partialPrefill).toBe('<think>Consider the scene.</think>Opening: ');
-        await page.locator('.scratchpad-section').filter({ has: page.locator('#scratchpad-prefill') }).evaluate(section => section.scrollIntoView({ block: 'start' }));
+        await page.locator('details.scratchpad-drawer[data-context-drawer="prefills"]').evaluate(section => section.scrollIntoView({ block: 'start' }));
         await page.screenshot({ path: `../screenshots/scratchpad-prefills-${phone ? 'phone' : 'desktop'}-after.png` });
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await checkImageControlContrast(page, ['.scratchpad-reply-swipes button:not(:disabled)'], phone);

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const AGENT = {
     id: 'scene-keeper',
@@ -56,7 +57,8 @@ for (const phone of [false, true]) {
         await expect(toasts).toContainText('Share Agents under Context before saving a change to one.');
         await expect(dialog).toHaveCount(0);
 
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
+        await openContextDrawer(page, 'tools');
         const share = page.locator('label.scratchpad-check', { hasText: 'Shares the name, description and prompt' });
         await share.scrollIntoViewIfNeeded();
         const box = await share.boundingBox();
@@ -72,6 +74,7 @@ for (const phone of [false, true]) {
         await expect(preview).toContainText('## Agents');
         await expect(preview).toContainText('ID: scene-keeper');
         await expect(preview).toContainText('Old agent prompt.');
+        await showContextSection(page, 'replies');
         await page.locator('[id^="scratchpad-connection-"]').first().selectOption('durable');
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
 

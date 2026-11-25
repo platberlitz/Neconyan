@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const PLANTED = [
     'sk-PLANTEDKEY1234567890abcdef',
@@ -38,7 +39,7 @@ async function openScratchpad(page) {
 }
 
 async function useDurableConnection(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
 }
@@ -116,7 +117,7 @@ for (const phone of [false, true]) {
             await account.settled(failedJob, 'failed');
 
             // The switch is off by default and Show preview then has no evidence.
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
+            await openScratchpadContext(page, 'sharing');
             if (phone) await applyIOSOnlyCss(page);
             const toggle = page.getByRole('checkbox', { name: /^App diagnostics/ });
             await expect(toggle).not.toBeChecked();
@@ -127,11 +128,13 @@ for (const phone of [false, true]) {
 
             // One tap on the quick prompt turns on only this switch.
             await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+            const quickToggle = page.locator('.scratchpad-quick-toggle');
+            if (await quickToggle.isVisible() && await quickToggle.getAttribute('aria-expanded') === 'false') await quickToggle.click();
             await page.getByRole('button', { name: 'What went wrong in Neconyan?', exact: true }).click();
             await expect(page.locator('#toast-container .toast').filter({ hasText: 'Turned on App diagnostics for this session.' }).first()).toBeVisible();
             await expect(page.locator('.scratchpad-composer')).toHaveValue('Use the app diagnostics to tell me what went wrong in Neconyan, and what I should try or share next.');
             await page.evaluate(() => window.toastr.clear());
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
+            await openScratchpadContext(page, 'sharing');
             await expect(toggle).toBeChecked();
             await expect(page.getByRole('checkbox', { name: /^Problem checks/ })).not.toBeChecked();
             const row = toggle.locator('..');
@@ -223,7 +226,7 @@ for (const phone of [false, true]) {
             if (!viewer.isAdmin) expect(sent).not.toContain('(admin only)');
 
             // Switching it off again sends the ordinary request without any evidence or evidence instructions.
-            await page.getByRole('tab', { name: 'Context', exact: true }).click();
+            await openScratchpadContext(page, 'sharing');
             await toggle.uncheck();
             await expect(toggle).not.toBeChecked();
             await page.getByRole('tab', { name: 'Chat', exact: true }).click();

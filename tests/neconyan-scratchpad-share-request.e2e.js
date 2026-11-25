@@ -6,6 +6,7 @@ import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before) {
@@ -57,7 +58,7 @@ async function openScratchpad(page) {
 }
 
 async function useDurableConnection(page) {
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
     await page.locator('#scratchpad-connection-miso').selectOption('durable');
     await page.getByRole('checkbox', { name: /^Stream replies/ }).uncheck();
 }
@@ -207,7 +208,7 @@ for (const phone of [false, true]) {
         }
 
         // Nothing changes until a button is pressed.
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(contextSwitch(/^Last prompt sent/)).not.toBeChecked();
         await expect(contextSwitch(/^App diagnostics/)).not.toBeChecked();
         await expect(contextSwitch(/^Current preset/)).not.toBeChecked();
@@ -240,7 +241,7 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-message.is-user').last()).toContainText(FOLLOW_UP);
         let saved = await savedSettings(account, source);
         expect(saved.include).toMatchObject({ preset: false, appEvidence: true, lastPrompt: true });
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         await expect(contextSwitch(/^Last prompt sent/)).toBeChecked();
         await expect(contextSwitch(/^App diagnostics/)).toBeChecked();
         await expect(contextSwitch(/^Current preset/)).not.toBeChecked();

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
+import { openScratchpadContext, openContextDrawer, showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 const LONG_LORE_TITLE = 'Nightshade_by_the_garden_gate_with_a_very_long_unbroken_entry_title';
 
@@ -36,7 +37,8 @@ test('assistant connection choices survive reopening and route each speaker to i
     } });
     const page = await account.open();
     const source = await openScratchpad(page);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
+    await openContextDrawer(page, 'other-assistants');
     await expect(page.locator('#scratchpad-max-tokens')).toHaveValue('32000');
     for (const assistant of ['miso', 'taro', 'nori']) {
         await page.locator(`#scratchpad-connection-${assistant}`).selectOption(`scratch-${assistant}`);
@@ -47,7 +49,8 @@ test('assistant connection choices survive reopening and route each speaker to i
     await page.close();
     const reopened = await account.open();
     await openScratchpad(reopened);
-    await reopened.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(reopened, 'replies');
+    await openContextDrawer(reopened, 'other-assistants');
     for (const assistant of ['miso', 'taro', 'nori']) await expect(reopened.locator(`#scratchpad-connection-${assistant}`)).toHaveValue(`scratch-${assistant}`);
     await reopened.getByRole('tab', { name: 'Chat', exact: true }).click();
     for (const assistant of ['Miso', 'Taro', 'Nori']) {
@@ -77,7 +80,8 @@ test('the first connection choice stays selected and carries over to chats witho
     const page = await account.open();
     const source = await openScratchpad(page);
     expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions).toHaveLength(0);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
+    await openContextDrawer(page, 'other-assistants');
     await page.locator('#scratchpad-connection-taro').selectOption('remembered');
     await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections?.taro)
         .toEqual({ kind: 'profile', profileId: 'remembered' });
@@ -87,7 +91,8 @@ test('the first connection choice stays selected and carries over to chats witho
     await selectConversation(page, other);
     const otherSource = await page.evaluate(async () => (await import('/scripts/scratchpad/context.js')).wireSource((await import('/scripts/scratchpad/context.js')).currentSource()));
     expect(otherSource.key).not.toBe(source.key);
-    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(page, 'replies');
+    await openContextDrawer(page, 'other-assistants');
     await expect(page.locator('#scratchpad-connection-taro')).toHaveValue('remembered');
     await expect(page.locator('#scratchpad-connection-miso')).toHaveValue('');
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
@@ -104,7 +109,8 @@ test('the first connection choice stays selected and carries over to chats witho
     const reopened = await account.open();
     const third = await createCharacter(account, 'Third Chat');
     await selectConversation(reopened, third);
-    await reopened.getByRole('tab', { name: 'Context', exact: true }).click();
+    await openScratchpadContext(reopened, 'replies');
+    await openContextDrawer(reopened, 'other-assistants');
     await expect(reopened.locator('#scratchpad-connection-taro')).toHaveValue('remembered');
 });
 
@@ -131,7 +137,7 @@ for (const phone of [false, true]) {
         const source = await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
         await page.locator('.scratchpad-composer').fill('Compare the first and third swipes.');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         // The new web-search section loads asynchronously and rerenders Context.
         // Wait for that render to finish before opening the swipes details.
         await expect(page.locator('#scratchpad-web-search-settings [role="status"]'))
@@ -141,6 +147,8 @@ for (const phone of [false, true]) {
         // for that save before opening a Context details section it can rerender.
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections?.miso)
             .toEqual({ kind: 'profile', profileId: 'durable' });
+        await showContextSection(page, 'sharing');
+        await openContextDrawer(page, 'picks');
         const swipes = page.locator('.scratchpad-swipes');
         await swipes.locator('summary').click();
         await expect(swipes).toHaveJSProperty('open', true);
@@ -156,7 +164,8 @@ for (const phone of [false, true]) {
         await page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true }).check();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].settings.picked).toEqual(['0:swipe:0', '0:swipe:2']);
         await openScratchpad(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
+        await openContextDrawer(page, 'picks');
         await expect(page.getByRole('checkbox', { name: 'Pick message #0, swipe 1', exact: true })).toBeChecked();
         await expect(page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true })).toBeChecked();
         const target = await page.locator('.scratchpad-swipes > summary').boundingBox();
@@ -197,7 +206,8 @@ for (const phone of [false, true]) {
         const page = await account.open();
         const source = await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
+        await openContextDrawer(page, 'other-assistants');
         for (const assistant of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${assistant}`).selectOption(`table-${assistant}`);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await page.locator('.scratchpad-round-table').click();
@@ -275,7 +285,7 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         const composer = page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true });
         await composer.fill('Tell me about the moonflower.');
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
         // Dispatch together while the first session is still being created.
         await page.locator('#scratchpad-depth').evaluate(input => {
             input.value = '1';
@@ -288,7 +298,8 @@ for (const phone of [false, true]) {
             const { bucket } = await account.post('/api/scratchpad/bucket', { source });
             return bucket.sessions.map(session => [session.settings.depth, session.settings.maxTokens]);
         }).toEqual([[1, 512]]);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'sharing');
+        await openContextDrawer(page, 'lore');
         await expect(page.locator('.scratchpad-lore')).toContainText('Shared: keyword found');
         const book = page.locator('.scratchpad-lore-book', { hasText: 'Scratchpad Garden' });
         await expect(book.locator('summary')).toContainText('1 of 2 shared');

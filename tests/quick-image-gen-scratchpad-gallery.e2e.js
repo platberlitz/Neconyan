@@ -7,6 +7,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
+import { openScratchpadContext } from './neconyan-scratchpad-context-helpers.js';
 
 const baseline = process.env.NECONYAN_GALLERY_BASELINE_SCRIPT;
 const deleteBaseline = process.env.NECONYAN_GALLERY_DELETE_BASELINE_DIR;
@@ -82,7 +83,7 @@ for (const phone of [true, false]) {
         const page = await account.open({ workspace: false });
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
         if (phone) await applyIOSOnlyCss(page);
-        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await openScratchpadContext(page, 'replies');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         const change = { type: 'image', action: 'generate', target: 'image', prompt, negative: 'blur' };

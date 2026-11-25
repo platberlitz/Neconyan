@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showContextSection } from './neconyan-scratchpad-context-helpers.js';
 
 for (const phone of [false, true]) {
     test(`${phone ? 'phone' : 'desktop'} Scratchpad keeps valid limits when fields are cleared and shows saved limits`, async ({ app }) => {
@@ -19,9 +20,11 @@ for (const phone of [false, true]) {
         const depth = page.locator('#scratchpad-depth');
         await expect(replyLimit).toHaveValue('32000');
         const initialDepth = await depth.inputValue();
+        await showContextSection(page, 'replies');
         await replyLimit.fill('');
         await replyLimit.press('Tab');
         await expect(replyLimit).toHaveValue('32000');
+        await showContextSection(page, 'sharing');
         await depth.fill('');
         await depth.press('Tab');
         await expect(depth).toHaveValue(initialDepth);
@@ -30,6 +33,7 @@ for (const phone of [false, true]) {
         await depth.press('Tab');
         await expect(depth).toHaveValue('200');
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.depth).toBe(200);
+        await showContextSection(page, 'replies');
         await replyLimit.fill('2048');
         await replyLimit.press('Tab');
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.maxTokens).toBe(2048);
