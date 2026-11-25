@@ -201,9 +201,12 @@ for (const phone of [false, true]) {
                 const right = element.getBoundingClientRect().right;
                 const wide = [...element.querySelectorAll('*')].filter(node => node.getClientRects().length && node.getBoundingClientRect().right > right + 1)
                     .map(node => node.className || node.tagName);
-                return { scroll: element.scrollWidth - element.clientWidth, wide };
+                const clippedBadges = [...element.querySelectorAll('.scratchpad-drawer-badge')]
+                    .filter(node => node.getClientRects().length && node.textContent.trim().length <= 20 && node.scrollWidth > node.clientWidth + 1)
+                    .map(node => node.textContent);
+                return { scroll: element.scrollWidth - element.clientWidth, wide, clippedBadges };
             });
-            expect(overflow, `${name} ${JSON.stringify(overflow)}`).toEqual({ scroll: 0, wide: [] });
+            expect(overflow, `${name} ${JSON.stringify(overflow)}`).toEqual({ scroll: 0, wide: [], clippedBadges: [] });
         }
         await showContextSection(page, 'sharing');
         const chips = await page.locator('#scratchpad-context-pane-sharing .scratchpad-chip-toggle').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));

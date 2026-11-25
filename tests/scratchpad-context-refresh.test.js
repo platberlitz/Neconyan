@@ -555,6 +555,11 @@ describe('Scratchpad Context refresh lifecycle', () => {
         withSettings(f, { roundTable: false, assistantConnections: { nori: { kind: 'profile', profileId: 'fast' } } });
         expect(drawer(f, 'other-assistants').open).toBe(true);
         expect(badge(f, 'other-assistants')).toBe('1 custom');
+        withSettings(f, { roundTable: false, assistantPrompts: { taro: 'Be brief.' } });
+        expect(drawer(f, 'other-assistants').open).toBe(true);
+        expect(badge(f, 'other-assistants')).toBe('1 custom');
+        withSettings(f, { roundTable: false, assistantConnections: { nori: { kind: 'profile', profileId: 'fast' } }, assistantPrompts: { nori: 'Be sharp.', taro: 'Be brief.' } });
+        expect(badge(f, 'other-assistants')).toBe('2 custom');
         withSettings(f, { roundTable: true, participants: ['miso', 'taro', 'nori'] });
         expect(drawer(f, 'other-assistants')).toBeUndefined();
         expect(selects()).toEqual(['scratchpad-connection-miso', 'scratchpad-connection-taro', 'scratchpad-connection-nori']);

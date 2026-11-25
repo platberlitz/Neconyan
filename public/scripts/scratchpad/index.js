@@ -4168,7 +4168,8 @@ function renderContext({ force = true } = {}) {
     const assistants = allAssistants();
     const replying = assistants.filter(assistant => activeIds.has(assistant.id));
     const others = assistants.filter(assistant => !activeIds.has(assistant.id));
-    const customisedIn = live => others.filter(assistant => assistantConnection(live, assistant.id).kind === 'profile').length;
+    const customisedIn = live => others.filter(assistant =>
+        assistantConnection(live, assistant.id).kind === 'profile' || Boolean(live.assistantPrompts?.[assistant.id])).length;
     const customised = customisedIn(settings);
     const connections = h('section', { class: 'scratchpad-section scratchpad-context-assistants' },
         h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),

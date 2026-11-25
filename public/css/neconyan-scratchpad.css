@@ -3074,14 +3074,14 @@ body.reduced-motion .scratchpad-talk[data-hearing="true"] .scratchpad-talk-level
 }
 
 .scratchpad-drawer-title {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     font-weight: 700;
 }
 
 .scratchpad-drawer-badge {
     display: block;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
