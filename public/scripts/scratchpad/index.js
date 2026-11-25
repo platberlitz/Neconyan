@@ -71,8 +71,12 @@ import { canRehearse, normaliseRehearsalLabel } from './rehearsal.js';
 import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal-preview.js';
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
+import {
+    clearFollowUps, clearHold, createFollowUp, createFollowUpQueues, dequeueFollowUp, enqueueFollowUp, followUpKey, followUpState,
+    holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
+} from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261207-companion-panel-open';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261208-scratchpad-followup-queue';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -231,6 +235,11 @@ const app = {
     attachments: [],
     attachmentDrafts: new Map(),
     readingFiles: new Set(),
+    // Follow-ups typed while a reply is pending, per session. They live in this tab only and reset on reload.
+    followUps: createFollowUpQueues(),
+    followUpSeen: new Map(),
+    followUpAway: new Set(),
+    followUpStops: new Set(),
     previews: new Map(),
     foldedThinking: new Set(),
     // Share cards this client dismissed or partly unticked, keyed by session, reply and card. They reset on reload.
@@ -415,6 +424,208 @@ function randomReplyEnabled() {
 
 function pendingReply(session = activeSession()) {
     return session?.messages.find(item => item.role === 'assistant' && item.state === 'pending') ?? null;
+}
+
+/* Follow-ups queued while a reply is still being written */
+
+function activeFollowUpKey(session = activeSession()) {
+    return app.source && session ? followUpKey(app.source, session.id) : '';
+}
+
+function activeFollowUps() {
+    const key = activeFollowUpKey();
+    return key ? followUpState(app.followUps, key) : followUpState(app.followUps, '');
+}
+
+function resetFollowUps() {
+    clearFollowUps(app.followUps);
+    app.followUpSeen.clear();
+    app.followUpAway.clear();
+    app.followUpStops.clear();
+}
+
+// A queue whose session is out of sight never fires; it comes back paused instead.
+function markFollowUpsAway() {
+    const visible = app.open ? activeFollowUpKey() : '';
+    for (const key of app.followUps.keys()) if (key !== visible) app.followUpAway.add(key);
+}
+
+// The replies to the latest user message, with a stopped reply told apart from one that failed.
+function settledReplyStates(session) {
+    const messages = session?.messages ?? [];
+    const stopped = app.followUpStops.has(session?.id);
+    return messages.slice(messages.findLastIndex(item => item.role === 'user') + 1)
+        .filter(item => item.role === 'assistant')
+        .map(item => {
+            if (item.state === 'pending') return 'pending';
+            if (item.state !== 'failed') return 'done';
+            return stopped || /^Stopped\b/.test(String(item.error || '')) ? 'cancelled' : 'failed';
+        });
+}
+
+function followUpNotice(held) {
+    if (held === 'stopped') return t`Paused because the previous reply stopped.`;
+    if (held === 'failed') return t`Paused because the previous reply failed.`;
+    if (held === 'context') return t`Paused because the chat changed. Return to send, or press Send now.`;
+    if (held === 'reopened') return t`Paused while you were away. Press Send now to send it.`;
+    return '';
+}
+
+function reconcileFollowUps() {
+    const session = activeSession();
+    const key = activeFollowUpKey(session);
+    if (!key) return;
+    const isPending = Boolean(pendingReply(session));
+    const wasPending = app.followUpSeen.get(key) ?? false;
+    const settledStates = settledReplyStates(session);
+    app.followUpSeen.set(key, isPending);
+    if (!isPending) app.followUpStops.delete(session.id);
+    const state = followUpState(app.followUps, key);
+    if (!state.items.length) {
+        app.followUpAway.delete(key);
+        return;
+    }
+    if (isPending && app.open) app.followUpAway.delete(key);
+    const visible = app.open && !app.followUpAway.has(key);
+    const sameSource = isCurrentSource(state.items[0].source);
+    if (!isPending && state.held === 'context' && visible && sameSource) {
+        clearHold(app.followUps, key);
+        void sendNextFollowUp();
+        return;
+    }
+    const outcome = reconcilePendingTransition({ wasPending, isPending, settledStates, visible, sameSource });
+    if (outcome === 'send' && !state.held) {
+        // Another send or swipe still owns the composer; try again on the next bucket update.
+        if (app.sending || app.swiping) app.followUpSeen.set(key, true);
+        else void sendNextFollowUp();
+    } else if (outcome.startsWith('hold-')) {
+        const held = holdFollowUps(app.followUps, key, outcome.slice('hold-'.length)).held;
+        app.followUpAway.delete(key);
+        renderFollowUps();
+        announceReply(followUpNotice(held));
+    }
+}
+
+async function sendNextFollowUp() {
+    const key = activeFollowUpKey();
+    if (!key || app.sending || app.swiping || pendingReply()) return false;
+    const { item } = dequeueFollowUp(app.followUps, key);
+    if (!item) return false;
+    renderFollowUps();
+    return send({ queuedItem: item, queuedKey: key });
+}
+
+async function sendFollowUpNow() {
+    const key = activeFollowUpKey();
+    if (!key) return;
+    const state = followUpState(app.followUps, key);
+    // Send now after a context change means sending into the context on screen.
+    if (state.held === 'context') for (const item of state.items) item.source = app.source;
+    clearHold(app.followUps, key);
+    app.followUpAway.delete(key);
+    // With a reply still running, Send now just lifts the pause so the queue goes out after it.
+    if (pendingReply()) {
+        app.followUpSeen.set(key, true);
+        renderComposer();
+        return;
+    }
+    await sendNextFollowUp();
+}
+
+function typedToolLabels() {
+    return { picked: t`Picked`, from: t`from`, now: t`Now` };
+}
+
+// Returns false when there is nothing to queue, so the primary button can stop the reply instead.
+function queueFollowUp() {
+    const session = activeSession();
+    const key = activeFollowUpKey(session);
+    if (!key || !pendingReply(session)) return false;
+    const text = app.el.composer.value.trim();
+    const attachments = app.attachments;
+    if (!text && !attachments.length) return false;
+    if (app.readingFiles.has(attachments)) return true;
+    if (followUpState(app.followUps, key).items.length >= MAX_QUEUED_FOLLOW_UPS) {
+        toastr.warning(t`Up to five follow-ups can wait at once.`);
+        return true;
+    }
+    if (text) {
+        try {
+            if (expandTypedTools(text, { labels: typedToolLabels() }).help) {
+                showToolsHelp();
+                return true;
+            }
+        } catch (error) {
+            if (!(error instanceof TypedToolError)) throw error;
+            toastr.warning(typedToolProblem(error), t`Nothing was queued`);
+            app.el.composer.focus();
+            return true;
+        }
+    }
+    const item = createFollowUp({ text, attachments, source: app.source, sourceKey: key });
+    if (!enqueueFollowUp(app.followUps, key, item).added) {
+        toastr.warning(t`Up to five follow-ups can wait at once.`);
+        return true;
+    }
+    app.followUpSeen.set(key, true);
+    attachments.splice(0, attachments.length);
+    app.el.composer.value = '';
+    renderComposer();
+    app.el.composer.focus();
+    return true;
+}
+
+function editFollowUp(id) {
+    const key = activeFollowUpKey();
+    const queued = followUpState(app.followUps, key).items.find(item => item.id === id);
+    if (!queued) return;
+    if (app.attachments.length + queued.attachments.length > MAX_ATTACHMENTS) {
+        toastr.warning(t`Attach up to eight files per message.`);
+        return;
+    }
+    const { item } = takeFollowUpForEdit(app.followUps, key, id);
+    const composer = app.el.composer;
+    composer.value = [item.text, composer.value.trim()].filter(Boolean).join('\n\n');
+    app.attachments.splice(0, 0, ...item.attachments);
+    renderComposer();
+    composer.focus();
+    composer.setSelectionRange(composer.value.length, composer.value.length);
+}
+
+function removeQueuedFollowUp(id) {
+    removeFollowUp(app.followUps, activeFollowUpKey(), id);
+    renderComposer();
+}
+
+function renderFollowUpItem(item) {
+    const count = item.attachments.length;
+    const files = count === 1 ? t`1 file` : t`${count} files`;
+    const preview = item.text.replace(/\s+/g, ' ').trim();
+    return h('li', { class: 'scratchpad-queue-item' },
+        h('span', { class: 'scratchpad-queue-text', 'data-i18n-ignore': '', title: item.text || null, text: preview || files }),
+        count && preview ? h('span', { class: 'scratchpad-queue-files', title: files },
+            h('i', { class: 'fa-solid fa-paperclip', 'aria-hidden': 'true' }),
+            h('span', { class: 'sr-only', text: files }),
+            h('span', { 'aria-hidden': 'true', text: String(count) })) : null,
+        iconButton('', () => editFollowUp(item.id), { icon: 'fa-pen', className: 'scratchpad-queue-edit', title: t`Edit queued follow-up` }),
+        iconButton('', () => removeQueuedFollowUp(item.id), { icon: 'fa-xmark', className: 'scratchpad-queue-remove', title: t`Remove queued follow-up` }));
+}
+
+function renderFollowUps() {
+    const strip = app.el.queue;
+    if (!strip) return;
+    const state = activeFollowUps();
+    clear(strip);
+    strip.hidden = !state.items.length;
+    if (!state.items.length) return;
+    const notice = followUpNotice(state.held);
+    append(strip, [
+        h('div', { class: 'scratchpad-queue-head' },
+            h('span', { class: 'scratchpad-queue-title', text: t`Queued next` }),
+            state.held ? iconButton(t`Send now`, () => void sendFollowUpNow(), { icon: 'fa-paper-plane', className: 'scratchpad-queue-send', disabled: app.sending || app.swiping, primary: true }) : null),
+        notice ? h('p', { class: 'scratchpad-queue-notice', text: notice }) : null,
+        h('ol', { class: 'scratchpad-queue-list' }, state.items.map(renderFollowUpItem)),
+    ]);
 }
 
 function dockedWidth() {
@@ -615,8 +826,9 @@ function buildChatPanel() {
         placeholder: t`Ask anything...`,
         'aria-label': t`Message for Scratchpad`,
         onkeydown: onComposerKey,
-        oninput: fitComposer,
+        oninput: onComposerInput,
     });
+    el.queue = h('section', { class: 'scratchpad-queue', 'aria-label': t`Queued next`, hidden: true });
     el.send = iconButton('', () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', title: t`Send`, primary: true });
     el.webSearch = iconButton(t`Web search`, () => { closeComposeMenu(); void toggleWebSearch(); },
         { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
@@ -681,7 +893,7 @@ function buildChatPanel() {
         el.overview,
         el.replyStatus,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quick, el.attachments, el.fileStatus, el.queue, h('div', { class: 'scratchpad-compose-row' }, el.composeActions, el.composer, el.dictate, el.send)),
     ]);
 }
 
@@ -726,15 +938,18 @@ function applyBucket(bucket, { ticket = null } = {}) {
     const session = activeSession();
     if (session) app.assistant = session.assistant;
     announceReplyChange(before, session);
+    markFollowUpsAway();
     render();
     renderHistoryView();
     syncWatchers();
+    reconcileFollowUps();
 }
 
 function syncDraft({ carry = false } = {}) {
     const owner = getCurrentUserHandle();
     if (app.draftOwner !== owner) {
         app.draftOwner = owner;
+        resetFollowUps();
         app.attachments = [];
         app.attachmentDrafts.clear();
         app.drafts.clear();
@@ -805,6 +1020,7 @@ function checkSource() {
             if (changed) {
                 app.contextKey = '';
                 render();
+                reconcileFollowUps();
             }
         }
         return;
@@ -812,6 +1028,7 @@ function checkSource() {
     stopWatchers();
     app.source = next;
     app.bucket = null;
+    markFollowUpsAway();
     app.editing = '';
     app.pickLimit = PICK_PAGE;
     app.openSwipes.clear();
@@ -1236,52 +1453,70 @@ async function resolveShortcut(typed, source, sessionId) {
     };
 }
 
-async function send({ regenerate = '', discuss = false, rehearsal = false, followUp = '', rehearsalChange = null } = {}) {
-    if (app.sending || app.swiping || app.readingFiles.has(app.attachments)) return;
+// A queued follow-up that cannot go out goes back to the front of its queue, paused, so its words are never lost.
+async function send(options = {}) {
+    const { queuedItem = null, queuedKey = '' } = options;
+    if (!queuedItem) return sendMessage(options);
+    const owner = getCurrentUserHandle();
+    let sent = false;
+    try {
+        sent = await sendMessage(options);
+    } finally {
+        if (!sent && owner === getCurrentUserHandle()) {
+            restoreFollowUp(app.followUps, queuedKey, queuedItem);
+            holdFollowUps(app.followUps, queuedKey, isCurrentSource(queuedItem.source) ? 'failed' : 'context');
+            renderFollowUps();
+        }
+    }
+    return sent;
+}
+
+async function sendMessage({ regenerate = '', discuss = false, rehearsal = false, followUp = '', rehearsalChange = null, queuedItem = null } = {}) {
+    if (app.sending || app.swiping || (!queuedItem && app.readingFiles.has(app.attachments))) return false;
     const source = app.source;
-    if (!source) return;
-    if (rehearsal && !canRehearse(source)) return;
-    if (rehearsalChange && (!rehearsal || !canTryProposalInRehearsal(rehearsalChange.change, source))) return;
-    if (!isCurrentSource(source)) {
+    if (!source) return false;
+    if (rehearsal && !canRehearse(source)) return false;
+    if (rehearsalChange && (!rehearsal || !canTryProposalInRehearsal(rehearsalChange.change, source))) return false;
+    if (!isCurrentSource(source) || (queuedItem && !isCurrentSource(queuedItem.source))) {
         toastr.warning(t`The Scratchpad context changed. Return to it before sending.`);
-        return;
+        return false;
     }
     const draft = app.el.composer.value;
     const initialSessionId = activeSession()?.id;
     // A discussion round sends its own request; anything typed in the box rides along as the point to focus on.
     const request = t`Read each other's answers to my last message. Say where you agree, where you disagree and why, and what you would now change in your own answer.`;
     // A share card sends its own fixed message and leaves the draft and attachments where they are.
-    let typed = followUp || draft.trim();
+    let typed = followUp || (queuedItem ? queuedItem.text : draft.trim());
     let scan;
     if (!regenerate && !discuss && !followUp) {
         try {
-            const expanded = expandTypedTools(typed, { labels: { picked: t`Picked`, from: t`from`, now: t`Now` } });
+            const expanded = expandTypedTools(typed, { labels: typedToolLabels() });
             if (expanded.help) {
                 showToolsHelp();
-                return;
+                return false;
             }
             typed = expanded.text;
         } catch (error) {
             if (!(error instanceof TypedToolError)) throw error;
             toastr.warning(typedToolProblem(error), t`Nothing was sent`);
             app.el.composer.focus();
-            return;
+            return false;
         }
         if (findShortcuts(typed).shortcuts.length) {
             const resolved = await resolveShortcut(typed, source, initialSessionId);
-            if (!resolved) return;
+            if (!resolved) return false;
             typed = resolved.text;
             scan = resolved.scan;
         }
     }
     const text = regenerate ? '' : discuss ? [request, typed].filter(Boolean).join('\n\n') : typed;
     const attachedDraft = app.attachments;
-    const attachments = regenerate || discuss || followUp ? [] : [...attachedDraft];
+    const attachments = regenerate || discuss || followUp ? [] : [...(queuedItem ? queuedItem.attachments : attachedDraft)];
     const empty = !regenerate && !rehearsal && !text && !attachments.length;
     const replyTo = empty ? activeSession()?.messages.at(-1) : null;
     if (empty && replyTo?.role !== 'user') {
         app.el.composer.focus();
-        return;
+        return false;
     }
     app.sending = true;
     renderComposer();
@@ -1289,7 +1524,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
         await app.queue;
         requireScope(source, initialSessionId);
         const session = await ensureSession(source);
-        if (!session) return;
+        if (!session) return false;
         if (replyTo && session.messages.at(-1)?.id !== replyTo.id) throw new Error(t`The Scratchpad settings or messages changed. Try sending again.`);
         const draftKey = app.draftKey;
         const snapshot = JSON.stringify(session);
@@ -1344,7 +1579,7 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
             genders,
             acknowledgement,
         });
-        if (!regenerate && !followUp) {
+        if (!regenerate && !followUp && !queuedItem) {
             attachedDraft.splice(0, attachments.length);
             if ((app.draftKey === draftKey || (sameSourceBucket(source, app.source) && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
             else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
@@ -1358,8 +1593,10 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
             applyBucket(result.bucket);
             scrollMessages(true);
         }
+        return true;
     } catch (error) {
         reportError(error, t`Scratchpad could not send that.`);
+        return false;
     } finally {
         app.sending = false;
         renderComposer();
@@ -1369,6 +1606,8 @@ async function send({ regenerate = '', discuss = false, rehearsal = false, follo
 async function stopReply() {
     const pending = pendingReply();
     if (!pending?.jobId) return;
+    const sessionId = activeSession()?.id;
+    if (sessionId) app.followUpStops.add(sessionId);
     try {
         if (!await api.cancelReply(pending.jobId)) throw new Error(t`Scratchpad could not stop the reply. Try again.`);
     } catch (error) {
@@ -1378,8 +1617,8 @@ async function stopReply() {
 }
 
 function onSendButton() {
-    if (pendingReply()) void stopReply();
-    else void send();
+    if (!pendingReply()) void send();
+    else if (!queueFollowUp()) void stopReply();
 }
 
 function closeComposeMenu() {
@@ -1436,7 +1675,8 @@ function renderAttachments(files, { draft = false } = {}) {
 function onComposerKey(event) {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || isPhone()) return;
     event.preventDefault();
-    if (!pendingReply()) void send();
+    if (pendingReply()) queueFollowUp();
+    else void send();
 }
 
 function fitComposer() {
@@ -3012,12 +3252,7 @@ function renderComposer() {
     const disabled = !app.source || !app.bucket || app.sending || app.swiping || readingFiles;
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
-    const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
-    const sendLabel = pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
-        : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
-    el.send.setAttribute('aria-label', sendLabel);
-    el.send.title = sendLabel;
-    el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
+    renderSendButton(pending);
     setWebSearchToggle(el.webSearch, { enabled: currentSettings().webSearch === true, configured: app.webSearch?.readiness?.configured === true });
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     el.plus.disabled = disabled;
@@ -3042,6 +3277,30 @@ function renderComposer() {
     el.fileStatus.hidden = !readingFiles && !app.attachments.length;
     el.fileStatus.textContent = readingFiles ? t`Reading files...` : t`PDFs share extracted text. Images are resized and need an image-capable model.`;
     for (const chip of el.quick.querySelectorAll('button:not(.scratchpad-chip-edit)')) chip.disabled = !app.source;
+    renderFollowUps();
+}
+
+// While a reply is still being written, a typed draft turns Stop into Queue follow-up.
+function canQueueFollowUp(pending = pendingReply()) {
+    if (!pending || app.el.composer.disabled || app.readingFiles.has(app.attachments)) return false;
+    return Boolean(app.el.composer.value.trim() || app.attachments.length);
+}
+
+function renderSendButton(pending = pendingReply()) {
+    const el = app.el;
+    const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
+    const queue = canQueueFollowUp(pending);
+    const sendLabel = queue ? t`Queue follow-up`
+        : pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
+            : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
+    el.send.setAttribute('aria-label', sendLabel);
+    el.send.title = sendLabel;
+    el.send.querySelector('i').className = `fa-solid ${queue ? 'fa-clock' : pending ? 'fa-stop' : 'fa-paper-plane'}`;
+}
+
+function onComposerInput() {
+    fitComposer();
+    renderSendButton();
 }
 
 /* Context tab */
@@ -4093,6 +4352,7 @@ export function hideScratchpad() {
     if (!app.open) return;
     const restoreFocus = app.el.root.contains(document.activeElement);
     app.open = false;
+    markFollowUpsAway();
     app.ticket += 1;
     app.personaWarning = false;
     stopReadAloud();
