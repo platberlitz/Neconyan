@@ -50,7 +50,7 @@ describe('stored catalogue revision', () => {
     });
 
     test('the startup update notice puts each escaped line on its own row', () => {
-        expect(indexSource).toContain("toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated', { escapeHtml: false });");
+        expect(indexSource).toContain('toastr.success(startupUpdates.map(item => escapeHtml(item)).join(\'<br>\'), \'Agents updated\', { escapeHtml: false });');
     });
 });
 
