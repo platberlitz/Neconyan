@@ -400,6 +400,25 @@ describe('Provider URL and hostname validation', () => {
         });
     });
 
+    describe('Retired OpenAI video endpoint (/api/openai/generate-video)', () => {
+        test('is not mounted and makes no outbound requests', async () => {
+            const res = await fetch(`${baseUrl}/api/openai/generate-video`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: 'A cat on a windowsill', model: 'sora-2' }),
+            });
+            expect(res.status).toBe(404);
+            expect(capturedFetches).toHaveLength(0);
+        });
+
+        test('the OpenAI router source no longer carries the retired route', () => {
+            const source = fs.readFileSync(fileURLToPath(new URL('../src/endpoints/openai.js', import.meta.url)), 'utf8');
+            expect(source).not.toContain('/generate-video');
+            expect(source).not.toContain('sora-2');
+            expect(source).not.toContain('api.openai.com/v1/videos');
+        });
+    });
+
     describe('OpenAI multimodal captioning (/api/openai/caption-image)', () => {
         test('does not send stored OpenRouter or other provider keys when reverse_proxy is set', async () => {
             const res = await fetch(`${baseUrl}/api/openai/caption-image`, {
