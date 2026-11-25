@@ -42,6 +42,7 @@
 - **Dice Roller** has **Auto roll** and **Auto send** under **Roll options**, so a fresh roll waits after every reply and lands after your message when you send it, without touching the message box; tagged choices from **CYOA Choices with Skill Checks** and **Doors with Fate Checks** get a matching d100 roll that those agents use in place of their hidden one.
 - Scratchpad's **Context** tab now opens with **What Scratchpad will read**, a live summary of what's shared with **Show preview** beside it, and splits its choices into **Sharing**, **Replies** and **Setup**, with story and lore as quick switches and rarer settings folded away until they're in use.
 - **CYOA Choices with Skill Checks** and **Doors with Fate Checks** work as Companions with the **Dice Roller**'s **Auto send**: tap a choice in the **Companion panel** or just type its number, such as 1 or 1, then 2, and each choice gets its own d100 roll for the reply, while the Companion versions stop asking for a hidden roll the reply never sees.
+- The closed **Roll options** box in the **Dice Roller** no longer has a big empty gap under its title on phones.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -249,6 +250,7 @@
 - PR #982 (2026-11-25) `feat(dice): add Auto roll and Auto send to the Dice Roller`
 - PR #983 (2026-11-25) `feat(scratchpad): split the Context tab into Sharing, Replies and Setup`
 - PR #984 (2026-11-25) `feat(dice): roll CYOA and Doors choices picked by number or from the Companion panel`
+- PR #985 (2026-11-25) `fix(dice): drop the empty gap under Roll options on phones`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
