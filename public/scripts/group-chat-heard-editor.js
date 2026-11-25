@@ -3,7 +3,7 @@ import { getOpenGroupSceneRules, groups, is_group_generating, saveGroupHearers, 
 import { changeGroupHearers, setGroupEveryoneHears } from './group-chat-visibility.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 
 let initialized = false;
 
@@ -100,7 +100,7 @@ export async function openGroupHeardEditor(messageId) {
 
     const later = chat.slice(messageId + 1).some(item => !item?.is_system);
     if (later) {
-        const rangeRow = $('<div class="group_heard_range" role="group"></div>').attr('aria-label', t`Change`);
+        const rangeRow = $('<div class="group_heard_range" role="group"></div>').attr('aria-label', translate('Change', 'scoped.action.change'));
         rangeRow.append(choiceButton(t`This message`, 'one', true), choiceButton(t`From here on`, 'later', false));
         content.append(rangeRow);
     }
