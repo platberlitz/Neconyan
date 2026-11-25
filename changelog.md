@@ -18,7 +18,8 @@
 - The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 - **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
 - The **Companions** panel now docks beside the chat instead of covering it. Opening **Scratchpad** or **Notes** takes the space instead, so the chat stays readable.
-- The **Companions** panel opens without freezing the app for a few seconds when you run a lot of themed companions, and its buttons respond straight away.
+- Drag the inner edge of the docked **Companions** panel (or focus the divider and use the Left/Right arrow keys) to resize it, and your width is remembered.
+- The **Companions** panel opens without freezing the app when you run a lot of themed companions, even on iPhone and Safari or in a chat full of saved companion notes, and its buttons respond straight away.
 - Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
 - Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
@@ -27,6 +28,7 @@
 - Fixed non-English alerts that dropped singular counts or cut off save warnings in **Dialogue Colors**.
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
 - Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
+- **Scratchpad** can now rewrite, add and delete messages in a **Conversation** chat, and edit your preset there too once you tick **Current preset**. Each change has **Try first** before you save and **Undo** after.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -202,10 +204,14 @@
 - PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
 - PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
+- PR #959 (2026-11-25) `fix(companions): stop the panel freezing when opened in busy chats`
 - PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 - PR #961 (2026-11-25) `fix(i18n): protect Meower and Scratchpad text, translate textarea placeholders, keep TTS disabled values, and guard against invisible characters`
 - PR #962 (2026-11-25) `fix(i18n): match empty template holes and split adjacent Dialogue Colors toast templates`
 - PR #963 (2026-11-25) `fix(i18n): fold Turkish dotted I in search and mark untranslated uppercase headings`
+- PR #964 (2026-11-25) `feat(companions): resize the docked panel beside the chat`
+- PR #965 (2026-11-25) `feat(scratchpad): change messages and the preset in Conversation`
+- PR #967 (2026-11-25) `fix(i18n): keep Meower pickers and Scratchpad session names and web sources as written`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

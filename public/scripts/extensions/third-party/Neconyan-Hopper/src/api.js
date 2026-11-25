@@ -317,9 +317,17 @@ export async function ensureCharacters() {
 export function listPersonas() {
     const context = ctx();
     const personas = context.powerUserSettings?.personas ?? {};
-    const list = Object.entries(personas).map(([entityId, name]) => ({ entityId, name: String(name || 'You') }));
+    const list = Object.entries(personas).map(([entityId, name]) => ({
+        entityId,
+        name: String(name || 'You'),
+        hasCustomName: Boolean(name),
+    }));
     if (context.userAvatar && !list.some(persona => persona.entityId === context.userAvatar)) {
-        list.push({ entityId: context.userAvatar, name: context.name1 || 'You' });
+        list.push({
+            entityId: context.userAvatar,
+            name: context.name1 || 'You',
+            hasCustomName: Boolean(context.name1),
+        });
     }
     return list;
 }

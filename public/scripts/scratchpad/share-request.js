@@ -64,7 +64,7 @@ export const SHARE_HINTS = Object.freeze({
 
 const CHAT_ITEMS = Object.freeze({
     roleplay: SHARE_ITEM_KEYS,
-    conversation: Object.freeze(SHARE_ITEM_KEYS.filter(key => !['authorsNote', 'mewmory', 'preset', 'companionNotes'].includes(key))),
+    conversation: Object.freeze(SHARE_ITEM_KEYS.filter(key => !['authorsNote', 'mewmory', 'companionNotes'].includes(key))),
 });
 const GENERAL_ITEMS = Object.freeze(['persona', 'preset', 'problems', 'appEvidence', 'appSource', 'agents', 'regex', 'cssSnippets', 'dialogueColors']);
 

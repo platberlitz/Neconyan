@@ -254,10 +254,22 @@ describe('Scratchpad reply parsing', () => {
         expect(() => normaliseChange({ type: 'character', action: 'delete', character: 'Nova', field: 'alternate_greetings', value: ['Hi.'] })).toThrow('unknown action');
     });
 
-    test.each([undefined, null, '', ' ', '#', '# ', [], [0], false, {}, -1, 1.5, '1e2', Number.MAX_SAFE_INTEGER + 1])('rejects missing or malformed targets: %p', target => {
+    const MALFORMED_TARGETS = [undefined, null, '', ' ', '#', '# ', [], [0], false, {}, 1.5, '1e2', Number.MAX_SAFE_INTEGER + 1];
+
+    test.each([...MALFORMED_TARGETS, -1])('rejects missing or malformed targets: %p', target => {
         expect(() => normaliseChange({ type: 'chat', action: 'delete', message: target })).toThrow('which message');
-        expect(() => normaliseChange({ type: 'chat', action: 'insert', after: target, text: 'Hello.' })).toThrow('where it goes');
         expect(() => normaliseChange({ type: 'lorebook', action: 'delete', book: 'B', uid: target })).toThrow('which entry');
+    });
+
+    test.each(MALFORMED_TARGETS)('rejects a new message with a missing or malformed place: %p', target => {
+        expect(() => normaliseChange({ type: 'chat', action: 'insert', after: target, text: 'Hello.' })).toThrow('where it goes');
+    });
+
+    test.each([-1, '-1', ' -1 '])('accepts -1 as the start of the chat for a new message: %p', target => {
+        const change = normaliseChange({ type: 'chat', action: 'insert', after: target, speaker: 'user', text: 'Hello.' });
+        expect(change).toMatchObject({ action: 'insert', after: -1, speaker: 'user', text: 'Hello.' });
+        expect(describeChange(change)).toBe('Add a message at the start');
+        expect(() => normaliseChange({ type: 'chat', action: 'insert', after: -2, text: 'Hello.' })).toThrow('where it goes');
     });
 
     test.each([0, '0', '#0', ' #12 '])('accepts explicit numbered targets: %p', target => {

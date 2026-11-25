@@ -951,11 +951,12 @@ function pollVotersNode(voters) {
     if (!voters.length) {
         return null;
     }
+    const hostT = hostTag();
     const names = voters.map(vote => `${nameFor(vote.actorKey, vote.actorSnapshot)} (@${handleFor(vote.actorKey, vote.actorSnapshot)})`);
-    const label = `Voted by ${names.join(', ')}`;
+    const label = hostT`Voted by ${names.join(', ')}`;
     return el('span', {
         className: 'sbtw-poll-voters',
-        attrs: { role: 'img', 'aria-label': label, title: label },
+        attrs: { role: 'img', 'aria-label': label, title: label, 'data-i18n-ignore': '' },
     }, voters.map(vote => avatarNode(accountFor(vote.actorKey) ?? vote.actorSnapshot ?? null, 'xs')));
 }
 
@@ -1019,9 +1020,10 @@ function imageNode(post) {
             }
         }, { once: true });
     }
+    const hostT = hostTag();
     return el('button', {
         className: 'sbtw-image',
-        attrs: { type: 'button', title: 'Open image', 'aria-label': post.image.prompt ? `Open image: ${post.image.prompt}` : 'Open image', 'data-focus-key': `image:${post.id}` },
+        attrs: { type: 'button', title: hostT`Open image`, 'aria-label': post.image.prompt ? hostT`Open image: ${post.image.prompt}` : hostT`Open image`, 'data-focus-key': `image:${post.id}`, 'data-i18n-ignore': '' },
         on: { click: () => openImage(post.image.url, post.image.prompt) },
     }, [img]);
 }
@@ -1823,17 +1825,18 @@ function timelineView() {
     // Made-up trending topics, under the Trending tab: tapping one searches the timeline for it.
     let trendsBar = null;
     if (state.tab === 'trending') {
+        const hostT = hostTag();
         const trends = state.session?.trends ?? [];
         installTrendPanGuard();
         trendsBar = el('div', { className: 'sbtw-trends', attrs: { 'aria-label': 'Trending topics' } }, trends.length
             ? trends.map(trend => el('button', {
                 className: 'sbtw-trend',
-                attrs: { type: 'button', title: `Write a round of posts about ${trend.topic}`, disabled: state.busy || mutationTask ? 'disabled' : null, 'data-focus-key': `trend:${trend.topic}` },
+                attrs: { type: 'button', title: hostT`Write a round of posts about ${trend.topic}`, disabled: state.busy || mutationTask ? 'disabled' : null, 'data-focus-key': `trend:${trend.topic}`, 'data-i18n-ignore': '' },
                 // A tap runs a refresh about the topic (same post cap as Refresh) and shows the matches in Main as they land.
                 on: { click: () => { if (state.busy || mutationTask) { return; } state.tab = 'main'; state.timelineSearch = trend.topic; state.revealTarget = null; void refresh({ topic: trend.topic, manual: true }); } },
             }, [
                 el('span', { className: 'sbtw-trend-topic', text: trend.topic, attrs: { 'data-i18n-ignore': '' } }),
-                el('span', { className: 'sbtw-trend-count', text: `${formatCount(trend.posts)} posts` }),
+                el('span', { className: 'sbtw-trend-count', text: hostT`${formatCount(trend.posts)} posts` }),
             ]))
             : [el('span', { className: 'sbtw-hint', text: 'Trending topics appear after the next Refresh.' })]);
     }
@@ -2407,7 +2410,7 @@ function settingsView() {
         },
     }, personas.map(persona => el('option', {
         text: persona.name,
-        attrs: { value: persona.entityId, selected: persona.entityId === session.personaId ? 'selected' : null },
+        attrs: { value: persona.entityId, selected: persona.entityId === session.personaId ? 'selected' : null, ...(persona.hasCustomName ? { 'data-i18n-ignore': '' } : {}) },
     })));
 
     const groupSelect = el('select', {
@@ -2422,7 +2425,7 @@ function settingsView() {
         },
     }, [
         el('option', { text: 'Choose a group...', attrs: { value: '' } }),
-        ...groups.map(group => el('option', { text: group.name || 'Unnamed group', attrs: { value: String(group.id) } })),
+        ...groups.map(group => el('option', { text: group.name || 'Unnamed group', attrs: { value: String(group.id), ...(group.name ? { 'data-i18n-ignore': '' } : {}) } })),
     ]);
 
     const profileSelect = el('select', {
@@ -2435,7 +2438,7 @@ function settingsView() {
             : null,
         ...profiles.map(profile => el('option', {
             text: profile.name,
-            attrs: { value: profile.id, selected: profile.id === settings.profileId ? 'selected' : null },
+            attrs: { value: profile.id, selected: profile.id === settings.profileId ? 'selected' : null, ...(profile.name ? { 'data-i18n-ignore': '' } : {}) },
         })),
     ]);
 
@@ -2945,17 +2948,21 @@ async function deleteTimeline() {
 }
 
 function sessionBar() {
+    const personas = new Map(api.listPersonas().map(persona => [persona.entityId, persona]));
     const hostT = hostTag();
-    const personas = new Map(api.listPersonas().map(persona => [persona.entityId, persona.name]));
     const sessions = api.listSessions();
     const select = el('select', {
         className: 'sbtw-input sbtw-session-select',
         attrs: { 'aria-label': 'Timeline session', 'data-focus-key': 'session' },
         on: { change: event => void switchSession(event.target.value) },
-    }, sessions.map(session => el('option', {
-        text: `${sessionDisplayName(session)} · ${personas.get(session.personaId) ?? hostT`Unassigned`}`,
-        attrs: { value: session.id, selected: session.id === state.session?.id ? 'selected' : null, 'data-i18n-ignore': '' },
-    })));
+    }, sessions.map(session => {
+        const persona = personas.get(session.personaId);
+        const personaLabel = persona ? (persona.hasCustomName ? persona.name : hostT`You`) : hostT`Unassigned`;
+        return el('option', {
+            text: `${sessionDisplayName(session)} · ${personaLabel}`,
+            attrs: { value: session.id, selected: session.id === state.session?.id ? 'selected' : null, 'data-i18n-ignore': '' },
+        });
+    }));
     return el('div', { className: 'sbtw-session-bar' }, [
         select,
         button('New timeline', 'sbtw-btn sbtw-btn-quiet', () => { void createTimeline(); }, { iconName: 'fa-plus' }),

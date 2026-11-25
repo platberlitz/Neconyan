@@ -383,11 +383,14 @@ for (const phone of [false, true]) {
         await pad_.connect();
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Checked.' } }] };
         const untouched = await pad_.include();
-        await pad_.refuse('/check preset', 'Conversation chats can\'t share a preset.');
         await pad_.refuse('/check lorebook', 'No lorebook is linked to this Conversation.');
         await pad_.refuse('/why Harbourmaster', 'No lorebook is linked to this Conversation.');
         const pair = await compareWithButton(page, account, app, pad_, 'app', '/check app', { expectOn: ['appEvidence'], untouched });
         expect(pair.request).toBe(REQUESTS.app);
+        // Conversation shares the active preset with the account prompt order, so its check runs like Roleplay's.
+        const presetPair = await compareWithButton(page, account, app, pad_, 'preset', '/check preset', { expectOn: ['preset', 'problems'], untouched });
+        expect(presetPair.notice).toContain('Current preset');
+        expect(presetPair.request).toBe(REQUESTS.preset);
     });
 }
 
