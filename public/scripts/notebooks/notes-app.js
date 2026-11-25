@@ -1380,7 +1380,11 @@ function reportLoreUpdates(updates) {
     if (!Array.isArray(updates)) return;
     const updated = updates.filter(item => item.updated).length;
     const review = updates.filter(item => item.status === 'needs_review' || item.status === 'conflict').length;
-    if (updated) toast('success', `Lore kept up to date (${updated} entr${updated === 1 ? 'y' : 'ies'}).`);
+    if (updated) {
+        toast('success', updated === 1
+            ? `Lore kept up to date (${updated} entry).`
+            : `Lore kept up to date (${updated} entries).`);
+    }
     if (review) toast('info', 'Linked lore needs a review before it changes. See Details > Lore.');
 }
 
@@ -1864,7 +1868,11 @@ async function moveNote({ title, folder }) {
         app.elements.title.value = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
         return null;
     }
-    if (result.updatedLinks) toast('success', `Updated ${result.updatedLinks} link${result.updatedLinks === 1 ? '' : 's'} in other notes.`);
+    if (result.updatedLinks) {
+        toast('success', result.updatedLinks === 1
+            ? `Updated ${result.updatedLinks} link in other notes.`
+            : `Updated ${result.updatedLinks} links in other notes.`);
+    }
     if (result.unresolved?.length) toast('info', `${result.unresolved.length} link(s) could not be updated safely and were left as they were.`);
     await reloadNote();
     await refreshTree();

@@ -33,6 +33,31 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
         assert.ok(keys.has(caption), `missing ${caption}`);
         assert.equal(english[caption], caption, `missing English caption: ${caption}`);
     }
+    for (const caption of [
+        'Always active: ~${0} tokens across ${1} always-active entry. Click to inspect.',
+        'Always active: ~${0} tokens across ${1} always-active entries. Click to inspect.',
+        'Enabled (${0} pipeline). Last run returned 0 entries from ${1} candidate. Stages: ${2}.',
+        'Enabled (${0} pipeline). Last run returned 0 entries from ${1} candidates. Stages: ${2}.',
+        'Enabled (${0} pipeline). Last run injected ${1} entry from ${2} candidate.',
+        'Enabled (${0} pipeline). Last run injected ${1} entries from ${2} candidates.',
+        'Delete ${0} selected agent?',
+        'Delete ${0} selected agents?',
+        'scoped.pathfinder.stage_entry_one',
+        'scoped.pathfinder.stage_entry_many',
+        'scoped.pathfinder.stage_label',
+    ]) {
+        assert.ok(keys.has(caption), `missing M102a key ${caption}`);
+        assert.equal(typeof english[caption], 'string', `missing English catalogue entry: ${caption}`);
+    }
+    for (const retired of [
+        'Always active: ~${0} tokens across ${1}${2}${3} Click to inspect.',
+        'Enabled (${0} pipeline). Last run injected ${1} entr${2}${3}.',
+        'Enabled (${0} pipeline). Last run returned 0 entries${1}.${2}',
+        'Delete ${0} selected agent${1}?',
+    ]) {
+        assert.ok(!keys.has(retired), `retired M102a key still collected: ${retired}`);
+        assert.ok(!Object.hasOwn(english, retired), `retired M102a key still in en.json: ${retired}`);
+    }
     // Developer-facing errors and identifiers never reach the page.
     for (const text of ['Server is not ready yet.', 'Could not close Meower.', 'BatchConflictError']) {
         assert.ok(!keys.has(text), `unexpected ${text}`);

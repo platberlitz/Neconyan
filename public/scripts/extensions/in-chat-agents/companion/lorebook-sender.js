@@ -5,6 +5,22 @@ const KEYS_PATTERN = /^\s*(?:\*\*Keys:\*\*|\*\*Keys\*\*:|Keys:)\s*(.*?)\s*$/i;
 
 let writeChain = Promise.resolve();
 
+function formatLorebookAddedToast(created, bookName, duplicates) {
+    if (duplicates <= 0) {
+        return created === 1
+            ? `Added ${created} lorebook entry to "${bookName}".`
+            : `Added ${created} lorebook entries to "${bookName}".`;
+    }
+    if (duplicates === 1) {
+        return created === 1
+            ? `Added ${created} lorebook entry to "${bookName}". Skipped ${duplicates} duplicate.`
+            : `Added ${created} lorebook entries to "${bookName}". Skipped ${duplicates} duplicate.`;
+    }
+    return created === 1
+        ? `Added ${created} lorebook entry to "${bookName}". Skipped ${duplicates} duplicates.`
+        : `Added ${created} lorebook entries to "${bookName}". Skipped ${duplicates} duplicates.`;
+}
+
 export function isLorebookAgent(agent) {
     return Array.isArray(agent?.tags)
         && agent.tags.some(tag => String(tag ?? '').trim().toLowerCase() === 'lorebook');
@@ -283,10 +299,11 @@ async function sendLorebookEntries(content, context, notifier, isCurrent) {
         await offerFallbackLorebookAttachment(context, bookName, committedName, attachToChat, notifier, isCurrent);
         bookName = committedName;
         if (created > 0) {
-            const duplicateNote = duplicates > 0 ? ` Skipped ${duplicates} duplicate${duplicates === 1 ? '' : 's'}.` : '';
-            notifier?.success?.(`Added ${created} lorebook entr${created === 1 ? 'y' : 'ies'} to "${bookName}".${duplicateNote}`);
+            notifier?.success?.(formatLorebookAddedToast(created, bookName, duplicates));
         } else {
-            notifier?.info?.(`No new entries added to "${bookName}"; ${duplicates} already exist${duplicates === 1 ? 's' : ''}.`);
+            notifier?.info?.(duplicates === 1
+                ? `No new entries added to "${bookName}"; ${duplicates} already exists.`
+                : `No new entries added to "${bookName}"; ${duplicates} already exist.`);
         }
 
         return { bookName, created, duplicates };

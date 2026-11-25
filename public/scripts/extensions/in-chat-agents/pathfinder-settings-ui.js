@@ -1082,14 +1082,26 @@ function bindEvents() {
             await refreshServerRetrievalLog();
             const results = await runDiagnostics();
             if (settingsSession !== session) return;
-            let text = '';
-
-            for (const [key, value] of Object.entries(results)) {
-                const icon = value.ok ? '✓' : '✗';
-                text += `${icon} ${key}: ${value.message}\n`;
+            const entries = Object.entries(results);
+            if (entries.length === 0) {
+                output.text('All checks passed!');
+            } else {
+                const frag = document.createDocumentFragment();
+                for (const [key, value] of entries) {
+                    const label = document.createElement('span');
+                    label.textContent = key;
+                    const message = document.createElement('span');
+                    message.textContent = value.message;
+                    frag.append(
+                        document.createTextNode(`${value.ok ? '✓' : '✗'} `),
+                        label,
+                        document.createTextNode(': '),
+                        message,
+                        document.createTextNode('\n'),
+                    );
+                }
+                output.empty().append(frag);
             }
-
-            output.text(text || 'All checks passed!');
         } catch (err) {
             if (settingsSession !== session) return;
             output.text('Error running diagnostics: ' + err.message);

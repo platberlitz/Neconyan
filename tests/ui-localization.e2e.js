@@ -910,3 +910,119 @@ test('TTS VoiceMapEntry keeps option values intact when German localises the dis
         voiceMapUpdates: 3,
     });
 });
+
+test('M102a localises ja-jp Lorebook 12-entry tooltip and tr-tr Pawthfinder per-row diagnostics DOM cleanly', async ({ page }) => {
+    const readJson = async rel => JSON.parse(await readFile(new URL(rel, import.meta.url), 'utf8'));
+    const [jaBase, jaSupp, trBase, trSupp, enCat] = await Promise.all([
+        readJson('../public/locales/ja-jp.json'),
+        readJson('../public/locales/neconyan/ja-jp.json'),
+        readJson('../public/locales/tr-tr.json'),
+        readJson('../public/locales/neconyan/tr-tr.json'),
+        readJson('../public/locales/neconyan/en.json'),
+    ]);
+
+    const { assembleLocaleData } = await import('../public/scripts/locale-assembly.js');
+    const jaDict = assembleLocaleData({ base: jaBase, supplement: jaSupp, catalogue: enCat }).dictionary;
+    const trLocale = assembleLocaleData({ base: trBase, supplement: trSupp, catalogue: enCat });
+
+    const loreSource = await readFile(new URL('../public/scripts/neconyan-lorebook-tokens.js', import.meta.url), 'utf8');
+    const uiL10nSource = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+
+    const titleFnMatch = loreSource.match(/export function tokenFootprintTitle[\s\S]*?\n}/);
+    const formatFnMatch = loreSource.match(/export function formatTokenCount[\s\S]*?\n}/);
+    expect(titleFnMatch && formatFnMatch).toBeTruthy();
+
+    await page.setContent(`
+        <main id="root">
+            <button id="neco-lore-token-meter" type="button">~240</button>
+            <div id="pf--diagnostics-output"></div>
+        </main>
+    `);
+    await page.addScriptTag({ type: 'module', content: `${uiL10nSource}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+
+    const jaTitle = await page.evaluate(([dict, formatCode, titleCode]) => {
+        const formatTokenCount = new Function(`return (${formatCode.replace(/^export /, '')});`)();
+        const tokenFootprintTitle = new Function('formatTokenCount', `return (${titleCode.replace(/^export /, '')});`)(formatTokenCount);
+        const btn = document.getElementById('neco-lore-token-meter');
+        btn.title = tokenFootprintTitle({
+            items: Array.from({ length: 12 }, (_, idx) => ({ uid: String(idx), tokens: 20 })),
+            total: 240,
+            budget: null,
+            usage: null,
+            overBudget: false,
+        });
+        window.localizeControls(btn, dict);
+        return btn.getAttribute('title');
+    }, [jaDict, formatFnMatch[0], titleFnMatch[0]]);
+
+    expect(jaTitle).toBe('常時有効: ~240トークン（12件のエントリー） クリックして確認。');
+
+    const diagSource = await readFile(new URL('../public/scripts/extensions/in-chat-agents/pathfinder/diagnostics.js', import.meta.url), 'utf8');
+    const sliceFn = name => {
+        const m = diagSource.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`, 'm'));
+        expect(m, `function ${name}`).toBeTruthy();
+        return m[0];
+    };
+    const diagHelpers = [
+        sliceFn('translate'),
+        sliceFn('formatZeroSelectionSummary'),
+        sliceFn('formatInjectedSummary'),
+        sliceFn('getPipelineStageSummary'),
+    ].join('\n');
+
+    const trResult = await page.evaluate(([dict, scoped, helpersCode]) => {
+        globalThis.SillyTavern = {
+            getContext: () => ({
+                translate: (text, key = null) => (key && Object.hasOwn(scoped, key) ? scoped[key] : (dict[text] ?? text)),
+            }),
+        };
+        const api = new Function(`${helpersCode}\nreturn { formatZeroSelectionSummary, formatInjectedSummary, getPipelineStageSummary };`)();
+
+        const renderRows = results => {
+            const output = document.getElementById('pf--diagnostics-output');
+            output.textContent = '';
+            const frag = document.createDocumentFragment();
+            for (const [key, value] of Object.entries(results)) {
+                const label = document.createElement('span');
+                label.className = 'pf-diag-label';
+                label.textContent = key;
+                const message = document.createElement('span');
+                message.className = 'pf-diag-msg';
+                message.textContent = value.message;
+                frag.append(
+                    document.createTextNode(`${value.ok ? '✓' : '✗'} `),
+                    label,
+                    document.createTextNode(': '),
+                    message,
+                    document.createTextNode('\n'),
+                );
+            }
+            output.append(frag);
+            window.localizeControls(output, dict);
+            return [...output.querySelectorAll('.pf-diag-msg')].map(node => node.textContent);
+        };
+
+        const zeroMsg = api.formatZeroSelectionSummary(
+            'default',
+            5,
+            api.getPipelineStageSummary([
+                { promptId: 'lore', entriesFound: 0 },
+                { promptId: 'rank', entriesFound: 1 },
+            ]),
+        );
+        const injectedMsg = api.formatInjectedSummary('default', 3, 5);
+
+        return {
+            zeroRows: renderRows({ 'Pipeline Mode': { ok: true, message: zeroMsg } }),
+            injectedRows: renderRows({ 'Pipeline Mode': { ok: true, message: injectedMsg } }),
+        };
+    }, [trLocale.dictionary, trLocale.scoped, diagHelpers]);
+
+    expect(trResult.zeroRows).toEqual([
+        'Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 0 girdi döndürdü. Aşamalar: lore: 0 girdi; rank: 1 girdi.',
+    ]);
+    expect(trResult.injectedRows).toEqual([
+        'Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 3 girdi ekledi.',
+    ]);
+});

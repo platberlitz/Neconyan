@@ -62,7 +62,12 @@ export function repairForExport(book) {
         throw new Error(`Export stopped: this lorebook has problems that cannot be fixed automatically. ${plan.defects.map(repairDefectText).join('; ')}.`);
     }
     if (plan.changes.length) {
-        globalThis.toastr?.info(plan.changes.map(repairChangeText).join('\n'), `Fixed ${plan.changes.length} broken entr${plan.changes.length === 1 ? 'y' : 'ies'} for export`);
+        globalThis.toastr?.info(
+            plan.changes.map(repairChangeText).join('\n'),
+            plan.changes.length === 1
+                ? `Fixed ${plan.changes.length} broken entry for export`
+                : `Fixed ${plan.changes.length} broken entries for export`,
+        );
     }
     return plan.book;
 }
@@ -262,7 +267,9 @@ export async function mountLorebookTools(root) {
             healthIcon.classList.toggle('fa-shield-halved', !count);
             healthIcon.classList.toggle('fa-triangle-exclamation', count > 0);
             healthButton.title = count
-                ? `Health check: ${count} error${count === 1 ? '' : 's'} or warning${count === 1 ? '' : 's'}. Click to review.`
+                ? (count === 1
+                    ? `Health check: ${count} error or warning. Click to review.`
+                    : `Health check: ${count} errors or warnings. Click to review.`)
                 : 'Health check: no errors or warnings found yet. Click for the full check.';
         }
 

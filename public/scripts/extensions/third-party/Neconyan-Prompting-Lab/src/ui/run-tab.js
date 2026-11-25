@@ -227,7 +227,9 @@ export function createRunTab({ onRunFinished = null } = {}) {
             className: 'sbpl-summary',
             text: blockedById.size
                 ? `Ready to run: ${ready} of ${report.cases.length} test cases.`
-                : `Ready to run: ${ready} test case${ready === 1 ? '' : 's'}.`,
+                : (ready === 1
+                    ? `Ready to run: ${ready} test case.`
+                    : `Ready to run: ${ready} test cases.`),
         }));
 
         const scroller = element('div', { className: 'sbpl-scroll-x' });

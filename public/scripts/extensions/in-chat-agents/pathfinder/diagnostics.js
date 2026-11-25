@@ -4,6 +4,44 @@ import { getFeedItems } from './activity-feed.js';
 import { getEnabledToolAgents } from '../agent-store.js';
 import { getPathfinderRuntimeAgent, getToolRecursionState, isPathfinderToolEnabledForAgent, syncToolAgentRegistrations } from '../agent-runner.js';
 
+function translate(text, key = null) {
+    const fn = (globalThis.SillyTavern ?? globalThis.window?.SillyTavern)?.getContext?.()?.translate;
+    return typeof fn === 'function' ? fn(text, key) : text;
+}
+
+function formatZeroSelectionSummary(pipelineId, candidateCount, stageSummary) {
+    if (!stageSummary) {
+        if (candidateCount <= 0) {
+            return `Enabled (${pipelineId} pipeline). Last run returned 0 entries.`;
+        }
+        return candidateCount === 1
+            ? `Enabled (${pipelineId} pipeline). Last run returned 0 entries from ${candidateCount} candidate.`
+            : `Enabled (${pipelineId} pipeline). Last run returned 0 entries from ${candidateCount} candidates.`;
+    }
+    if (candidateCount <= 0) {
+        return `Enabled (${pipelineId} pipeline). Last run returned 0 entries. Stages: ${stageSummary}.`;
+    }
+    return candidateCount === 1
+        ? `Enabled (${pipelineId} pipeline). Last run returned 0 entries from ${candidateCount} candidate. Stages: ${stageSummary}.`
+        : `Enabled (${pipelineId} pipeline). Last run returned 0 entries from ${candidateCount} candidates. Stages: ${stageSummary}.`;
+}
+
+function formatInjectedSummary(pipelineId, selectedCount, candidateCount) {
+    if (candidateCount <= 0) {
+        return selectedCount === 1
+            ? `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entry.`
+            : `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entries.`;
+    }
+    if (candidateCount === 1) {
+        return selectedCount === 1
+            ? `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entry from ${candidateCount} candidate.`
+            : `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entries from ${candidateCount} candidate.`;
+    }
+    return selectedCount === 1
+        ? `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entry from ${candidateCount} candidates.`
+        : `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entries from ${candidateCount} candidates.`;
+}
+
 function getRegisteredPathfinderTools(ToolManager) {
     const tools = ToolManager?.tools instanceof Map
         ? [...ToolManager.tools.values()]
@@ -82,10 +120,10 @@ function getLastPipelineRunMessage(settings) {
     }
 
     if (selectedCount === 0) {
-        return `Enabled (${pipelineId} pipeline). Last run returned 0 entries${candidateCount > 0 ? ` from ${candidateCount} candidate(s)` : ''}.${getPipelineStageSummary(lastRun.stageResults)}`;
+        return formatZeroSelectionSummary(pipelineId, candidateCount, getPipelineStageSummary(lastRun.stageResults));
     }
 
-    return `Enabled (${pipelineId} pipeline). Last run injected ${selectedCount} entr${selectedCount === 1 ? 'y' : 'ies'}${candidateCount > 0 ? ` from ${candidateCount} candidate(s)` : ''}.`;
+    return formatInjectedSummary(pipelineId, selectedCount, candidateCount);
 }
 
 function getToolRegistrationDetail(enabledTools, registeredTools) {
@@ -102,11 +140,19 @@ function getToolRegistrationDetail(enabledTools, registeredTools) {
 }
 
 function getPipelineStageSummary(stageResults = []) {
-    const stageCounts = stageResults
+    return stageResults
         .filter(stage => stage && Number.isFinite(Number(stage.entriesFound)))
-        .map(stage => `${stage.promptId || `stage ${Number(stage.stageIndex ?? 0) + 1}`}: ${Number(stage.entriesFound)} entr${Number(stage.entriesFound) === 1 ? 'y' : 'ies'}`);
-
-    return stageCounts.length > 0 ? ` Stages: ${stageCounts.join('; ')}.` : '';
+        .map(stage => {
+            const count = Number(stage.entriesFound);
+            const stageNum = Number(stage.stageIndex ?? 0) + 1;
+            const label = stage.promptId || translate('stage ${0}', 'scoped.pathfinder.stage_label').replace('${0}', String(stageNum));
+            const countText = (count === 1
+                ? translate('${0} entry', 'scoped.pathfinder.stage_entry_one')
+                : translate('${0} entries', 'scoped.pathfinder.stage_entry_many')
+            ).replace('${0}', String(count));
+            return `${label}: ${countText}`;
+        })
+        .join('; ');
 }
 
 export async function runDiagnostics() {
@@ -257,7 +303,9 @@ export async function runDiagnostics() {
         ok: true,
         message: s.dedupeNaturalActivation === false
             ? 'Disabled. Pawthfinder may inject entries that World Info also activates naturally.'
-            : `Enabled. Last pipeline skipped ${skippedNaturalCount} naturally activated entr${skippedNaturalCount === 1 ? 'y' : 'ies'}.`,
+            : (skippedNaturalCount === 1
+                ? `Enabled. Last pipeline skipped ${skippedNaturalCount} naturally activated entry.`
+                : `Enabled. Last pipeline skipped ${skippedNaturalCount} naturally activated entries.`),
     };
 
     results['World Info Keywords'] = {

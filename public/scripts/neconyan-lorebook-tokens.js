@@ -69,7 +69,21 @@ export async function measureTokenFootprint(book, { count = estimateTokens, budg
  * @returns {string}
  */
 export function tokenFootprintTitle({ items, total, budget, usage, overBudget }) {
-    const entries = `${items.length} always-active entr${items.length === 1 ? 'y' : 'ies'}`;
-    const share = budget ? ` of the ${formatTokenCount(budget)} World Info budget (${Math.round(usage * 100)}%)` : '';
-    return `Always active: ~${formatTokenCount(total)} tokens across ${entries}${share}${overBudget ? ' - over budget!' : '.'} Click to inspect.`;
+    const totalText = formatTokenCount(total);
+    const entryCount = items.length;
+    if (!budget) {
+        return entryCount === 1
+            ? `Always active: ~${totalText} tokens across ${entryCount} always-active entry. Click to inspect.`
+            : `Always active: ~${totalText} tokens across ${entryCount} always-active entries. Click to inspect.`;
+    }
+    const budgetText = formatTokenCount(budget);
+    const pct = Math.round(usage * 100);
+    if (overBudget) {
+        return entryCount === 1
+            ? `Always active: ~${totalText} tokens across ${entryCount} always-active entry of the ${budgetText} World Info budget (${pct}%) - over budget! Click to inspect.`
+            : `Always active: ~${totalText} tokens across ${entryCount} always-active entries of the ${budgetText} World Info budget (${pct}%) - over budget! Click to inspect.`;
+    }
+    return entryCount === 1
+        ? `Always active: ~${totalText} tokens across ${entryCount} always-active entry of the ${budgetText} World Info budget (${pct}%). Click to inspect.`
+        : `Always active: ~${totalText} tokens across ${entryCount} always-active entries of the ${budgetText} World Info budget (${pct}%). Click to inspect.`;
 }

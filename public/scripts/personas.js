@@ -2103,8 +2103,10 @@ async function lockPersona(type = 'chat') {
                 updatePersonaConnectionsAvatarList();
                 if (power_user.persona_show_notifications) {
                     let additional = '';
-                    if (unlinkedCharacters.length)
-                        additional += `<br /><br />${t`Unlinked existing persona${unlinkedCharacters.length > 1 ? 's' : ''}: ${unlinkedCharacters.map(escapeHtml).join(', ')}`}`;
+                    if (unlinkedCharacters.length) {
+                        const unlinkedNames = unlinkedCharacters.map(escapeHtml).join(', ');
+                        additional += `<br /><br />${unlinkedCharacters.length === 1 ? t`Unlinked existing persona: ${unlinkedNames}` : t`Unlinked existing personas: ${unlinkedNames}`}`;
+                    }
                     if (additional || !isPersonaPanelOpen()) {
                         toastr.success(t`User persona ${escapeHtml(name1)} is locked to character ${escapeHtml(name2)}${additional}`, t`Persona Locked`, { escapeHtml: false });
                     }

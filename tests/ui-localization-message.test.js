@@ -269,7 +269,7 @@ describe('empty holes and Dialogue Colors localization', () => {
 
     test('matches singular n=1 plural-ending keys and optional-suffix captions', () => {
         const singularCases = [
-            ['de-de', '1 Nachricht umgefärbt.', '1 ausgewählte(n) Agent(en) löschen?'],
+            ['de-de', '1 Nachricht umgefärbt.', '1 ausgewählten Agenten löschen?'],
             ['ja-jp', '1件のメッセージの色を再適用しました。', '選択した1体のエージェントを削除しますか？'],
             ['tr-tr', '1 mesaj yeniden renklendirildi.', 'Seçili 1 ajan silinsin mi?'],
         ];
@@ -315,5 +315,110 @@ describe('empty holes and Dialogue Colors localization', () => {
         for (const [input, expected] of cases) {
             expect(localizeString(input, turkish)).toBe(expected);
         }
+    });
+});
+
+describe('M102a plural templates, Lorebook tooltip, and Pawthfinder diagnostics', () => {
+    const loadShippedLocale = language => {
+        const baseFile = `${language}.json`;
+        return assembleLocaleData({
+            base: fs.existsSync(localePath(baseFile)) ? readLocale(baseFile) : {},
+            supplement: readLocale(`neconyan/${language}.json`),
+            catalogue: readLocale('neconyan/en.json'),
+        });
+    };
+
+    test.each(SHIPPED_LANGUAGES)('L10N-LOREBOOK-TOOLTIP-MULTIDIGIT translates 1 and 12 always-active entries cleanly: %s', language => {
+        const { dictionary } = loadShippedLocale(language);
+        const inputs = [
+            ['Always active: ~20 tokens across 1 always-active entry. Click to inspect.', '20', '1'],
+            ['Always active: ~240 tokens across 12 always-active entries. Click to inspect.', '240', '12'],
+            ['Always active: ~240 tokens across 12 always-active entries of the 1k World Info budget (24%). Click to inspect.', '240', '12'],
+            ['Always active: ~240 tokens across 12 always-active entries of the 200 World Info budget (120%) - over budget! Click to inspect.', '240', '12'],
+        ];
+        for (const [input, tokens, count] of inputs) {
+            const localized = localizeString(input, dictionary);
+            expect(localized).not.toBe(input);
+            expect(localized).toContain(tokens);
+            expect(localized).toContain(count);
+            expect(localized).not.toMatch(/(?:^|[^\p{L}])(?:always-active|Click to inspect|over budget)(?:$|[^\p{L}])/iu);
+        }
+    });
+
+    test('pinned ja-jp and zh-cn Lorebook 12-entry tooltips match expected output', () => {
+        const ja = loadShippedLocale('ja-jp').dictionary;
+        const zh = loadShippedLocale('zh-cn').dictionary;
+        expect(localizeString('Always active: ~240 tokens across 12 always-active entries. Click to inspect.', ja))
+            .toBe('常時有効: ~240トークン（12件のエントリー） クリックして確認。');
+        expect(localizeString('Always active: ~240 tokens across 12 always-active entries. Click to inspect.', zh))
+            .toBe('常驻激活：共 12 个词条，约 240 个 token。 点击查看。');
+    });
+
+    test.each(SHIPPED_LANGUAGES)('L10N-PATHFINDER-TR-CANDIDATES translates zero-selection and injected candidate variants: %s', language => {
+        const { dictionary, scoped } = loadShippedLocale(language);
+        expect(scoped['scoped.pathfinder.stage_entry_one']).toContain('${0}');
+        expect(scoped['scoped.pathfinder.stage_entry_many']).toContain('${0}');
+        expect(scoped['scoped.pathfinder.stage_label']).toContain('${0}');
+
+        const stage0 = scoped['scoped.pathfinder.stage_entry_many'].replace('${0}', '0');
+        const stage1 = scoped['scoped.pathfinder.stage_entry_one'].replace('${0}', '1');
+        const stageSummary = `lore: ${stage0}; rank: ${stage1}`;
+
+        const zeroNoStage = localizeString('Enabled (default pipeline). Last run returned 0 entries from 5 candidates.', dictionary);
+        const zeroWithStage = localizeString(`Enabled (default pipeline). Last run returned 0 entries from 5 candidates. Stages: ${stageSummary}.`, dictionary);
+        const injectedThree = localizeString('Enabled (default pipeline). Last run injected 3 entries from 5 candidates.', dictionary);
+        const injectedOneNoCand = localizeString('Enabled (default pipeline). Last run injected 1 entry.', dictionary);
+        const injectedOneOneCand = localizeString('Enabled (default pipeline). Last run injected 1 entry from 1 candidate.', dictionary);
+
+        for (const text of [zeroNoStage, zeroWithStage, injectedThree, injectedOneNoCand, injectedOneOneCand]) {
+            expect(text).not.toMatch(/\bentry\b|\bentries\b|\bcandidate\b|\bcandidates\b|\bLast run\b|\bStages:\b/);
+        }
+        expect(zeroWithStage).toContain(stageSummary);
+        expect(injectedThree).toContain('3');
+        expect(injectedThree).toContain('5');
+    });
+
+    test('tr-tr Pawthfinder outputs localize zero-selection with multi-stage details and injected candidates completely', () => {
+        const { dictionary, scoped } = loadShippedLocale('tr-tr');
+        const stageSummary = `lore: ${scoped['scoped.pathfinder.stage_entry_many'].replace('${0}', '0')}; rank: ${scoped['scoped.pathfinder.stage_entry_one'].replace('${0}', '1')}`;
+        expect(localizeString('Enabled (default pipeline). Last run returned 0 entries from 5 candidates.', dictionary))
+            .toBe('Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 0 girdi döndürdü.');
+        expect(localizeString(`Enabled (default pipeline). Last run returned 0 entries from 5 candidates. Stages: ${stageSummary}.`, dictionary))
+            .toBe('Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 0 girdi döndürdü. Aşamalar: lore: 0 girdi; rank: 1 girdi.');
+        expect(localizeString('Enabled (default pipeline). Last run injected 3 entries from 5 candidates.', dictionary))
+            .toBe('Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 3 girdi ekledi.');
+    });
+
+    test.each(SHIPPED_LANGUAGES)('L10N-41 M102a slice translates n=1 and n=3 captions without plural-hole leaks: %s', language => {
+        const { dictionary } = loadShippedLocale(language);
+        const inputs = [
+            'Delete 1 selected agent?',
+            'Delete 3 selected agents?',
+            'Added 1 lorebook entry to "Book".',
+            'Added 3 lorebook entries to "Book". Skipped 2 duplicates.',
+            'Health check: 1 error or warning. Click to review.',
+            'Health check: 3 errors or warnings. Click to review.',
+            'Gallery keeps the newest 50 images. 1 older image was removed.',
+            'Gallery keeps the newest 50 images. 3 older images were removed.',
+            'Stored 1 snapshot; 1 failed.',
+            'Stored 3 snapshots; 2 failed.',
+            'Maximum 1 reference image reached',
+            'Maximum 3 reference images reached',
+        ];
+        for (const input of inputs) {
+            const localized = localizeString(input, dictionary);
+            expect(localized).not.toBe(input);
+            expect(localized).not.toMatch(/\(s\)|\(n\)|\(e\)|\(en\)|\(es\)|\(ies\)|\.\.| was |(?:^|[^\p{L}])entr(?:$|[^\p{L}])/iu);
+        }
+    });
+
+    test('pinned M102a de-de, ko-kr, es-es, fr-fr, ru-ru, uk-ua, and ar-sa outputs are leak-free', () => {
+        expect(localizeString('Delete 3 selected agents?', loadShippedLocale('de-de').dictionary)).toBe('3 ausgewählte Agenten löschen?');
+        expect(localizeString('Delete 3 selected agents?', loadShippedLocale('ko-kr').dictionary)).toBe('선택한 3개의 에이전트를 삭제할까요?');
+        expect(localizeString('Added 3 lorebook entries to "Book".', loadShippedLocale('es-es').dictionary)).toBe('Se agregaron 3 entradas de lorebook a "Book".');
+        expect(localizeString('Delete 3 selected agents?', loadShippedLocale('fr-fr').dictionary)).toBe('Supprimer 3 agents sélectionnés ?');
+        expect(localizeString('Stored 3 snapshots; 2 failed.', loadShippedLocale('ru-ru').dictionary)).toBe('Сохранено снимков: 3; с ошибкой: 2.');
+        expect(localizeString('Stored 3 snapshots; 2 failed.', loadShippedLocale('uk-ua').dictionary)).toBe('Збережено знімків: 3; не вдалося: 2.');
+        expect(localizeString('Delete 3 selected agents?', loadShippedLocale('ar-sa').dictionary)).toBe('حذف الوكلاء المحددين (3)؟');
     });
 });

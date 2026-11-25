@@ -2,6 +2,8 @@
 /* global globalThis */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
+import { localizeString } from '../public/scripts/ui-localization.js';
 
 const toolSource = readFileSync(new URL('../public/scripts/tool-calling.js', import.meta.url), 'utf8');
 const ToolDefinition = new Function(`return (${toolSource.match(/class ToolDefinition \{[\s\S]*?\n\}/)[0]});`)();
@@ -21,6 +23,7 @@ await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agen
     syncToolAgentRegistrations: () => refreshRegistrations(),
 }));
 
+const { clearFeed, logPathfinderRetrievalDetail } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js');
 const { clearAllTrees, getSettings, getTree, replaceSettings, saveTree } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
 const { runDiagnostics } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/diagnostics.js');
 
@@ -30,6 +33,7 @@ describe('Pawthfinder diagnostics', () => {
     let save;
 
     beforeEach(() => {
+        clearFeed();
         clearAllTrees();
         replaceSettings({
             enabledLorebooks: ['Manual Book'], includeContextualLorebooks: false, sidecarEnabled: true,
@@ -124,5 +128,76 @@ describe('Pawthfinder diagnostics', () => {
         expect(results['World Info Keywords'].message).toContain('Manual Book');
         expect(results['World Info Keywords'].message).toContain('Constant and sticky entries still activate');
         expect(results['World Info Keywords'].message).toContain('keywords return if a retrieval fails');
+    });
+
+    test('formats pipeline zero-selection and injected entry/candidate counts without (s) leaks', async () => {
+        replaceSettings({
+            enabledLorebooks: ['Manual Book'], includeContextualLorebooks: false, pipelineEnabled: true, pipelineId: 'default',
+        });
+
+        clearFeed();
+        logPathfinderRetrievalDetail({ mode: 'pipeline', metadata: { selectedEntryCount: 0, candidateCount: 5 } });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run returned 0 entries from 5 candidates.');
+
+        clearFeed();
+        logPathfinderRetrievalDetail({
+            mode: 'pipeline',
+            stageResults: [{ promptId: 'lore', entriesFound: 0 }, { promptId: 'rank', entriesFound: 1 }],
+            metadata: { selectedEntryCount: 0, candidateCount: 5 },
+        });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run returned 0 entries from 5 candidates. Stages: lore: 0 entries; rank: 1 entry.');
+
+        clearFeed();
+        logPathfinderRetrievalDetail({ mode: 'pipeline', metadata: { selectedEntryCount: 0, candidateCount: 1 } });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run returned 0 entries from 1 candidate.');
+
+        clearFeed();
+        logPathfinderRetrievalDetail({ mode: 'pipeline', metadata: { selectedEntryCount: 3, candidateCount: 5 } });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run injected 3 entries from 5 candidates.');
+
+        clearFeed();
+        logPathfinderRetrievalDetail({ mode: 'pipeline', metadata: { selectedEntryCount: 1, candidateCount: 1 } });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run injected 1 entry from 1 candidate.');
+
+        clearFeed();
+        logPathfinderRetrievalDetail({ mode: 'pipeline', metadata: { selectedEntryCount: 1, candidateCount: 0 } });
+        expect((await runDiagnostics())['Pipeline Mode'].message)
+            .toBe('Enabled (default pipeline). Last run injected 1 entry.');
+    });
+
+    test('translates multi-stage zero-selection diagnostics completely in tr-tr via SillyTavern translate', async () => {
+        const readJson = rel => JSON.parse(readFileSync(new URL(`../public/locales/${rel}`, import.meta.url), 'utf8'));
+        const { dictionary, scoped } = assembleLocaleData({
+            base: readJson('tr-tr.json'),
+            supplement: readJson('neconyan/tr-tr.json'),
+            catalogue: readJson('neconyan/en.json'),
+        });
+        replaceSettings({
+            enabledLorebooks: ['Manual Book'], includeContextualLorebooks: false, pipelineEnabled: true, pipelineId: 'default',
+        });
+        globalThis.window = {
+            SillyTavern: {
+                getContext: () => ({
+                    ToolManager: manager,
+                    loadWorldInfo: load,
+                    saveWorldInfo: save,
+                    translate: (text, key = null) => (key && Object.hasOwn(scoped, key) ? scoped[key] : (dictionary[text] ?? text)),
+                }),
+            },
+        };
+        clearFeed();
+        logPathfinderRetrievalDetail({
+            mode: 'pipeline',
+            stageResults: [{ promptId: 'lore', entriesFound: 0 }, { promptId: 'rank', entriesFound: 1 }],
+            metadata: { selectedEntryCount: 0, candidateCount: 5 },
+        });
+        const results = await runDiagnostics();
+        expect(localizeString(results['Pipeline Mode'].message, dictionary))
+            .toBe('Etkin (default ardışık düzen). Son çalıştırma 5 aday arasından 0 girdi döndürdü. Aşamalar: lore: 0 girdi; rank: 1 girdi.');
     });
 });

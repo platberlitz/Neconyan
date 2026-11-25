@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { assembleLocaleData, isScopedKey, tableForKey } from '../public/scripts/locale-assembly.js';
@@ -12,6 +12,11 @@ const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${fi
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
 const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
+const PATHFINDER_SCOPED_KEYS = [
+    'scoped.pathfinder.stage_entry_one',
+    'scoped.pathfinder.stage_entry_many',
+    'scoped.pathfinder.stage_label',
+];
 const catalogue = readJson('neconyan/en.json');
 const files = Object.fromEntries(LANGUAGES.map(language => [language, { base: readJson(`${language}.json`), supplement: readJson(`neconyan/${language}.json`), catalogue }]));
 
@@ -52,17 +57,27 @@ test('every real scoped key is a catalogued image choice or the Nano reasoning l
         const { base, supplement } = files[language];
         for (const [name, table] of [['base', base], ['supplement', supplement]]) {
             for (const key of Object.keys(table).filter(isScopedKey)) {
-                assert.ok(key.startsWith('scoped.prompt_media.') || [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY].includes(key), `${language} ${name} holds an uncatalogued scoped namespace`);
+                assert.ok(
+                    key.startsWith('scoped.prompt_media.') || [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY, ...PATHFINDER_SCOPED_KEYS].includes(key),
+                    `${language} ${name} holds an uncatalogued scoped namespace`,
+                );
                 assert.ok(Object.hasOwn(catalogue, key), `${language} ${name}: ${key} is not a key of the catalogue`);
             }
         }
     }
-    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label and Scratchpad's Change history heading.
+    // The catalogue carries 51 image-choice entries, the explicit Nano reasoning label, Scratchpad's Change history heading and 3 Pawthfinder stage-summary entries.
     const catalogued = Object.keys(catalogue).filter(isScopedKey);
     assert.equal(catalogued.filter(key => key.startsWith('scoped.prompt_media.')).length, 51);
-    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [NANO_REASONING_SCOPED_KEY, SCRATCHPAD_HISTORY_SCOPED_KEY]);
+    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), [
+        NANO_REASONING_SCOPED_KEY,
+        SCRATCHPAD_HISTORY_SCOPED_KEY,
+        ...PATHFINDER_SCOPED_KEYS,
+    ]);
     assert.equal(catalogue[NANO_REASONING_SCOPED_KEY], '${0} (unavailable)');
     assert.equal(catalogue[SCRATCHPAD_HISTORY_SCOPED_KEY], 'Change history');
+    assert.equal(catalogue['scoped.pathfinder.stage_entry_one'], '${0} entry');
+    assert.equal(catalogue['scoped.pathfinder.stage_entry_many'], '${0} entries');
+    assert.equal(catalogue['scoped.pathfinder.stage_label'], 'stage ${0}');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -179,4 +194,34 @@ test('tableForKey sends a scoped key to the scoped table and every other key to 
     assert.equal(tableForKey('scoped.x', dictionary, undefined), undefined);
     assert.equal(tableForKey('Open', undefined, scoped), undefined);
     assert.equal(tableForKey('scoped.x', undefined, undefined), undefined);
+});
+
+test('all 17 supplements translate Pawthfinder stage scoped keys without leaking bare entry counts into dictionary', () => {
+    const shipped = readdirSync(new URL('../public/locales/neconyan', import.meta.url))
+        .filter(name => name.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(name))
+        .map(name => name.slice(0, -'.json'.length))
+        .sort();
+    assert.equal(shipped.length, 17);
+    for (const language of shipped) {
+        let base = {};
+        try {
+            base = readJson(`${language}.json`);
+        } catch {
+            base = {};
+        }
+        const supplement = readJson(`neconyan/${language}.json`);
+        const { dictionary, scoped } = assembleLocaleData({ base, supplement, catalogue });
+        for (const key of PATHFINDER_SCOPED_KEYS) {
+            assert.equal(typeof scoped[key], 'string', `${language}: missing ${key} in scoped`);
+            assert.ok(!Object.hasOwn(dictionary, key), `${language}: ${key} leaked into dictionary`);
+            assert.ok(!Object.hasOwn(dictionary, catalogue[key]), `${language}: English alias ${catalogue[key]} leaked into dictionary`);
+        }
+    }
+    const { dictionary: trDict, scoped: trScoped } = assembleLocaleData({
+        base: readJson('tr-tr.json'),
+        supplement: readJson('neconyan/tr-tr.json'),
+        catalogue,
+    });
+    assert.equal(trScoped['scoped.pathfinder.stage_entry_many'], '${0} girdi');
+    assert.equal(localizeString('2 entries', trDict), '2 entries');
 });

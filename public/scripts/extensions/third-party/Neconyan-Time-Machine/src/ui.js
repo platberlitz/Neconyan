@@ -187,12 +187,18 @@ export async function openTimeMachine() {
                 status.textContent = message;
             }));
             if (result.failed > 0) {
-                status.textContent = `Stored ${result.taken} snapshot${result.taken === 1 ? '' : 's'}; ${result.failed} failed.`;
+                status.textContent = result.taken === 1
+                    ? `Stored ${result.taken} snapshot; ${result.failed} failed.`
+                    : `Stored ${result.taken} snapshots; ${result.failed} failed.`;
                 globalThis.toastr?.warning('Some items could not be snapshotted.');
             } else {
-                status.textContent = result.taken === 0
-                    ? 'Nothing has changed since the last snapshot.'
-                    : `Stored ${result.taken} new snapshot${result.taken === 1 ? '' : 's'}.`;
+                let statusText = 'Nothing has changed since the last snapshot.';
+                if (result.taken === 1) {
+                    statusText = `Stored ${result.taken} new snapshot.`;
+                } else if (result.taken > 1) {
+                    statusText = `Stored ${result.taken} new snapshots.`;
+                }
+                status.textContent = statusText;
             }
             renderTargets();
             state.comparison++;
@@ -598,7 +604,9 @@ export async function openTimeMachine() {
         }
         const wrapper = el('div', 'sbctm-diff-wrap');
         wrapper.append(el('p', 'sbctm-diff-legend',
-            `Restoring this version changes ${rows.length} field${rows.length === 1 ? '' : 's'}.`));
+            rows.length === 1
+                ? `Restoring this version changes ${rows.length} field.`
+                : `Restoring this version changes ${rows.length} fields.`));
         for (const change of rows) {
             const card = el('div', `sbctm-change sbctm-${change.kind}`);
             const head = el('div', 'sbctm-change-head');

@@ -253,7 +253,9 @@ export function createPlaygroundPanel({ initialText = '', announce = defaultAnno
                 ? ` ${result.unreadable} file${result.unreadable === 1 ? '' : 's'} could not be read and were skipped.`
                 : '';
             const confirmed = await confirmRemoval(ctx,
-                `Remove ${count} unused global variable${count === 1 ? '' : 's'}?`,
+                count === 1
+                    ? `Remove ${count} unused global variable?`
+                    : `Remove ${count} unused global variables?`,
                 `Nothing refers to these any more (checked ${looked}).${skipped} Removing them cannot be undone: ${result.unused.join(', ')}`);
             if (!confirmed) {
                 reportGlobals('Nothing was removed.');
@@ -262,7 +264,9 @@ export function createPlaygroundPanel({ initialText = '', announce = defaultAnno
             const removed = removeGlobals(ctx, result.unused);
             globalsStatus = '';
             renderVariables();
-            reportGlobals(`Removed ${removed.length} unused global variable${removed.length === 1 ? '' : 's'}.`);
+            reportGlobals(removed.length === 1
+                ? `Removed ${removed.length} unused global variable.`
+                : `Removed ${removed.length} unused global variables.`);
         } catch (error) {
             reportGlobals(`Could not check global variables: ${error?.message ?? error}`, { error: true });
         } finally {

@@ -1,13 +1,11 @@
 [
   "All ${0} enabled Pawthfinder tool(s) registered and active. ${1}${2}",
-  "Always active: ~${0} tokens across ${1}${2}${3} Click to inspect.",
   "Auto chat ref: Failed to inline ${0}${1}: ${2}",
   "Auto chat ref: Inlined ${0}${1}",
   "Availability: ${0}${1}",
   "Checkpoint\n${0}\n\n${1}",
   "Could not delete ${0} ${1}. Try again.",
   "Deleted ${0} ${1}.",
-  "Enabled (${0} pipeline). Last run injected ${1} entr${2}${3}.",
   "Extension ${0} ${1}d.",
   "Extension ${0} synced${1}${2}.",
   "Generating... ${0}%${1}${2}",

@@ -828,7 +828,9 @@ function setupSettingsSearch() {
 
         if (statusEl) {
             statusEl.textContent = totalMatches > 0
-                ? `Found ${totalMatches} matching setting${totalMatches === 1 ? "" : "s"}`
+                ? (totalMatches === 1
+                    ? `Found ${totalMatches} matching setting`
+                    : `Found ${totalMatches} matching settings`)
                 : `No settings matching "${query}"`;
         }
     };
@@ -4001,9 +4003,15 @@ function renderComfyComponentOverrides() {
     inspect.className = "menu_button";
     inspect.disabled = comfyWorkflowChoiceState.loading;
     const remaining = new Set(context.candidates.map(row => row.classType)).size - comfyWorkflowChoiceState.inspected.size;
-    inspect.textContent = comfyWorkflowChoiceState.loading
-        ? "Inspecting..."
-        : (remaining > 0 ? `Inspect workflow choices (${remaining} class${remaining === 1 ? "" : "es"})` : "Refresh workflow choices");
+    let inspectLabel = "Refresh workflow choices";
+    if (comfyWorkflowChoiceState.loading) {
+        inspectLabel = "Inspecting...";
+    } else if (remaining === 1) {
+        inspectLabel = `Inspect workflow choices (${remaining} class)`;
+    } else if (remaining > 1) {
+        inspectLabel = `Inspect workflow choices (${remaining} classes)`;
+    }
+    inspect.textContent = inspectLabel;
     inspect.onclick = () => void discoverComfyWorkflowChoices();
     actions.append(inspect);
     details.append(actions);
@@ -9849,7 +9857,11 @@ async function readValidatedReferenceFiles(files, existingSources = [], maxCount
             errors.push(`${file?.name || "file"}: ${error.message}`);
         }
     }
-    if (Array.from(files || []).length > candidates.length) errors.push(`Maximum ${maxCount} reference image${maxCount === 1 ? "" : "s"} reached`);
+    if (Array.from(files || []).length > candidates.length) {
+        errors.push(maxCount === 1
+            ? `Maximum ${maxCount} reference image reached`
+            : `Maximum ${maxCount} reference images reached`);
+    }
     return { sources, errors };
 }
 
@@ -11960,7 +11972,9 @@ function warnGalleryEviction(event) {
     const now = Date.now();
     if (now - _galleryEvictionToastTs < 4000) return;
     _galleryEvictionToastTs = now;
-    qigToast.warning(`Gallery keeps the newest ${limit} images. ${count} older image${count === 1 ? " was" : "s were"} removed.`);
+    qigToast.warning(count === 1
+        ? `Gallery keeps the newest ${limit} images. ${count} older image was removed.`
+        : `Gallery keeps the newest ${limit} images. ${count} older images were removed.`);
 }
 
 async function initializeGalleryRepository() {
@@ -12527,9 +12541,17 @@ function displayBatchResults(results, returnFocusElement = null) {
                 if (i < entries.length - 1) await new Promise(r => setTimeout(r, 300));
             }
             const { succeeded, failed } = summarizeOperationOutcomes(outcomes);
-            if (!failed) qigToast.success(`Downloaded ${succeeded} image${succeeded === 1 ? "" : "s"}`);
-            else if (succeeded) qigToast.warning(`Downloaded ${succeeded}; ${failed} failed`);
-            else qigToast.error(`Could not download ${failed} image${failed === 1 ? "" : "s"}`);
+            if (!failed) {
+                qigToast.success(succeeded === 1
+                    ? `Downloaded ${succeeded} image`
+                    : `Downloaded ${succeeded} images`);
+            } else if (succeeded) {
+                qigToast.warning(`Downloaded ${succeeded}; ${failed} failed`);
+            } else {
+                qigToast.error(failed === 1
+                    ? `Could not download ${failed} image`
+                    : `Could not download ${failed} images`);
+            }
         };
         document.getElementById("qig-batch-insert-all").onclick = async (e) => {
             e.stopPropagation();
