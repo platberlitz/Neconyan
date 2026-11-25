@@ -1603,9 +1603,11 @@ body.neconyan-companion-resizing {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
+/* display: none keeps the closed panel out of the render tree; visibility: hidden
+   inherits through every card and makes WebKit restyle the whole panel on reopen,
+   even when off-screen cards use content-visibility: auto. */
 .ica--tpanel:not(.is-open) {
-    visibility: hidden;
-    pointer-events: none;
+    display: none;
 }
 
 .ica--tpanel-header {
@@ -1761,6 +1763,12 @@ body.neconyan-companion-resizing {
     border-color: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 48%, transparent);
     background: transparent;
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 36%, transparent);
+    /* The panel scroller paints every card, off-screen ones included, and each Catline icon
+       costs a sprite layout to paint, so opening a busy chat's panel froze for most of a second.
+       Off-screen cards skip style, layout and paint until they scroll near; auto keeps the size
+       a card last drew at so the scrollbar stays steady. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 220px;
 }
 
 .ica--tpanel-agent[data-hidden="true"] {

@@ -1551,6 +1551,7 @@ describe('companion tracker panel', () => {
         const panelNode = {
             scrollHeight: 1200,
             clientHeight: 400,
+            isConnected: true,
             dataset: {},
             addEventListener: jest.fn(),
             querySelector: jest.fn(selector => (selector === '[data-role="panel-jump"]' ? group : null)),
@@ -1599,7 +1600,11 @@ describe('companion tracker panel', () => {
         const frames = [];
         const previousFrame = globalThis.requestAnimationFrame;
         globalThis.requestAnimationFrame = jest.fn(callback => frames.push(callback));
-        const flushFrames = () => frames.splice(0).forEach(callback => callback());
+        let clock = 0;
+        const flushFrames = () => frames.splice(0).forEach(callback => callback(clock += 16));
+        const runFrames = () => {
+            for (let count = 0; count < 400 && frames.length; count++) flushFrames();
+        };
 
         try {
             const html = panel.buildPanelHtml();
@@ -1624,15 +1629,36 @@ describe('companion tracker panel', () => {
             expect(buttons['panel-scroll-bottom'].getAttribute('aria-disabled')).toBe('false');
 
             await press('panel-scroll-bottom');
-            expect(panelNode.scrollTo).toHaveBeenLastCalledWith({ top: 1200, behavior: 'smooth' });
-            expect(scrollTop).toBe(800);
+            expect(scrollTop).toBeGreaterThan(0);
+            expect(scrollTop).toBeLessThan(800);
+            // Cards still drawing for the first time grow as they arrive, moving the bottom mid-jump.
+            panelNode.scrollHeight = 1500;
+            runFrames();
+            expect(frames).toHaveLength(0);
+            expect(scrollTop).toBe(1100);
+            expect(panelNode.scrollTo).not.toHaveBeenCalled();
+            scrollListener[1]();
+            flushFrames();
             expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('false');
             expect(buttons['panel-scroll-bottom'].getAttribute('aria-disabled')).toBe('true');
+
+            scrollTop = 0;
+            await press('panel-scroll-bottom');
+            const reachedBeforeWheel = scrollTop;
+            panelNode.addEventListener.mock.calls.filter(([type]) => type === 'wheel').at(-1)[1]();
+            runFrames();
+            expect(scrollTop).toBe(reachedBeforeWheel);
 
             globalThis.document.body.classList = { contains: name => name === 'reduced-motion' };
             await press('panel-scroll-top');
             expect(panelNode.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'auto' });
             expect(buttons['panel-scroll-top'].getAttribute('aria-disabled')).toBe('true');
+
+            await press('panel-scroll-bottom');
+            expect(scrollTop).toBe(1100);
+            runFrames();
+            scrollTop = 0;
+            panelNode.scrollHeight = 1200;
 
             scrollTop = 300;
             scrollListener[1]();
@@ -1644,6 +1670,21 @@ describe('companion tracker panel', () => {
             scrollTop = 0;
             panel.refreshCompanionPanel();
             expect(group.hidden).toBe(true);
+
+            // Closing the panel hides it with display:none, which resets scrollTop in real browsers.
+            // Reopening in the same chat restores the saved scroll offset; switching chats clears it.
+            panelNode.scrollHeight = 1200;
+            scrollTop = 420;
+            panel.closeCompanionPanel();
+            scrollTop = 0;
+            panel.openCompanionPanel();
+            expect(scrollTop).toBe(420);
+
+            panel.closeCompanionPanel();
+            scrollTop = 0;
+            await eventSource.emit('chat_changed');
+            panel.openCompanionPanel();
+            expect(scrollTop).toBe(0);
         } finally {
             globalThis.requestAnimationFrame = previousFrame;
         }

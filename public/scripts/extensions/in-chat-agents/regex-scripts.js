@@ -1,4 +1,4 @@
-import { regexFromString } from '../../regex-utils.js';
+import { regexFromString, replaceWithRegex } from '../../regex-utils.js';
 import { preserveRelationshipQuotePair } from '../../relationship-tracker-quotes.js';
 import { uuidv4 } from '../../slash-commands/SlashCommandRuntimeUtils.js';
 
@@ -240,7 +240,7 @@ export function applyRegexScript(script, rawString, {
         return rawString;
     }
 
-    return rawString.replace(compiled, function (match) {
+    return replaceWithRegex(rawString, compiled, function (match) {
         const args = [...arguments];
         /* Trailing callback arguments are offset, source string and (optionally) named groups; only the leading entries are captures. */
         const namedGroups = args[args.length - 1] && typeof args[args.length - 1] === 'object' ? args[args.length - 1] : null;
