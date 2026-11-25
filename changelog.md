@@ -35,6 +35,7 @@
 - Non-English languages now keep your persona, group, connection profile and session names, **Scratchpad** web search sources, and **Meower** voter and trend tooltips as written.
 - Fixed translated button, keycap and tooltip labels across **Meower**, **Scratchpad** and the **Hotkeys** help guide where shared English words or shifted hotkey entries previously showed the wrong phrase.
 - General **Scratchpad** can share up to 8 lorebooks at once now. Pick each one from **Add a lorebook** under **Share a lorebook**, press **Remove** to drop one, and assistants can suggest edits to any of them.
+- **Scratchpad** can ask one assistant the same thing on two connections at once now. Pick a second one in **Compare with a second connection** under **Assistant connections**, read both replies side by side with their connection badges, and press **Keep only this reply** on the one you prefer.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -234,6 +235,7 @@
 - PR #974 (2026-11-25) `docs(changelog): add two missing localisation highlights`
 - PR #975 (2026-11-25) `feat(scratchpad): share several lorebooks by hand in General`
 - PR #976 (2026-11-25) `fix(openai): remove retired sora-2 video endpoint`
+- PR #977 (2026-11-25) `feat(scratchpad): compare one assistant on two connections`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
