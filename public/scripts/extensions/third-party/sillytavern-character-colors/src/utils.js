@@ -598,3 +598,90 @@ export function formatCleanedMessagesToast(messageCount, swipeCount) {
         ? `Cleaned ${messageCount} message.`
         : `Cleaned ${messageCount} messages.`;
 }
+
+export function formatConflictRepairToast(changedCount, unresolvedCount) {
+    const singleChanged = changedCount === 1;
+    if (unresolvedCount === 1) {
+        return singleChanged
+            ? `Recolored ${changedCount} character; ${unresolvedCount} conflict remains.`
+            : `Recolored ${changedCount} characters; ${unresolvedCount} conflict remains.`;
+    }
+    return singleChanged
+        ? `Recolored ${changedCount} character; ${unresolvedCount} conflicts remain.`
+        : `Recolored ${changedCount} characters; ${unresolvedCount} conflicts remain.`;
+}
+
+export function formatRestoredTablesToast(count, skipped) {
+    const singleTable = count === 1;
+    if (skipped === 1) {
+        return singleTable
+            ? `Restored ${count} stored color table. Skipped ${skipped} key that now exists.`
+            : `Restored ${count} stored color tables. Skipped ${skipped} key that now exists.`;
+    }
+    if (skipped > 1) {
+        return singleTable
+            ? `Restored ${count} stored color table. Skipped ${skipped} keys that now exist.`
+            : `Restored ${count} stored color tables. Skipped ${skipped} keys that now exist.`;
+    }
+    return singleTable
+        ? `Restored ${count} stored color table.`
+        : `Restored ${count} stored color tables.`;
+}
+
+export function formatDeletedCharactersToast(removedCount, keptCount) {
+    const singleRemoved = removedCount === 1;
+    if (keptCount === 1) {
+        return singleRemoved
+            ? `Deleted ${removedCount} selected character. Kept ${keptCount} pinned character.`
+            : `Deleted ${removedCount} selected characters. Kept ${keptCount} pinned character.`;
+    }
+    if (keptCount > 1) {
+        return singleRemoved
+            ? `Deleted ${removedCount} selected character. Kept ${keptCount} pinned characters.`
+            : `Deleted ${removedCount} selected characters. Kept ${keptCount} pinned characters.`;
+    }
+    return singleRemoved
+        ? `Deleted ${removedCount} selected character.`
+        : `Deleted ${removedCount} selected characters.`;
+}
+
+export function formatDomVerificationToast(corrections, queuedReviews) {
+    const singleCorrection = corrections === 1;
+    if (queuedReviews === 1) {
+        return singleCorrection
+            ? `Verified DOM colors: applied ${corrections} correction, queued ${queuedReviews} suggestion for review.`
+            : `Verified DOM colors: applied ${corrections} corrections, queued ${queuedReviews} suggestion for review.`;
+    }
+    return singleCorrection
+        ? `Verified DOM colors: applied ${corrections} correction, queued ${queuedReviews} suggestions for review.`
+        : `Verified DOM colors: applied ${corrections} corrections, queued ${queuedReviews} suggestions for review.`;
+}
+
+export function formatVerificationStoppedToast(checked, corrections, queuedReviews) {
+    const singleChecked = checked === 1;
+    if (corrections === 0 && queuedReviews === 0) {
+        return singleChecked
+            ? `Verification stopped after ${checked} message: the provider request failed.`
+            : `Verification stopped after ${checked} messages: the provider request failed.`;
+    }
+    const singleCorrection = corrections === 1;
+    const singleSuggestion = queuedReviews === 1;
+    if (singleChecked) {
+        if (singleCorrection) {
+            return singleSuggestion
+                ? `Verification stopped after ${checked} message: the provider request failed. Applied ${corrections} correction and queued ${queuedReviews} suggestion before stopping.`
+                : `Verification stopped after ${checked} message: the provider request failed. Applied ${corrections} correction and queued ${queuedReviews} suggestions before stopping.`;
+        }
+        return singleSuggestion
+            ? `Verification stopped after ${checked} message: the provider request failed. Applied ${corrections} corrections and queued ${queuedReviews} suggestion before stopping.`
+            : `Verification stopped after ${checked} message: the provider request failed. Applied ${corrections} corrections and queued ${queuedReviews} suggestions before stopping.`;
+    }
+    if (singleCorrection) {
+        return singleSuggestion
+            ? `Verification stopped after ${checked} messages: the provider request failed. Applied ${corrections} correction and queued ${queuedReviews} suggestion before stopping.`
+            : `Verification stopped after ${checked} messages: the provider request failed. Applied ${corrections} correction and queued ${queuedReviews} suggestions before stopping.`;
+    }
+    return singleSuggestion
+        ? `Verification stopped after ${checked} messages: the provider request failed. Applied ${corrections} corrections and queued ${queuedReviews} suggestion before stopping.`
+        : `Verification stopped after ${checked} messages: the provider request failed. Applied ${corrections} corrections and queued ${queuedReviews} suggestions before stopping.`;
+}

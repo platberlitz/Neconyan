@@ -910,3 +910,77 @@ test('TTS VoiceMapEntry keeps option values intact when German localises the dis
         voiceMapUpdates: 3,
     });
 });
+
+test('Dialogue Colors showUndoToast renders escaped message and undo prompt in separate spans across German and Turkish', async ({ page }) => {
+    const uiLocalizationSource = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    const historySource = await readFile(new URL('../public/scripts/extensions/third-party/sillytavern-character-colors/src/history.js', import.meta.url), 'utf8');
+    const escapeMatch = historySource.match(/^const escapeToastHtml = [^]*?;\n/m);
+    const showMatch = historySource.match(/^export function showUndoToast\([^]*?^\}\n?/m);
+    expect(escapeMatch?.[0]).toBeTruthy();
+    expect(showMatch?.[0]).toBeTruthy();
+
+    const deDict = await mergedDictionary('de-de');
+    const trDict = await mergedDictionary('tr-tr');
+
+    await page.setContent('<div id="toast-container"></div>');
+    await page.addScriptTag({ type: 'module', content: `${uiLocalizationSource}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+
+    const result = await page.evaluate(([escapeCode, showCode, dictionaries]) => {
+        const settings = { disableToasts: false };
+        const undo = () => {};
+        const toastrCalls = [];
+        const toastr = {
+            info(html, title, options) {
+                toastrCalls.push({ html, title, options });
+                const toastEl = document.createElement('div');
+                toastEl.className = 'toast toast-info';
+                const titleEl = document.createElement('div');
+                titleEl.className = 'toast-title';
+                titleEl.textContent = title;
+                const msgEl = document.createElement('div');
+                msgEl.className = 'toast-message';
+                msgEl.innerHTML = html;
+                toastEl.append(titleEl, msgEl);
+                document.getElementById('toast-container').replaceChildren(toastEl);
+            },
+        };
+        const showUndoToast = new Function(
+            'settings',
+            'toastr',
+            'undo',
+            `${escapeCode}\n${showCode.replace(/^export /, '')}\nreturn showUndoToast;`,
+        )(settings, toastr, undo);
+
+        showUndoToast('Recolored 3 messages.', () => {});
+        window.localizeControls(document.getElementById('toast-container'), dictionaries.de);
+        const deSpans = [...document.querySelectorAll('#toast-container .toast-message span')].map(el => el.textContent);
+        const deTitle = document.querySelector('#toast-container .toast-title').textContent;
+
+        showUndoToast('Cleaned 3 messages (2 swipes).', () => {});
+        window.localizeControls(document.getElementById('toast-container'), dictionaries.tr);
+        const trSpans = [...document.querySelectorAll('#toast-container .toast-message span')].map(el => el.textContent);
+        const trTitle = document.querySelector('#toast-container .toast-title').textContent;
+
+        showUndoToast('Deleted <script> & "quotes" \'here\'.', () => {});
+        const escapedHtml = toastrCalls.at(-1).html;
+
+        return {
+            deSpans,
+            deTitle,
+            trSpans,
+            trTitle,
+            escapedHtml,
+            escapeHtmlFlag: toastrCalls[0].options.escapeHtml,
+        };
+    }, [escapeMatch[0], showMatch[0], { de: deDict, tr: trDict }]);
+
+    expect(result).toEqual({
+        deSpans: ['3 Nachrichten umgefärbt.', 'Zum Rückgängigmachen auf diese Meldung klicken.'],
+        deTitle: deDict['Undo Available'],
+        trSpans: ['3 mesaj temizlendi (2 kaydırma).', 'Geri almak için bu bildirime tıklayın.'],
+        trTitle: trDict['Undo Available'],
+        escapedHtml: '<span class="dc-undo-message">Deleted &lt;script&gt; &amp; &quot;quotes&quot; &#39;here&#39;.</span> <span>Click this toast to undo.</span>',
+        escapeHtmlFlag: false,
+    });
+});

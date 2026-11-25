@@ -103,7 +103,9 @@ export async function applyChatColorMarkupCleanup(options = {}) {
         if (!restored.length) return false;
         queueChatSave();
         await refreshMessages(getContext()?.chat, restored);
-        toast.info(`Restored ${restored.length} message${restored.length === 1 ? '' : 's'}.`);
+        toast.info(restored.length === 1
+            ? `Restored ${restored.length} message.`
+            : `Restored ${restored.length} messages.`);
         return true;
     };
     return { ...report, undo };

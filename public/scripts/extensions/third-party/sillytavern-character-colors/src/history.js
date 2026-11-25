@@ -151,15 +151,27 @@ export function createRestoreSnapshot() {
     return restore;
 }
 
+const escapeToastHtml = value => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
 export function showUndoToast(message, restoreFn, { always = false } = {}) {
     if (settings.disableToasts && !always) return;
     if (!toastr?.info) return;
     restoreFn?.capture?.();
-    toastr.info(`${message} Click this toast to undo.`, 'Undo Available', {
-        closeButton: true,
-        tapToDismiss: false,
-        timeOut: 7000,
-        extendedTimeOut: 3000,
-        onclick: typeof restoreFn === 'function' ? restoreFn : () => undo()
-    });
+    toastr.info(
+        `<span class="dc-undo-message">${escapeToastHtml(message)}</span> <span>Click this toast to undo.</span>`,
+        'Undo Available',
+        {
+            closeButton: true,
+            tapToDismiss: false,
+            escapeHtml: false,
+            timeOut: 7000,
+            extendedTimeOut: 3000,
+            onclick: typeof restoreFn === 'function' ? restoreFn : () => undo(),
+        },
+    );
 }

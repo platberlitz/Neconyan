@@ -12,7 +12,7 @@ import { filterPromptCharacterEntries, formatPromptLiteralSymbol, getThoughtDeli
 import { getContext } from './st-api.js';
 import { AUTO_ATTRIBUTION_VERIFY_DELAY_MS, AUTO_ATTRIBUTION_VERIFY_RENDERED_LIMIT, AUTO_ATTRIBUTION_VERIFY_RETRY_DELAY_MS, AUTO_ATTRIBUTION_VERIFY_STABLE_RETRY_DELAY_MS, MAX_PENDING_AUTO_ATTRIBUTION_VERIFICATIONS, STREAMING_ATTRIBUTION_VERIFY_DELAY_MS, attributionChatGeneration, attributionVerificationEpoch, autoAttributionVerifyTimer, autoAttributionVerifyTimerDue, characterColors, isDomEngine, isStreamingGenerationActive, isVerifyingAttribution, lastStreamingAttributionVerifyKey, pendingAttributionVerifications, pendingAutoAttributionVerifyIndices, recentAutoAttributionVerifyAttempts, setAttributionVerificationEpoch, setAutoAttributionVerifyTimer, setAutoAttributionVerifyTimerDue, setIsVerifyingAttribution, setLastStreamingAttributionVerifyKey, setStreamingAttributionGeneration, setStreamingAttributionVerifyTimer, settings, streamingAttributionGeneration, streamingAttributionVerifyTimer } from './state.js';
 import { setVerifyAttributionButtonBusy } from './ui.js';
-import { getMessageElementByIndex, hashMessageText, isCompositeSpeakerLabel, toast } from './utils.js';
+import { formatDomVerificationToast, formatVerificationStoppedToast, getMessageElementByIndex, hashMessageText, isCompositeSpeakerLabel, toast } from './utils.js';
 
 // The welcome-page greeting is an ordinary (non-system) message that SillyTavern
 // labels 'assistant_message'. That chat is never saved, so a verdict can never
@@ -1305,11 +1305,15 @@ export async function verifyLatestAttributionsWithLLM(options = {}) {
     const result = await verifyAttributionsWithLLM(lastIdx, { ...options, expectedIdentity: identity });
     if (!automatic && result.checked && (result.corrections > 0 || result.queuedReviews > 0)) {
         if (result.corrections > 0 && result.queuedReviews > 0) {
-            toast.info(`Verified DOM colors: applied ${result.corrections} correction${result.corrections !== 1 ? 's' : ''}, queued ${result.queuedReviews} suggestion${result.queuedReviews !== 1 ? 's' : ''} for review.`);
+            toast.info(formatDomVerificationToast(result.corrections, result.queuedReviews));
         } else if (result.queuedReviews > 0) {
-            toast.info(`Verified DOM colors: queued ${result.queuedReviews} suggestion${result.queuedReviews !== 1 ? 's' : ''} for review.`);
+            toast.info(result.queuedReviews === 1
+                ? `Verified DOM colors: queued ${result.queuedReviews} suggestion for review.`
+                : `Verified DOM colors: queued ${result.queuedReviews} suggestions for review.`);
         } else {
-            toast.info(`Verified DOM colors: applied ${result.corrections} correction${result.corrections !== 1 ? 's' : ''}.`);
+            toast.info(result.corrections === 1
+                ? `Verified DOM colors: applied ${result.corrections} correction.`
+                : `Verified DOM colors: applied ${result.corrections} corrections.`);
         }
     } else if (!automatic && result.checked && result.corrections === 0) {
         toast.info('Verified colors: no corrections needed.');
@@ -1359,17 +1363,18 @@ export async function verifyVisibleAttributionsWithLLM(options = {}) {
         // The sweep runs newest-first and stops at the first fatal provider
         // error, so the remaining messages were never looked at. Saying
         // "nothing to check" here would be wrong.
-        const applied = corrections > 0 || queuedReviews > 0
-            ? ` Applied ${corrections} correction${corrections !== 1 ? 's' : ''} and queued ${queuedReviews} suggestion${queuedReviews !== 1 ? 's' : ''} before stopping.`
-            : '';
-        toast.error(`Verification stopped after ${checked} message${checked !== 1 ? 's' : ''}: the provider request failed.${applied}`);
+        toast.error(formatVerificationStoppedToast(checked, corrections, queuedReviews));
     } else if (!automatic && (corrections > 0 || queuedReviews > 0)) {
         if (corrections > 0 && queuedReviews > 0) {
-            toast.info(`Verified DOM colors: applied ${corrections} correction${corrections !== 1 ? 's' : ''}, queued ${queuedReviews} suggestion${queuedReviews !== 1 ? 's' : ''} for review.`);
+            toast.info(formatDomVerificationToast(corrections, queuedReviews));
         } else if (queuedReviews > 0) {
-            toast.info(`Verified DOM colors: queued ${queuedReviews} suggestion${queuedReviews !== 1 ? 's' : ''} for review.`);
+            toast.info(queuedReviews === 1
+                ? `Verified DOM colors: queued ${queuedReviews} suggestion for review.`
+                : `Verified DOM colors: queued ${queuedReviews} suggestions for review.`);
         } else {
-            toast.info(`Verified DOM colors: applied ${corrections} correction${corrections !== 1 ? 's' : ''}.`);
+            toast.info(corrections === 1
+                ? `Verified DOM colors: applied ${corrections} correction.`
+                : `Verified DOM colors: applied ${corrections} corrections.`);
         }
     } else if (!automatic && !checked) {
         toast.info('No unverified visible DOM messages to check.');
