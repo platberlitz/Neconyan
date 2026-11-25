@@ -1,0 +1,1 @@
+Fixed translated button, keycap and tooltip labels across **Meower**, **Scratchpad** and the **Hotkeys** help guide where shared English words or shifted hotkey entries previously showed the wrong phrase.
