@@ -1,1 +1,0 @@
-**CYOA Choices with Skill Checks** and **Doors with Fate Checks** work as Companions with the **Dice Roller**'s **Auto send**: tap a choice in the **Companion panel** or just type its number, such as 1 or 1, then 2, and each choice gets its own d100 roll for the reply, while the Companion versions stop asking for a hidden roll the reply never sees.
