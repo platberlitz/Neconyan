@@ -118,16 +118,22 @@ export async function transcribeWav(wav, serviceId, { fetch = globalThis.fetch, 
 /**
  * Starts recording from the microphone. `stop()` resolves to the recording, `cancel()` throws it away;
  * either way the microphone is released. `onLimit` runs once when the longest recording time is reached.
+ * `audio` asks for particular microphone processing; a browser that refuses it gets the plain request instead.
  */
-export async function startRecording({ onLimit, maxSeconds = MAX_DICTATION_SECONDS } = {}) {
+export async function startRecording({ onLimit, maxSeconds = MAX_DICTATION_SECONDS, audio = null } = {}) {
     if (!canDictate()) throw new DictationError('unsupported');
     let stream;
     try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await openMicrophone(audio);
     } catch (error) {
         throw new DictationError('microphone', error);
     }
-    const release = () => { for (const track of stream.getTracks()) track.stop(); };
+    let released = false;
+    const release = () => {
+        if (released) return;
+        released = true;
+        for (const track of stream.getTracks()) track.stop();
+    };
     let recorder;
     try {
         recorder = new MediaRecorder(stream);
@@ -155,7 +161,22 @@ export async function startRecording({ onLimit, maxSeconds = MAX_DICTATION_SECON
         throw new DictationError('unsupported', error);
     }
     return {
+        stream,
         stop: end,
-        cancel: () => { void end(); },
+        // Throwing a recording away lets go of the microphone at once rather than when the recorder settles.
+        cancel: () => {
+            release();
+            void end();
+        },
     };
+}
+
+async function openMicrophone(audio) {
+    if (!audio) return navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+        return await navigator.mediaDevices.getUserMedia({ audio });
+    } catch (error) {
+        if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') throw error;
+        return navigator.mediaDevices.getUserMedia({ audio: true });
+    }
 }

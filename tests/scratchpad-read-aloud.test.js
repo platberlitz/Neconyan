@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { registerExtensionCapability } from '../public/scripts/neconyan-conversation/extension-capabilities.js';
-import { canReadAloud, isReadingAloud, spokenText, stopReadAloud, toggleReadAloud } from '../public/scripts/scratchpad/read-aloud.js';
+import { canReadAloud, isReadingAloud, speakReplies, speakReply, spokenText, stopReadAloud, toggleReadAloud } from '../public/scripts/scratchpad/read-aloud.js';
 
 const change = '```scratchpad-change\n{"type":"persona","action":"replace","field":"description","value":"Tall."}\n```';
 
@@ -93,5 +93,66 @@ describe('Scratchpad read aloud', () => {
         unregister();
         unregister = null;
         expect(await toggleReadAloud({ id: 'e', text: 'Five.' }, 'Miso', jest.fn())).toBe('unavailable');
+    });
+
+    test('a spoken reply resolves when the voice runs out, is stopped or cannot start', async () => {
+        const tts = fakeTts();
+        unregister = registerExtensionCapability('tts', tts);
+        const onChange = jest.fn();
+        const finished = speakReply({ id: 'a', text: 'One.' }, 'Miso', { onChange });
+        await Promise.resolve();
+        expect(isReadingAloud('a')).toBe(true);
+        tts.playing = false;
+        jest.advanceTimersByTime(800);
+        await expect(finished).resolves.toBe('finished');
+        expect(onChange).toHaveBeenCalledTimes(2);
+
+        const stopped = speakReply({ id: 'b', text: 'Two.' }, 'Miso');
+        await Promise.resolve();
+        stopReadAloud();
+        await expect(stopped).resolves.toBe('stopped');
+
+        const controller = new AbortController();
+        const aborted = speakReply({ id: 'c', text: 'Three.' }, 'Miso', { signal: controller.signal });
+        controller.abort();
+        await expect(aborted).resolves.toBe('stopped');
+        expect(isReadingAloud('c')).toBe(false);
+        expect(tts.stopPlayback).toHaveBeenCalledTimes(2);
+
+        await expect(speakReply({ id: 'd', text: change }, 'Miso')).resolves.toBe('empty');
+        unregister();
+        unregister = registerExtensionCapability('tts', fakeTts({ started: false }));
+        await expect(speakReply({ id: 'e', text: 'Five.' }, 'Miso')).resolves.toBe('unavailable');
+        unregister();
+        unregister = null;
+        await expect(speakReply({ id: 'f', text: 'Six.' }, 'Miso')).resolves.toBe('unavailable');
+    });
+
+    test('several replies are read in order, skipping change cards, and stop together', async () => {
+        const tts = fakeTts();
+        unregister = registerExtensionCapability('tts', tts);
+        const replies = [
+            { message: { id: 'a', text: 'From Miso.' }, speaker: 'Miso' },
+            { message: { id: 'b', text: change }, speaker: 'Taro' },
+            { message: { id: 'c', text: 'From Kuro.' }, speaker: 'Kuro' },
+        ];
+        const all = speakReplies(replies);
+        await Promise.resolve();
+        expect(tts.narrateTtsMessage).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Miso', mes: 'From Miso.' }), expect.any(Object));
+        tts.playing = false;
+        await jest.advanceTimersByTimeAsync(800);
+        expect(tts.narrateTtsMessage).toHaveBeenCalledTimes(2);
+        expect(tts.narrateTtsMessage).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'Kuro', mes: 'From Kuro.' }), expect.any(Object));
+        tts.playing = false;
+        await jest.advanceTimersByTimeAsync(800);
+        await expect(all).resolves.toBe('finished');
+
+        const controller = new AbortController();
+        const interrupted = speakReplies(replies, { signal: controller.signal });
+        await Promise.resolve();
+        controller.abort();
+        await expect(interrupted).resolves.toBe('stopped');
+        expect(tts.narrateTtsMessage).toHaveBeenCalledTimes(3);
+        await expect(speakReplies([replies[1]])).resolves.toBe('empty');
     });
 });
