@@ -219,6 +219,9 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     context.deactivateSendButtons = jest.fn(() => { context.is_send_press = true; });
     context.executeSlashCommandsOnChatInput = jest.fn();
     context.sendMessageAsUser = jest.fn(async text => { context.chat.push({ mes: text, is_user: true, extra: {} }); });
+    context.prepareComposerSend = () => {};
+    context.discardComposerSend = () => {};
+    context.appendComposerSendAdditions = text => text;
     context.sendSystemMessage = jest.fn();
     context.parseChatCompletionLogprobs = () => null;
 

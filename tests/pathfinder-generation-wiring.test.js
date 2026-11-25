@@ -252,6 +252,9 @@ function connectionFailureHost(streaming = false) {
             removePrefix(text) { return text; }
         },
     });
+    host.context.prepareComposerSend = () => {};
+    host.context.discardComposerSend = () => {};
+    host.context.appendComposerSendAdditions = text => text;
     host.context.sendMessageAsUser = jest.fn(async text => {
         host.context.chat.push({ name: 'User', mes: text, is_user: true, extra: {} });
     });

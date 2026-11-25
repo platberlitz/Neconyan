@@ -147,6 +147,8 @@ describe('browser image refusal notice', () => {
         name2: 'User',
         neutralCharacterName: 'Assistant',
         newAssistantChat: jest.fn(),
+        prepareComposerSend: jest.fn(),
+        discardComposerSend: jest.fn(),
         Generate,
         showSwipeButtons: jest.fn(),
         isReportedImageRefusal: reported.isReportedImageRefusal,

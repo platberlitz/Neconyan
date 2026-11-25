@@ -14,10 +14,14 @@ import {
     formatRollLine,
     getGenerationChat,
     getOutcome,
+    getSkillCheckOutcome,
     getTargetForDifficulty,
+    isSameSkillCheck,
     parseRollLines,
+    parseSkillCheck,
     resolveTarget,
     rollDice,
+    rollSkillCheck,
 } from '../public/scripts/extensions/in-chat-agents/companion/dice.js';
 import { isDiceRollerAgent } from '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import {
@@ -28,6 +32,12 @@ import {
     restoreDiceCompanionWidget,
 } from '../public/scripts/extensions/in-chat-agents/companion/dice-companion-view.js';
 import { getAgentRequestCost } from '../public/scripts/extensions/in-chat-agents/agent-recommendations.js';
+import {
+    appendComposerSendAdditions,
+    discardComposerSend,
+    prepareComposerSend,
+    registerComposerSendHook,
+} from '../public/scripts/composer-send-hooks.js';
 
 const readRepoFile = path => readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), 'utf8');
 
@@ -268,5 +278,102 @@ describe('dice roller companion wiring', () => {
         expect(readRepoFile('src/generation/companion-capacity.js')).toContain('!isDiceRollerAgent(agent)');
         expect(readRepoFile('src/generation/roleplay-companions.js')).toContain('!isDiceRollerAgent(agent)');
         expect(readRepoFile('src/generation/companion-feedback.js')).toContain('buildDiceDirective(roll.rolls');
+    });
+
+    test('auto roll and auto send are options, off by default, and send without touching the message box', () => {
+        const runtime = readRepoFile('public/scripts/extensions/in-chat-agents/companion/dice-roller.js');
+        expect(runtime).toContain('createCheckbox(\'autoRoll\', \'Auto roll\'');
+        expect(runtime).toContain('createCheckbox(\'autoSend\', \'Auto send\'');
+        expect(runtime).toContain('autoRoll: false,');
+        expect(runtime).toContain('autoSend: false,');
+        expect(runtime).toContain('registerComposerSendHook(addRollAfterMessage)');
+        expect(runtime).toContain('eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, rollAfterReply)');
+        const addRollAfterMessage = runtime.slice(runtime.indexOf('function addRollAfterMessage'), runtime.indexOf('function decorateTextNode'));
+        expect(addRollAfterMessage).not.toContain('insertIntoComposer');
+        expect(addRollAfterMessage).not.toContain('send_textarea');
+
+        const script = readRepoFile('public/script.js');
+        const send = script.slice(script.indexOf('export async function sendTextareaMessage'), script.indexOf('export async function sendTextareaMessage') + 4000);
+        expect(send).toContain('if (textareaText && generateType === \'normal\') {\n        prepareComposerSend(textareaText, { type: generateType });');
+        expect(send).toContain('discardComposerSend();');
+        expect(script).toContain('await sendMessageAsUser(appendComposerSendAdditions(textareaText), messageBias);');
+        expect(readRepoFile('public/scripts/group-chats.js')).toContain('await sendMessageAsUser(appendComposerSendAdditions(userInput), bias.messageBias);');
+    });
+
+    test('CYOA and Doors agents read the visible roll in place of their hidden one', () => {
+        for (const slug of ['cyoa-choices-skill-checks', 'doors-fate-checks']) {
+            const template = JSON.parse(readRepoFile(`public/scripts/extensions/in-chat-agents/templates/${slug}.json`));
+            expect(template.prompt).toContain('carries a 🎲 dice line');
+        }
+    });
+});
+
+describe('Dice Roller skill checks', () => {
+    test('reads the tag CYOA Choices with Skill Checks and Doors with Fate Checks write', () => {
+        expect(parseSkillCheck('1. **[Speech 42/100]** Talk the guard down')).toEqual({ skill: 'Speech', target: 42, action: 'Talk the guard down' });
+        expect(parseSkillCheck('I go for it.\n2. [Lockpicking 65/100] Pick the side door\nquietly')).toEqual({ skill: 'Lockpicking', target: 65, action: 'Pick the side door' });
+        expect(parseSkillCheck('[Nerve 140 / 100] Jump')).toMatchObject({ skill: 'Nerve', target: 100 });
+        expect(parseSkillCheck('Talk the guard down')).toBeNull();
+        expect(parseSkillCheck('[Speech 42/20] Talk')).toBeNull();
+    });
+
+    test('scores a d100 roll under the target with the agents\' bands', () => {
+        expect(getSkillCheckOutcome(1, 5)).toBe(OUTCOMES.CRITICAL_SUCCESS);
+        expect(getSkillCheckOutcome(100, 100)).toBe(OUTCOMES.CRITICAL_FAILURE);
+        expect(getSkillCheckOutcome(32, 42)).toBe(OUTCOMES.SUCCESS);
+        expect(getSkillCheckOutcome(33, 42)).toBe(OUTCOMES.PARTIAL_SUCCESS);
+        expect(getSkillCheckOutcome(52, 42)).toBe(OUTCOMES.PARTIAL_SUCCESS);
+        expect(getSkillCheckOutcome(53, 42)).toBe(OUTCOMES.FAILURE);
+    });
+
+    test('a skill check line reaches the reply like any other roll', () => {
+        const rolled = rollSkillCheck({ skill: 'Speech', target: 42, action: 'Talk the guard down' }, sequence(31)(100));
+        expect(rolled).toMatchObject({ check: 'skill', sides: 100, count: 1, total: 31, target: 42, outcome: OUTCOMES.SUCCESS });
+        expect(isSameSkillCheck(rolled, { skill: 'Speech', target: 42 })).toBe(true);
+        expect(isSameSkillCheck(rolled, { skill: 'Speech', target: 50 })).toBe(false);
+        expect(isSameSkillCheck(rollDice({ sides: 20 }), { skill: 'Speech', target: 42 })).toBe(false);
+        const line = formatRollLine(rolled);
+        expect(line).toBe('🎲 Talk the guard down - rolled 31 vs 42 (Speech check, d100 roll under) - SUCCESS');
+        expect(parseRollLines(`1. [Speech 42/100] Talk the guard down\n${line}`)).toEqual([
+            expect.objectContaining({ action: 'Talk the guard down', total: 31, target: 42, outcome: OUTCOMES.SUCCESS }),
+        ]);
+    });
+});
+
+describe('composer send hooks', () => {
+    test('a hook\'s line goes after the sent text once, and is told it went', () => {
+        const onSent = jest.fn();
+        const hook = jest.fn(() => ({ text: '🎲 Rolled 17 vs 12 (1d20: 17) - SUCCESS', onSent }));
+        const unregister = registerComposerSendHook(hook);
+        try {
+            prepareComposerSend('I open the door.  \n', { type: 'normal' });
+            expect(hook).toHaveBeenCalledWith({ text: 'I open the door.  \n', type: 'normal' });
+            expect(appendComposerSendAdditions('I open the door.  \n')).toBe('I open the door.\n🎲 Rolled 17 vs 12 (1d20: 17) - SUCCESS');
+            expect(onSent).toHaveBeenCalledTimes(1);
+            expect(appendComposerSendAdditions('Again')).toBe('Again');
+            expect(onSent).toHaveBeenCalledTimes(1);
+        } finally {
+            unregister();
+        }
+    });
+
+    test('a send that never became a message drops its lines, and a failing hook is skipped', () => {
+        const onSent = jest.fn();
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const unregisterBroken = registerComposerSendHook(() => {
+            throw new Error('broken');
+        });
+        const unregister = registerComposerSendHook(() => ({ text: 'line', onSent }));
+        try {
+            prepareComposerSend('Hello');
+            discardComposerSend();
+            expect(appendComposerSendAdditions('Hello')).toBe('Hello');
+            expect(onSent).not.toHaveBeenCalled();
+            expect(error).toHaveBeenCalledWith('A composer send hook failed', expect.any(Error));
+        } finally {
+            unregisterBroken();
+            unregister();
+            error.mockRestore();
+        }
     });
 });

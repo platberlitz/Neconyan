@@ -1354,7 +1354,12 @@ describe('companion tracker panel', () => {
 
             panel.openCompanionPanel();
             nowSpy.mockReturnValue(2000);
+            // Clicks fired by code, such as the composer focus after a chat loads, leave it open.
             outsideClickHandler({ target: { closest: jest.fn(() => null) } });
+            outsideClickHandler({ originalEvent: { isTrusted: false }, target: { closest: jest.fn(() => null) } });
+            expect(panelElement.removeClass).not.toHaveBeenCalled();
+
+            outsideClickHandler({ originalEvent: { isTrusted: true }, target: { closest: jest.fn(() => null) } });
 
             expect(panelElement.removeClass).toHaveBeenCalledWith('is-open');
 
@@ -1362,7 +1367,7 @@ describe('companion tracker panel', () => {
             panel.openCompanionPanel();
             panel.setCompanionPanelLocked(true);
             nowSpy.mockReturnValue(3000);
-            outsideClickHandler({ target: { closest: jest.fn(() => null) } });
+            outsideClickHandler({ originalEvent: { isTrusted: true }, target: { closest: jest.fn(() => null) } });
 
             expect(panel.isCompanionPanelLocked()).toBe(true);
             expect(accountStorage.setItem).toHaveBeenCalledWith('ica--tracker-panel-locked', 'true');
@@ -1429,6 +1434,7 @@ describe('companion tracker panel', () => {
 
             // Clicking inside a popup dialog or fullscreen overlay leaves the panel open.
             outsideClickHandler({
+                originalEvent: { isTrusted: true },
                 target: {
                     isConnected: true,
                     closest: jest.fn(selector => (selector.includes('dialog.popup') ? {} : null)),
@@ -1438,6 +1444,7 @@ describe('companion tracker panel', () => {
 
             // Clicking a detached control (e.g. a button removed during popup re-render) leaves the panel open.
             outsideClickHandler({
+                originalEvent: { isTrusted: true },
                 target: {
                     isConnected: false,
                     closest: jest.fn(() => null),
@@ -1448,6 +1455,7 @@ describe('companion tracker panel', () => {
             // Any click while an open modal popup sits above the panel leaves the panel open.
             openPopup = {};
             outsideClickHandler({
+                originalEvent: { isTrusted: true },
                 target: {
                     isConnected: true,
                     closest: jest.fn(() => null),
@@ -1458,6 +1466,7 @@ describe('companion tracker panel', () => {
             // Once no popup is open, a normal outside click closes the panel as expected.
             openPopup = null;
             outsideClickHandler({
+                originalEvent: { isTrusted: true },
                 target: {
                     isConnected: true,
                     closest: jest.fn(() => null),

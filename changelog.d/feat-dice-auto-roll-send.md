@@ -1,0 +1,1 @@
+**Dice Roller** has **Auto roll** and **Auto send** under **Roll options**, so a fresh roll waits after every reply and lands after your message when you send it, without touching the message box; tagged choices from **CYOA Choices with Skill Checks** and **Doors with Fate Checks** get a matching d100 roll that those agents use in place of their hidden one.
