@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { assembleLocaleData, isScopedKey, tableForKey } from '../public/scripts/locale-assembly.js';
@@ -12,6 +12,8 @@ const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${fi
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
 const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
+const STORY_MODE_WORD_COUNT_KEYS = ['scoped.story_mode.word_count_one', 'scoped.story_mode.word_count_many'];
+const HOPPER_TIMELINE_KEYS = ['scoped.hopper.timeline_default', 'scoped.hopper.timeline_numbered'];
 const EXTRA_SCOPED_KEYS = [
     NANO_REASONING_SCOPED_KEY,
     SCRATCHPAD_HISTORY_SCOPED_KEY,
@@ -20,6 +22,8 @@ const EXTRA_SCOPED_KEYS = [
     'scoped.horde.enter_anonymous',
     'scoped.key.enter',
     'scoped.action.change',
+    ...STORY_MODE_WORD_COUNT_KEYS,
+    ...HOPPER_TIMELINE_KEYS,
 ];
 const ALL_LOCALES = readJson('lang.json').filter(entry => entry.lang !== 'en').map(entry => entry.lang);
 const catalogue = readJson('neconyan/en.json');
@@ -79,6 +83,10 @@ test('every real scoped key is a catalogued image choice or an explicit collisio
     assert.equal(catalogue['scoped.horde.enter_anonymous'], 'Enter');
     assert.equal(catalogue['scoped.key.enter'], 'Enter');
     assert.equal(catalogue['scoped.action.change'], 'Change');
+    assert.equal(catalogue['scoped.story_mode.word_count_one'], '${0} word');
+    assert.equal(catalogue['scoped.story_mode.word_count_many'], '${0} words');
+    assert.equal(catalogue['scoped.hopper.timeline_default'], 'Timeline');
+    assert.equal(catalogue['scoped.hopper.timeline_numbered'], 'Timeline ${0}');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -195,6 +203,34 @@ test('tableForKey sends a scoped key to the scoped table and every other key to 
     assert.equal(tableForKey('scoped.x', dictionary, undefined), undefined);
     assert.equal(tableForKey('Open', undefined, scoped), undefined);
     assert.equal(tableForKey('scoped.x', undefined, undefined), undefined);
+});
+
+test('Story Mode word-count and Hopper timeline scoped keys stay isolated across all 17 supplements', () => {
+    const supplementFiles = readdirSync(new URL('../public/locales/neconyan/', import.meta.url))
+        .filter(name => name.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(name))
+        .sort();
+    assert.equal(supplementFiles.length, 17);
+    const aliases = readJson('neconyan/en-aliases.json');
+    for (const key of [...STORY_MODE_WORD_COUNT_KEYS, ...HOPPER_TIMELINE_KEYS]) {
+        assert.equal(aliases[key], catalogue[key], `missing alias for ${key}`);
+    }
+    for (const file of supplementFiles) {
+        const lang = file.replace(/\.json$/, '');
+        const { dictionary, scoped } = assembleLocaleData({
+            base: readJson(file),
+            supplement: readJson(`neconyan/${file}`),
+            catalogue,
+        });
+        for (const key of [...STORY_MODE_WORD_COUNT_KEYS, ...HOPPER_TIMELINE_KEYS]) {
+            assert.equal(typeof scoped[key], 'string', `${lang}: missing scoped.${key}`);
+            assert.ok(scoped[key].length > 0, `${lang}: empty ${key}`);
+            assert.ok(!Object.hasOwn(dictionary, key), `${lang}: ${key} leaked into dictionary`);
+        }
+        for (const rawTemplate of ['${0} word', '${0} words', 'Timeline ${0}']) {
+            assert.ok(!Object.hasOwn(dictionary, rawTemplate), `${lang}: ${rawTemplate} leaked into dictionary`);
+        }
+        assert.equal(localizeString('Famous last words', dictionary), 'Famous last words', `${lang}: Famous last words collided`);
+    }
 });
 
 test('all 17 non-English locales isolate Follow, Enter, Change, Contrastive_search_txt and align hotkeys', () => {

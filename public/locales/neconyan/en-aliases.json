@@ -579,5 +579,9 @@
   "scoped.hopper.follow": "Follow",
   "scoped.horde.enter_anonymous": "Enter",
   "scoped.key.enter": "Enter",
-  "scoped.action.change": "Change"
+  "scoped.action.change": "Change",
+  "scoped.story_mode.word_count_one": "${0} word",
+  "scoped.story_mode.word_count_many": "${0} words",
+  "scoped.hopper.timeline_default": "Timeline",
+  "scoped.hopper.timeline_numbered": "Timeline ${0}"
 }

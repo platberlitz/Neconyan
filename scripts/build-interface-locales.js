@@ -63,12 +63,13 @@ function literalText(node) {
     literalTextCache.set(node, text);
     return text;
 }
-const addCaption = value => {
+const addCaption = (value, { allowMacros = false } = {}) => {
     if (typeof value !== 'string') return;
     const trimmed = value.trim();
     // URLs, paths, file names and model ids are shown verbatim in every language.
     if (/^https?:\/\/|^\S*[/_]\S*$|^[\w.-]+\.[a-z\d]{2,12}$/i.test(trimmed)) return;
-    if (trimmed && !trimmed.includes(hole) && !/[{}<>]/.test(trimmed) && /[a-zA-Z]{2,}/.test(trimmed)) add(trimmed);
+    const checked = allowMacros ? trimmed.replace(/\{\{[^{}]+\}\}/g, '') : trimmed;
+    if (trimmed && !trimmed.includes(hole) && !/[{}<>]/.test(checked) && /[a-zA-Z]{2,}/.test(trimmed)) add(trimmed);
 };
 
 function collectHtml($) {
@@ -144,7 +145,7 @@ function walkAst(node, quiet = false) {
         collectHtmlString(node.value);
     }
     if (node.type === 'Property' && captionProperties.includes(node.key.name || node.key.value)) addCaption(literalText(node.value));
-    if (node.type === 'Property' && /^(body|\w+Body)$/.test(node.key.name || node.key.value)) literalText(node.value)?.split('\n').forEach(addCaption);
+    if (node.type === 'Property' && /^(body|\w+Body)$/.test(node.key.name || node.key.value)) literalText(node.value)?.split('\n').forEach(line => addCaption(line, { allowMacros: true }));
     if (node.type === 'AssignmentExpression' && [...captionProperties, 'ariaLabel'].includes(node.left.property?.name)) addCaption(literalText(node.right));
     if (node.type === 'CallExpression' && ['translate'].includes(node.callee.name) && node.arguments[0]?.type === 'Literal') add(node.arguments[1]?.value || node.arguments[0].value, node.arguments[0].value);
     if (node.type === 'CallExpression' && node.callee.object?.name === 'toastr' && ['success', 'info', 'warning', 'error'].includes(node.callee.property?.name)) {
@@ -210,6 +211,9 @@ if (fs.existsSync(serverRoot)) visitServer(serverRoot);
 // Bundled assistant roles and summaries are shown on Home as plain text.
 const assistants = JSON.parse(fs.readFileSync(path.resolve('default/content/assistants/manifest.json'), 'utf8'));
 for (const personality of assistants.personalities || []) [personality.role, personality.summary].forEach(addCaption);
+// The shipped 404 page sits under default/content/errors/ rather than public/, so collect it explicitly.
+const notFoundErrorPage = path.resolve('default/content/errors/url-not-found.html');
+if (fs.existsSync(notFoundErrorPage)) collectHtml(load(fs.readFileSync(notFoundErrorPage, 'utf8')));
 const placeholders = value => (value.match(/\$\{[^}]+\}|\{\{[^}]+\}\}|%[sd]|\{\d+\}/g) || []).sort();
 const command = process.env.NECONYAN_TRANSLATION_COMMAND;
 // --list and --write-catalogue exit here, before the translation command is ever used.

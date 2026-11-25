@@ -1141,7 +1141,7 @@ function renderConnectionProfiles(profiles) {
     const noneOption = document.createElement('option');
 
     noneOption.value = '';
-    noneOption.textContent = NONE;
+    noneOption.textContent = t`<None>`;
     noneOption.selected = !selectedProfileId;
     profiles.appendChild(noneOption);
 

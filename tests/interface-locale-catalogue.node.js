@@ -36,6 +36,53 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
         assert.ok(keys.has(caption), `missing ${caption}`);
         assert.equal(english[caption], caption, `missing English caption: ${caption}`);
     }
+    const group5Captions = [
+        'A **macro** is a short instruction inside double braces, such as **{{char}}**. It becomes text when a prompt is built. This page lets you look up the syntax, try it and keep macros of your own.',
+        'The syntax switches control comparisons in **{{if}}** and repairs for macros written for other apps. Their help buttons explain exactly what changes.',
+        'These settings appear for **Main API** and **WebLLM**. **LLM Prompt** is the instruction the model gets when it picks a feeling; the **{{labels}}** macro becomes the list of feelings it may choose from.',
+        'Describe the picture you want. You can use **{{char}}** and **{{user}}** for the character and your persona names.',
+        'The **Context Template** puts the pieces in order, using a **story string** with placeholders such as **{{description}}** and **{{persona}}**. Pick a ready-made template for your model.',
+        '**What it does** holds the name, **Where results go** and the agent’s instructions. **Prompt or reply** lets it work on the request or the reply; **Companion note** makes it a companion that writes its own note. **Macros** such as {{char}} and {{user}} are filled in when it runs, and the refine button asks a model to improve the instructions before anything changes.',
+        'A **persona** is you, in the story. Its name replaces **{{user}}** in cards and prompts, and its description tells the model what you look like and how you act.',
+        '**Outlet Name** names the outlet for the **Outlet** position: write {{outlet::Name}} in a prompt and the entry appears there. **Automation ID** can run a Quick Reply when the entry joins in.',
+        'This bug report draft is not a JSON object.',
+        'This bug report draft has no title.',
+        'This bug report draft does not say what went wrong.',
+        '${0}\'s ${1} tour',
+        'Start ${0}\'s ${1} tour',
+        'all chats',
+        'group chats',
+        'individual chats',
+        'Agent switches apply to ${0}.',
+        '<None>',
+        'Not found',
+        'This page does not exist. Check the address for typos, or go back to the main Neconyan page.',
+        'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.',
+    ];
+    for (const caption of group5Captions) {
+        assert.ok(keys.has(caption), `missing ${caption}`);
+        assert.equal(english[caption], caption, `missing English caption: ${caption}`);
+    }
+    const group5Scoped = {
+        'scoped.story_mode.word_count_one': '${0} word',
+        'scoped.story_mode.word_count_many': '${0} words',
+        'scoped.hopper.timeline_default': 'Timeline',
+        'scoped.hopper.timeline_numbered': 'Timeline ${0}',
+    };
+    for (const [scopedKey, englishText] of Object.entries(group5Scoped)) {
+        assert.ok(keys.has(scopedKey), `missing ${scopedKey}`);
+        assert.equal(english[scopedKey], englishText, `missing English scoped value: ${scopedKey}`);
+    }
+    for (const excluded of [
+        '${0} word',
+        '${0} words',
+        'Timeline ${0}',
+        'Agent switches apply to ${0}.${1}',
+        'This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.',
+        'This Neconyan is behind a login. Here is how to get back in.',
+    ]) {
+        assert.ok(!keys.has(excluded), `unexpected ${excluded}`);
+    }
     // Developer-facing errors and identifiers never reach the page.
     for (const text of ['Server is not ready yet.', 'Could not close Meower.', 'BatchConflictError']) {
         assert.ok(!keys.has(text), `unexpected ${text}`);
@@ -90,6 +137,7 @@ test('the catalogue can be written and listed without a translator, and one lang
             : statSync(source).isDirectory() || (/\.(html|js|json)$/.test(source) && !/[\\/]locales[\\/]neconyan[\\/]en\.json$/.test(source));
         cpSync(join(root, 'public'), join(scratch, 'public'), { recursive: true, filter: wanted });
         cpSync(join(root, 'default', 'content', 'assistants', 'manifest.json'), join(scratch, 'default', 'content', 'assistants', 'manifest.json'));
+        cpSync(join(root, 'default', 'content', 'errors', 'url-not-found.html'), join(scratch, 'default', 'content', 'errors', 'url-not-found.html'));
         const script = join(root, 'scripts', 'build-interface-locales.js');
 
         // --write-catalogue and --list never reach the translator.

@@ -1,6 +1,11 @@
-/* global window, document, globalThis, Element */
+/* global window, document, globalThis, localStorage, Element */
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('interface text is localised everywhere except user-authored content', async ({ page }) => {
     const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
@@ -503,6 +508,15 @@ function sliceDeclaration(text, name) {
     return constant ? constant[0] : null;
 }
 
+async function assembledLocale(lang) {
+    const readJson = async file => JSON.parse(await readFile(new URL(file, import.meta.url), 'utf8'));
+    return assembleLocaleData({
+        base: await readJson(`../public/locales/${lang}.json`),
+        supplement: await readJson(`../public/locales/neconyan/${lang}.json`),
+        catalogue: await readJson('../public/locales/neconyan/en.json'),
+    });
+}
+
 async function openSlicedRenderer(page, fileMap, lang) {
     const sources = {};
     for (const [relativePath, names] of Object.entries(fileMap)) {
@@ -513,7 +527,7 @@ async function openSlicedRenderer(page, fileMap, lang) {
             sources[name] = decl;
         }
     }
-    const readJson = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));
+    const readJson = async filePath => JSON.parse(await readFile(new URL(filePath, import.meta.url), 'utf8'));
     const [base, supplement, aliases] = await Promise.all([
         readJson(`../public/locales/${lang}.json`),
         readJson(`../public/locales/neconyan/${lang}.json`),
@@ -584,7 +598,7 @@ test('Meower real renderers protect user and model content while keeping UI fall
     const trDict = await openSlicedRenderer(page, {
         '../public/scripts/extensions/third-party/Neconyan-Hopper/src/api.js': ['listPersonas'],
         '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': [
-            'el', 'icon', 'hostTag', 'button', 'field', 'checkbox', 'settingsGroup',
+            'el', 'icon', 'hostTag', 'sessionDisplayName', 'button', 'field', 'checkbox', 'settingsGroup',
             'bodyNode', 'pollVotersNode', 'pollNode', 'imageNode', 'engagementNode',
             'replyNode', 'repostedReplyNode', 'postNode', 'quoteNode',
             'replyComposer', 'attachMentionPicker', 'timelineView',
@@ -1203,6 +1217,328 @@ test('TTS VoiceMapEntry keeps option values intact when German localises the dis
         defaultVoiceIdAfterChange: 'disabled',
         voiceMapUpdates: 3,
     });
+});
+
+async function openRoutedM104App(page, lang, { stubModules = {}, documents = {} } = {}) {
+    const localeData = await assembledLocale(lang);
+    const origin = 'http://m104.test';
+    const publicDir = path.join(repoRoot, 'public');
+    const contentType = p => p.endsWith('.html') ? 'text/html; charset=utf-8'
+        : p.endsWith('.json') ? 'application/json; charset=utf-8'
+            : 'text/javascript; charset=utf-8';
+    const i18nStub = `
+        import { localizeString } from '/scripts/ui-localization.js';
+        const localeData = ${JSON.stringify(localeData)};
+        export function translate(text, key = null) {
+            const k = key || text;
+            const table = k.startsWith('scoped.') ? localeData.scoped : localeData.dictionary;
+            return table?.[k] || text;
+        }
+        export function t(strings, ...values) {
+            const raw = strings.reduce((acc, s, i) => acc + s + (values[i] !== undefined ? '\${' + i + '}' : ''), '');
+            return translate(raw).replace(/\\$\\{(\\d+)\\}/g, (_m, idx) => values[idx]);
+        }
+        export function localizeMessage(text) {
+            return localizeString(text, localeData.dictionary);
+        }
+    `;
+    await page.route(`${origin}/**`, async route => {
+        const url = new URL(route.request().url());
+        if (documents[url.pathname]) {
+            return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: documents[url.pathname] });
+        }
+        if (url.pathname === '/scripts/i18n.js') {
+            return route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: i18nStub });
+        }
+        if (stubModules[url.pathname]) {
+            return route.fulfill({ status: 200, contentType: 'text/javascript; charset=utf-8', body: stubModules[url.pathname] });
+        }
+        if (url.pathname.startsWith('/scripts/') || url.pathname.startsWith('/locales/')) {
+            const resolved = path.resolve(publicDir, '.' + decodeURIComponent(url.pathname));
+            if (!resolved.startsWith(publicDir + path.sep)) return route.abort();
+            return route.fulfill({ status: 200, contentType: contentType(resolved), path: resolved });
+        }
+        return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<main id="root"></main>' });
+    });
+    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    return localeData;
+}
+
+test('L10N-48 & L10N-52: tool and lorebook tours translate macro paragraphs and dynamic speaker headings (tr-tr)', async ({ page }) => {
+    const stubModules = {
+        '/scripts/neconyan-assistant-art.js': 'export const getAssistantIconSrc = a => `/img/${a}.png`;',
+        '/scripts/neconyan-page-intro.js': 'export function createPageIntro(key, kicker, description, launch) { const d = document.createElement("div"); d.className = "neconyan-tool-page-intro"; d.dataset.key = key; d.append(kicker, " ", description, launch); return d; }',
+        '/scripts/neconyan-tour-invitations.js': 'export const TOOL_TOUR_INVITE_PREFIX = "tool_"; export const LOREBOOK_TOUR_INVITE_KEY = "lb"; export function addTourInvitationDismiss() {} export function dismissTourInvitation() {}',
+    };
+    await openRoutedM104App(page, 'tr-tr', { stubModules });
+    const result = await page.evaluate(async () => {
+        const toolTour = await import('/scripts/neconyan-tool-tour.js');
+        const loreTour = await import('/scripts/neconyan-lorebook-tour.js');
+        const root = document.getElementById('root');
+        const heading = document.createElement('div');
+        root.append(heading);
+        toolTour.mountToolPage('connections', heading, root);
+        const launch = heading.querySelector('.neconyan-tool-tour-button');
+        const inviteStrong = heading.querySelector('.neconyan-tool-tour-invite strong');
+        const connectionsMeta = {
+            ariaLabel: launch.getAttribute('aria-label'),
+            title: launch.getAttribute('title'),
+            invite: inviteStrong.textContent,
+        };
+        toolTour.startToolTour('connections', root);
+        const connectionsSpeaker = document.querySelector('.neconyan-tool-tour-speaker').textContent;
+        toolTour.endToolTour({ restoreFocus: false });
+
+        toolTour.startToolTour('macro-enhanced', root);
+        const macroBody = [...document.querySelectorAll('.neconyan-tool-tour-body p')].map(p => p.textContent).join('\n');
+        toolTour.endToolTour({ restoreFocus: false });
+
+        const overridesStep = loreTour.getLorebookTourSteps({ hasBooks: true, hasEntries: true }).find(s => s.id === 'overrides');
+        const loreTranslated = loreTour.translateLorebookTourCopy(overridesStep.body);
+        return { connectionsMeta, connectionsSpeaker, macroBody, loreTranslated };
+    });
+
+    expect(result.connectionsMeta).toEqual({
+        ariaLabel: 'Nori ile Bağlantılar turunu başlat',
+        title: 'Bağlantılar boyunca rehberli bir gezinti',
+        invite: 'Bağlantılar için yeni misiniz?',
+    });
+    expect(result.connectionsSpeaker).toBe('Nori ile Bağlantılar turu');
+    expect(result.macroBody).toContain('Makro, {{char}} gibi çift süslü parantez içindeki kısa bir yönergedir.');
+    expect(result.loreTranslated).toContain('**Outlet Adı**, **Outlet** konumu için çıkış adını belirler: bir isteme {{outlet::Name}} yazarsanız girdi orada görünür.');
+});
+
+test('L10N-51: Scratchpad BugReportError messages translate on render (tr-tr)', async ({ page }) => {
+    const { dictionary } = await openRoutedM104App(page, 'tr-tr', {
+        stubModules: { '/scripts/utils.js': 'export async function copyText() {}' },
+    });
+    const rendered = await page.evaluate(async dict => {
+        const { splitBugReports } = await import('/scripts/scratchpad/bug-report.js');
+        const { renderBugReportCard } = await import('/scripts/scratchpad/source-findings.js');
+        const { localizeControls } = await import('/scripts/ui-localization.js');
+        const reply = [
+            '```neconyan-bug-report\n[]\n```',
+            '```neconyan-bug-report\n{"summary":"x"}\n```',
+            '```neconyan-bug-report\n{"title":"Broken"}\n```',
+        ].join('\n');
+        const root = document.getElementById('root');
+        for (const part of splitBugReports(reply)) {
+            if (part.type === 'bug-report') root.append(renderBugReportCard(part));
+        }
+        localizeControls(root, dict);
+        return [...root.querySelectorAll('.scratchpad-muted[role="status"]')].map(node => node.textContent);
+    }, dictionary);
+
+    expect(rendered).toEqual([
+        dictionary['This bug report draft is not a JSON object.'],
+        dictionary['This bug report draft has no title.'],
+        dictionary['This bug report draft does not say what went wrong.'],
+    ]);
+});
+
+test('L10N-52: In-Chat Agents #ica--scope-description translates cleanly across scopes (tr-tr, ko-kr)', async ({ page }) => {
+    for (const [lang, expectedAll, expectedGroup] of [
+        ['tr-tr', 'Ajan anahtarları tüm sohbetler için geçerlidir. Bir ajanı son yanıtında çalıştırmak için bir sohbet açın.', 'Ajan anahtarları grup sohbetleri için geçerlidir.'],
+        ['ko-kr', '에이전트 스위치는 모든 채팅에 적용돼요. 에이전트를 최근 답변에 실행하려면 채팅을 열어주세요.', '에이전트 스위치는 그룹 채팅에 적용돼요.'],
+    ]) {
+        await openSlicedRenderer(page, {
+            '../public/scripts/extensions/in-chat-agents/index.js': ['updateAgentOverview'],
+        }, lang);
+        const result = await page.evaluate(() => {
+            const { scope } = window.renderHarness;
+            const root = document.getElementById('root');
+            root.innerHTML = '<span id="ica--agent-count"></span><span id="ica--companion-count"></span><span id="ica--run-status"></span><span id="ica--scope-description"></span>';
+            let settings = { enabled: true, separateRecentChats: false };
+            let lastIdx = -1;
+            let scopeLabel = 'Group chats';
+            Object.assign(scope, {
+                getCurrentChatId: () => 'chat1',
+                isAgentEnabledForCurrentScope: () => false,
+                isCompanionAgent: () => false,
+                isAgentGenerationActive: () => false,
+                areAgentsGloballyEnabled: () => true,
+                getGlobalSettings: () => settings,
+                getAgentChatScopeLabel: () => scopeLabel,
+                getLastAssistantMessageIndex: () => lastIdx,
+                isCurrentAgentWorkspace: () => true,
+                lastManualRunFeedback: null,
+                agentLibraryLoading: false,
+                agentLibraryReady: true,
+                updatePathfinderStatusLine() {},
+            });
+            scope.updateAgentOverview([]);
+            const allNoReply = document.getElementById('ica--scope-description').textContent;
+            settings = { enabled: true, separateRecentChats: true };
+            lastIdx = 1;
+            scope.updateAgentOverview([]);
+            const groupWithReply = document.getElementById('ica--scope-description').textContent;
+            return { allNoReply, groupWithReply };
+        });
+        expect(result.allNoReply).toBe(expectedAll);
+        expect(result.groupWithReply).toBe(expectedGroup);
+    }
+});
+
+test('L10N-52: Story Mode word count localises via scoped keys while keeping ordinary prose untouched (tr-tr, ko-kr)', async ({ page }) => {
+    for (const [lang, singular, plural] of [
+        ['tr-tr', '1\u00a0kelime', '2\u00a0kelime'],
+        ['ko-kr', '1\u00a0단어', '2\u00a0단어'],
+    ]) {
+        const { dictionary } = await openRoutedM104App(page, lang, {
+            stubModules: {
+                '/scripts/extensions/third-party/Neconyan-Story-Mode/src/api.js': `
+                    export const isBusy = () => false;
+                    export const isEnabled = () => true;
+                    export const canUndo = () => false;
+                    export const canRedo = () => false;
+                    export const manuscript = () => ({ words: globalThis.__storyWords ?? 0, text: '' });
+                    export const ctx = () => ({});
+                    export const toast = () => {};
+                `,
+            },
+        });
+        const result = await page.evaluate(async dict => {
+            const { mountBar, refreshBar } = await import('/scripts/extensions/third-party/Neconyan-Story-Mode/src/ui.js');
+            const { localizeControls } = await import('/scripts/ui-localization.js');
+            const root = document.getElementById('root');
+            root.innerHTML = '<div id="send_form"><div id="nonQRFormItems"></div></div><p id="prose">Famous last words</p>';
+            const bar = mountBar();
+            bar.hidden = false;
+
+            globalThis.__storyWords = 1;
+            refreshBar();
+            localizeControls(root, dict);
+            const one = document.getElementById('sbstory-words').textContent;
+
+            globalThis.__storyWords = 2;
+            refreshBar();
+            localizeControls(root, dict);
+            const two = document.getElementById('sbstory-words').textContent;
+
+            return { one, two, prose: document.getElementById('prose').textContent };
+        }, dictionary);
+
+        expect(result.one).toBe(singular);
+        expect(result.two).toBe(plural);
+        expect(result.prose).toBe('Famous last words');
+    }
+});
+
+test('L10N-52: Meower sessionBar translates generated default timelines while keeping user-named Timeline verbatim (tr-tr)', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': ['el', 'icon', 'hostTag', 'translate', 'sessionDisplayName', 'button', 'sessionBar'],
+    }, 'tr-tr');
+    const options = await page.evaluate(() => {
+        const { scope, dictionary, t, translate } = window.renderHarness;
+        globalThis.SillyTavern = { getContext: () => ({ t, translate }) };
+        Object.assign(scope, {
+            searchOpen: false,
+            state: { session: { id: 's0' }, timelineSearch: '' },
+            api: {
+                listPersonas: () => [],
+                listSessions: () => [
+                    { id: 's0', name: 'Timeline', defaultNameIndex: 0, personaId: 'missing' },
+                    { id: 's2', name: 'Timeline 2', defaultNameIndex: 2, personaId: 'missing' },
+                    { id: 'su0', name: 'Timeline', personaId: 'missing' },
+                    { id: 'su2', name: 'Timeline 2', personaId: 'missing' },
+                    { id: 'sd', name: 'Default', personaId: 'missing' },
+                ],
+            },
+        });
+        const root = document.getElementById('root');
+        root.append(scope.sessionBar());
+        window.localizeControls(root, dictionary);
+        return [...root.querySelectorAll('.sbtw-session-select option')].map(o => o.textContent);
+    });
+    expect(options).toEqual([
+        'Zaman çizelgesi · Atanmamış',
+        'Zaman çizelgesi 2 · Atanmamış',
+        'Timeline · Atanmamış',
+        'Timeline 2 · Atanmamış',
+        'Default · Atanmamış',
+    ]);
+});
+
+test('L10N-52: Connection Manager <None> option translates while custom profile names stay protected (tr-tr)', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/extensions/connection-manager/index.js': ['renderConnectionProfiles'],
+    }, 'tr-tr');
+    const result = await page.evaluate(() => {
+        const { scope, dictionary } = window.renderHarness;
+        const profile = { id: 'p1', name: 'Default', fav: false };
+        Object.assign(scope, {
+            extension_settings: { connectionManager: { selectedProfile: '', profiles: [profile] } },
+            getSortedProfiles: () => [profile],
+            getSortedFolders: () => [],
+            compareProfiles: () => 0,
+            updateProfileDetails() {},
+        });
+        const select = document.createElement('select');
+        document.getElementById('root').append(select);
+        scope.renderConnectionProfiles(select);
+        window.localizeControls(select, dictionary);
+        return [...select.options].map(o => ({ value: o.value, text: o.textContent, ignored: o.hasAttribute('data-i18n-ignore') }));
+    });
+    expect(result).toEqual([
+        { value: '', text: '<Hiçbiri>', ignored: false },
+        { value: 'p1', text: 'Default', ignored: true },
+    ]);
+});
+
+test('L10N-53: shipped 404 page localises via page-locale.js (tr-tr)', async ({ page }) => {
+    const notFoundHtml = await readFile(path.join(repoRoot, 'default/content/errors/url-not-found.html'), 'utf8');
+    await page.addInitScript(() => localStorage.setItem('language', 'tr-tr'));
+    await openRoutedM104App(page, 'tr-tr', {
+        documents: { '/nonexistent-m104-route': notFoundHtml },
+    });
+    await page.goto('http://m104.test/nonexistent-m104-route', { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('tr-tr');
+    expect(await page.title()).toBe('Bulunamadı');
+    await expect(page.locator('h1')).toHaveText('Bulunamadı');
+    await expect(page.locator('p')).toHaveText('Bu sayfa mevcut değil. Adreste yazım hatası olup olmadığını kontrol edin veya ana Neconyan sayfasına geri dönün.');
+});
+
+test('L10N-56: server crash notice and report reader localise unclean-previous-exit cause (tr-tr)', async ({ page }) => {
+    const { dictionary } = await openRoutedM104App(page, 'tr-tr');
+    const k23 = 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.';
+    const result = await page.evaluate(async cause => {
+        await import('/scripts/crash-diagnostics.js');
+        const { createServerCrashObserver } = await import('/scripts/crash-diagnostics-context.js');
+        const { localizeMessage } = await import('/scripts/i18n.js');
+        const responseBody = JSON.stringify({
+            schema: 1,
+            runId: 'run-m104',
+            latest: { id: 'rep-m104', at: '2026-11-24T12:00:00Z', errorPreview: cause },
+        });
+        const observer = createServerCrashObserver({
+            isAdmin: () => true,
+            getAccount: () => 'admin',
+            getRequestHeaders: () => ({}),
+            refreshCsrfToken: async () => {},
+            localizeMessage,
+            fetchFn: async () => ({ ok: true, status: 200, text: async () => responseBody }),
+        });
+        observer.start();
+        await new Promise(resolve => setTimeout(resolve, 25));
+        const noticeText = document.querySelector('#neconyan-crash-notice p')?.textContent || '';
+        observer.stop();
+
+        const { openCrashReportReader } = await import('/scripts/crash-report-reader.js');
+        let readerSummary = '';
+        openCrashReportReader({
+            browserReports: { reports: [{ id: 'srv-1', runtime: 'server', at: '2026-11-24T12:00:00Z', kind: 'unclean-previous-exit', summary: 'Unexpected server stop', error: { message: cause } }] },
+            selectedReportId: 'srv-1',
+            localizeMessage,
+            popup: content => {
+                readerSummary = content.querySelector('[role="status"]')?.textContent || '';
+                return { close() {} };
+            },
+        });
+        return { noticeText, readerSummary };
+    }, k23);
+
+    expect(result.noticeText).toContain(dictionary[k23]);
+    expect(result.readerSummary).toContain(dictionary[k23]);
 });
 
 test('Meower Follow button isolates ko-kr social Follow from the OpenAI instruction fragment', async ({ page }) => {

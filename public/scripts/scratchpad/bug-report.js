@@ -4,6 +4,8 @@
  * the network, so it can be tested on its own.
  */
 
+import { uiText } from '../ui-text.js';
+
 export const BUG_REPORT_FENCE = 'neconyan-bug-report';
 const FENCE_PATTERN = /```neconyan-bug-report[^\n]*\n([\s\S]*?)```/g;
 export const MAX_BUG_REPORTS = 3;
@@ -52,7 +54,7 @@ function environmentText(value) {
 }
 
 export function normaliseBugReport(input) {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BugReportError('This bug report draft is not a JSON object.');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BugReportError(uiText('This bug report draft is not a JSON object.'));
     const refs = list(input.sourceRefs, LIMITS.ref, MAX_REFS * 2)
         .map(ref => ref.replace(/^`+|`+$/g, ''))
         .filter(ref => SOURCE_REF.test(ref) && !ref.split('/').includes('..'));
@@ -66,8 +68,8 @@ export function normaliseBugReport(input) {
         sourceRefs: [...new Set(refs)].slice(0, MAX_REFS),
         environment: environmentText(input.environment),
     };
-    if (!report.title) throw new BugReportError('This bug report draft has no title.');
-    if (!report.summary && !report.actual) throw new BugReportError('This bug report draft does not say what went wrong.');
+    if (!report.title) throw new BugReportError(uiText('This bug report draft has no title.'));
+    if (!report.summary && !report.actual) throw new BugReportError(uiText('This bug report draft does not say what went wrong.'));
     return report;
 }
 

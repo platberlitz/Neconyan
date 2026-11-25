@@ -1,7 +1,7 @@
 /** Application adapter. Only scalar counts and fixed states leave the application. */
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 
-export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken, fetchFn = fetch, showNotice = options => globalThis.NeconyanCrashDiagnostics?.showNotice?.(options) }) {
+export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken, fetchFn = fetch, showNotice = options => globalThis.NeconyanCrashDiagnostics?.showNotice?.(options), localizeMessage = text => text }) {
     let active = false, timer = null, inFlight = null, lastRequest = -Infinity, runId = null, disconnected = false, currentNotice = null;
     const memorySeen = new Map();
     const scope = account => {
@@ -37,13 +37,16 @@ export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeade
             try { const stored = localStorage.getItem(key); if (stored && stored.length <= 2048) seen = JSON.parse(stored).filter(item => typeof item === 'string' && item.length <= 128).slice(-20); } catch { /* A page-local acknowledgement still works below. */ }
             if (latest && typeof latest.id === 'string' && latest.id.length <= 128 && !seen.includes(latest.id)) {
                 const restarted = runId && runId !== result.runId && disconnected;
-                currentNotice = showNotice({ id: latest.id, title: restarted ? 'The server restarted after an unexpected stop' : 'A saved server crash report is available',
-                    message: `${typeof latest.at === 'string' ? latest.at : 'Time unavailable'}. ${typeof latest.errorPreview === 'string' ? latest.errorPreview.slice(0, 400) : 'No error message was supplied.'}`,
+                const title = localizeMessage(restarted ? 'The server restarted after an unexpected stop' : 'A saved server crash report is available');
+                const atText = typeof latest.at === 'string' ? latest.at : localizeMessage('Time unavailable');
+                const previewText = typeof latest.errorPreview === 'string' ? localizeMessage(latest.errorPreview.slice(0, 400)) : localizeMessage('No error message was supplied.');
+                currentNotice = showNotice({ id: latest.id, title,
+                    message: `${atText}. ${previewText}`,
                     onRead: async () => {
                         if (!valid(account)) return;
                         const module = await import('./crash-report-reader.js');
                         if (!valid(account)) return;
-                        module.openCrashReportReader({ selectedReportId: latest.id, loadServerReports: async () => {
+                        module.openCrashReportReader({ selectedReportId: latest.id, localizeMessage, loadServerReports: async () => {
                             const response = await fetchWithCsrfRetry('/api/server-admin/crash-reports', () => ({ method: 'POST', credentials: 'same-origin', headers: getRequestHeaders() }), { refreshCsrfToken, fetchFn });
                             if (!valid(account) || !response.ok) return { unavailable: 'Server reports are unavailable for this account.' };
                             const result = await response.json();
@@ -61,12 +64,12 @@ export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeade
     return { start: () => { if (isAdmin()) { active = true; void poll(); } }, stop, recovered: () => { disconnected = true; resume(); } };
 }
 
-export function initialiseCrashActivity({ eventSource, event_types, getChat, getExtensionCount, isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) {
+export function initialiseCrashActivity({ eventSource, event_types, getChat, getExtensionCount, isAdmin, getAccount, getRequestHeaders, refreshCsrfToken, localizeMessage = text => text }) {
     const api = globalThis.NeconyanCrashDiagnostics;
     if (!api) return;
     const safe = callback => (...args) => { try { callback(...args); } catch { /* Optional diagnostics. */ } };
     const update = patch => api.updateActivity?.(patch);
-    const server = isAdmin && getAccount ? createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) : null;
+    const server = isAdmin && getAccount ? createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken, localizeMessage }) : null;
     api.serverRecovered = safe(() => server?.recovered());
     let revision = 0, lengths = [], historyCounts = [], total = 0, totalHistory = 0, idleHandle = null, alternativesComplete = true;
     const cancelMeasurement = () => { if (idleHandle !== null) { if (globalThis.cancelIdleCallback) cancelIdleCallback(idleHandle); else clearTimeout(idleHandle); idleHandle = null; } };
