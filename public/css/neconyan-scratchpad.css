@@ -507,6 +507,35 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     color: var(--neco-ink);
 }
 
+.scratchpad-badge.scratchpad-compare-badge,
+.scratchpad-badge.scratchpad-connection-badge {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.scratchpad-badge.scratchpad-connection-badge {
+    display: inline-block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scratchpad-compare-warning {
+    margin: 0;
+    padding: 6px 10px;
+    border-left: 3px solid var(--neco-ginger);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
 .scratchpad-tone-row {
     display: flex;
     flex-wrap: wrap;

@@ -1411,9 +1411,9 @@ test('saved context setups keep only portable choices, are account-owned and pro
         name: 'Lean read',
         settings: {
             depth: 4, include: { card: false, persona: true, authorsNote: true, lore: true, preset: true, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: true, companionNotes: false },
-            maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher',
+            maxTokens: 512, stream: false, webSearch: true, readLinks: true, prefill: 'Ideas:', partialPrefill: '', feedbackTone: 'harsher', compareConnection: null,
         },
-    }], 'the shared feedback tone travels, and per-assistant tones stay with their session');
+    }], 'the shared feedback tone travels, per-assistant tones stay with their session, and compare stays off unless the setup chose it');
     assert.deepEqual(Object.keys(saved.setups[0].settings), [...CONTEXT_SETUP_KEYS]);
     assert.deepEqual(read(a), saved);
     assert.deepEqual(read(b).setups, [], 'another account sees none of them');

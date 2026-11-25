@@ -83,6 +83,16 @@ Turn on **Random** beside **Round table** for one reply per message. **Ask 1** p
 
 With **Random** off, round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views, or press **Discuss these answers** under the round: each assistant then reads the others' answers and replies again, saying where they agree, where they disagree and what they would change. Anything you have typed in the message box is sent with it as the point to focus on. The button appears once at least two assistants have finished answering your latest message, and that round doesn't run a web search. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant. Random uses **Stop** for its single reply.
 
+### Compare connections
+
+To see how one assistant answers on two models, open **Context → Assistant connections** and pick a profile under **Compare with a second connection**. The choices are **Off**, the current connection (**Current connection** in General, **Same connection as the chat** in a story chat) and each saved connection profile. Each message then gets two replies from the same assistant, one from its main connection and one from the second, written at the same time. The header shows **Compare: 2 connections**, and each reply carries a small badge naming the connection it came from, such as the profile name or **Current connection**. Badges show profile names only, never keys or addresses.
+
+The two connections must differ. If the second connection would reach the same profile or the same current connection as the assistant's main one, Context shows **Choose a different connection from Miso's main connection.** (with the assistant's name), and sending is refused with **Choose two different connections to compare.** Comparing is for a single assistant, so it is switched off while **Round table** is on; Context says **Turn off Round Table to compare one assistant on two connections.** Turn the round table off to use it again.
+
+**Stop all** stops both replies, and a queued follow-up waits until both have finished. **Try again** on either reply makes a new version on that reply's own connection, so the other one stays as it was. When you have decided, press **Keep only this reply** on the one you prefer; the other reply in the pair is deleted and the kept one stays in the conversation with its badge. Until then, the assistant reads both replies as one earlier turn, each marked with its connection. **Discuss these answers** isn't offered for a compared pair, because both replies come from the same assistant. Rehearsals always use the main connection and write a single reply, and change cards in either reply work as usual.
+
+The choice is saved with the session and in **Saved setups**. Session exports and copies leave it out, as they leave out every connection choice.
+
 ### Feedback tone
 
 The **Feedback tone** slider under the assistant picker sets how hard the assistants judge your writing and ideas. Drag it, use the arrow keys, or press a stop in **Context → Feedback tone**:

@@ -154,6 +154,12 @@ export function assistantConnection(settings, assistant) {
     return normaliseConnection(settings.assistantConnections?.[normaliseAssistant(assistant)] ?? settings.connection);
 }
 
+/** The second connection Scratchpad compares the assistant on, or null when comparing is off. */
+export function normaliseCompareConnection(value) {
+    if (value === null || value === undefined || value === '' || (isPlainObject(value) && value.kind === 'none')) return null;
+    return normaliseConnection(value);
+}
+
 export function sessionAssistants(session) {
     return session.settings.roundTable ? session.settings.participants : [session.assistant];
 }
@@ -182,6 +188,7 @@ export function defaultSettings() {
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
+        compareConnection: null,
         assistantPrompts: {},
         assistants: {},
         roundTable: false,
@@ -273,6 +280,8 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
             }
         }
     }
+    if (source.compareConnection !== undefined) settings.compareConnection = normaliseCompareConnection(source.compareConnection);
+    settings.compareConnection ??= null;
     if (source.maxTokens !== undefined) {
         const maxTokens = numericInput(source.maxTokens);
         if (maxTokens !== null) settings.maxTokens = Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(maxTokens)));
@@ -375,6 +384,9 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
         if (allowInternalKeys) {
+            if (typeof input.compareGroup === 'string' && ID_PATTERN.test(input.compareGroup)) message.compareGroup = input.compareGroup;
+            if (input.connection !== undefined && isPlainObject(input.connection)) message.connection = normaliseConnection(input.connection);
+            if (typeof input.connectionLabel === 'string' && input.connectionLabel.trim()) message.connectionLabel = boundedString(input.connectionLabel, 200, { trim: true });
             const sharedPreset = normalisePresetTargets(input.sharedPreset);
             if (sharedPreset.length) message.sharedPreset = sharedPreset;
             const images = normaliseStoredImages(input.images);
@@ -837,6 +849,11 @@ export function branchSession(bucket, sessionId, messageId) {
         settings: { ...structuredClone(original.settings), notes: original.settings.notes.filter(ref => !ref.grantId) }, messages: structuredClone(kept) });
     // These records were made by this server for these very replies, so the copy keeps them as they are.
     if (session.messages.length === kept.length) {
+        const copyCompareFields = (target, source) => {
+            if (source.compareGroup) target.compareGroup = source.compareGroup;
+            if (source.connection) target.connection = structuredClone(source.connection);
+            if (source.connectionLabel) target.connectionLabel = source.connectionLabel;
+        };
         session.messages.forEach((copy, position) => {
             const source = kept[position];
             if (copy.role !== 'assistant' || source.role !== 'assistant') return;
@@ -844,6 +861,12 @@ export function branchSession(bucket, sessionId, messageId) {
             else delete copy.webSearch;
             if (source.webPages) copy.webPages = structuredClone(source.webPages);
             if (source.sourceLookup) copy.sourceLookup = structuredClone(source.sourceLookup);
+            copyCompareFields(copy, source);
+            if (Array.isArray(copy.swipes) && Array.isArray(source.swipes) && copy.swipes.length === source.swipes.length) {
+                copy.swipes.forEach((swipe, swipePos) => {
+                    if (swipe && source.swipes[swipePos]) copyCompareFields(swipe, source.swipes[swipePos]);
+                });
+            }
         });
     }
     return { session, draft: message.role === 'user' ? message.text : '' };
@@ -941,6 +964,22 @@ export function deleteMessage(bucket, sessionId, messageId) {
     if (message.state === 'pending' || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply or image before deleting it.', 409);
     session.messages = session.messages.filter(item => item.id !== messageId);
     touch(session);
+}
+
+/** Keeps one reply of a connection comparison and deletes the others from the same pair. */
+export function keepComparedReply(bucket, sessionId, messageId) {
+    const session = findSession(bucket, sessionId);
+    const message = findMessage(session, messageId);
+    if (message.role !== 'assistant' || !message.compareGroup) throw fail('SCRATCHPAD_COMPARE_MISSING', 'That reply is not part of a comparison.');
+    const siblings = session.messages.filter(item => item !== message && item.role === 'assistant' && item.compareGroup === message.compareGroup
+        && (item.assistant ?? '') === (message.assistant ?? ''));
+    if ([message, ...siblings].some(item => item.state === 'pending' || hasPendingImages(item))) {
+        throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for both replies to finish before keeping one.', 409);
+    }
+    const removed = new Set(siblings.map(item => item.id));
+    session.messages = session.messages.filter(item => !removed.has(item.id));
+    touch(session);
+    return message;
 }
 
 export function swipeMessage(bucket, sessionId, messageId, index) {
