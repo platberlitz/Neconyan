@@ -123,6 +123,18 @@ test('retains ten private reports and ignores damaged files', t => {
     assert.equal(getCrashReports(directory).length, 9);
 });
 
+test('reports saved in the same millisecond keep their order and the newest is never pruned', t => {
+    const directory = temporary(t);
+    const frozen = Date.now();
+    t.mock.method(Date, 'now', () => frozen);
+    for (let i = 0; i < 10; i++) assert.ok(writeCrashReport('test', `Failure ${i}`, {}, directory));
+    const newest = writeCrashReport('test', 'Newest', {}, directory);
+    assert.ok(fs.existsSync(path.join(directory, newest)));
+    const reports = getCrashReports(directory);
+    assert.equal(reports.length, 10);
+    assert.deepEqual(reports.map(report => report.error.message), ['Newest', ...Array.from({ length: 9 }, (_, index) => `Failure ${9 - index}`)]);
+});
+
 test('every saved report stays within its size cap, including the new server memory fields', t => {
     const directory = temporary(t);
     const samples = Array.from({ length: 12 }, (_, index) => ({ at: new Date(index * 1000).toISOString(), heapUsed: index, heapLimit: 1e9, rss: 1, deviceAvailable: 1, deviceTotal: 2 }));

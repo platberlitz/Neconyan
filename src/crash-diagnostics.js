@@ -22,6 +22,8 @@ let activitySnapshot = () => null;
 let version = {};
 const runId = randomUUID();
 let latestStatus = null;
+// Report names sort by this stamp, so two reports saved in the same millisecond still keep their order.
+let lastReportStamp = 0;
 
 function reportSummary(report) {
     if (report.kind === 'server-out-of-memory') return 'The server ran out of JavaScript memory and stopped.';
@@ -79,7 +81,8 @@ export function writeCrashReport(kind, error, extra = {}, dir = directory) {
     try {
         dir ||= path.resolve('data', 'crash-reports');
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        const name = `crash-${Date.now()}-${randomUUID()}.json`;
+        lastReportStamp = Math.max(Date.now(), lastReportStamp + 1);
+        const name = `crash-${lastReportStamp}-${randomUUID()}.json`;
         const report = {
             schema: 1, id: name.slice(0, -5), runtime: 'server', kind, at: new Date().toISOString(),
             error: describeError(error), environment: runtimeContext(),
