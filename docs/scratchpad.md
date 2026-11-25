@@ -100,7 +100,15 @@ The tone is saved with the session, carried by branches, copies and JSON session
 
 To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
 
-Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
+Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early.
+
+### Queue a follow-up
+
+While a reply is being written, the button beside the message box shows **Stop** (or **Stop all** for a round table) when the box is empty. Start typing or attach a file and it becomes **Queue follow-up**; press it, or Enter on desktop, to put the message in **Queued next** above the box. The box clears so you can keep writing. Typed tools are checked straight away: `/help` opens the tools list and a mistyped tool is flagged without queueing anything. Up to five follow-ups can wait in each session, and they go out one at a time, in order, each as soon as every reply to the previous message has finished. Each one is sent like a normal message, with the context read fresh, so the assistant sees the reply it was waiting for.
+
+Each queued message has **Edit queued follow-up**, which moves it back into the message box (ahead of anything you already typed there, so nothing is lost), and **Remove queued follow-up**. The queue lives in this browser tab only; it isn't saved with the session.
+
+The queue pauses instead of sending when the previous reply was stopped or failed, when the chat behind Scratchpad changed, or when the reply finished while Scratchpad was closed or another session was open. The strip says why. **Send now** sends the next message (or, while a reply is still running, lets the queue go out after it), and you can still edit or remove anything waiting. Going back to the original chat also resumes a queue paused by a chat change.
 
 Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB; attached text has its own limits under Attachments. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each saved Scratchpad file holds up to 32 MiB. Older chat-specific files stay in place and appear in the shared list without being combined into one oversized file. If a file fills up, delete old sessions or long replies, or enable automatic cleanup in **Sessions**.
 

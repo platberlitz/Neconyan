@@ -1445,6 +1445,99 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     margin: 0;
 }
 
+.scratchpad-queue {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+
+.scratchpad-queue[hidden] {
+    display: none;
+}
+
+.scratchpad-queue-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+.scratchpad-queue-title {
+    color: var(--neco-muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.scratchpad-queue-notice {
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 0.78rem;
+}
+
+.scratchpad-queue-list {
+    display: grid;
+    gap: 4px;
+    max-height: 168px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.scratchpad-queue-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding-inline-start: 10px;
+    border-radius: 10px;
+    background: var(--neco-surface);
+}
+
+.scratchpad-queue-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scratchpad-queue-files {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 18%, transparent);
+    color: var(--neco-ink);
+    font-size: 0.75rem;
+}
+
+.scratchpad-app .scratchpad-queue-edit,
+.scratchpad-app .scratchpad-queue-remove {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+}
+
+.scratchpad-app .scratchpad-queue-send {
+    flex: 0 0 auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 4px 12px;
+}
+
 .scratchpad-file-thumb {
     width: 36px;
     height: 36px;
