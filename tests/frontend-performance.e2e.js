@@ -89,8 +89,10 @@ test.describe('frontend performance smoke', () => {
         // Native tools now include more modules than the old Neconyan fixture.
         // Keep the measured cold start bounded without truncating its timing buffer.
         // 1.5.5 loaded 997 files; 1.5.6 adds the session expiry notice, startup readiness,
-        // the first-run stylesheet and the chatroom theme renderer.
-        expect(snapshot.assetCount).toBeLessThan(1025);
+        // the first-run stylesheet and the chatroom theme renderer (1001 files).
+        // 1.6.0 adds Scratchpad checks, character folders, lorebook links, group 'heard' tools,
+        // memory shards and the deferred What's new, slash command and macro warning sheets (1031 files).
+        expect(snapshot.assetCount).toBeLessThan(1055);
         expect(snapshot.optionalSpeechRequests).toBe(0);
         expect(snapshot.extensionPrefetches).toBe(0);
         expect(snapshot.jsBytes).toBeGreaterThan(0);

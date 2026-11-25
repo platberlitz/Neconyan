@@ -73,7 +73,10 @@ for (const phone of [true, false]) for (const concurrent of [false, true]) {
             expect(layout.right).toBeLessThanOrEqual(page.viewportSize().width);
             expect(layout.height).toBeGreaterThan(0);
             expect(layout.opacity).toBeGreaterThan(0);
-            await expect(preview.locator('.ica--companion-action')).toHaveCount(0);
+            // While the note is written, its actions stay in place but only Stop can be pressed.
+            await expect(preview.locator('.ica--companion-stop')).toHaveCount(1);
+            const actions = preview.locator('.ica--companion-action:not(.ica--companion-stop)');
+            await expect.poll(() => actions.evaluateAll(buttons => buttons.length > 0 && buttons.every(button => button.disabled))).toBe(true);
             if (process.env.NECONYAN_SCREENSHOT_PHASE !== 'before') await capture();
             expect(app.provider.calls.find(call => call.model === 'post-held').completedAt).toBeNull();
             if (concurrent) await expect.poll(() => app.provider.calls.some(call => call.model === 'companion-held')).toBe(true);

@@ -167,6 +167,13 @@ function cropControl(image, box) {
 }
 
 async function revealSwipeArrows(page, left, right) {
+    // For a few seconds after a chat loads, the app keeps pinning it to the
+    // bottom until the reader scrolls. A script scroll is not reader input, so
+    // a later pin could move the row between measuring and the screenshot.
+    // Wheel over the chat first, as a reader would, to end that pin.
+    const chatBox = await page.locator('#chat').boundingBox();
+    await page.mouse.move(chatBox.x + chatBox.width / 2, chatBox.y + Math.min(chatBox.height, 400) / 2);
+    await page.mouse.wheel(0, -40);
     await expect.poll(async () => {
         // Scroll the chat itself, not the document. The usable area stops at the
         // fixed toolbar even when the scroll container extends behind it.

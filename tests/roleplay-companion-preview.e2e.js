@@ -67,7 +67,9 @@ for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, tr
             if (process.env.NECONYAN_SCREENSHOT_PHASE === 'before') await capture();
             await expect(preview.locator('.mes_timer')).not.toBeEmpty();
             await expect(preview.locator('.ica--companion-ledger')).toContainText('The first Companion is already ready.');
-            await expect(preview.locator('.ica--companion-action')).toHaveCount(0);
+            // While the reply is still a preview, its notes keep their actions in place but only Stop can be pressed.
+            const actions = preview.locator('.ica--companion-action:not(.ica--companion-stop)');
+            await expect.poll(() => actions.evaluateAll(buttons => buttons.length > 0 && buttons.every(button => button.disabled))).toBe(true);
             if (process.env.NECONYAN_SCREENSHOT_PHASE !== 'before') await capture();
             expect(app.provider.calls.find(call => call.model === 'held-note').completedAt).toBeNull();
             expect((await account.job(jobId)).state).not.toBe('completed');
@@ -75,7 +77,7 @@ for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, tr
 
             await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
             await expect(page.locator('#ica--tracker-panel [data-agent-id="late"] .ica--companion-pending')).toBeVisible();
-            await expect(page.locator('#ica--tracker-panel [data-agent-id="late"] [data-action="panel-edit-note"]')).toHaveCount(0);
+            await expect(page.locator('#ica--tracker-panel [data-agent-id="late"] [data-action="panel-edit-note"]')).toBeDisabled();
             await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
 
             // A fresh page also reads the existing results, without submitting any model work again.

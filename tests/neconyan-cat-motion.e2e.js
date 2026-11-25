@@ -772,9 +772,15 @@ test('Sunken Reef paints manta ray, swordfish, axolotl, rising bubbles and a poi
         await page.mouse.move(420 + Math.cos(angle) * 240, 520 - Math.sin(angle) * 180);
         await page.waitForTimeout(16);
     }
-    await expect.poll(async () => (await snapshot()).wakeBubbles, { timeout: 10000 }).toBeGreaterThan(0);
-    expect((await snapshot()).wakeRipples).toBeGreaterThan(0);
-    expect((await snapshot()).companion).toBe(true);
+    // The companion follows for 900 ms after the last move, so each check moves the pointer
+    // again and reads the wake and the companion from the same snapshot.
+    let nudge = 0;
+    await expect.poll(async () => {
+        nudge += 1;
+        await page.mouse.move(180 + (nudge % 2) * 40, 520);
+        const { wakeBubbles, wakeRipples, companion } = await snapshot();
+        return { wake: wakeBubbles > 0 && wakeRipples > 0, companion };
+    }, { timeout: 10000 }).toEqual({ wake: true, companion: true });
     await page.screenshot({ path: testInfo.outputPath('sunken-reef-wake.png') });
 
     const before = (await snapshot()).palette;
@@ -798,11 +804,15 @@ test('Sunken Reef paints manta ray, swordfish, axolotl, rising bubbles and a poi
     expect(still.wakeBubbles).toBe(0);
     expect(still.wakeRipples).toBe(0);
     expect(still.companion).toBe(false);
-    const creaturesCanvas = page.locator('#sb-sunken-reef-creatures');
-    const frozenA = await creaturesCanvas.screenshot();
-    await page.waitForTimeout(700);
-    const frozenB = await creaturesCanvas.screenshot();
-    expect(Buffer.compare(frozenA, frozenB)).toBe(0);
+    // Compare the reef's own pixels: a page screenshot of a full-screen canvas also captures
+    // the app drawn over it, which can redraw once the settings save lands.
+    const frozen = await page.evaluate(async () => {
+        const canvases = [...document.querySelectorAll('#sb-sunken-reef-stage canvas')];
+        const first = canvases.map(canvas => canvas.toDataURL());
+        await new Promise(resolve => setTimeout(resolve, 700));
+        return canvases.map((canvas, index) => canvas.toDataURL() === first[index]);
+    });
+    expect(frozen).toEqual([true, true, true]);
 
     await page.locator('#reduced_motion').evaluate(input => {
         input.checked = false;
