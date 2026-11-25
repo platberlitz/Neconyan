@@ -203,6 +203,7 @@
 - PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
 - PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
+- PR #959 (2026-11-25) `fix(companions): stop the panel freezing when opened in busy chats`
 - PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 - PR #961 (2026-11-25) `fix(i18n): protect Meower and Scratchpad text, translate textarea placeholders, keep TTS disabled values, and guard against invisible characters`
 - PR #962 (2026-11-25) `fix(i18n): match empty template holes and split adjacent Dialogue Colors toast templates`
