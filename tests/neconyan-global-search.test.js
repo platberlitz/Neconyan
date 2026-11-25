@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { createSearchMatcher } from '../public/scripts/util/fuzzy-search.js';
+import { createSearchMatcher, foldSearchText } from '../public/scripts/util/fuzzy-search.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shellSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-tabs.js'), 'utf8');
@@ -24,6 +24,7 @@ function getFunctionSource(name) {
 function createSearchContext() {
     const context = vm.createContext({
         createSearchMatcher,
+        foldSearchText,
         escapeRegex: value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
         normalizeText: value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
     });
@@ -125,5 +126,33 @@ describe('global search finds pages and the setting you asked for', () => {
         expect(renderSource).toContain('\'Open section\'');
         expect(renderSource).toContain('`in ${match.sectionLabel}`');
         expect(revealSource).toMatch(/openShell\(shellKey, match\.tabId\);\s*\/\/[^\n]*\n\s*if \(!\(match\.element instanceof HTMLElement\)\) \{\s*return;/);
+    });
+
+    test('folds Turkish queries against Turkish/English titles and sets lang="en" only on untranslated group labels', () => {
+        const context = createSearchContext();
+        expect(score(context, { displayText: 'İçe aktar', sectionLabel: 'Ayarlar' }, 'ice').score).toBeGreaterThan(0);
+        expect(score(context, { displayText: 'API anahtarı', sectionLabel: 'Bağlantılar' }, 'api').score).toBeGreaterThan(0);
+        expect(score(context, { displayText: 'Quick Image Gen', sectionLabel: 'Tools' }, foldSearchText('quıck ımage gen')).score).toBeGreaterThan(0);
+
+        const makeEl = (tag, options = {}) => {
+            const node = { tag, className: options.className ?? '', textContent: options.text ?? '', attrs: options.attrs ?? {}, children: [], lang: '' };
+            node.appendChild = child => node.children.push(child);
+            return node;
+        };
+        const trMap = new Map([['Dialogue Colors', 'Diyalog Renkleri']]);
+        const labelContext = vm.createContext({
+            createElement: makeEl,
+            translate: value => trMap.get(value) ?? value,
+        });
+        vm.runInContext(getFunctionSource('createSearchGroupLabel'), labelContext);
+
+        const brandGroup = labelContext.createSearchGroupLabel({ groupLabel: 'Quick Image Gen' });
+        expect(brandGroup.children[0].lang).toBe('en');
+
+        const translatedTab = labelContext.createSearchGroupLabel({ shellLabel: 'Ayarlar', tabLabel: 'Dialogue Colors' });
+        expect(translatedTab.children[2].lang).toBe('');
+
+        const brandTab = labelContext.createSearchGroupLabel({ shellLabel: 'Araçlar', tabLabel: 'Mewmory' });
+        expect(brandTab.children[2].lang).toBe('en');
     });
 });

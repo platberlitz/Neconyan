@@ -15,7 +15,7 @@ import { PATCH_BASE_ERROR, canonicalText, chatContentHash, chatPatchIndex, chatP
 import { digestKeptFingerprints } from '../../public/scripts/chat-patch-fingerprint.js';
 import { cachedFilePath, createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
 import { collectRecentChatFiles, selectRecentChatFiles } from '../chat-library-inventory.js';
-import { createChatSearchMatcher } from '../chat-search-matcher.js';
+import { createChatSearchMatcher, foldSearchText } from '../chat-search-matcher.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
@@ -2965,14 +2965,14 @@ router.post('/search', validateAvatarUrlMiddleware, async function (request, res
         const results = [];
 
         /** @type {string[]} */
-        const fragments = query ? query.trim().toLowerCase().split(/\s+/).filter(x => x) : [];
+        const fragments = query ? foldSearchText(query).trim().split(/\s+/).filter(Boolean) : [];
 
         /** @type {ChatMatchFunction} */
         const hasTextMatch = (textArray) => {
             if (fragments.length === 0) {
                 return true;
             }
-            return fragments.every(fragment => textArray.some(text => String(text ?? '').toLowerCase().includes(fragment)));
+            return fragments.every(fragment => textArray.some(text => foldSearchText(text ?? '').includes(fragment)));
         };
 
         for (const chatFile of chatFiles) {

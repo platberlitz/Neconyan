@@ -9,7 +9,7 @@ const segmenter = canSegmentWords() ? new Intl.Segmenter(undefined, { granularit
 const WORD = /[\p{L}\p{M}\p{N}_]+(?:['\u2019][\p{L}\p{M}\p{N}_]+)*/gu;
 
 export function terms(value) {
-    const text = String(value).normalize('NFKC').toLocaleLowerCase();
+    const text = String(value).normalize('NFKC').replace(/i\u0307/gi, 'i').replace(/İ/g, 'i').toLowerCase();
     if (!segmenter) return text.match(WORD) ?? [];
     return [...segmenter.segment(text)].filter(part => part.isWordLike).map(part => part.segment);
 }

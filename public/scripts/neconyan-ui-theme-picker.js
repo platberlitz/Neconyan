@@ -1,4 +1,5 @@
 import { accessibleTheme, contrastRatio } from './theme-contrast.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 
 const previewFields = {
     surface: 'blur_tint_color',
@@ -170,7 +171,7 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
     function filter() {
         clearTimeout(filterTimer);
         filterTimer = 0;
-        const query = search.value.trim().toLocaleLowerCase();
+        const query = foldSearchText(search.value).trim();
         for (const entry of entries) {
             const filtered = !entry.search.includes(query) || (tone !== 'all' && tone !== entry.tone);
             if (entry.filtered === filtered) continue;
@@ -253,7 +254,7 @@ export function createUiThemePicker(host, { onSelect, translate = text => text }
                         onSelect(theme.name);
                         settle();
                     });
-                    return { name: theme.name, search: theme.name.toLocaleLowerCase(), tone: preview.tone, button, filtered: false };
+                    return { name: theme.name, search: foldSearchText(theme.name), tone: preview.tone, button, filtered: false };
                 });
                 grid.replaceChildren(...entries.map(entry => entry.button));
             }

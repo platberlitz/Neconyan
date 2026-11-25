@@ -7,6 +7,7 @@ import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { setUiVisibility } from '../../../ui-motion.js';
 import { accountStorage } from '../../../util/AccountStorage.js';
 import { escapeHtml } from '../../../utils.js';
+import { foldSearchText } from '../../../util/fuzzy-search.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { getAgentResultModelName } from '../model-label.js';
 import { patchCompanionView, runCompanionViewAction } from './view-state.js';
@@ -829,7 +830,7 @@ function buildPanelAgentSection(state) {
     const agentId = state.agentId ?? state.agent?.id ?? '';
     const latest = state.latest;
     const name = getStateDisplayName(state);
-    const searchText = escapeHtml(`${name} ${latest?.result?.content ?? ''}`.toLocaleLowerCase());
+    const searchText = escapeHtml(foldSearchText(`${name} ${latest?.result?.content ?? ''}`));
     const icon = getStateIcon(state);
     const isHidden = isAgentHidden(agentId);
     const canSendToLorebook = isLorebookAgent(state.agent);
@@ -1112,7 +1113,7 @@ function jumpPanel(direction) {
 function applyPanelSearch({ rendering = false } = {}) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
-    const terms = panelSearchQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const terms = foldSearchText(panelSearchQuery).trim().split(/\s+/).filter(Boolean);
     const sections = [...panel.querySelectorAll('.ica--tpanel-agent')];
     let matches = 0;
     let changed = false;

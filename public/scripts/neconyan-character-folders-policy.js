@@ -258,7 +258,7 @@ export function detectImportSource({ sourceUrl = '', sourceId = '', fileName = '
 }
 
 function normalizeFolderName(name) {
-    return String(name || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+    return String(name || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 /**

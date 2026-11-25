@@ -2114,6 +2114,10 @@ export function compareIgnoreCaseAndAccents(a, b, comparisonFunction) {
     return comparisonFunction(normalizedA, normalizedB);
 }
 
+function normalizeSearchIgnoreCaseAndAccents(value) {
+    return String(value).replace(/[İı]/g, 'i').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
 /**
  * Performs a case-insensitive and accent-insensitive substring search.
  * This function normalizes the strings to remove diacritical marks and converts them to lowercase to ensure the search is insensitive to case and accents.
@@ -2123,7 +2127,8 @@ export function compareIgnoreCaseAndAccents(a, b, comparisonFunction) {
  * @returns {boolean} true if the searchTerm is found within the text, otherwise returns false
  */
 export function includesIgnoreCaseAndAccents(text, searchTerm) {
-    return compareIgnoreCaseAndAccents(text, searchTerm, (a, b) => a?.includes(b) === true);
+    if (!text || !searchTerm) return text?.includes?.(searchTerm) === true;
+    return normalizeSearchIgnoreCaseAndAccents(text).includes(normalizeSearchIgnoreCaseAndAccents(searchTerm));
 }
 
 /**
@@ -2724,8 +2729,8 @@ export function textValueMatcher(params, data) {
         return textValueMatcher(params, match);
     }
 
-    const textMatch = compareIgnoreCaseAndAccents(data.text, params.term, (a, b) => a.indexOf(b) > -1);
-    const valueMatch = data.element instanceof HTMLOptionElement && compareIgnoreCaseAndAccents(data.element.value, params.term, (a, b) => a.indexOf(b) > -1);
+    const textMatch = includesIgnoreCaseAndAccents(data.text, params.term);
+    const valueMatch = data.element instanceof HTMLOptionElement && includesIgnoreCaseAndAccents(data.element.value, params.term);
 
     if (textMatch || valueMatch) {
         return data;

@@ -1,4 +1,5 @@
 // Pure helpers for the bottom bar chat picker. The picker DOM lives in chat-picker.js.
+import { foldSearchText } from './util/fuzzy-search.js';
 
 const CHAT_NAME_UNSAFE_CHARACTERS = /[/?<>\\:*|"\x00-\x1f\x80-\x9f]/g;
 
@@ -38,13 +39,13 @@ export function getChatPickerTitle(fileName, ownerName = '') {
  * @returns {boolean}
  */
 export function matchesChatPickerQuery(entry, query) {
-    const terms = String(query ?? '').toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const terms = foldSearchText(query).split(/\s+/).filter(Boolean);
     if (!terms.length) {
         return true;
     }
 
     const haystack = [entry?.title, entry?.fileName, entry?.preview]
-        .map(value => String(value ?? '').toLocaleLowerCase())
+        .map(value => foldSearchText(value))
         .join('\n');
     return terms.every(term => haystack.includes(term));
 }

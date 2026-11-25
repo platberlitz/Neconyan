@@ -8,6 +8,7 @@ import { createNeconyanFolder, moveNeconyanLorebook } from './neconyan-lorebook-
 import { t } from './i18n.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { initModelRotation, mountModelRotationPanel } from './neconyan-model-rotation.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 
 const nativeState = {
     characterRoot: null,
@@ -512,7 +513,7 @@ function createLorebookLibrary(worldInfo) {
     // Each pass rebuilds every book row, so typing waits for a pause.
     let searchTimer = 0;
     search.addEventListener('input', () => {
-        nativeState.lorebookQuery = search.value.trim().toLowerCase();
+        nativeState.lorebookQuery = foldSearchText(search.value).trim();
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => renderLorebookLibrary(library), 120);
     });
@@ -520,7 +521,7 @@ function createLorebookLibrary(worldInfo) {
         const name = window.prompt('Name this lorebook folder:')?.trim();
         if (!name) return;
         const metadata = getNeconyanLorebookFolders();
-        if (metadata.folders.some(folder => folder.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        if (metadata.folders.some(folder => folder.name.toLowerCase() === name.toLowerCase())) {
             globalThis.toastr?.warning?.('A folder with that name already exists.', 'Lorebooks');
             return;
         }
@@ -621,7 +622,7 @@ function renderLorebookLibrary(library) {
                 const nextName = window.prompt('Rename this folder:', label)?.trim();
                 if (!nextName || nextName === label) return;
                 const currentMetadata = getNeconyanLorebookFolders();
-                if (currentMetadata.folders.some(folder => folder.id !== id && folder.name.toLocaleLowerCase() === nextName.toLocaleLowerCase())) {
+                if (currentMetadata.folders.some(folder => folder.id !== id && folder.name.toLowerCase() === nextName.toLowerCase())) {
                     globalThis.toastr?.warning?.('A folder with that name already exists.', 'Lorebooks');
                     return;
                 }
@@ -649,7 +650,7 @@ function renderLorebookLibrary(library) {
     const query = nativeState.lorebookQuery;
     const selectedFolder = nativeState.lorebookFolder;
     const visibleNames = names.filter(name => {
-        if (query && !name.toLocaleLowerCase().includes(query)) return false;
+        if (query && !foldSearchText(name).includes(query)) return false;
         const folderId = metadata.assignments[name];
         if (selectedFolder === 'unfiled') return !folderId;
         return selectedFolder === 'all' || folderId === selectedFolder;

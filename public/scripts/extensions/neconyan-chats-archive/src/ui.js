@@ -1,4 +1,5 @@
 import { mountSavedArchiveWork } from './saved-work.js';
+import { foldSearchText } from '../../../util/fuzzy-search.js';
 import {
     createDefaultOrganization,
     filterRows,
@@ -170,7 +171,7 @@ function mentionChoices(ctx) {
         if (!name || !character.avatar) {
             continue;
         }
-        const key = name.toLocaleLowerCase();
+        const key = name.toLowerCase();
         const choice = choices.get(key) ?? { name, avatars: [] };
         choice.avatars.push(character.avatar);
         choices.set(key, choice);
@@ -179,13 +180,13 @@ function mentionChoices(ctx) {
 }
 
 function fuzzyMentionChoices(choices, query, limit = 8) {
-    const needle = String(query ?? '').trim().toLocaleLowerCase();
+    const needle = foldSearchText(query).trim();
     if (!needle) {
         return choices.slice(0, limit);
     }
     const ranked = [];
     for (const choice of choices) {
-        const name = choice.name.toLocaleLowerCase();
+        const name = foldSearchText(choice.name);
         const direct = name.indexOf(needle);
         if (direct >= 0) {
             ranked.push({ choice, score: direct * 10 + name.length - needle.length });
@@ -302,7 +303,7 @@ function renderOwnerOptions(ctx, ui, choices, selected) {
     for (const choice of choices) {
         const option = button('sbca-owner-option');
         option.dataset.sbcaOwner = choice.value;
-        option.dataset.sbcaSearch = `${choice.label} ${choice.meta} ${choice.id}`.toLocaleLowerCase();
+        option.dataset.sbcaSearch = foldSearchText(`${choice.label} ${choice.meta} ${choice.id}`);
         option.setAttribute('aria-label', choice.meta ? `${choice.label}, ${choice.meta}` : choice.label);
         // Every caption here is a name or already built with tr(), so the localiser must leave the option alone.
         option.setAttribute('data-i18n-ignore', '');
@@ -340,7 +341,7 @@ function renderOwnerOptions(ctx, ui, choices, selected) {
 }
 
 function filterOwnerOptions(ui) {
-    const query = ui.ownerField.search.value.trim().toLocaleLowerCase();
+    const query = foldSearchText(ui.ownerField.search.value).trim();
     let visible = 0;
     for (const option of ui.ownerField.list.querySelectorAll('.sbca-owner-option')) {
         option.hidden = !!query && !option.dataset.sbcaSearch.includes(query);

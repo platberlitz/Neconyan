@@ -2,6 +2,7 @@ import { eventSource, event_types, saveSettingsDebounced } from '../../../script
 import { extension_settings } from '../../extensions.js';
 import { isTrueBoolean } from '../../utils.js';
 import { accountStorage } from '../../util/AccountStorage.js';
+import { foldSearchText } from '../../util/fuzzy-search.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
@@ -242,10 +243,10 @@ const showHistoryMenu = () => {
     empty.textContent = t`Your inputs will appear here after you send them.`;
     empty.hidden = history.length > 0;
     search.addEventListener('input', () => {
-        const terms = search.value.toLowerCase().trim().split(/\s+/);
+        const terms = foldSearchText(search.value).trim().split(/\s+/);
         let matches = 0;
         for (const item of list.querySelectorAll('.stih--item')) {
-            item.hidden = !terms.every(term => item.textContent.toLowerCase().includes(term));
+            item.hidden = !terms.every(term => foldSearchText(item.textContent).includes(term));
             if (!item.hidden) matches++;
         }
         empty.textContent = history.length ? t`No matching inputs. Try another search.` : t`Your inputs will appear here after you send them.`;

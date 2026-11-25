@@ -2,6 +2,7 @@ import { element, button, textField } from './fields.js';
 import { editCreatorDraft } from './model.js';
 import { renderCreatorLoreTools } from './lore-tools.js';
 import { renderLoreWriter } from './lore-writer.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 
 export function nextEntryId(entries) {
     let id = 0;
@@ -86,7 +87,7 @@ export async function renderLore(workspace, main) {
         const filterHeader = element('div', 'creator-inline-bar');
         filterHeader.append(
             textField('Filter entries', '', value => {
-                for (const item of list.children) item.hidden = !item.dataset.search.includes(value.toLocaleLowerCase());
+                for (const item of list.children) item.hidden = !item.dataset.search.includes(foldSearchText(value));
             }, { rows: 1, placeholder: 'Filter by title, key or content...' }),
             button('Add entry', () => workspace.edit(next => {
                 const entries = next.books.find(item => item.id === book.id).data.entries;
@@ -97,7 +98,7 @@ export async function renderLore(workspace, main) {
         panel.append(filterHeader);
         for (const [uid, entry] of Object.entries(book.data.entries)) {
             const row = element('details', 'creator-review-item creator-lore-entry');
-            row.dataset.search = `${entry.comment} ${(entry.key ?? []).join(' ')} ${entry.content}`.toLocaleLowerCase();
+            row.dataset.search = foldSearchText(`${entry.comment} ${(entry.key ?? []).join(' ')} ${entry.content}`);
             row.append(element('summary', '', `${entry.disable ? 'Disabled: ' : ''}${entry.comment || `Entry ${uid}`}${entry.agentBlacklisted ? ' · Protected from AI' : ''}`));
             const update = change => workspace.edit(next => change(next.books.find(item => item.id === book.id).data.entries[uid]));
             const entryGrid = element('div', 'creator-form-grid');

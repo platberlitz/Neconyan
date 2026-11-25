@@ -1,4 +1,5 @@
 import { createBlankRule, createDefaultRules, GROUPS, MODULE_NAME, SECTION_IDS, SECTIONS } from './sections.js';
+import { foldSearchText } from '../../../../util/fuzzy-search.js';
 import { isValidTagName } from './wrap.js';
 import {
     clearAllPresetRules,
@@ -752,11 +753,11 @@ export function renderSettings() {
             return;
         }
         const overrides = getPresetRuleOverrides();
-        const query = presetSearchValue.trim().toLowerCase();
+        const query = foldSearchText(presetSearchValue).trim();
         let visible = 0;
         for (const record of presetRows) {
             const rule = presetWorkingRules[record.prompt.identifier] ?? {};
-            const searchText = `${record.prompt.label} ${record.prompt.identifier} ${rule.tag ?? ''}`.toLowerCase();
+            const searchText = foldSearchText(`${record.prompt.label} ${record.prompt.identifier} ${rule.tag ?? ''}`);
             const matchesSearch = !query || searchText.includes(query);
             const matchesOverride = !showPresetOverridesOnly || Object.hasOwn(overrides, record.prompt.identifier);
             const containsFocus = record.row.wrapper.contains(document.activeElement);

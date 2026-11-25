@@ -9,6 +9,7 @@ import { getCommandDocs, getMacroCatalog, macroSignature } from '../catalog.js';
 import { renderMacroText } from '../ui/macro-text.js';
 import { uiState } from '../ui/ui-state.js';
 import { TOPICS } from './topics.js';
+import { foldSearchText } from '../../../../../util/fuzzy-search.js';
 
 const GUIDES_KEY = 'guides';
 const COMMANDS_KEY = 'commands';
@@ -110,7 +111,7 @@ export function renderReferenceTab(container, { onInsert } = {}) {
                     label: topic.title,
                     prose: true,
                     summary: firstSentence(topic.body[0]),
-                    haystack: `${topic.title} ${topic.body.join(' ')}`.toLowerCase(),
+                    haystack: foldSearchText(`${topic.title} ${topic.body.join(' ')}`),
                     render: body => renderTopic(body, topic),
                 })),
             });
@@ -132,7 +133,7 @@ export function renderReferenceTab(container, { onInsert } = {}) {
                     label: macroSignature(entry),
                     prose: false,
                     summary: firstSentence(entry.description),
-                    haystack: [
+                    haystack: foldSearchText([
                         entry.name,
                         entry.requested,
                         entry.description,
@@ -140,7 +141,7 @@ export function renderReferenceTab(container, { onInsert } = {}) {
                         ...(entry.aliases ?? []),
                         ...(entry.unnamedArgs ?? []).map(arg => `${arg.name} ${arg.description ?? ''}`),
                         ...(entry.exampleUsage ?? []),
-                    ].join(' ').toLowerCase(),
+                    ].join(' ')),
                     render: body => renderMacro(body, entry),
                 })),
             });
@@ -156,7 +157,7 @@ export function renderReferenceTab(container, { onInsert } = {}) {
                     label: `/${command.name}`,
                     prose: true,
                     summary: firstSentence(command.helpString.replace(/<[^>]+>/g, '')),
-                    haystack: `${command.name} ${command.helpString} ${command.returns}`.toLowerCase(),
+                    haystack: foldSearchText(`${command.name} ${command.helpString} ${command.returns}`),
                     render: body => renderCommand(body, command),
                 })),
             });
@@ -357,7 +358,7 @@ export function renderReferenceTab(container, { onInsert } = {}) {
     function draw() {
         results.replaceChildren();
         anchors.clear();
-        const query = search.value.trim().toLowerCase();
+        const query = foldSearchText(search.value).trim();
         const searching = query.length > 0;
         let shown = 0;
 

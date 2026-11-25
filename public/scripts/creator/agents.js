@@ -1,5 +1,6 @@
 import { element, button } from './fields.js';
 import { creatorAgentTargets, startCreatorAgentProcessing } from './agent-processing.js';
+import { foldSearchText } from '../util/fuzzy-search.js';
 
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', depth_prompt: 'Character’s Note', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
 
@@ -86,7 +87,7 @@ export async function renderCreatorAgents(workspace, main) {
     emptyFilterNote.hidden = true;
 
     const applyAgentFilter = () => {
-        const query = searchQuery.trim().toLocaleLowerCase();
+        const query = foldSearchText(searchQuery).trim();
         let visibleCount = 0;
         for (const row of agentRows) {
             const matchesQuery = !query || row.nameLower.includes(query);
@@ -154,7 +155,7 @@ export async function renderCreatorAgents(workspace, main) {
         });
         label.append(input, textSpan, badge);
         choices.append(label);
-        agentRows.push({ id: agent.id, nameLower: String(agent.name ?? '').toLocaleLowerCase(), category: getAgentListKind(agent), label, input, badge });
+        agentRows.push({ id: agent.id, nameLower: foldSearchText(agent.name), category: getAgentListKind(agent), label, input, badge });
     }
     if (!sortedAgents.length) choices.append(element('p', 'creator-muted', 'Add or import agents in Agents, then return here.'));
     refreshOrder();

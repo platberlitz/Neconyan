@@ -32,6 +32,7 @@ import { commonEnumProviders } from './slash-commands/SlashCommandCommonEnumsPro
 import { renderTemplateAsync } from './templates.js';
 import { t, translate } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { foldSearchText } from './util/fuzzy-search.js';
 import { enumTypes, SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import {
     applyNotesImportPayload,
@@ -3129,9 +3130,9 @@ function renderTagManagerAssignChips() {
     }
 
     container.empty();
-    const query = root.find('#neconyan_assign_tag_search').val()?.toString().trim().toLowerCase() ?? '';
+    const query = foldSearchText(root.find('#neconyan_assign_tag_search').val() ?? '').trim();
     const sorted = tags
-        .filter(tag => !query || tag.name.toLowerCase().includes(query) || getTagNote(tag).toLowerCase().includes(query))
+        .filter(tag => !query || foldSearchText(tag.name).includes(query) || foldSearchText(getTagNote(tag)).includes(query))
         .slice()
         .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
 

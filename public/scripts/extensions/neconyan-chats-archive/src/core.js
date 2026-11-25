@@ -1,4 +1,5 @@
 // Pure data helpers: no DOM and no fetch.
+import { foldSearchText } from '../../../util/fuzzy-search.js';
 
 const SIZE_UNITS = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 };
 const CHAT_KINDS = new Set(['solo', 'group', 'orphan']);
@@ -585,13 +586,13 @@ export function recordsToText(records) {
 }
 
 export function matchesQueryFragments(text, query) {
-    const searchable = String(text ?? '').toLowerCase();
-    const fragments = String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+    const searchable = foldSearchText(text);
+    const fragments = foldSearchText(query).split(/\s+/).filter(Boolean);
     return fragments.length > 0 && fragments.every(fragment => searchable.includes(fragment));
 }
 
 export function findMatchingMessageIndex(messages, query) {
-    const fragments = [...new Set(String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean))];
+    const fragments = [...new Set(foldSearchText(query).split(/\s+/).filter(Boolean))];
     if (fragments.length === 0) {
         return -1;
     }
@@ -599,7 +600,7 @@ export function findMatchingMessageIndex(messages, query) {
     let firstMatch = -1;
     const list = Array.isArray(messages) ? messages : [];
     for (let index = 0; index < list.length; index++) {
-        const text = typeof list[index]?.mes === 'string' ? list[index].mes.toLowerCase() : '';
+        const text = typeof list[index]?.mes === 'string' ? foldSearchText(list[index].mes) : '';
         let containsFragment = false;
         for (const fragment of fragments) {
             if (text.includes(fragment)) {
@@ -631,7 +632,7 @@ export function findMatchingSnippet(records, query) {
 
 function createJsonlSearch(query) {
     return {
-        fragments: [...new Set(String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean))],
+        fragments: [...new Set(foldSearchText(query).split(/\s+/).filter(Boolean))],
         matched: new Set(),
         snippet: null,
     };
@@ -641,7 +642,7 @@ function searchJsonlRecord(search, record) {
     if (!isRecord(record) || typeof record.mes !== 'string') {
         return;
     }
-    const text = record.mes.toLowerCase();
+    const text = foldSearchText(record.mes);
     let containsFragment = false;
     for (const fragment of search.fragments) {
         if (text.includes(fragment)) {
@@ -730,7 +731,7 @@ function rowNumber(row, field) {
 }
 
 export function filterRows(rows, options = {}, organization = null) {
-    const needle = String(options.text ?? '').trim().toLowerCase();
+    const needle = foldSearchText(options.text).trim();
     const maps = organizationMaps(organization);
     const bounds = {
         minDate: numberBound(options.minDate, true),
@@ -796,7 +797,7 @@ export function filterRows(rows, options = {}, organization = null) {
             ...(metadata.tags ?? []),
         ];
         return [row.file_id, row.ownerName, row.snippet, ...labels]
-            .some(field => String(field ?? '').toLowerCase().includes(needle));
+            .some(field => foldSearchText(field).includes(needle));
     });
 }
 

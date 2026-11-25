@@ -9,6 +9,7 @@ import { extension_settings, saveMetadataDebounced } from '../../../extensions.j
 import { background_settings } from '../../../backgrounds.js';
 import { promptManager } from '../../../openai.js';
 import { power_user } from '../../../power-user.js';
+import { foldSearchText } from '../../../util/fuzzy-search.js';
 import {
     buildSectionBlocks,
     computeReorderedOrder,
@@ -340,7 +341,7 @@ function injectPromptToolbar(promptList) {
 }
 
 function getPromptSearchQuery() {
-    return String(document.getElementById('bpt-prompt-search')?.value || '').trim().toLowerCase();
+    return foldSearchText(document.getElementById('bpt-prompt-search')?.value).trim();
 }
 
 function getPromptRows() {
@@ -378,7 +379,7 @@ function hasPromptRowContent(row) {
 
 function getPromptSearchText(row) {
     const prompt = getPromptRowData(row);
-    return `${getPromptRowName(row)}\n${prompt?.content || ''}`.toLowerCase();
+    return foldSearchText(`${getPromptRowName(row)}\n${prompt?.content || ''}`);
 }
 
 function buildDividerRegex() {
@@ -1019,7 +1020,7 @@ function refreshPromptSections() {
         });
 
         sections.forEach(section => {
-            const titleMatches = query.length > 0 && section.title.toLowerCase().includes(query);
+            const titleMatches = query.length > 0 && foldSearchText(section.title).includes(query);
             let matchedCount = 0;
             const countablePrompts = section.prompts.filter(row => !row.classList.contains('bpt-divider-structural'));
 

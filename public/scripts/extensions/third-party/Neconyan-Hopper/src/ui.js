@@ -1,6 +1,7 @@
 // Every DOM touch lives here. Post bodies are model output and are rendered as text nodes,
 // never as markup - which is also why nothing in this file assigns innerHTML.
 
+import { foldSearchText } from '../../../../util/fuzzy-search.js';
 import {
     BODY_CLASS,
     KIND_AMBIENT,
@@ -2473,7 +2474,7 @@ function settingsView() {
         row.classList.add('sbtw-invite');
         row.querySelector('input').dataset.focusKey = `invite:${character.avatar}`;
         row.dataset.avatar = character.avatar;
-        row.dataset.search = [name, character.avatar, ...tagsOf(character.avatar)].join(' ').toLocaleLowerCase();
+        row.dataset.search = foldSearchText([name, character.avatar, ...tagsOf(character.avatar)].join(' '));
         return row;
     });
     const inviteCount = el('span', { className: 'sbtw-invite-count' });
@@ -2500,7 +2501,7 @@ function settingsView() {
         },
     });
     const filterInvites = () => {
-        const query = inviteSearch.value.trim().toLocaleLowerCase();
+        const query = foldSearchText(inviteSearch.value).trim();
         let visible = 0;
         for (const row of inviteRows) {
             const hidden = Boolean(query) && !row.dataset.search.includes(query);

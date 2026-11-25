@@ -35,7 +35,7 @@ import {
 } from './topbar-extension-slot/index.js';
 import { power_user, setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
 import { escapeRegex } from './util/escape-regex.js';
-import { createSearchMatcher } from './util/fuzzy-search.js';
+import { createSearchMatcher, foldSearchText } from './util/fuzzy-search.js';
 import { searchSavedContent, openSavedSearchResult } from './account-search.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
@@ -3075,9 +3075,9 @@ function getNeconyanNativeTools() {
 }
 
 function focusNeconyanNativeManagerRow(label) {
-    const normalizedLabel = String(label || '').trim().toLowerCase();
+    const normalizedLabel = foldSearchText(label).trim();
     return waitForNeconyanNativeReady(() => Array.from(document.querySelectorAll('.extensions_info .extension_block'))
-        .find(row => row.textContent.trim().toLowerCase().includes(normalizedLabel)))
+        .find(row => foldSearchText(row.textContent).trim().includes(normalizedLabel)))
         .then(row => {
             if (!(row instanceof HTMLElement)) {
                 return false;
@@ -3646,8 +3646,8 @@ function hasSearchWordStarts(text, patterns) {
 // Ranks a result by where the words land: the item's own name first, then its section, then
 // anything else it mentions (tooltips, placeholders, page keywords).
 function scoreSearchEntry(entry, query, patterns) {
-    const label = normalizeText(entry.displayText);
-    const section = normalizeText(entry.sectionLabel);
+    const label = foldSearchText(entry.displayText).replace(/\s+/g, ' ').trim();
+    const section = foldSearchText(entry.sectionLabel).replace(/\s+/g, ' ').trim();
     // Page names win ties with settings of the same name: the page is usually where you want to go.
     const pageBonus = entry.kind === 'page' ? 20 : 0;
     const lengthPenalty = label.length / 1000;
@@ -18876,7 +18876,7 @@ function getSearchPageEntries() {
 }
 
 function collectGlobalSearchMatches(query) {
-    const normalizedQuery = normalizeText(query);
+    const normalizedQuery = foldSearchText(query).replace(/\s+/g, ' ').trim();
 
     if (!normalizedQuery) {
         return [];
@@ -18918,16 +18918,16 @@ function collectGlobalSearchMatches(query) {
                 }
 
                 const { score, sectionOnly } = scoreSearchEntry(entry, normalizedQuery, wordPatterns);
-                const sectionText = normalizeText(entry.sectionLabel);
+                const sectionText = foldSearchText(entry.sectionLabel).replace(/\s+/g, ' ').trim();
                 // Controls that only matched through their section name fold into one result
                 // for that section, so a section search does not list every button inside it.
                 const isSection = typeof entry.action !== 'function'
                     && !entry.kind
                     && Boolean(sectionText)
-                    && (sectionOnly || (normalizeText(entry.displayText) === sectionText
+                    && (sectionOnly || (foldSearchText(entry.displayText).replace(/\s+/g, ' ').trim() === sectionText
                         && entry.element instanceof HTMLElement
                         && entry.element.matches(NN_SEARCH_SECTION_HEADING_SELECTOR)));
-                const isWholeTab = isSection && sectionText === normalizeText(entry.tabLabel);
+                const isWholeTab = isSection && sectionText === foldSearchText(entry.tabLabel).replace(/\s+/g, ' ').trim();
                 const match = {
                     ...entry,
                     ...(isSection ? {
@@ -18945,8 +18945,8 @@ function collectGlobalSearchMatches(query) {
                     shellKey,
                     match.dedupeKey || [
                         entry.tabId,
-                        normalizeText(entry.sectionLabel),
-                        normalizeText(entry.displayText),
+                        foldSearchText(entry.sectionLabel).replace(/\s+/g, ' ').trim(),
+                        foldSearchText(entry.displayText).replace(/\s+/g, ' ').trim(),
                     ].filter(Boolean).join('::'),
                 ].filter(Boolean).join('::');
                 const existingMatch = matches.get(matchKey);
@@ -19020,7 +19020,7 @@ function getMobileQuickActionSearchSources() {
 }
 
 function getMobileQuickActionSearchMatches(query, { sources = null } = {}) {
-    const normalizedQuery = normalizeText(query);
+    const normalizedQuery = foldSearchText(query).replace(/\s+/g, ' ').trim();
 
     if (normalizedQuery.length < 2) {
         return [];
@@ -19077,8 +19077,8 @@ function findMobileQuickActionMatch(action) {
     const entries = getTabSearchEntries(tabState, { includeThemeCard: true });
     const exactMatch = entries.find(entry => entry.dedupeKey === normalizedAction.dedupeKey);
     const fallbackMatch = exactMatch || entries.find(entry => (
-        normalizeText(entry.sectionLabel) === normalizeText(normalizedAction.sectionLabel)
-        && normalizeText(entry.displayText) === normalizeText(normalizedAction.displayText)
+        foldSearchText(entry.sectionLabel).replace(/\s+/g, ' ').trim() === foldSearchText(normalizedAction.sectionLabel).replace(/\s+/g, ' ').trim()
+        && foldSearchText(entry.displayText).replace(/\s+/g, ' ').trim() === foldSearchText(normalizedAction.displayText).replace(/\s+/g, ' ').trim()
     ));
 
     if (!fallbackMatch) {
@@ -19209,6 +19209,27 @@ function renderUniversalSearchResults(query) {
     state.savedTimer = setTimeout(() => void load(), 200);
 }
 
+function createSearchGroupLabel(match) {
+    const label = createElement('div', { className: 'sb-search-result-group-label' });
+    if (match.groupLabel) {
+        const span = createElement('span', { text: match.groupLabel });
+        if (translate(match.groupLabel) === match.groupLabel) {
+            span.lang = 'en';
+        }
+        label.appendChild(span);
+        return label;
+    }
+
+    label.appendChild(createElement('span', { text: match.shellLabel }));
+    label.appendChild(createElement('span', { text: ' · ', attrs: { 'data-i18n-ignore': 'true' } }));
+    const tabSpan = createElement('span', { text: match.tabLabel });
+    if (match.tabLabel && translate(match.tabLabel) === match.tabLabel) {
+        tabSpan.lang = 'en';
+    }
+    label.appendChild(tabSpan);
+    return label;
+}
+
 function renderSearchMatches(query, matches, { loading = false, message = '', loadMore = null, moreLabel = 'More saved results' } = {}) {
     const searchState = getUniversalSearchState();
     const results = searchState.results;
@@ -19254,7 +19275,7 @@ function renderSearchMatches(query, matches, { loading = false, message = '', lo
                 'aria-label': groupLabel,
             },
         });
-        group.appendChild(createElement('div', { className: 'sb-search-result-group-label', text: groupLabel }));
+        group.appendChild(createSearchGroupLabel(groupMatches[0]));
 
         for (const match of groupMatches) {
             const button = createElement('button', {
@@ -19267,14 +19288,14 @@ function renderSearchMatches(query, matches, { loading = false, message = '', lo
                 },
             });
             const label = match.displayText || match.sectionLabel || match.tabLabel;
-            const labelText = normalizeText(label);
-            const sectionText = normalizeText(match.sectionLabel);
+            const labelText = foldSearchText(label).replace(/\s+/g, ' ').trim();
+            const sectionText = foldSearchText(match.sectionLabel).replace(/\s+/g, ' ').trim();
             // Say where a setting lives when its section adds something the group label does not.
             const detailText = match.detail || (
                 match.kind !== 'section'
                 && sectionText
                 && sectionText !== labelText
-                && sectionText !== normalizeText(match.tabLabel)
+                && sectionText !== foldSearchText(match.tabLabel).replace(/\s+/g, ' ').trim()
                     ? `in ${match.sectionLabel}`
                     : ''
             );
