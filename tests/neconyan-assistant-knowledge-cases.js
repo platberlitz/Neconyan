@@ -49,6 +49,7 @@ export const refreshedKnowledgeCases = [
     ['What does Try before saving do in the Scratchpad review?', 'scratchpad.try-change', 'closes the review without saving'],
     ['Why does my Scratchpad reply say Rehearsal · Unsaved change?', 'scratchpad.try-change', 'Tried without saving: with the change name'],
     ['How do I add my own quick prompts to Scratchpad?', 'scratchpad.quick-prompts', 'Add a prompt creates a row'],
+    ['Where did my Scratchpad quick prompts go after I sent a message?', 'scratchpad.quick-prompts-row', 'folds into a slim Quick prompts bar'],
     ['How do I reuse my Scratchpad Context choices in another session?', 'scratchpad.context-setups', 'Press Save current choices and name the setup'],
     ['What do the typed tools /roll, /calc and /pick do in a Scratchpad message?', 'scratchpad.typed-tools', '/roll 2d6+1 rolls dice and shows every die'],
     ['Can I type /check card in Scratchpad to run the card check without pressing the quick prompt?', 'scratchpad.check-shortcuts', 'start a line of your message with /check card'],
