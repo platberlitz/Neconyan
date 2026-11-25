@@ -233,6 +233,7 @@
 - PR #973 (2026-11-25) `fix(i18n): replace core, Lorebook, and Pawthfinder plural-ending template holes`
 - PR #974 (2026-11-25) `docs(changelog): add two missing localisation highlights`
 - PR #975 (2026-11-25) `feat(scratchpad): share several lorebooks by hand in General`
+- PR #976 (2026-11-25) `fix(openai): remove retired sora-2 video endpoint`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
