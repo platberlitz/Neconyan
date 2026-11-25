@@ -67,6 +67,7 @@ test('the catalogue does not collect HTTP header names', () => {
 });
 
 test('no catalogue key has adjacent placeholders beyond the frozen allow-list', t => {
+    assert.equal(allowList.length, 39, 'adjacent-placeholder allow-list reflects M102a retirement of Lorebook and Pawthfinder adjacent keys');
     assert.ok(allowList.length > 0 && allowList.every(key => adjacentPlaceholders.test(key)), 'the allow-list holds only adjacent-placeholder keys');
     for (const key of checkAdjacentKeys(collectedKeys(), allowList)) t.diagnostic(`no longer collected, can leave the allow-list: ${JSON.stringify(key)}`);
 });

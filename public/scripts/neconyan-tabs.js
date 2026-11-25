@@ -13744,7 +13744,11 @@ function renderConsoleLogsStatus() {
 
     const linesShown = state.entries.length;
     const totalBuffered = state.totalBuffered || linesShown;
-    const noteParts = [`Showing ${linesShown} of ${totalBuffered} recent console line${totalBuffered === 1 ? '' : 's'}.`];
+    const noteParts = [
+        totalBuffered === 1
+            ? t`Showing ${linesShown} of ${totalBuffered} recent console line.`
+            : t`Showing ${linesShown} of ${totalBuffered} recent console lines.`,
+    ];
 
     if (state.captureStartedAt) {
         noteParts.push(`Capture started ${formatConsoleLogDateTime(state.captureStartedAt)}.`);
@@ -16298,11 +16302,14 @@ function renderSillyTavernExtensionSyncReport(reportData = null) {
 
         const body = createElement('div', { className: 'sb-import-report-item-body' });
         const copiedFiles = Number(result?.copiedFiles ?? 0) || 0;
+        const extensionName = result?.name || 'extension';
         const statusLine = createElement('p', {
             className: 'sb-import-report-item-copy',
             text: result?.status === 'failed'
                 ? (result?.error || 'This extension could not be synced.')
-                : `Copied ${copiedFiles} file${copiedFiles === 1 ? '' : 's'} into ${result?.name || 'extension'}.`,
+                : (copiedFiles === 1
+                    ? `Copied ${copiedFiles} file into ${extensionName}.`
+                    : `Copied ${copiedFiles} files into ${extensionName}.`),
         });
         const checksLine = createElement('p', {
             className: 'sb-import-report-item-checks',
@@ -16447,9 +16454,12 @@ async function handleSillyTavernExtensionSync() {
         const failedCount = Number(result?.failedCount ?? 0) || 0;
         const needsAttention = warningCount + failedCount > 0;
         const gitMetadataSkippedCount = Number(result?.gitMetadataSkippedCount ?? 0) || 0;
+        const gitMetadataNote = gitMetadataSkippedCount > 0
+            ? ` ${gitMetadataSkippedCount === 1 ? t`Git metadata was skipped on ${gitMetadataSkippedCount} extension to avoid permission issues, so built-in update tooling may need a reinstall later.` : t`Git metadata was skipped on ${gitMetadataSkippedCount} extensions to avoid permission issues, so built-in update tooling may need a reinstall later.`}`
+            : '';
         const message = needsAttention
             ? `${result?.message || 'Extension sync finished with warnings.'} ${getExtensionSyncActivationMessage(result)} Review the report below before reloading.`
-            : `${result?.message || 'Extension sync finished.'} ${getExtensionSyncActivationMessage(result)}${gitMetadataSkippedCount > 0 ? ` Git metadata was skipped on ${gitMetadataSkippedCount} extension${gitMetadataSkippedCount === 1 ? '' : 's'} to avoid permission issues, so built-in update tooling may need a reinstall later.` : ''}`;
+            : `${result?.message || 'Extension sync finished.'} ${getExtensionSyncActivationMessage(result)}${gitMetadataNote}`;
         const tone = failedCount > 0 ? 'danger' : warningCount > 0 ? 'warn' : 'good';
 
         renderSillyTavernExtensionSyncReport(result);

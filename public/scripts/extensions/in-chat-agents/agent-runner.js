@@ -556,7 +556,13 @@ export function cancelAgentGeneration() {
     notifyAgentGenerationStateChanged();
 
     if (stopped || wasActive || queuedCount > 0) {
-        toastr.info(queuedCount > 0 ? `Stopping agent generation and clearing ${queuedCount} queued run${queuedCount === 1 ? '' : 's'}...` : 'Stopping agent generation...');
+        let stopMessage = 'Stopping agent generation...';
+        if (queuedCount === 1) {
+            stopMessage = `Stopping agent generation and clearing ${queuedCount} queued run...`;
+        } else if (queuedCount > 1) {
+            stopMessage = `Stopping agent generation and clearing ${queuedCount} queued runs...`;
+        }
+        toastr.info(stopMessage);
         return true;
     }
 

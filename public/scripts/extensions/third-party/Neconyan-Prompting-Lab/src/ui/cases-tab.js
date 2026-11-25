@@ -237,7 +237,9 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
                                 await storage.saveCase({ ...testCase, tags: [...testCase.tags, tag] });
                             }
                         }
-                        status.textContent = `Tagged ${chosenCases.length} test case${chosenCases.length === 1 ? '' : 's'} with "${tag}".`;
+                        status.textContent = chosenCases.length === 1
+                            ? `Tagged ${chosenCases.length} test case with "${tag}".`
+                            : `Tagged ${chosenCases.length} test cases with "${tag}".`;
                         await reload();
                     } finally {
                         task.release();
@@ -253,7 +255,9 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
                         }
                         selected.clear();
                         editing = null;
-                        status.textContent = `Deleted ${count} test case${count === 1 ? '' : 's'}, along with their saved runs.`;
+                        status.textContent = count === 1
+                            ? `Deleted ${count} test case, along with their saved runs.`
+                            : `Deleted ${count} test cases, along with their saved runs.`;
                         await reload();
                     } finally {
                         task.release();
@@ -281,7 +285,9 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
             await storage.updateSuite(suiteId, (suite) => {
                 suite.caseIds.push(...ids.filter(id => !suite.caseIds.includes(id)));
             });
-            status.textContent = `Duplicated ${sourceCases.length} test case${sourceCases.length === 1 ? '' : 's'}.`;
+            status.textContent = sourceCases.length === 1
+                ? `Duplicated ${sourceCases.length} test case.`
+                : `Duplicated ${sourceCases.length} test cases.`;
             await reload();
         } finally {
             task.release();

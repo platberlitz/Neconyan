@@ -658,9 +658,13 @@ export function recommendAgents(answers, context = {}) {
     const remainingExtraRequests = Math.max(0, extraRequestLimit - activeExtraCount);
 
     if (normalized.budget === 'free' && activeExtraCount > 0) {
-        notes.push(`You already have ${activeExtraCount} extra-request agent${activeExtraCount === 1 ? '' : 's'} switched on. This pass adds none and does not switch them off.`);
+        notes.push(activeExtraCount === 1
+            ? `You already have ${activeExtraCount} extra-request agent switched on. This pass adds none and does not switch them off.`
+            : `You already have ${activeExtraCount} extra-request agents switched on. This pass adds none and does not switch them off.`);
     } else if (normalized.budget === 'light' && activeExtraCount >= extraRequestLimit) {
-        notes.push(`You already have ${activeExtraCount} extra-request agent${activeExtraCount === 1 ? '' : 's'} switched on, so the two this budget describes are in use. Taro does not switch any of them off.`);
+        notes.push(activeExtraCount === 1
+            ? `You already have ${activeExtraCount} extra-request agent switched on, so the two this budget describes are in use. Taro does not switch any of them off.`
+            : `You already have ${activeExtraCount} extra-request agents switched on, so the two this budget describes are in use. Taro does not switch any of them off.`);
     }
     if (selectedStyles.has('roleplay')) {
         notes.push('Roleplay needs no extra agent on its own. The rest of these answers decide what else is worth adding.');

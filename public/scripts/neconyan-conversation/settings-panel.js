@@ -537,7 +537,9 @@ export function renderConversationMemoryPanel() {
 
     if (meta instanceof HTMLElement) {
         const branchName = branch?.name || 'Current branch';
-        meta.textContent = `Persistent for this Conversation · ${branchName} has ${messageCount} message${messageCount === 1 ? '' : 's'} · summarized through ${summarizedCount}`;
+        meta.textContent = messageCount === 1
+            ? `Persistent for this Conversation · ${branchName} has ${messageCount} message · summarized through ${summarizedCount}`
+            : `Persistent for this Conversation · ${branchName} has ${messageCount} messages · summarized through ${summarizedCount}`;
     }
 }
 

@@ -583,5 +583,8 @@
   "scoped.story_mode.word_count_one": "${0} word",
   "scoped.story_mode.word_count_many": "${0} words",
   "scoped.hopper.timeline_default": "Timeline",
-  "scoped.hopper.timeline_numbered": "Timeline ${0}"
+  "scoped.hopper.timeline_numbered": "Timeline ${0}",
+  "scoped.pathfinder.stage_entry_one": "${0} entry",
+  "scoped.pathfinder.stage_entry_many": "${0} entries",
+  "scoped.pathfinder.stage_label": "stage ${0}"
 }

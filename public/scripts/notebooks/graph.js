@@ -142,7 +142,13 @@ export function createGraphView(app, container) {
             .filter(node => NODE_ID.test(node?.id) && typeof node.title === 'string' && typeof node.path === 'string');
         const ids = new Set(nodes.map(node => node.id));
         const edges = (Array.isArray(result.edges) ? result.edges : []).slice(0, 1200).filter(edge => ids.has(edge?.source) && ids.has(edge?.target));
-        output.append(h('p', { class: 'notes-hint notes-graph-summary', role: 'status', text: `Showing ${nodes.length} of ${result.total} notes, with ${edges.length} connection${edges.length === 1 ? '' : 's'}.` }));
+        output.append(h('p', {
+            class: 'notes-hint notes-graph-summary',
+            role: 'status',
+            text: edges.length === 1
+                ? `Showing ${nodes.length} of ${result.total} notes, with ${edges.length} connection.`
+                : `Showing ${nodes.length} of ${result.total} notes, with ${edges.length} connections.`,
+        }));
         if (result.truncated?.nodes || result.truncated?.edges) output.append(h('p', { class: 'notes-notice', text: 'This graph is limited in size. Use the folder or tag filters to show a smaller part of the notebook.' }));
         if (!nodes.length) {
             output.append(h('p', { class: 'notes-hint', text: 'No notes match these filters. Clear the filters or make a new note.' }));

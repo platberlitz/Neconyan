@@ -12,6 +12,11 @@ const readJson = file => JSON.parse(readFileSync(new URL(`../public/locales/${fi
 const LANGUAGES = ['pt-pt', 'it-it', 'de-de'];
 const NANO_REASONING_SCOPED_KEY = 'scoped.nanogpt.reasoning.unavailable';
 const SCRATCHPAD_HISTORY_SCOPED_KEY = 'scoped.scratchpad.HIS-01';
+const PATHFINDER_SCOPED_KEYS = [
+    'scoped.pathfinder.stage_entry_one',
+    'scoped.pathfinder.stage_entry_many',
+    'scoped.pathfinder.stage_label',
+];
 const STORY_MODE_WORD_COUNT_KEYS = ['scoped.story_mode.word_count_one', 'scoped.story_mode.word_count_many'];
 const HOPPER_TIMELINE_KEYS = ['scoped.hopper.timeline_default', 'scoped.hopper.timeline_numbered'];
 const EXTRA_SCOPED_KEYS = [
@@ -24,6 +29,7 @@ const EXTRA_SCOPED_KEYS = [
     'scoped.action.change',
     ...STORY_MODE_WORD_COUNT_KEYS,
     ...HOPPER_TIMELINE_KEYS,
+    ...PATHFINDER_SCOPED_KEYS,
 ];
 const ALL_LOCALES = readJson('lang.json').filter(entry => entry.lang !== 'en').map(entry => entry.lang);
 const catalogue = readJson('neconyan/en.json');
@@ -87,6 +93,9 @@ test('every real scoped key is a catalogued image choice or an explicit collisio
     assert.equal(catalogue['scoped.story_mode.word_count_many'], '${0} words');
     assert.equal(catalogue['scoped.hopper.timeline_default'], 'Timeline');
     assert.equal(catalogue['scoped.hopper.timeline_numbered'], 'Timeline ${0}');
+    assert.equal(catalogue['scoped.pathfinder.stage_entry_one'], '${0} entry');
+    assert.equal(catalogue['scoped.pathfinder.stage_entry_many'], '${0} entries');
+    assert.equal(catalogue['scoped.pathfinder.stage_label'], 'stage ${0}');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -203,6 +212,36 @@ test('tableForKey sends a scoped key to the scoped table and every other key to 
     assert.equal(tableForKey('scoped.x', dictionary, undefined), undefined);
     assert.equal(tableForKey('Open', undefined, scoped), undefined);
     assert.equal(tableForKey('scoped.x', undefined, undefined), undefined);
+});
+
+test('all 17 supplements translate Pawthfinder stage scoped keys without leaking bare entry counts into dictionary', () => {
+    const shipped = readdirSync(new URL('../public/locales/neconyan', import.meta.url))
+        .filter(name => name.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(name))
+        .map(name => name.slice(0, -'.json'.length))
+        .sort();
+    assert.equal(shipped.length, 17);
+    for (const language of shipped) {
+        let base = {};
+        try {
+            base = readJson(`${language}.json`);
+        } catch {
+            base = {};
+        }
+        const supplement = readJson(`neconyan/${language}.json`);
+        const { dictionary, scoped } = assembleLocaleData({ base, supplement, catalogue });
+        for (const key of PATHFINDER_SCOPED_KEYS) {
+            assert.equal(typeof scoped[key], 'string', `${language}: missing ${key} in scoped`);
+            assert.ok(!Object.hasOwn(dictionary, key), `${language}: ${key} leaked into dictionary`);
+            assert.ok(!Object.hasOwn(dictionary, catalogue[key]), `${language}: English alias ${catalogue[key]} leaked into dictionary`);
+        }
+    }
+    const { dictionary: trDict, scoped: trScoped } = assembleLocaleData({
+        base: readJson('tr-tr.json'),
+        supplement: readJson('neconyan/tr-tr.json'),
+        catalogue,
+    });
+    assert.equal(trScoped['scoped.pathfinder.stage_entry_many'], '${0} girdi');
+    assert.equal(localizeString('2 entries', trDict), '2 entries');
 });
 
 test('Story Mode word-count and Hopper timeline scoped keys stay isolated across all 17 supplements', () => {

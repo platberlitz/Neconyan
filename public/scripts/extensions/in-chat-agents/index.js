@@ -7589,7 +7589,10 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
         const count = ids.length;
         if (count === 0) return;
         const isCurrent = captureAgentSaveGuard(ids);
-        const result = await new Popup(`Delete ${count} selected agent${count !== 1 ? 's' : ''}?`, POPUP_TYPE.CONFIRM).show();
+        const result = await new Popup(
+            count === 1 ? `Delete ${count} selected agent?` : `Delete ${count} selected agents?`,
+            POPUP_TYPE.CONFIRM,
+        ).show();
         if (result === POPUP_RESULT.AFFIRMATIVE) {
             if (!isCurrent()) throw new Error('The selected agents changed. Reopen the deletion confirmation.');
             await deleteAgentBatch(ids);
@@ -7779,7 +7782,9 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
             return;
         }
         const result = await new Popup(
-            `Reset ${bundledCount} bundled agent${bundledCount !== 1 ? 's' : ''} to their original template defaults? Their connection profiles and agent-specific settings will be kept.`,
+            bundledCount === 1
+                ? `Reset ${bundledCount} bundled agent to their original template defaults? Their connection profiles and agent-specific settings will be kept.`
+                : `Reset ${bundledCount} bundled agents to their original template defaults? Their connection profiles and agent-specific settings will be kept.`,
             POPUP_TYPE.CONFIRM,
         ).show();
         if (result !== POPUP_RESULT.AFFIRMATIVE) return;
@@ -7800,7 +7805,9 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
             persistExtensionState();
         }
         await refreshSavedAgents(changes.map(agent => agent.id));
-        toastr.success(`Reset ${changes.length} bundled agent${changes.length !== 1 ? 's' : ''} to defaults.`);
+        toastr.success(changes.length === 1
+            ? `Reset ${changes.length} bundled agent to defaults.`
+            : `Reset ${changes.length} bundled agents to defaults.`);
     }));
     // Refresh profiles when chat changes (profiles may have been added/removed)
     const refreshProfileUi = () => {

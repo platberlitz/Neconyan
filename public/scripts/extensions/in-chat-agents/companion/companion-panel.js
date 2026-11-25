@@ -1224,10 +1224,15 @@ function buildPanelRunButtonsHtml(states = []) {
     const automaticCount = getAutomaticCompanionAgents(getLatestAssistantCompanionMessageIndex()).length;
     const retryIndex = getLatestCompanionResultsMessageIndex();
     const retryCount = getRetryableCompanionAgents(retryIndex).length;
-    const automaticTitle = automaticCount > 0
-        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the latest reply`
-        : 'No automatic companions are ready to run on the latest reply';
-    const retryTitle = `Run the ${retryCount} companion${retryCount === 1 ? '' : 's'} that failed on message #${retryIndex} again`;
+    let automaticTitle = 'No automatic companions are ready to run on the latest reply';
+    if (automaticCount === 1) {
+        automaticTitle = `Run the ${automaticCount} automatic companion on the latest reply`;
+    } else if (automaticCount > 1) {
+        automaticTitle = `Run the ${automaticCount} automatic companions on the latest reply`;
+    }
+    const retryTitle = retryCount === 1
+        ? `Run the ${retryCount} companion that failed on message #${retryIndex} again`
+        : `Run the ${retryCount} companions that failed on message #${retryIndex} again`;
 
     return `
         <div class="ica--tpanel-run" role="group" aria-label="Run companions">
@@ -1800,7 +1805,9 @@ async function handlePanelAction(event) {
                     ? t`1 companion failed again. Check your connection, then try again.`
                     : t`${failedAgain} companions failed again. Check your connection, then try again.`);
             } else {
-                toastr.success(`Retried ${results.length} companion${results.length === 1 ? '' : 's'}.`);
+                toastr.success(results.length === 1
+                    ? `Retried ${results.length} companion.`
+                    : `Retried ${results.length} companions.`);
             }
         } finally {
             button.prop('disabled', false);

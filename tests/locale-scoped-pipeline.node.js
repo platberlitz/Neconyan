@@ -110,7 +110,7 @@ test('the real tree no longer collects the four scoped English texts, and still 
     const keys = new Set(JSON.parse(run.stdout));
     const catalogue = JSON.parse(readFileSync(join(root, 'public/locales/neconyan/en.json'), 'utf8'));
     const scoped = Object.entries(catalogue).filter(([key]) => key.startsWith('scoped.'));
-    assert.equal(scoped.length, 62);
+    assert.equal(scoped.length, 65);
     for (const [key, english] of scoped) {
         assert.ok(keys.has(key), `scoped key not collected: ${key}`);
         // Collision-isolated labels deliberately share English text with another exact key; all other scoped labels must not appear as exact keys.
@@ -154,8 +154,8 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         assert.equal(written.status, 0, written.stderr);
         const catalogue = JSON.parse(readFileSync(join(scratch, 'public', 'locales', 'neconyan', 'en.json'), 'utf8'));
         const scopedKeys = Object.keys(catalogue).filter(key => key.startsWith('scoped.'));
-        // E1's seven plus 44 review-dialog keys (E2-D 43 and CNV-28), Nano reasoning, Scratchpad Change history, 5 collision-isolated labels, Story Mode word counts, and Hopper default timelines.
-        assert.equal(scopedKeys.length, 62, 'the freshly written catalogue holds 51 image keys, Nano reasoning, Scratchpad Change history, 5 collision-isolated labels, Story Mode word counts, and Hopper default timelines');
+        // E1's seven plus 44 review-dialog keys (E2-D 43 and CNV-28), Nano reasoning, Scratchpad Change history, 5 collision-isolated labels, Story Mode word counts, Hopper default timelines, and 3 Pawthfinder stage-summary keys.
+        assert.equal(scopedKeys.length, 65, 'the freshly written catalogue holds 51 image keys, Nano reasoning, Scratchpad Change history, 5 collision-isolated labels, Story Mode word counts, Hopper default timelines, and 3 Pawthfinder stage-summary keys');
 
         // 2b. The scratch copies of the pt-pt files may already hold translated scoped entries (the real ones, once they are translated).
         //     Remove them from the scratch copies only, so the fill below makes them and the exact XX: checks stay; keep what else the
@@ -189,7 +189,7 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         const base = read('pt-pt.json');
         const { dictionary, scoped } = assembleLocaleData({ base, supplement, catalogue: filledCatalogue });
         const scopedEntries = Object.entries(filledCatalogue).filter(([key]) => key.startsWith('scoped.'));
-        assert.equal(scopedEntries.length, 62);
+        assert.equal(scopedEntries.length, 65);
         // An entry that held a translation keeps it. An empty entry counts as not translated yet, and the fill is meant to complete it.
         const translatedBeforeFill = Object.entries(supplementBeforeFill).filter(([, value]) => value !== '');
         assert.ok(translatedBeforeFill.length > 0, 'the supplement held no translation before the fill, so the check below would prove nothing');

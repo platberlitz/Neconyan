@@ -1227,7 +1227,9 @@ export function renderSettings() {
             importReport.append(el('span', undefined, result.error));
         } else {
             const imported = result.imported ?? [];
-            importReport.append(el('strong', undefined, `Imported ${imported.length} profile${imported.length === 1 ? '' : 's'}.`));
+            importReport.append(el('strong', undefined, imported.length === 1
+                ? `Imported ${imported.length} profile.`
+                : `Imported ${imported.length} profiles.`));
             if (imported.length) {
                 importReport.append(el('span', undefined, imported.map(name => `“${name}”`).join(', ')));
             }

@@ -210,6 +210,26 @@ describe('Token footprint', () => {
         expect(over).toMatchObject({ total: 440, overBudget: true, nearBudget: false });
         expect(tokenFootprintTitle(over)).toBe('Always active: ~440 tokens across 2 always-active entries of the 100 World Info budget (440%) - over budget! Click to inspect.');
     });
+
+    test('formats singular and 12-entry token footprint titles across budget states', () => {
+        const single = [{ uid: '0', title: 'One', tokens: 20 }];
+        const twelve = Array.from({ length: 12 }, (_, idx) => ({ uid: String(idx), title: `E${idx}`, tokens: 20 }));
+
+        expect(tokenFootprintTitle({ items: single, total: 20, budget: null, usage: null, overBudget: false }))
+            .toBe('Always active: ~20 tokens across 1 always-active entry. Click to inspect.');
+        expect(tokenFootprintTitle({ items: twelve, total: 240, budget: null, usage: null, overBudget: false }))
+            .toBe('Always active: ~240 tokens across 12 always-active entries. Click to inspect.');
+
+        expect(tokenFootprintTitle({ items: single, total: 20, budget: 1000, usage: 0.02, overBudget: false }))
+            .toBe('Always active: ~20 tokens across 1 always-active entry of the 1k World Info budget (2%). Click to inspect.');
+        expect(tokenFootprintTitle({ items: twelve, total: 240, budget: 1000, usage: 0.24, overBudget: false }))
+            .toBe('Always active: ~240 tokens across 12 always-active entries of the 1k World Info budget (24%). Click to inspect.');
+
+        expect(tokenFootprintTitle({ items: single, total: 20, budget: 10, usage: 2, overBudget: true }))
+            .toBe('Always active: ~20 tokens across 1 always-active entry of the 10 World Info budget (200%) - over budget! Click to inspect.');
+        expect(tokenFootprintTitle({ items: twelve, total: 240, budget: 200, usage: 1.2, overBudget: true }))
+            .toBe('Always active: ~240 tokens across 12 always-active entries of the 200 World Info budget (120%) - over budget! Click to inspect.');
+    });
 });
 
 describe('Health check choices in project files', () => {

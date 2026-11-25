@@ -193,7 +193,9 @@ export function registerCommands() {
                         state[prop] = {};
                     }
                     touchChatState();
-                    return `Cleared ${cleared} stored value${cleared === 1 ? '' : 's'} in this chat.`;
+                    return cleared === 1
+                        ? `Cleared ${cleared} stored value in this chat.`
+                        : `Cleared ${cleared} stored values in this chat.`;
                 }
                 const key = String(named?.key ?? unnamed ?? '').trim();
                 if (!key) {

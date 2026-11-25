@@ -1,0 +1,1 @@
+Non-English tooltips, **Pawthfinder** diagnostics, and extension status messages across **Lorebook**, **In-Chat Agents**, and core tools now use complete singular and plural translations instead of mixed English suffixes.

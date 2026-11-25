@@ -288,11 +288,15 @@ export class EnhancedMacroAutoCompleteOption extends AutoCompleteOption {
 
             if (listItemCount < listMin) {
                 const needed = listMin - listItemCount;
-                return `Not enough list items yet: this macro requires at least ${listMin} item${listMin === 1 ? '' : 's'}, but only ${listItemCount} provided. Add ${needed} more.`;
+                return listMin === 1
+                    ? `Not enough list items yet: this macro requires at least ${listMin} item, but only ${listItemCount} provided. Add ${needed} more.`
+                    : `Not enough list items yet: this macro requires at least ${listMin} items, but only ${listItemCount} provided. Add ${needed} more.`;
             }
 
             if (listMax !== null && listItemCount > listMax) {
-                return `Too many list items: this macro accepts at most ${listMax} item${listMax === 1 ? '' : 's'}, but ${listItemCount} provided.`;
+                return listMax === 1
+                    ? `Too many list items: this macro accepts at most ${listMax} item, but ${listItemCount} provided.`
+                    : `Too many list items: this macro accepts at most ${listMax} items, but ${listItemCount} provided.`;
             }
         }
 
@@ -1305,8 +1309,14 @@ export class MacroClosingTagAutoCompleteOption extends AutoCompleteOption {
         // Description
         const desc = document.createElement('p');
         if (this.#isOptional) {
-            const nestingInfo = this.#nestingLevel > 0 ? ` This scope is nested ${this.#nestingLevel} level${this.#nestingLevel > 1 ? 's' : ''} deep.` : '';
-            desc.textContent = `Optionally inserts the closing tag {{/${this.#macroName}}}. The scoped content for this macro is optional - you can close it or leave it open.${nestingInfo}`;
+            desc.textContent = `Optionally inserts the closing tag {{/${this.#macroName}}}. The scoped content for this macro is optional - you can close it or leave it open.`;
+            if (this.#nestingLevel > 0) {
+                const nestingSpan = document.createElement('span');
+                nestingSpan.textContent = this.#nestingLevel === 1
+                    ? `This scope is nested ${this.#nestingLevel} level deep.`
+                    : `This scope is nested ${this.#nestingLevel} levels deep.`;
+                desc.append(document.createTextNode(' '), nestingSpan);
+            }
         } else {
             desc.textContent = `Inserts the closing tag {{/${this.#macroName}}} to complete the scoped macro. The content between the opening and closing tags will be passed as the last argument.`;
         }

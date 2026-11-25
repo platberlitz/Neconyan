@@ -140,7 +140,9 @@ export function renderCreatorPurrks(workspace, main) {
         }, true);
         if (!changed) return;
         workspace.status(added
-            ? `Extracted ${added} Purrk${added === 1 ? '' : 's'} from the card. Extracted Purrks start switched off; turn on the ones you want.`
+            ? (added === 1
+                ? `Extracted ${added} Purrk from the card. Extracted Purrks start switched off; turn on the ones you want.`
+                : `Extracted ${added} Purrks from the card. Extracted Purrks start switched off; turn on the ones you want.`)
             : 'Nothing new to extract: those Purrks are already on this card, or it has reached the limit.');
     });
     extractBtn.disabled = atLimit;
@@ -160,7 +162,9 @@ export function renderCreatorPurrks(workspace, main) {
         }, true);
         if (!changed) return;
         workspace.status(added
-            ? `Added ${added} AI-generated Purrk${added === 1 ? '' : 's'} to the draft. Undo removes them.`
+            ? (added === 1
+                ? `Added ${added} AI-generated Purrk to the draft. Undo removes them.`
+                : `Added ${added} AI-generated Purrks to the draft. Undo removes them.`)
             : `This card already has ${MAX_PURRKS_PER_CARD} Purrks, so nothing was added.`);
     }).finally(() => workspace.render()), true);
     aiGenerateBtn.disabled = atLimit || Boolean(workspace.busy);
