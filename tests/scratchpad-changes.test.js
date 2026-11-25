@@ -310,7 +310,7 @@ describe('Scratchpad reviewed saves', () => {
         const prepare = jest.fn(async () => ({ before: 'Old.', after: 'New.', editable: false, commit }));
         const errors = [];
         const popup = jest.fn(async () => { app.queue = queued; return 1; });
-        const runtime = vm.createContext({ app, prepareChange: prepare, currentSettings: () => ({ include: { card: shared } }),
+        const runtime = vm.createContext({ app, prepareChange: prepare, currentSettings: () => ({ include: { card: shared } }), generalLorebooks: () => [],
             sameChat: () => true, requireScope() {}, reportError: error => errors.push(error.message),
             h: () => ({}), changeDiff: () => ({}), callGenericPopup: popup, POPUP_TYPE: { CONFIRM: 1 }, POPUP_RESULT: { AFFIRMATIVE: 1 },
             committedChanges: new Set(), toastr: { success: jest.fn() }, markChange: async () => true,
@@ -348,6 +348,60 @@ describe('Scratchpad reviewed saves', () => {
         const plan = await prepareChange({ type: 'lorebook', action: 'edit', book: 'Garden', uid: 0, content: 'New lore.' }, general, { sharedLorebook: 'Garden' });
         await plan.commit(plan.after);
         expect(saveWorldInfo.mock.calls[0][1].entries[0].content).toBe('New lore.');
+    });
+
+    test('General saves changes to any shared lorebook and refuses the rest', async () => {
+        const { world_names } = await import('../public/scripts/world-info.js');
+        world_names.push('Harbour', 'Vault');
+        try {
+            const general = { kind: 'general', key: 'general', avatar: selectedAvatar };
+            const sharedLorebooks = ['Harbour', 'Garden'];
+            for (const name of sharedLorebooks) {
+                const plan = await prepareChange({ type: 'lorebook', action: 'edit', book: name, uid: 0, content: `${name} lore.` }, general, { sharedLorebooks });
+                await plan.commit(plan.after);
+            }
+            expect(saveWorldInfo.mock.calls.map(([name, data]) => [name, data.entries[0].content])).toEqual([['Harbour', 'Harbour lore.'], ['Garden', 'Garden lore.']]);
+            loadWorldInfo.mockClear();
+            await expect(prepareChange({ type: 'lorebook', action: 'edit', book: 'Vault', uid: 0, content: 'New.' }, general, { sharedLorebooks })).rejects.toThrow('Share that lorebook under Context');
+            await expect(prepareChange({ type: 'lorebook', action: 'edit', book: 'Garden', uid: 0, content: 'New.' }, general, { sharedLorebooks: [], sharedLorebook: 'Garden' })).rejects.toThrow('Share that lorebook under Context');
+            expect(loadWorldInfo).not.toHaveBeenCalled();
+            const legacy = await prepareChange({ type: 'lorebook', action: 'edit', book: 'Garden', uid: 0, content: 'Legacy lore.' }, general, { sharedLorebook: 'Garden' });
+            await legacy.commit(legacy.after);
+            expect(saveWorldInfo).toHaveBeenLastCalledWith('Garden', expect.objectContaining({ entries: expect.objectContaining({ 0: expect.objectContaining({ content: 'Legacy lore.' }) }) }), expect.anything());
+        } finally {
+            world_names.splice(world_names.indexOf('Harbour'), 2);
+        }
+    });
+
+    test('General refuses to save to a lorebook removed after review, and keeps saving to the other one', async () => {
+        const { world_names } = await import('../public/scripts/world-info.js');
+        world_names.push('Harbour');
+        try {
+            const contextSource = fs.readFileSync(new URL('../public/scripts/scratchpad/context.js', import.meta.url), 'utf8');
+            let settings = { include: {}, lorebook: 'Harbour', lorebooks: ['Harbour', 'Garden'] };
+            const general = { kind: 'general', key: 'general', avatar: selectedAvatar };
+            const runtime = vm.createContext({ app: { source: general, queue: Promise.resolve() }, prepareChange, currentSettings: () => settings,
+                sameChat: () => true, requireScope() {}, wireSource: value => value, applyBucket() {}, personaGuard() {}, imageGuard() {},
+                t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
+            });
+            vm.runInContext(contextSource.match(/^export function generalLorebooks\([\s\S]*?^}/m)[0].replace(/^export /, ''), runtime);
+            for (const name of ['prepareReviewPlan', 'commitReviewPlan']) {
+                vm.runInContext(panelSource.match(new RegExp(`^async function ${name}\\([\\s\\S]*?^}`, 'm'))[0], runtime);
+            }
+            const part = name => ({ index: 0, change: { type: 'lorebook', action: 'edit', book: name, uid: 0, content: `${name} lore.` } });
+            const session = { id: 'session' };
+            const message = { id: 'message' };
+            const harbour = await runtime.prepareReviewPlan(general, session, message, part('Harbour'));
+            const garden = await runtime.prepareReviewPlan(general, session, message, part('Garden'));
+            settings = { ...settings, lorebook: 'Garden', lorebooks: ['Garden'] };
+            await expect(runtime.commitReviewPlan(general, session, part('Harbour'), harbour, harbour.after)).rejects.toThrow('Share that lorebook in Scratchpad');
+            expect(saveWorldInfo).not.toHaveBeenCalled();
+            await runtime.commitReviewPlan(general, session, part('Garden'), garden, garden.after);
+            expect(saveWorldInfo.mock.calls.map(([name, data]) => [name, data.entries[0].content])).toEqual([['Garden', 'Garden lore.']]);
+            await expect(runtime.prepareReviewPlan(general, session, message, part('Harbour'))).rejects.toThrow('Share that lorebook under Context');
+        } finally {
+            world_names.splice(world_names.indexOf('Harbour'), 1);
+        }
     });
 
     test('General permits new-character creation only after review approval', async () => {

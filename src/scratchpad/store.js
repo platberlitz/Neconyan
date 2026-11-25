@@ -35,6 +35,8 @@ export const MAX_NAME_LENGTH = 80;
 export const MAX_PICKED = 400;
 export const MAX_NOTE_REFERENCES = 12;
 export const MAX_LORE_OVERRIDES = 1000;
+export const MAX_GENERAL_LOREBOOKS = 8;
+export const MAX_LOREBOOK_NAME_LENGTH = 300;
 export const MIN_MAX_TOKENS = 64;
 export const MAX_MAX_TOKENS = 32000;
 export const DEFAULT_MAX_TOKENS = 32000;
@@ -195,7 +197,18 @@ export function defaultSettings() {
         readLinks: false,
         autoSummary: false,
         lorebook: '',
+        lorebooks: [],
     };
+}
+
+/** General Scratchpad lorebooks shared by hand: unique trimmed names, at most MAX_GENERAL_LOREBOOKS. */
+export function normaliseLorebooks(value) {
+    if (!Array.isArray(value) || value.some(name => typeof name !== 'string' || name.length > MAX_LOREBOOK_NAME_LENGTH)) {
+        throw fail('SCRATCHPAD_LOREBOOK_INVALID', 'Choose lorebooks to share, or none.');
+    }
+    const books = [...new Set(value.map(name => name.trim()).filter(Boolean))];
+    if (books.length > MAX_GENERAL_LOREBOOKS) throw fail('SCRATCHPAD_LOREBOOK_INVALID', `Share up to ${MAX_GENERAL_LOREBOOKS} lorebooks by hand.`);
+    return books;
 }
 
 export function normaliseSettings(input, previous = defaultSettings(), { allowInternalKeys = false } = {}) {
@@ -273,11 +286,15 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
     if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
     if (typeof source.readLinks === 'boolean') settings.readLinks = source.readLinks;
     if (typeof source.autoSummary === 'boolean') settings.autoSummary = source.autoSummary;
-    settings.lorebook ??= '';
-    if (source.lorebook !== undefined) {
-        if (typeof source.lorebook !== 'string' || source.lorebook.length > 300) throw fail('SCRATCHPAD_LOREBOOK_INVALID', 'Choose a lorebook to share, or none.');
-        settings.lorebook = source.lorebook.trim();
+    settings.lorebooks = Array.isArray(settings.lorebooks) ? normaliseLorebooks(settings.lorebooks) : normaliseLorebooks([settings.lorebook].filter(Boolean));
+    if (source.lorebooks !== undefined) settings.lorebooks = normaliseLorebooks(source.lorebooks);
+    else if (source.lorebook !== undefined) {
+        if (typeof source.lorebook !== 'string' || source.lorebook.length > MAX_LOREBOOK_NAME_LENGTH) throw fail('SCRATCHPAD_LOREBOOK_INVALID', 'Choose a lorebook to share, or none.');
+        const book = source.lorebook.trim();
+        settings.lorebooks = book ? [book] : [];
     }
+    // The single name stays as a mirror of the first shared book for older callers.
+    settings.lorebook = settings.lorebooks[0] || '';
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
         for (const assistant of Object.keys(source.assistantPrompts).filter(isAssistantId).slice(0, 27)) {
@@ -758,7 +775,7 @@ export function createSession(bucket, input = {}, { inheritSettings = true } = {
     const assistant = normaliseAssistant(input.assistant);
     const previous = inheritSettings ? bucket.sessions.find(item => item.id === bucket.activeSessionId) : null;
     const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
-    const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], pickedSource: null, lorebook: '', notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
+    const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], pickedSource: null, lorebook: '', lorebooks: [], notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
     const session = {
         id: newScratchpadId(),
         name: name || nextName(bucket, assistant, undefined, settings),
@@ -1027,7 +1044,7 @@ export function publicBucket(bucket) {
         cleanup: bucket.cleanup ?? defaultCleanup(),
         sessions: bucket.sessions,
         changeHistory: bucket.changeHistory ?? [],
-        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, inputBytes: MAX_INPUT_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
+        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, inputBytes: MAX_INPUT_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES, lorebooks: MAX_GENERAL_LOREBOOKS },
     };
 }
 

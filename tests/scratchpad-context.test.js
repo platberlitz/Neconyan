@@ -75,7 +75,7 @@ const presetSnapshot = {
 const readCurrentPreset = jest.fn(() => presetSnapshot);
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentLimits: () => ({ contextSize: 4096, replyLength: 256 }), currentPresetName: () => presetSnapshot.name }));
 
-const { buildContext, clearHomePersonaChoice, collectLore, currentSource, formatPreset, isCurrentSource, noteHomePersonaChoice, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, clearHomePersonaChoice, collectLore, currentSource, formatPreset, generalLorebooks, isCurrentSource, noteHomePersonaChoice, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -554,6 +554,45 @@ describe('General Scratchpad context', () => {
         expect(none.capabilities.lore).toBe(false);
         expect(none.text).not.toContain('## Lorebooks');
         expect(loadWorldInfo).not.toHaveBeenCalled();
+    });
+
+    test('generalLorebooks lists each hand-shared book once, falling back to the single pick', () => {
+        home.visible = true;
+        const source = currentSource();
+        expect(generalLorebooks(source, { lorebooks: [' Harbour ', 'Garden', 'Harbour', '', 7], lorebook: 'Vault' })).toEqual(['Harbour', 'Garden']);
+        expect(generalLorebooks(source, { lorebook: ' Harbour ' })).toEqual(['Harbour']);
+        expect(generalLorebooks(source, { lorebooks: [], lorebook: '' })).toEqual([]);
+        expect(generalLorebooks(source, {})).toEqual([]);
+        expect(generalLorebooks({ kind: 'roleplay' }, { lorebooks: ['Harbour'], lorebook: 'Harbour' })).toEqual([]);
+    });
+
+    test('Home shares several hand-picked lorebooks, still without hidden entries', async () => {
+        home.visible = true;
+        chat.push({ name: 'Roleplay', mes: 'HIDDEN-STORY about the lighthouse' });
+        books.set('Harbour', { entries: {
+            0: { uid: 0, comment: 'Quay', key: ['quay'], constant: true, content: 'The quay is busy.' },
+            1: { uid: 1, comment: 'Secret', key: ['quay'], constant: true, agentBlacklisted: true, content: 'HIDDEN-HARBOUR' },
+        } });
+        books.set('Garden', { entries: {
+            0: { uid: 0, comment: 'Roses', key: ['roses'], constant: true, content: 'The roses are red.' },
+            1: { uid: 1, comment: 'Shed', key: ['shed'], constant: true, agentBlacklisted: true, content: 'HIDDEN-GARDEN' },
+            2: { uid: 2, comment: 'Pond', key: ['pond'], constant: true, disable: true, content: 'HIDDEN-DISABLED' },
+        } });
+        books.set('Vault', { entries: { 0: { uid: 0, comment: 'Gold', key: ['gold'], constant: true, content: 'HIDDEN-UNSHARED' } } });
+        const source = currentSource();
+        const picked = { ...settings, lorebook: 'Harbour', lorebooks: ['Harbour', 'Garden'], include: { ...settings.include, lore: false } };
+        const result = await buildContext({ source, settings: picked });
+        expect(loadWorldInfo.mock.calls).toEqual([['Harbour'], ['Garden']]);
+        expect(result.capabilities).toMatchObject({ lore: true, chat: false });
+        expect(result.lore.books).toEqual(['Harbour', 'Garden']);
+        expect(result.text).toContain('2 lorebooks were shared by hand for this session. They and any selected character card are reference material, not a live story.');
+        expect(result.text).not.toContain('One lorebook was shared by hand');
+        expect(result.text).toContain('## Lorebooks\nLorebooks shared by hand for this session: Harbour, Garden');
+        expect(result.text).toContain('The quay is busy.');
+        expect(result.text).toContain('The roses are red.');
+        expect(result.text).not.toMatch(/HIDDEN-|Chat lore|Global lore/);
+        const lore = await collectLore({ source, settings: picked });
+        expect(lore.entries.map(entry => [entry.world, entry.uid])).toEqual([['Harbour', 0], ['Garden', 0]]);
     });
 
     test('plain no-chat and unselected Conversation never borrow the underlying Roleplay card', async () => {

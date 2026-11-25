@@ -791,6 +791,81 @@ test('a hand-picked lorebook is shared in General for that session only', async 
     }
 });
 
+test('General shares up to eight hand-picked lorebooks, migrating the single pick', async t => {
+    assert.deepEqual(store.defaultSettings().lorebooks, []);
+    assert.equal(store.MAX_GENERAL_LOREBOOKS, 8);
+    assert.deepEqual(store.normaliseLorebooks([' Harbour ', 'Garden', 'Harbour', '', '  ']), ['Harbour', 'Garden']);
+    for (const value of ['Harbour', [7], ['x'.repeat(301)], null]) assert.throws(() => store.normaliseLorebooks(value), { code: 'SCRATCHPAD_LOREBOOK_INVALID' });
+    const eight = Array.from({ length: 8 }, (_, index) => `Book ${index + 1}`);
+    assert.deepEqual(store.normaliseSettings({ lorebooks: eight }).lorebooks, eight);
+    assert.throws(() => store.normaliseSettings({ lorebooks: [...eight, 'Book 9'] }), { code: 'SCRATCHPAD_LOREBOOK_INVALID', message: /up to 8 lorebooks/ });
+    // Repeats do not count towards the limit.
+    assert.deepEqual(store.normaliseSettings({ lorebooks: [...eight, 'Book 1'] }).lorebooks, eight);
+
+    // A session saved with one picked book reads back as a list of one, and the old field mirrors the first book.
+    assert.deepEqual(store.normaliseSettings({ lorebook: ' Harbour ' }), { ...store.normaliseSettings({}), lorebook: 'Harbour', lorebooks: ['Harbour'] });
+    assert.deepEqual(store.normaliseSettings({ lorebooks: ['Garden', 'Harbour'] }).lorebook, 'Garden');
+    assert.deepEqual(store.normaliseSettings({ lorebooks: [] }, { ...store.defaultSettings(), lorebook: 'Harbour' }).lorebook, '');
+    assert.deepEqual(store.normaliseSettings({ lorebook: 'Garden' }, { ...store.defaultSettings(), lorebooks: ['Harbour', 'Vault'] }).lorebooks, ['Garden']);
+    const legacySettings = { ...store.defaultSettings(), lorebook: 'Harbour' };
+    delete legacySettings.lorebooks;
+    assert.deepEqual(store.normaliseSettings({ depth: 4 }, legacySettings).lorebooks, ['Harbour']);
+    assert.deepEqual(store.normaliseSettings({ depth: 4 }, { ...store.defaultSettings(), lorebook: 'Garden', lorebooks: ['Harbour', 'Garden'] }).lorebooks, ['Harbour', 'Garden']);
+    // Context setups travel between chats, so neither the list nor the old single pick goes with them.
+    assert.ok(!CONTEXT_SETUP_KEYS.includes('lorebook') && !CONTEXT_SETUP_KEYS.includes('lorebooks'));
+
+    const a = account(t);
+    const connection = { kind: 'profile', profileId: 'saved' };
+    const legacy = a.mutate(GENERAL, bucket => {
+        const session = store.createSession(bucket, { settings: { connection } });
+        session.settings = { ...session.settings, lorebook: 'Harbour' };
+        delete session.settings.lorebooks;
+        return session;
+    });
+    assert.deepEqual(a.read(GENERAL).sessions.find(item => item.id === legacy.id).settings.lorebooks, ['Harbour']);
+    const shared = a.mutate(GENERAL, bucket => {
+        const session = store.updateSession(bucket, legacy.id, { settings: { lorebooks: ['Harbour', 'Garden'] } });
+        session.messages.push({ id: 'a'.repeat(24), role: 'user', text: 'Hi', created: '2026-11-11T00:00:00.000Z' },
+            { id: 'b'.repeat(24), role: 'assistant', state: 'done', text: 'Yo', created: '2026-11-11T00:00:01.000Z', assistant: 'taro' });
+        return session;
+    });
+    const stored = a.read(GENERAL).sessions.find(item => item.id === shared.id).settings;
+    assert.deepEqual([stored.lorebooks, stored.lorebook], [['Harbour', 'Garden'], 'Harbour']);
+    const branch = a.mutate(GENERAL, bucket => store.branchSession(bucket, shared.id, 'b'.repeat(24))).session;
+    assert.deepEqual(branch.settings.lorebooks, ['Harbour', 'Garden']);
+    const fresh = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { connection } }));
+    assert.deepEqual([fresh.settings.lorebooks, fresh.settings.lorebook], [[], '']);
+
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'Done.' }; } });
+    const one = a.mutate(GENERAL, bucket => store.updateSession(bucket, branch.id, { settings: { lorebooks: ['Garden'] } }));
+    const two = a.read(GENERAL).sessions.find(item => item.id === shared.id);
+    for (const [session, expected] of [[two, /Kris shared 2 lorebooks by hand for this session; they are reference material/], [one, /shared one lorebook by hand/], [fresh, /no story messages or lorebooks are shared/]]) {
+        const body = sendBody(session, { source: GENERAL, capabilities: { lore: true } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.match(calls.at(-1).messages[0].content, expected);
+    }
+});
+
+test('Only General with two or more shared lorebooks changes the system prompt wording', () => {
+    const base = { assistant: 'miso', gender: 'neutral', userName: 'Kris' };
+    const plural = buildScratchpadSystemPrompt({ ...base, sourceKind: 'general', capabilities: { lore: true }, generalLoreCount: 3 }).text;
+    assert.match(plural, /Kris shared 3 lorebooks by hand for this session; they are reference material, not evidence of a live story\./);
+    assert.match(plural, /and those shared lorebooks may receive change suggestions\. Never propose story message edits here, or edits to any other lorebook\./);
+    assert.doesNotMatch(plural, /shared one lorebook by hand/);
+    // Everything else must stay exactly as it was before the count existed.
+    for (const [sourceKind, capabilities] of [['roleplay', { lore: true, chat: true }], ['conversation', { lore: true, chat: true }], ['notebook', { lore: true }], ['general', { lore: false }], ['general', { lore: true }]]) {
+        for (const customPrompt of [undefined, 'MY-CUSTOM-VOICE']) {
+            const before = buildScratchpadSystemPrompt({ ...base, sourceKind, capabilities, customPrompt }).text;
+            const counts = sourceKind === 'general' && capabilities.lore ? [0, 1] : [0, 1, 2, 8];
+            for (const generalLoreCount of counts) {
+                assert.equal(buildScratchpadSystemPrompt({ ...base, sourceKind, capabilities, customPrompt, generalLoreCount }).text, before, `${sourceKind} ${generalLoreCount}`);
+            }
+        }
+    }
+});
+
 test('a sent message offers Author\'s Note changes only while the session shares the note', async t => {
     const a = account(t);
     const calls = [];
