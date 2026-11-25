@@ -354,7 +354,7 @@
     "Window AI Model": "Modèle Window AI",
     "OpenRouter Model Sorting": "Tri des modèles OpenRouter",
     "Alphabetically": "Alphabétiquement",
-    "Price": "Prix ​​(le moins cher)",
+    "Price": "Prix (le moins cher)",
     "Context Size": "Taille du contexte",
     "Group by vendors": "Regrouper par fournisseurs",
     "Group by vendors Description": "Placez les modèles OpenAI dans un groupe, les modèles Anthropic dans un autre groupe, etc. Peut être combiné avec le tri.",

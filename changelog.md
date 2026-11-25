@@ -21,6 +21,7 @@
 - Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
 - Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
+- Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`

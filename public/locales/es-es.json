@@ -1271,7 +1271,7 @@
     "sd_refine_mode_txt": "Editar mensajes antes de la generación",
     "sd_interactive_mode": "Genera imágenes automáticamente al enviar mensajes como 'envíame una foto de gato'.",
     "sd_interactive_mode_txt": "Modo interactivo",
-    "sd_multimodal_captioning": "Utilice subtítulos multimodales para generar indicaciones para retratos de usuarios y personajes basados ​​en sus avatares.",
+    "sd_multimodal_captioning": "Utilice subtítulos multimodales para generar indicaciones para retratos de usuarios y personajes basados en sus avatares.",
     "sd_multimodal_captioning_txt": "Utilice subtítulos multimodales para retratos",
     "sd_expand": "Ampliar mensajes automáticamente utilizando el modelo de generación de texto",
     "sd_expand_txt": "Mensajes de mejora automática",

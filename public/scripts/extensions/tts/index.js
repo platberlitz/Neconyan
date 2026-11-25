@@ -11,7 +11,7 @@ import { debounce_timeout } from '../../constants.js';
 import { SlashCommandEnumValue, enumTypes } from '../../slash-commands/SlashCommandEnumValue.js';
 import { enumIcons } from '../../slash-commands/SlashCommandCommonEnumsProvider.js';
 import { POPUP_TYPE, callGenericPopup } from '../../popup.js';
-import { applyLocale, localizeMessage, t } from '/scripts/i18n.js';
+import { applyLocale, localizeMessage, t, translate } from '/scripts/i18n.js';
 import { registerExtensionCapability } from '../../neconyan-conversation/extension-capabilities.js';
 
 const UPDATE_INTERVAL = 1000;
@@ -117,6 +117,25 @@ let ttsDeferredProviderLoadStarted = false;
 
 const DEFAULT_VOICE_MARKER = '[Default Voice]';
 const DISABLED_VOICE_MARKER = 'disabled';
+const LOCALIZED_DISABLED_VOICE_LABELS = new Set(['معطّل', '已停用', 'uitgeschakeld', 'deaktiviert', 'óvirkt', 'disabilitato', '비활성화됨', 'deshabilitado', 'вимкнено', 'đã tắt']);
+
+function normalizeSavedVoiceId(voiceId, availableVoices = []) {
+    if (typeof voiceId !== 'string') {
+        return voiceId;
+    }
+    if (voiceId === DISABLED_VOICE_MARKER || voiceId === DEFAULT_VOICE_MARKER) {
+        return voiceId;
+    }
+    const hasProviderVoice = Array.isArray(availableVoices) && availableVoices.some(voice => (typeof voice === 'string' ? voice : voice?.name) === voiceId);
+    if (hasProviderVoice) {
+        return voiceId;
+    }
+    const localizedDisabled = typeof translate === 'function' ? translate(DISABLED_VOICE_MARKER) : DISABLED_VOICE_MARKER;
+    if (voiceId === localizedDisabled || LOCALIZED_DISABLED_VOICE_LABELS.has(voiceId)) {
+        return DISABLED_VOICE_MARKER;
+    }
+    return voiceId;
+}
 
 export function getPreviewString(lang) {
     const previewStrings = {
@@ -1681,8 +1700,8 @@ class VoiceMapEntry {
     addUI(voiceIds) {
         let sanitizedName = sanitizeId(this.name);
         let defaultOption = this.name === DEFAULT_VOICE_MARKER ?
-            `<option>${DISABLED_VOICE_MARKER}</option>` :
-            `<option>${DEFAULT_VOICE_MARKER}</option><option>${DISABLED_VOICE_MARKER}</option>`;
+            `<option value="${DISABLED_VOICE_MARKER}">${DISABLED_VOICE_MARKER}</option>` :
+            `<option value="${DEFAULT_VOICE_MARKER}">${DEFAULT_VOICE_MARKER}</option><option value="${DISABLED_VOICE_MARKER}">${DISABLED_VOICE_MARKER}</option>`;
         let template = `
             <div class='tts_voicemap_block_char flex-container flexGap5'>
                 <span id='tts_voicemap_char_${sanitizedName}'>${this.name}</span>
@@ -1786,7 +1805,7 @@ async function initVoiceMapInternal(unrestricted, speakers, provider, providerNa
         // Check provider settings for voiceIds
         let voiceId;
         if (character in voiceMapFromSettings) {
-            voiceId = voiceMapFromSettings[character];
+            voiceId = normalizeSavedVoiceId(voiceMapFromSettings[character], voiceIdsFromProvider);
         } else if (character === DEFAULT_VOICE_MARKER) {
             voiceId = DISABLED_VOICE_MARKER;
         } else {

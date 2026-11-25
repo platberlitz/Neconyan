@@ -67,6 +67,7 @@ async function readUserText() {
 
 /** Runs in the page. Returns { surfaces, preservation } for the whole document. */
 function scanDocument({ tokens, userText }) {
+    const nonTextareaUserText = userText.split(',').filter(selector => selector !== 'textarea').join(',');
     const open = '⟦';
     const close = '⟧';
     // An id with a digit in it is generated (a counter or an index), so it never anchors a path.
@@ -105,7 +106,7 @@ function scanDocument({ tokens, userText }) {
             klass = /[\p{L}\p{N}]/u.test(rest) ? 'H' : 'W';
             found = marked;
         } else {
-            klass = where.element.closest(userText) ? 'P' : 'R';
+            klass = where.element.closest(kind === 'attr' ? nonTextareaUserText : userText) ? 'P' : 'R';
             found = plain;
         }
         const bareText = string.split(/⟦[^⟧]*⟧/).join('').trim();

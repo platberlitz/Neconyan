@@ -1277,7 +1277,7 @@
     "Only one entry with the same label will be activated": "只有一个带有相同标签的条目将被激活",
     "A relative likelihood of entry activation within the group": "组内进入激活的相对可能性",
     "Group Weight": "组权重",
-    "Sticky entries will stay active for N messages after being triggered.": "粘性条目在被触发后将保持活跃状态​​ N 条消息。",
+    "Sticky entries will stay active for N messages after being triggered.": "粘性条目在被触发后将保持活跃状态 N 条消息。",
     "Sticky": "黏性",
     "Non-sticky": "无黏性",
     "Entries with a cooldown can't be activated N messages after being triggered.": "具有冷却时间的条目在触发后 N 条消息内无法被激活。",
