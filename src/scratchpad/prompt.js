@@ -295,15 +295,18 @@ function changeInstructions({ lore, character, chat, members, notebook, persona,
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false, imageEditing = false, feedbackTone = DEFAULT_FEEDBACK_TONE }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '', webSearch = false, webPages = false, imageEditing = false, feedbackTone = DEFAULT_FEEDBACK_TONE, generalLoreCount = 1 }) {
     const persona = savedPersona ?? readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const general = sourceKind === 'general';
     const generalLore = general && capabilities.lore === true;
-    const contextNotice = !general ? '' : generalLore
-        ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages are shared. ${names.user} shared one lorebook by hand for this session; it is reference material, not evidence of a live story. Any supplied character card is reference material too. Only selected, shared cards, the shared persona (including its Scenario Notes) and that one lorebook may receive change suggestions. Never propose story message edits here, or edits to any other lorebook.`
-        : `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages or lorebooks are shared. Any supplied character card is reference material, not evidence of a live story. Only selected, shared cards and the shared persona (including its Scenario Notes) may receive field-change suggestions. Never propose story message or lorebook edits here.`;
+    const sharedBooks = Number.isSafeInteger(generalLoreCount) && generalLoreCount > 1 ? generalLoreCount : 1;
+    const contextNotice = !general ? '' : generalLore && sharedBooks > 1
+        ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages are shared. ${names.user} shared ${sharedBooks} lorebooks by hand for this session; they are reference material, not evidence of a live story. Any supplied character card is reference material too. Only selected, shared cards, the shared persona (including its Scenario Notes) and those shared lorebooks may receive change suggestions. Never propose story message edits here, or edits to any other lorebook.`
+        : generalLore
+            ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages are shared. ${names.user} shared one lorebook by hand for this session; it is reference material, not evidence of a live story. Any supplied character card is reference material too. Only selected, shared cards, the shared persona (including its Scenario Notes) and that one lorebook may receive change suggestions. Never propose story message edits here, or edits to any other lorebook.`
+            : `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages or lorebooks are shared. Any supplied character card is reference material, not evidence of a live story. Only selected, shared cards and the shared persona (including its Scenario Notes) may receive field-change suggestions. Never propose story message or lorebook edits here.`;
     if (general) capabilities = { ...capabilities, chat: false, lore: generalLore, members: [], preset: [], authorsNote: false };
     const sections = [
         `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. ${general ? contextNotice : `You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`}`,

@@ -4,8 +4,8 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { sameSourceBucket, sameSourceContext } from '../public/scripts/scratchpad/source.js';
 
 const source = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes', 'checkSource'];
-const code = functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0]).join('\n');
+const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes', 'checkSource', 'shareGeneralLorebooks', 'renderGeneralLorebooks'];
+const code = [source.match(/^const MAX_GENERAL_LOREBOOKS = .*$/m)[0], ...functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0])].join('\n');
 const defaults = { notes: [], picked: [], include: {}, assistantConnections: {}, depth: 15, maxTokens: 16000 };
 const ref = id => ({ notebookId: 'book', noteId: id });
 
@@ -60,6 +60,7 @@ function fixture(kind = 'roleplay') {
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
         renderWebSearchSettings: () => h('section', { class: 'scratchpad-web-settings' }),
         world_names: [],
+        generalLorebooks: (value, settings) => value?.kind === 'general' ? settings.lorebooks || [] : [],
         renderContextSetups: () => h('section', { class: 'scratchpad-setups' }),
         renderDictationSettings: () => null,
         renderFeedbackToneSettings: () => h('section', { class: 'scratchpad-tone-settings' }),

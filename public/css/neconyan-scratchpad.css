@@ -1951,6 +1951,50 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     margin: 0;
 }
 
+.scratchpad-shared-lorebooks {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.scratchpad-shared-lorebook {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 4px 4px 4px 12px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.scratchpad-shared-lorebook-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.scratchpad-shared-lorebook-name {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scratchpad-shared-lorebook-missing {
+    color: var(--neco-muted);
+}
+
+.scratchpad-app .scratchpad-shared-lorebook-remove {
+    flex: none;
+    border-radius: 6px;
+}
+
 .scratchpad-check {
     display: grid;
     grid-template-columns: auto 1fr;

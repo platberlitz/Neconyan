@@ -60,6 +60,8 @@ export const refreshedKnowledgeCases = [
     ['How does the Scratchpad regex script change card work when an assistant suggests a new Find pattern?', 'scratchpad.regex-changes', 'tick Regexes (off by default, also offered in General)'],
     ['How does the Scratchpad CSS snippet change card work when an assistant suggests new CSS?', 'scratchpad.css-snippet-changes', 'tick CSS Snippets (off by default, also offered in General)'],
     ['How do I use the General Scratchpad lorebook picker to share a lorebook without a chat?', 'scratchpad.general-lorebook', 'choose a book under Share a lorebook'],
+    ['Can I share more than one lorebook in General Scratchpad at once?', 'scratchpad.general-lorebook', 'pick again to add another, up to 8'],
+    ['How do I remove a shared lorebook from General Scratchpad?', 'scratchpad.general-lorebook', 'Press Remove beside a book to stop sharing it'],
     ['How do I use General Scratchpad to share the equipped preset without opening a chat?', 'scratchpad.preset', 'General shares the equipped preset for reference only'],
     ['Can I share my equipped preset in General Scratchpad?', 'scratchpad.preset', 'Context → Also share and tick Current preset'],
     ['How do I check my character card for problems in Scratchpad?', 'scratchpad.problem-checks', 'Also share has Problem checks'],

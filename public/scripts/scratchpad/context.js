@@ -311,12 +311,20 @@ export function loreOverrideKey(entry) {
     return `${entry.world}::${entry.uid}`;
 }
 
+/** Lorebooks shared by hand in General Scratchpad, in the order they were added. */
+export function generalLorebooks(source, settings) {
+    if (source?.kind !== 'general') return [];
+    const listed = Array.isArray(settings?.lorebooks) ? settings.lorebooks : [settings?.lorebook];
+    const books = listed.filter(book => typeof book === 'string').map(book => book.trim()).filter(Boolean);
+    return [...new Set(books)];
+}
+
 export function generalLorebook(source, settings) {
-    return source?.kind === 'general' && typeof settings?.lorebook === 'string' ? settings.lorebook.trim() : '';
+    return generalLorebooks(source, settings)[0] || '';
 }
 
 function sourceLorebooks(source, settings) {
-    if (source?.kind === 'general') return [generalLorebook(source, settings)].filter(Boolean);
+    if (source?.kind === 'general') return generalLorebooks(source, settings);
     const books = [];
     for (const character of sourceCharacters(source)) {
         books.push(character?.data?.extensions?.world);
@@ -528,7 +536,7 @@ export async function collectLore({ source, settings, scanText = '', rehearsalCh
 function formatLore(lore, substitute, general = false) {
     const lines = [];
     if (lore.books.length) lines.push(general
-        ? `Lorebook shared by hand for this session: ${lore.books.join(', ')}`
+        ? `${lore.books.length > 1 ? 'Lorebooks' : 'Lorebook'} shared by hand for this session: ${lore.books.join(', ')}`
         : `Lorebooks active in this chat: ${lore.books.join(', ')}`);
     for (const entry of lore.entries.filter(item => item.included)) {
         lines.push([
@@ -894,11 +902,14 @@ export async function buildContext({ source, settings, pendingText = '', session
     const substituteSource = text => namesOnly ? substituteSourceNames(text, names) : substituteParams(text, macros);
     const sections = [];
 
+    const sharedBooks = general ? generalLorebooks(source, settings) : [];
     sections.push([
         general
-            ? (generalLorebook(source, settings)
-                ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note or chat metadata is shared. One lorebook was shared by hand for this session. It and any selected character card are reference material, not a live story.'
-                : 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata or lorebook text is shared. Any selected character card is reference material, not a live story.')
+            ? (sharedBooks.length > 1
+                ? `General Scratchpad: no story chat is open. No story messages, Author's Note or chat metadata is shared. ${sharedBooks.length} lorebooks were shared by hand for this session. They and any selected character card are reference material, not a live story.`
+                : sharedBooks.length
+                    ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note or chat metadata is shared. One lorebook was shared by hand for this session. It and any selected character card are reference material, not a live story.'
+                    : 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata or lorebook text is shared. Any selected character card is reference material, not a live story.')
             : `Chat: ${source.label}`,
         ...(general && include.preset ? ['The equipped preset below is reference material only. It does not control this discussion.'] : []),
         ...(general ? [] : [`Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`]),

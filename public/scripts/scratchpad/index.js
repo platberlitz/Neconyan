@@ -26,6 +26,7 @@ import {
     collectLore,
     currentSource,
     estimateTokens,
+    generalLorebooks,
     isCurrentSource,
     sameChat,
     picksMatchSource,
@@ -76,7 +77,7 @@ import {
     holdFollowUps, MAX_QUEUED_FOLLOW_UPS, reconcilePendingTransition, removeFollowUp, restoreFollowUp, takeFollowUpForEdit,
 } from './follow-up-queue.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261208-scratchpad-followup-queue';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261209-scratchpad-general-lorebooks';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -139,7 +140,7 @@ function checkAvailability() {
     const include = settings.include || {};
     const general = source.kind === 'general';
     const noNotes = t`Checks aren't offered in a note discussion. Open General Scratchpad or a chat to run one.`;
-    const books = notebook ? [] : general ? [settings.lorebook].filter(Boolean) : sourceLorebookNames(source);
+    const books = notebook ? [] : general ? generalLorebooks(source, settings) : sourceLorebookNames(source);
     const presetName = notebook ? '' : currentPresetName();
     const presetShared = source.kind === 'roleplay' || source.kind === 'conversation' || (general && Boolean(include.preset));
     let presetProblem = '';
@@ -187,6 +188,7 @@ function checkPrompts() {
     return checkAvailability().filter(item => !item.problem).map(({ label, text, include }) => ({ label, text, include }));
 }
 
+const MAX_GENERAL_LOREBOOKS = 8;
 const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
@@ -194,6 +196,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false, companionNotes: false },
     loreOverrides: {},
     lorebook: '',
+    lorebooks: [],
     connection: { kind: 'current' },
     assistantConnections: {},
     roundTable: false,
@@ -1763,7 +1766,7 @@ function renderHeader() {
     const savedPrompts = `${getCurrentUserHandle()}:${app.quickPrompts.revision}`;
     const settings = currentSettings();
     const include = settings.include || {};
-    const quickState = JSON.stringify([include.problems, include.card, include.preset, include.lore, settings.lorebook, app.source?.avatar]);
+    const quickState = JSON.stringify([include.problems, include.card, include.preset, include.lore, generalLorebooks(app.source, settings), app.source?.avatar]);
     if (app.el.quick.dataset.sourceKind !== sourceKind || app.el.quick.dataset.imagesAvailable !== String(app.imageAvailability.image)
         || app.el.quick.dataset.savedPrompts !== savedPrompts || app.el.quick.dataset.quickState !== quickState) {
         app.el.quick.dataset.sourceKind = sourceKind;
@@ -2729,11 +2732,11 @@ async function prepareReviewPlan(source, session, message, part, picture) {
                 throw new Error(t`Share the original preset in this chat before saving its changes.`);
             }
         },
-        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, dialogueColorsShared: currentSettings().include.dialogueColors === true, sharedLorebook: currentSettings().lorebook || '',
-        disabledEntriesListed: currentSettings().include.problems === true && (source.kind === 'general' ? Boolean(currentSettings().lorebook) : currentSettings().include.lore !== false),
+        agentsShared: currentSettings().include.agents === true, authorsNoteShared: currentSettings().include.authorsNote === true, regexShared: currentSettings().include.regex === true, cssSnippetsShared: currentSettings().include.cssSnippets === true, dialogueColorsShared: currentSettings().include.dialogueColors === true, sharedLorebooks: generalLorebooks(source, currentSettings()),
+        disabledEntriesListed: currentSettings().include.problems === true && (source.kind === 'general' ? generalLorebooks(source, currentSettings()).length > 0 : currentSettings().include.lore !== false),
         lorebookGuard: () => {
             requireScope(source, session.id);
-            if (source.kind === 'general' && (!currentSettings().lorebook || currentSettings().lorebook !== part.change.book)) {
+            if (source.kind === 'general' && !generalLorebooks(source, currentSettings()).includes(part.change.book)) {
                 throw new Error(t`Share that lorebook in Scratchpad before saving changes to it.`);
             }
         },
@@ -3516,15 +3519,7 @@ function renderContext({ force = true } = {}) {
                 h('p', { class: 'scratchpad-muted', text: t`Covers ${activeSession().summary.count} earlier messages. Checked against the conversation before each use; rebuilt if those messages change.` }),
                 h('pre', { class: 'scratchpad-preview-text', text: activeSession().summary.text, 'data-i18n-ignore': '' }))
                 : h('p', { class: 'scratchpad-muted', text: t`No summary saved yet. Recent messages are kept in full alongside the summary.` })),
-        general ? h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
-            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. You can share one lorebook here, or tick what else to share below.` }),
-            h('div', { class: 'scratchpad-field' },
-                h('label', { for: 'scratchpad-lorebook', text: t`Share a lorebook` }),
-                h('select', { id: 'scratchpad-lorebook', class: 'text_pole', onchange: event => void updateSettings({ lorebook: event.currentTarget.value }, { rerenderContext: true }) },
-                    h('option', { value: '', text: t`None`, selected: !settings.lorebook }),
-                    ...[...new Set([...(world_names || []), settings.lorebook].filter(Boolean))].map(name => h('option', { value: name, text: name, selected: name === settings.lorebook, 'data-i18n-ignore': '' }))),
-                h('small', { text: t`Shared in this session only. Entries hidden from assistants stay hidden.` }))) : notebook ? h('section', { class: 'scratchpad-section' },
+        general ? renderGeneralLorebooks(settings) : notebook ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Note discussion` }),
             h('p', { class: 'scratchpad-muted', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })) : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
@@ -3577,10 +3572,68 @@ function renderContext({ force = true } = {}) {
                     onchange: event => void updateSettings({ partialPrefill: event.currentTarget.value }) }),
                 h('small', { text: t`Used instead of the reply prefill for Kimi K3 and K3.1. Start with <think> to seed thinking; close it with </think> before any visible reply text. An unclosed <think> seeds only thinking and is not added to the saved reply.` }))),
         notebook || general ? null : renderPicks(settings),
-        notebook || (general && !settings.lorebook) ? null : renderLore(settings, () => restore(true)),
+        notebook || (general && !generalLorebooks(app.source, settings).length) ? null : renderLore(settings, () => restore(true)),
         renderPreview(),
     ]);
     restore();
+}
+
+function shareGeneralLorebooks(change) {
+    return updateSettings(latest => {
+        const lorebooks = change(generalLorebooks({ kind: 'general' }, latest)).slice(0, MAX_GENERAL_LOREBOOKS);
+        return { lorebooks, lorebook: lorebooks[0] || '' };
+    }, { rerenderContext: true });
+}
+
+function renderGeneralLorebooks(settings) {
+    const shared = generalLorebooks(app.source, settings);
+    const known = new Set(world_names || []);
+    const available = [...known].filter(name => name && !shared.includes(name));
+    const full = shared.length >= MAX_GENERAL_LOREBOOKS;
+    const hint = full ? t`${MAX_GENERAL_LOREBOOKS} lorebooks is the most one session can share. Remove one to add another.`
+        : available.length ? '' : known.size ? t`Every lorebook is shared.` : t`No lorebooks to share yet.`;
+    const picker = h('select', {
+        id: 'scratchpad-lorebook',
+        class: 'text_pole',
+        disabled: full || !available.length,
+        'aria-describedby': hint ? 'scratchpad-lorebook-hint' : null,
+        onchange: event => {
+            const name = event.currentTarget.value;
+            event.currentTarget.value = '';
+            if (name) void shareGeneralLorebooks(books => books.includes(name) ? books : [...books, name]);
+        },
+    },
+    h('option', { value: '', text: t`Add a lorebook`, selected: true }),
+    ...available.map(name => h('option', { value: name, text: name, 'data-i18n-ignore': '' })));
+    const remove = async name => {
+        await shareGeneralLorebooks(books => books.filter(book => book !== name));
+        const panel = app.el.panels.context;
+        if (document.activeElement !== document.body || panel.hidden) return;
+        const next = panel.querySelector('.scratchpad-shared-lorebook-remove') || panel.querySelector('#scratchpad-lorebook:not(:disabled)');
+        next?.focus({ preventScroll: true });
+    };
+    return h('section', { class: 'scratchpad-section scratchpad-general-lorebooks' },
+        h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
+        h('p', { class: 'scratchpad-muted', text: t`No story chat is open. You can share up to ${MAX_GENERAL_LOREBOOKS} lorebooks here, or tick what else to share below.` }),
+        shared.length ? h('ul', { class: 'scratchpad-shared-lorebooks', 'aria-label': t`Shared lorebooks` },
+            ...shared.map(name => h('li', { class: 'scratchpad-shared-lorebook' },
+                h('span', { class: 'scratchpad-shared-lorebook-text' },
+                    h('span', { class: 'scratchpad-shared-lorebook-name', text: name, title: name, 'data-i18n-ignore': '' }),
+                    known.has(name) ? null : h('small', { class: 'scratchpad-shared-lorebook-missing', text: t`Not found. It may have been renamed or deleted.` })),
+                h('button', {
+                    type: 'button',
+                    class: 'menu_button scratchpad-button scratchpad-shared-lorebook-remove',
+                    'aria-label': t`Remove ${name}`,
+                    'data-context-control': `lorebook-remove:${name}`,
+                    onclick: () => void remove(name),
+                },
+                h('i', { class: 'fa-solid fa-xmark', 'aria-hidden': 'true' }),
+                h('span', { text: t`Remove` }))))) : null,
+        h('div', { class: 'scratchpad-field' },
+            h('label', { for: 'scratchpad-lorebook', text: t`Share a lorebook` }),
+            picker,
+            hint ? h('small', { id: 'scratchpad-lorebook-hint', class: 'scratchpad-shared-lorebooks-limit', text: hint }) : null,
+            h('small', { text: t`Shared in this session only. Entries hidden from assistants stay hidden.` })));
 }
 
 function renderFeedbackToneSettings(settings) {

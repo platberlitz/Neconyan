@@ -253,7 +253,7 @@ router.post('/prompt', (request, response) => {
         const source = body.source || body.sessionId ? normaliseSource(body.source) : null;
         const imageAvailability = readScratchpadImageAvailability(base);
         const participants = Array.isArray(body.participants) ? body.participants.slice(0, 3) : [];
-        const { targets, profiles, persona, sharedLorebook, toneSettings } = withScratchpad(base, lease => {
+        const { targets, profiles, persona, sharedLorebook, sharedLorebookCount, toneSettings } = withScratchpad(base, lease => {
             const bucket = source ? readBucketLocked(lease, source) : null;
             const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
             const library = readAssistantsLocked(lease);
@@ -261,13 +261,14 @@ router.post('/prompt', (request, response) => {
                 targets: bucket && imageAvailability.image ? captureImageTargetsLocked(lease, bucket.source, body.targets, { shared: session?.settings.include.card !== false }) : [],
                 profiles: Object.fromEntries([body.assistant, ...participants].map(id => [id, resolveAssistant(library, id, session?.settings.assistants)])),
                 persona: bucket ? capturePersonaTargetLocked(lease, source, body.capabilities?.persona, session?.settings.include.persona !== false) : null,
-                sharedLorebook: source?.kind !== 'general' || Boolean(session?.settings.lorebook),
+                sharedLorebook: source?.kind !== 'general' || Boolean(session?.settings.lorebooks.length),
+                sharedLorebookCount: source?.kind === 'general' ? session?.settings.lorebooks.length ?? 0 : 0,
                 toneSettings: session?.settings ?? { feedbackTone: body.feedbackTone, assistantTones: body.assistantTones },
             };
         });
         const prompt = buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
-            sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
+            sourceKind: source?.kind, generalLoreCount: sharedLorebookCount, userName: body.names?.user, characterName: body.names?.character,
             // The share list follows the live switches, so it is added at send time and never saved into a custom prompt.
             capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), shareable: undefined, shareDepth: undefined, notebook: body.capabilities?.notebook === true,
                 lore: body.capabilities?.lore === true && source?.kind !== 'notebook' && sharedLorebook,

@@ -722,7 +722,7 @@ export async function prepareChange(change, source, options = {}) {
     return plan;
 }
 
-async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', disabledEntriesListed = false, lorebookGuard } = {}) {
+async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, personaGuard, sharedPreset, presetGuard, creationGuard, creatorKey = '', agentsShared = false, authorsNoteShared = false, regexShared = false, cssSnippetsShared = false, dialogueColorsShared = false, mewmoryShared = false, sessionId = '', sharedLorebook = '', sharedLorebooks, disabledEntriesListed = false, lorebookGuard } = {}) {
     if (change.type === 'preset') {
         const { preparePresetChange } = await import('./preset-changes.js');
         return preparePresetChange(change, sharedPreset, () => { requireSource(source); presetGuard?.(); }, { globalOnly: source.kind === 'conversation' });
@@ -813,7 +813,8 @@ async function preparePlan(change, source, { sharedAvatar = '', sharedPersona, p
         return mewmoryPlan(change, source, sessionId);
     }
     if (change.type === 'lorebook') {
-        if (source.kind === 'general' && (!sharedLorebook || change.book !== sharedLorebook)) fail(t`Share that lorebook under Context before saving a change to it.`);
+        const allowedBooks = Array.isArray(sharedLorebooks) ? sharedLorebooks : (sharedLorebook ? [sharedLorebook] : []);
+        if (source.kind === 'general' && !allowedBooks.includes(change.book)) fail(t`Share that lorebook under Context before saving a change to it.`);
         return lorebookPlan(change, source, { disabledEntriesListed, lorebookGuard });
     }
     if (change.type === 'character') {
