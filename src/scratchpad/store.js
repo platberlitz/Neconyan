@@ -381,12 +381,12 @@ function normaliseMessage(input, { allowInternalKeys = false, allowSwipes = true
         if (typeof input.assistant === 'string') message.assistant = normaliseAssistant(input.assistant);
         if (typeof input.assistantName === 'string') message.assistantName = boundedString(input.assistantName, MAX_NAME_LENGTH, { trim: true });
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
-        if (typeof input.compareGroup === 'string' && ID_PATTERN.test(input.compareGroup)) message.compareGroup = input.compareGroup;
-        if (input.connection !== undefined && isPlainObject(input.connection)) message.connection = normaliseConnection(input.connection);
-        if (typeof input.connectionLabel === 'string' && input.connectionLabel.trim()) message.connectionLabel = boundedString(input.connectionLabel, 200, { trim: true });
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
         if (allowInternalKeys) {
+            if (typeof input.compareGroup === 'string' && ID_PATTERN.test(input.compareGroup)) message.compareGroup = input.compareGroup;
+            if (input.connection !== undefined && isPlainObject(input.connection)) message.connection = normaliseConnection(input.connection);
+            if (typeof input.connectionLabel === 'string' && input.connectionLabel.trim()) message.connectionLabel = boundedString(input.connectionLabel, 200, { trim: true });
             const sharedPreset = normalisePresetTargets(input.sharedPreset);
             if (sharedPreset.length) message.sharedPreset = sharedPreset;
             const images = normaliseStoredImages(input.images);
@@ -849,6 +849,11 @@ export function branchSession(bucket, sessionId, messageId) {
         settings: { ...structuredClone(original.settings), notes: original.settings.notes.filter(ref => !ref.grantId) }, messages: structuredClone(kept) });
     // These records were made by this server for these very replies, so the copy keeps them as they are.
     if (session.messages.length === kept.length) {
+        const copyCompareFields = (target, source) => {
+            if (source.compareGroup) target.compareGroup = source.compareGroup;
+            if (source.connection) target.connection = structuredClone(source.connection);
+            if (source.connectionLabel) target.connectionLabel = source.connectionLabel;
+        };
         session.messages.forEach((copy, position) => {
             const source = kept[position];
             if (copy.role !== 'assistant' || source.role !== 'assistant') return;
@@ -856,6 +861,12 @@ export function branchSession(bucket, sessionId, messageId) {
             else delete copy.webSearch;
             if (source.webPages) copy.webPages = structuredClone(source.webPages);
             if (source.sourceLookup) copy.sourceLookup = structuredClone(source.sourceLookup);
+            copyCompareFields(copy, source);
+            if (Array.isArray(copy.swipes) && Array.isArray(source.swipes) && copy.swipes.length === source.swipes.length) {
+                copy.swipes.forEach((swipe, swipePos) => {
+                    if (swipe && source.swipes[swipePos]) copyCompareFields(swipe, source.swipes[swipePos]);
+                });
+            }
         });
     }
     return { session, draft: message.role === 'user' ? message.text : '' };

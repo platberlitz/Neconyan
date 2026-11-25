@@ -15,6 +15,7 @@ const { setDirectoriesResolver, testExports: { runJob } } = await import('../src
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { roundToDiscuss } = await import('../public/scripts/scratchpad/discuss.js');
 const { replySwipes } = await import('../public/scripts/scratchpad/swipes.js');
+const { portableSettings } = await import('../public/scripts/scratchpad/portable-settings.js');
 const compare = await import('../public/scripts/scratchpad/compare.js');
 after(() => cancelAutoSaves());
 
@@ -252,15 +253,68 @@ test('settings, messages and saved setups normalise the compare fields', () => {
     assert.deepEqual(store.normaliseSettings({ compareConnection: BETA }).compareConnection, BETA);
     assert.deepEqual(store.normaliseSettings({ compareConnection: { kind: 'profile', profileId: '' } }).compareConnection, { kind: 'current' });
     assert.deepEqual(store.normaliseSettings({ depth: 2 }, store.normaliseSettings({ compareConnection: BETA })).compareConnection, BETA, 'a patch keeps the saved choice');
-    const message = store.testExports.normaliseMessage({ id: 'r1', role: 'assistant', text: 'A', compareGroup: 'u1', connection: BETA, connectionLabel: ` ${'B'.repeat(300)} ` });
+    const message = store.testExports.normaliseMessage({ id: 'r1', role: 'assistant', text: 'A', compareGroup: 'u1', connection: BETA, connectionLabel: ` ${'B'.repeat(300)} ` }, { allowInternalKeys: true });
     assert.equal(message.compareGroup, 'u1');
     assert.deepEqual(message.connection, BETA);
     assert.equal(message.connectionLabel.length, 200);
-    const plain = store.testExports.normaliseMessage({ id: 'r2', role: 'assistant', text: 'A', compareGroup: 'bad id!' });
+    const plain = store.testExports.normaliseMessage({ id: 'r2', role: 'assistant', text: 'A', compareGroup: 'bad id!' }, { allowInternalKeys: true });
     assert.equal(plain.compareGroup, undefined);
+    const untrusted = store.testExports.normaliseMessage({ id: 'r3', role: 'assistant', text: 'A', compareGroup: 'u1', connection: BETA, connectionLabel: 'Forged' });
+    assert.equal(untrusted.compareGroup, undefined);
+    assert.equal(untrusted.connection, undefined);
+    assert.equal(untrusted.connectionLabel, undefined);
     assert.ok(CONTEXT_SETUP_KEYS.includes('compareConnection'));
     assert.equal(contextSetupSettings({ depth: 3 }).compareConnection, null, 'older saved setups keep compare off');
     assert.deepEqual(contextSetupSettings({ compareConnection: BETA }).compareConnection, BETA);
+});
+
+test('untrusted imports strip compare metadata while local branches keep it', async t => {
+    const a = account(t);
+    const calls = [];
+    recordingGenerator(calls);
+    const accepted = await a.accept();
+    await runJob(getJob(a.directories, accepted.job.id));
+    const replies = a.read().messages.filter(message => message.role === 'assistant');
+    assert.equal(replies.length, 2);
+
+    const originalSettings = a.read().settings;
+    const imported = a.mutate(bucket => store.createSession(bucket, {
+        name: 'Imported',
+        settings: portableSettings(originalSettings),
+        messages: [
+            { role: 'user', text: 'Question' },
+            {
+                role: 'assistant',
+                text: 'Answer',
+                compareGroup: 'u1',
+                connection: BETA,
+                connectionLabel: 'Forged profile',
+                swipeIndex: 0,
+                swipes: [
+                    null,
+                    { role: 'assistant', text: 'Alt', compareGroup: 'u1', connection: ALPHA, connectionLabel: 'Forged swipe' },
+                ],
+            },
+        ],
+    }, { inheritSettings: false }));
+    const importedReply = imported.messages[1];
+    assert.equal(imported.settings.compareConnection, null);
+    assert.equal(importedReply.compareGroup, undefined);
+    assert.equal(importedReply.connection, undefined);
+    assert.equal(importedReply.connectionLabel, undefined);
+    assert.equal(importedReply.swipes[1].compareGroup, undefined);
+    assert.equal(importedReply.swipes[1].connection, undefined);
+    assert.equal(importedReply.swipes[1].connectionLabel, undefined);
+
+    const branched = a.mutate(bucket => store.branchSession(bucket, a.session.id, replies[1].id));
+    const branchedReplies = branched.session.messages.filter(message => message.role === 'assistant');
+    assert.equal(branchedReplies.length, 2);
+    assert.equal(branchedReplies[0].compareGroup, replies[0].compareGroup);
+    assert.equal(branchedReplies[1].compareGroup, replies[1].compareGroup);
+    assert.deepEqual(branchedReplies[0].connection, ALPHA);
+    assert.deepEqual(branchedReplies[1].connection, BETA);
+    assert.equal(branchedReplies[0].connectionLabel, 'Alpha');
+    assert.equal(branchedReplies[1].connectionLabel, 'Beta');
 });
 
 test('Keep only this reply refuses single and unfinished replies', async t => {
