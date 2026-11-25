@@ -1,5 +1,8 @@
 /* global globalThis */
-import { describe, test, expect, jest, beforeEach } from '@jest/globals';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, test, expect, jest, beforeEach, afterEach } from '@jest/globals';
 
 describe('companion tracker panel', () => {
     let chat;
@@ -2027,5 +2030,486 @@ describe('companion tracker panel', () => {
 
         expect(states.map(state => state.agentId).sort()).toEqual(['orphan-legacy', 'orphan-panel']);
         expect(states.find(state => state.agentId === 'orphan-card')).toBeUndefined();
+    });
+
+    describe('companion panel resize', () => {
+        const savedGlobals = {};
+
+        function saveGlobal(name) {
+            savedGlobals[name] = Object.getOwnPropertyDescriptor(globalThis, name);
+        }
+
+        afterEach(() => {
+            for (const [name, descriptor] of Object.entries(savedGlobals)) {
+                if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+                else delete globalThis[name];
+                delete savedGlobals[name];
+            }
+        });
+
+        function setupResizeHarness({
+            width = 1280,
+            phone = false,
+            sidebarOffset = '244px',
+            pinnedOpen = false,
+            pinnedWidth = 400,
+            panelRect = { left: 860, right: 1280, top: 0, bottom: 900, width: 420, height: 900 },
+        } = {}) {
+            saveGlobal('innerWidth');
+            saveGlobal('getComputedStyle');
+            saveGlobal('matchMedia');
+            saveGlobal('MutationObserver');
+            saveGlobal('addEventListener');
+            saveGlobal('removeEventListener');
+
+            let currentViewportWidth = width;
+            let isPhone = phone;
+            let currentSidebarOffset = sidebarOffset;
+            let isPinnedOpen = pinnedOpen;
+            let currentPanelRect = { ...panelRect };
+            let currentHtml = '';
+
+            Object.defineProperty(globalThis, 'innerWidth', {
+                configurable: true,
+                writable: true,
+                value: currentViewportWidth,
+            });
+
+            const windowListeners = new Map();
+            const addListener = (map, type, fn) => {
+                if (!map.has(type)) map.set(type, new Set());
+                map.get(type).add(fn);
+            };
+            const removeListener = (map, type, fn) => {
+                map.get(type)?.delete(fn);
+            };
+            const emit = (map, event) => {
+                for (const fn of [...(map.get(event.type) ?? [])]) fn(event);
+            };
+
+            globalThis.addEventListener = jest.fn((type, fn) => addListener(windowListeners, type, fn));
+            globalThis.removeEventListener = jest.fn((type, fn) => removeListener(windowListeners, type, fn));
+
+            const bodyClasses = new Set();
+            const bodyStyles = new Map();
+            const body = {
+                classList: {
+                    toggle: jest.fn((name, force) => {
+                        const next = force === undefined ? !bodyClasses.has(name) : Boolean(force);
+                        if (next) bodyClasses.add(name);
+                        else bodyClasses.delete(name);
+                        return next;
+                    }),
+                    add: jest.fn(name => bodyClasses.add(name)),
+                    remove: jest.fn(name => bodyClasses.delete(name)),
+                    contains: jest.fn(name => bodyClasses.has(name)),
+                },
+                style: {
+                    setProperty: jest.fn((name, value) => bodyStyles.set(name, value)),
+                    removeProperty: jest.fn(name => bodyStyles.delete(name)),
+                    getPropertyValue: jest.fn(name => bodyStyles.get(name) ?? ''),
+                },
+                append: jest.fn(),
+            };
+
+            const resizerAttrs = new Map();
+            const resizerListeners = new Map();
+            const resizerNode = {
+                tagName: 'DIV',
+                dataset: { role: 'panel-resizer' },
+                setAttribute: jest.fn((name, value) => resizerAttrs.set(name, String(value))),
+                getAttribute: jest.fn(name => resizerAttrs.get(name) ?? null),
+                addEventListener: jest.fn((type, fn) => addListener(resizerListeners, type, fn)),
+                removeEventListener: jest.fn((type, fn) => removeListener(resizerListeners, type, fn)),
+                setPointerCapture: jest.fn(),
+                releasePointerCapture: jest.fn(),
+                hasPointerCapture: jest.fn(() => true),
+                closest: jest.fn(selector => (selector === '.ica--tpanel-resizer' ? resizerNode : null)),
+                dispatchEvent: jest.fn(event => emit(resizerListeners, event)),
+            };
+
+            const panelAttrs = new Map([['data-edge', 'right'], ['data-launcher', 'handle']]);
+            const panelDelegated = [];
+            const panelDomNode = {
+                dataset: {},
+                getBoundingClientRect: jest.fn(() => currentPanelRect),
+                querySelector: jest.fn(selector => (selector === '.ica--tpanel-resizer' ? resizerNode : null)),
+                querySelectorAll: jest.fn(() => []),
+                addEventListener: jest.fn(),
+                scrollHeight: 400,
+                clientHeight: 400,
+                scrollTop: 0,
+            };
+            const panelWrapper = {
+                0: panelDomNode,
+                length: 1,
+                on: jest.fn((eventName, selectorOrHandler, maybeHandler) => {
+                    const selector = typeof selectorOrHandler === 'string' ? selectorOrHandler : null;
+                    const handler = typeof selectorOrHandler === 'function' ? selectorOrHandler : maybeHandler;
+                    panelDelegated.push({ eventName, selector, handler });
+                    return panelWrapper;
+                }),
+                off: jest.fn(() => panelWrapper),
+                html: jest.fn(html => {
+                    currentHtml = String(html ?? '');
+                    const match = currentHtml.match(/<div class="ica--tpanel-resizer"[^>]*>/);
+                    if (match) {
+                        for (const [, key, value] of match[0].matchAll(/([a-z-]+)="([^"]*)"/g)) {
+                            resizerAttrs.set(key, value);
+                        }
+                    }
+                    return panelWrapper;
+                }),
+                append: jest.fn(),
+                toggle: jest.fn(),
+                attr: jest.fn((name, value) => {
+                    if (value === undefined) return panelAttrs.get(name);
+                    panelAttrs.set(name, String(value));
+                    return panelWrapper;
+                }),
+                addClass: jest.fn(() => panelWrapper),
+                removeClass: jest.fn(() => panelWrapper),
+                find: jest.fn(() => ({ val: jest.fn() })),
+            };
+
+            const rightNavObservers = [];
+            const rightNavPanel = {
+                getBoundingClientRect: jest.fn(() => ({ width: isPinnedOpen ? pinnedWidth : 0 })),
+            };
+            const queryMatch = selector => {
+                if (selector === '#ica--tracker-panel .ica--tpanel-resizer') return resizerNode;
+                if (selector === '#right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)') {
+                    return isPinnedOpen ? rightNavPanel : null;
+                }
+                return null;
+            };
+
+            globalThis.document = {
+                body,
+                activeElement: null,
+                addEventListener: jest.fn(),
+                removeEventListener: jest.fn(),
+                querySelector: jest.fn(queryMatch),
+                querySelectorAll: jest.fn(() => []),
+                getElementById: jest.fn(id => {
+                    if (id === 'ica--tracker-panel') return panelDomNode;
+                    if (id === 'right-nav-panel') return rightNavPanel;
+                    return null;
+                }),
+            };
+
+            globalThis.getComputedStyle = jest.fn(() => ({
+                getPropertyValue: name => (name === '--neco-sidebar-offset' ? currentSidebarOffset : ''),
+            }));
+
+            const mediaListeners = new Set();
+            globalThis.matchMedia = jest.fn(query => ({
+                matches: query === '(max-width: 768px)' ? isPhone : false,
+                addEventListener: jest.fn((type, fn) => {
+                    if (type === 'change') mediaListeners.add(fn);
+                }),
+                removeEventListener: jest.fn((type, fn) => {
+                    if (type === 'change') mediaListeners.delete(fn);
+                }),
+            }));
+
+            globalThis.MutationObserver = class {
+                constructor(callback) {
+                    this.callback = callback;
+                    rightNavObservers.push(this);
+                }
+                observe() {}
+                disconnect() {}
+            };
+
+            const emptyStub = {
+                length: 0,
+                on: jest.fn(() => emptyStub),
+                off: jest.fn(() => emptyStub),
+                append: jest.fn(),
+                attr: jest.fn(() => emptyStub),
+                toggle: jest.fn(),
+                addClass: jest.fn(() => emptyStub),
+                removeClass: jest.fn(() => emptyStub),
+                css: jest.fn(() => emptyStub),
+            };
+            const handleStub = { ...emptyStub, length: 1 };
+            globalThis.$ = jest.fn(selector => {
+                if (selector === '#ica--tracker-panel') return panelWrapper;
+                if (selector === '#ica--tracker-panel-handle') return handleStub;
+                if (typeof selector === 'string' && selector.startsWith('\n            <div id="ica--tracker-panel"')) return panelWrapper;
+                return emptyStub;
+            });
+
+            const triggerDelegated = (eventName, selector, event) => {
+                const matches = panelDelegated.filter(entry => entry.eventName === eventName && entry.selector === selector);
+                for (const entry of matches) {
+                    entry.handler.call(resizerNode, event);
+                }
+            };
+
+            return {
+                bodyClasses,
+                bodyStyles,
+                resizerAttrs,
+                resizerNode,
+                panelAttrs,
+                panelWrapper,
+                getHtml: () => currentHtml,
+                triggerResizerPointerDown: event => triggerDelegated('pointerdown', '.ica--tpanel-resizer', event),
+                triggerResizerKeydown: event => triggerDelegated('keydown', '.ica--tpanel-resizer', event),
+                emitPointerMove: event => emit(windowListeners, { type: 'pointermove', ...event }),
+                emitPointerUp: event => emit(windowListeners, { type: 'pointerup', ...event }),
+                setViewportWidth: next => {
+                    currentViewportWidth = next;
+                    globalThis.innerWidth = next;
+                    emit(windowListeners, { type: 'resize' });
+                },
+                setPhone: next => {
+                    isPhone = next;
+                    for (const fn of mediaListeners) fn({ matches: next });
+                },
+                setPinnedOpen: next => {
+                    isPinnedOpen = next;
+                    for (const observer of rightNavObservers) observer.callback();
+                },
+                setPanelRect: next => {
+                    currentPanelRect = { ...currentPanelRect, ...next };
+                },
+                setSidebarOffset: next => {
+                    currentSidebarOffset = next;
+                },
+            };
+        }
+
+        test('clamps panel width between 320px minimum and comfortable chat width maximum', async () => {
+            const { clampCompanionPanelWidth } = await importPanel();
+            expect(clampCompanionPanelWidth(undefined, 0, 1280)).toBe(420);
+            expect(clampCompanionPanelWidth(Number.NaN, 0, 1280)).toBe(420);
+            expect(clampCompanionPanelWidth(180, 0, 1280)).toBe(320);
+            expect(clampCompanionPanelWidth(1100, 0, 1280)).toBe(920);
+            expect(clampCompanionPanelWidth(Infinity, 244, 1280)).toBe(676);
+            expect(clampCompanionPanelWidth(750, 244, 1280)).toBe(676);
+            // Sidebar 244 + pinned character panel 400 + 360 chat leaves < 320, so minimum 320 wins.
+            expect(clampCompanionPanelWidth(500, 644, 1280)).toBe(320);
+        });
+
+        test('persists stored width in accountStorage and applies --neco-companion-width when docked', async () => {
+            accountStorageValues.set('ica--tracker-panel-width', '548');
+            const harness = setupResizeHarness();
+            const { initCompanionPanel, openCompanionPanel, closeCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('548px');
+            expect(harness.resizerAttrs.get('role')).toBe('separator');
+            expect(harness.resizerAttrs.get('aria-orientation')).toBe('vertical');
+            expect(harness.resizerAttrs.get('aria-label')).toBe('Resize Companions');
+            expect(harness.resizerAttrs.get('tabindex')).toBe('0');
+            expect(harness.resizerAttrs.get('aria-valuemin')).toBe('320');
+            expect(harness.resizerAttrs.get('aria-valuemax')).toBe('676');
+            expect(harness.resizerAttrs.get('aria-valuenow')).toBe('548');
+
+            closeCompanionPanel();
+            expect(harness.bodyStyles.has('--neco-companion-width')).toBe(false);
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('548');
+        });
+
+        test('supports right-edge pointer drag widening/narrowing, defers renderPanel during drag, and persists on pointerup', async () => {
+            const harness = setupResizeHarness({ panelRect: { left: 860, right: 1280, top: 0, bottom: 900, width: 420, height: 900 } });
+            const { initCompanionPanel, openCompanionPanel, refreshCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+            harness.panelWrapper.html.mockClear();
+
+            harness.triggerResizerPointerDown({
+                pointerId: 7,
+                button: 0,
+                clientX: 860,
+                preventDefault: jest.fn(),
+                currentTarget: harness.resizerNode,
+            });
+            expect(harness.resizerNode.setPointerCapture).toHaveBeenCalledWith(7);
+            expect(harness.bodyClasses.has('neconyan-companion-resizing')).toBe(true);
+
+            harness.emitPointerMove({ pointerId: 7, clientX: 740 });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('540px');
+            expect(harness.resizerAttrs.get('aria-valuenow')).toBe('540');
+
+            // Re-render triggered mid-drag is deferred until pointerup.
+            refreshCompanionPanel();
+            expect(harness.panelWrapper.html).not.toHaveBeenCalled();
+
+            // Dragging further right clamps at 320px minimum.
+            harness.emitPointerMove({ pointerId: 7, clientX: 1020 });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('320px');
+
+            harness.emitPointerMove({ pointerId: 7, clientX: 760 });
+            harness.emitPointerUp({ pointerId: 7 });
+
+            expect(harness.bodyClasses.has('neconyan-companion-resizing')).toBe(false);
+            expect(harness.resizerNode.releasePointerCapture).toHaveBeenCalledWith(7);
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('520');
+            expect(harness.panelWrapper.html).toHaveBeenCalledTimes(1);
+        });
+
+        test('supports left-edge pointer drag widening right and narrowing left', async () => {
+            accountStorageValues.set('ica--tracker-panel-handle-top-v2', JSON.stringify({ edge: 'left', fraction: 0.5 }));
+            const harness = setupResizeHarness({ panelRect: { left: 244, right: 664, top: 0, bottom: 900, width: 420, height: 900 } });
+            const { initCompanionPanel, openCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+
+            expect(harness.panelAttrs.get('data-edge')).toBe('left');
+            expect(harness.bodyClasses.has('neconyan-companion-beside-left')).toBe(true);
+
+            harness.triggerResizerPointerDown({
+                pointerId: 3,
+                button: 0,
+                clientX: 664,
+                preventDefault: jest.fn(),
+                currentTarget: harness.resizerNode,
+            });
+
+            harness.emitPointerMove({ pointerId: 3, clientX: 794 });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('550px');
+            expect(harness.resizerAttrs.get('aria-valuenow')).toBe('550');
+
+            harness.emitPointerMove({ pointerId: 3, clientX: 480 });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('320px');
+
+            harness.emitPointerMove({ pointerId: 3, clientX: 764 });
+            harness.emitPointerUp({ pointerId: 3 });
+
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('520');
+        });
+
+        test('resizes by 32px with ArrowLeft and ArrowRight on right and left edges', async () => {
+            const harness = setupResizeHarness();
+            const { initCompanionPanel, openCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+
+            const arrowLeft = { key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+            const arrowRight = { key: 'ArrowRight', preventDefault: jest.fn(), stopPropagation: jest.fn() };
+
+            harness.triggerResizerKeydown(arrowLeft);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('452px');
+            expect(harness.resizerAttrs.get('aria-valuenow')).toBe('452');
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('452');
+            expect(arrowLeft.preventDefault).toHaveBeenCalled();
+            expect(arrowLeft.stopPropagation).toHaveBeenCalled();
+
+            harness.triggerResizerKeydown(arrowRight);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('420px');
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('420');
+
+            // Switch to left dock: ArrowRight widens, ArrowLeft narrows.
+            accountStorageValues.set('ica--tracker-panel-handle-top-v2', JSON.stringify({ edge: 'left', fraction: 0.5 }));
+            const leftHarness = setupResizeHarness();
+            const leftApi = await importPanel();
+            leftApi.initCompanionPanel();
+            leftApi.openCompanionPanel();
+
+            leftHarness.triggerResizerKeydown({ key: 'ArrowRight', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(leftHarness.bodyStyles.get('--neco-companion-width')).toBe('452px');
+            leftHarness.triggerResizerKeydown({ key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(leftHarness.bodyStyles.get('--neco-companion-width')).toBe('420px');
+        });
+
+        test('re-clamps width on #right-nav-panel pin/unpin and window resize without discarding saved preference', async () => {
+            accountStorageValues.set('ica--tracker-panel-width', '640');
+            const harness = setupResizeHarness({ width: 1280, sidebarOffset: '52px', pinnedOpen: false, pinnedWidth: 400 });
+            const { initCompanionPanel, openCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('640px');
+            expect(harness.resizerAttrs.get('aria-valuemax')).toBe('868');
+
+            // Pinning #right-nav-panel (400px) reduces max to 1280 - 52 - 400 - 360 = 468px.
+            harness.setPinnedOpen(true);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('468px');
+            expect(harness.resizerAttrs.get('aria-valuemax')).toBe('468');
+            expect(harness.resizerAttrs.get('aria-valuenow')).toBe('468');
+
+            // Unpinning restores the user's saved 640px width.
+            harness.setPinnedOpen(false);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('640px');
+
+            // Narrowing viewport re-clamps to 1024 - 52 - 360 = 612px.
+            harness.setViewportWidth(1024);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('612px');
+            expect(harness.resizerAttrs.get('aria-valuemax')).toBe('612');
+        });
+
+        test('preserves single resizer node markup and delegated resize after refreshCompanionPanel()', async () => {
+            const harness = setupResizeHarness();
+            const { initCompanionPanel, openCompanionPanel, refreshCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+            refreshCompanionPanel();
+            refreshCompanionPanel();
+
+            const resizerMatches = harness.getHtml().match(/class="ica--tpanel-resizer"/g) ?? [];
+            expect(resizerMatches).toHaveLength(1);
+
+            harness.triggerResizerKeydown({ key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('452px');
+
+            refreshCompanionPanel();
+            expect(harness.getHtml()).toContain('aria-valuenow="452"');
+            harness.triggerResizerKeydown({ key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('484px');
+        });
+
+        test('clears --neco-companion-width and ignores resize on phone viewports and top/bottom sheet docks', async () => {
+            accountStorageValues.set('ica--tracker-panel-width', '540');
+            const harness = setupResizeHarness({ phone: false });
+            const { initCompanionPanel, openCompanionPanel } = await importPanel();
+
+            initCompanionPanel();
+            openCompanionPanel();
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('540px');
+
+            // Switching to phone clears dock classes and width property, and ignores keyboard resize.
+            harness.setPhone(true);
+            expect(harness.bodyClasses.has('neconyan-companion-beside')).toBe(false);
+            expect(harness.bodyStyles.has('--neco-companion-width')).toBe(false);
+            harness.triggerResizerKeydown({ key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('540');
+
+            // Back to desktop, then switch handle edge to top sheet and back via topbar launcher.
+            harness.setPhone(false);
+            expect(harness.bodyStyles.get('--neco-companion-width')).toBe('540px');
+
+            accountStorageValues.set('ica--tracker-panel-handle-top-v2', JSON.stringify({ edge: 'top', fraction: 0.5 }));
+            const topHarness = setupResizeHarness();
+            const topApi = await importPanel();
+            topApi.initCompanionPanel();
+            topApi.openCompanionPanel();
+            expect(topHarness.panelAttrs.get('data-edge')).toBe('top');
+            expect(topHarness.bodyClasses.has('neconyan-companion-beside')).toBe(false);
+            expect(topHarness.bodyStyles.has('--neco-companion-width')).toBe(false);
+            topHarness.triggerResizerKeydown({ key: 'ArrowLeft', preventDefault: jest.fn(), stopPropagation: jest.fn() });
+            expect(accountStorageValues.get('ica--tracker-panel-width')).toBe('540');
+
+            // Topbar launcher docks on right edge and applies saved width.
+            topApi.setCompanionPanelLauncher('topbar');
+            expect(topHarness.panelAttrs.get('data-edge')).toBe('right');
+            expect(topHarness.bodyClasses.has('neconyan-companion-beside-right')).toBe(true);
+            expect(topHarness.bodyStyles.get('--neco-companion-width')).toBe('540px');
+
+            // Verify stylesheet hides the resizer on phones and top/bottom sheet docks.
+            const stylePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/scripts/extensions/in-chat-agents/style.css');
+            const styleCss = fs.readFileSync(stylePath, 'utf8');
+            expect(styleCss).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.ica--tpanel-resizer\s*\{\s*display:\s*none;/);
+            expect(styleCss).toContain('.ica--tpanel:not([data-edge="right"]):not([data-edge="left"]) .ica--tpanel-resizer');
+        });
     });
 });
