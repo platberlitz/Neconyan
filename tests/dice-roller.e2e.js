@@ -3,7 +3,7 @@
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
-import { searchAgentList } from './in-chat-agents-e2e-helpers.js';
+import { searchAgentList, searchAgentTemplates } from './in-chat-agents-e2e-helpers.js';
 
 test.setTimeout(240000);
 
@@ -310,6 +310,117 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
         expect(await page.evaluate(() => window.necoComposerWrites.filter(value => value.includes('🎲')))).toEqual([]);
         await expect(page.locator('#send_textarea')).toHaveValue('');
         await shot(page, `dice-${viewport}-auto-chat.png`);
+    });
+}
+
+const COMPANION_TASK = 'Complete only this companion task';
+
+function choiceBlock(tag) {
+    return [`[${tag}]`, '1. **[Speech 42/100]** Talk the guard down', '2. **[Stealth 30/100]** Slip past the gate', '3. **[Strength 60/100]** Force the door', `[/${tag}]`].join('\n');
+}
+
+async function addCompanionFromLibrary(page, templateId, name) {
+    await openAgentsTab(page);
+    const installed = await page.evaluate(async id => {
+        const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+        return store.getAgents().some(agent => agent.sourceTemplateId === id);
+    }, templateId);
+    if (!installed) {
+        await page.locator('#ica--templates').click();
+        const library = page.locator('.ica--template-browser');
+        await expect(library).toBeVisible();
+        await searchAgentTemplates(page, name, { templateId });
+        const added = page.waitForResponse(response => response.url().endsWith('/api/in-chat-agents/save') && response.request().postDataJSON()?.sourceTemplateId === templateId);
+        await library.locator(`.ica--template-card[data-id="${templateId}"] .ica--template-add`).click();
+        expect((await added).ok()).toBe(true);
+        await page.locator('dialog.popup:visible .popup-button-ok').click();
+        await expect(library).toBeHidden();
+    }
+    await searchAgentList(page, name, { count: 1 });
+    const card = page.locator('#ica--agentList .ica--agent-card').filter({ hasText: name }).first();
+    if (await card.locator('.ica--card-toggle').getAttribute('aria-pressed') !== 'true') {
+        await card.locator('.ica--card-toggle').click();
+    }
+    await expect(card.locator('.ica--card-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await card.locator('.ica--card-more').click();
+    await card.getByRole('button', { name: 'Make companion' }).click();
+    await expect(card.locator('.ica--btn-convert-execution')).toHaveAttribute('aria-label', 'Make prompt or reply agent');
+    await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+}
+
+for (const [location, phone, templateId, name, tag] of [
+    ['browser', false, 'tpl-cyoa-choices-skill-checks', 'CYOA Choices with Skill Checks', 'CHOICES'],
+    ['server', true, 'tpl-doors-fate-checks', 'Doors with Fate Checks', 'DOORS'],
+]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} ${name} as a companion: a choice tapped in the panel or typed as its number gets its check rolled for the ${location} reply`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true,
+            configureSettings: saved => useReplyLocation(saved, location) });
+        const mainReply = app.provider.mode.reply;
+        const isCompanionCall = body => (body.messages || []).some(message => message.role === 'system' && String(message.content).includes(COMPANION_TASK));
+        app.provider.mode.reply = body => (isCompanionCall(body)
+            ? { choices: [{ message: { role: 'assistant', content: choiceBlock(tag) } }] }
+            : mainReply);
+        const page = await openChat(account);
+        await waitForAgents(page);
+        await enableDice(page);
+        await addCompanionFromLibrary(page, templateId, name);
+
+        const panel = await openCompanionPanel(page);
+        const widget = panel.locator('.neco-dice');
+        await widget.locator('.neco-dice-options summary').click();
+        await widget.getByRole('checkbox', { name: 'Auto send' }).check();
+        await closeCompanionPanel(page);
+
+        // The first reply brings the companion's choices into the panel.
+        await sendAndSettle(page, app, 'We reach the gate.');
+        await expect.poll(() => app.provider.calls.filter(isCompanionCall).length, { timeout: 60000 }).toBeGreaterThan(0);
+        const companionPrompt = promptText(app.provider.calls.filter(isCompanionCall).at(-1)).join('\n');
+        expect(companionPrompt).toContain(`As a companion task, the [${tag}] block is your whole result`);
+        await openCompanionPanel(page);
+        await page.locator('#toast-container').evaluate(node => { node.style.display = 'none'; }).catch(() => {});
+        const choice = panel.locator('.ica--tpanel-agent-body .ica--choice-line').filter({ hasText: 'Talk the guard down' });
+        await expect(choice).toBeVisible({ timeout: 60000 });
+        await shot(page, `dice-${viewport}-${tag.toLowerCase()}-panel.png`);
+        await choice.click();
+        await expect(page.locator('#send_textarea')).toHaveValue('[Speech 42/100] Talk the guard down');
+
+        // Sending it rolls the tagged check and the reply is told the result.
+        await page.evaluate(() => { Math.random = () => 0.3; });
+        const before = app.provider.calls.length;
+        await page.locator('#send_but').click();
+        await expect.poll(() => app.provider.calls.slice(before).filter(call => !isCompanionCall(call)).length, { timeout: 60000 }).toBeGreaterThan(0);
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
+        const lastUser = await page.evaluate(async () => (await import('/script.js')).chat.filter(message => message.is_user).at(-1)?.mes);
+        expect(lastUser).toBe('[Speech 42/100] Talk the guard down\n🎲 Talk the guard down - rolled 31 vs 42 (Speech check, d100 roll under) - SUCCESS');
+        const reply = promptText(app.provider.calls.slice(before).find(call => !isCompanionCall(call))).join('\n');
+        expect(reply).toContain(DIRECTIVE);
+        expect(reply).toContain('Talk the guard down: SUCCESS');
+        await expect(page.locator('#send_textarea')).toHaveValue('');
+
+        // Typing the choice numbers instead rolls each tagged choice, in order.
+        await expect.poll(() => page.evaluate(async key => {
+            const { chat } = await import('/script.js');
+            const results = chat.at(-1)?.extra?.[key] ?? chat.at(-1)?.swipe_info?.[chat.at(-1).swipe_id]?.extra?.[key];
+            return Object.values(results ?? {}).some(result => result?.status === 'done' && String(result.content).includes('[Stealth 30/100]'));
+        }, 'inChatAgentCompanionResults'), { timeout: 60000 }).toBe(true);
+        const beforeNumbers = app.provider.calls.length;
+        await page.locator('#send_textarea').fill('1, then 2. I wave at the guard too.');
+        await page.locator('#send_but').click();
+        await expect.poll(() => app.provider.calls.slice(beforeNumbers).filter(call => !isCompanionCall(call)).length, { timeout: 60000 }).toBeGreaterThan(0);
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
+        const numbered = await page.evaluate(async () => (await import('/script.js')).chat.filter(message => message.is_user).at(-1)?.mes);
+        expect(numbered).toBe([
+            '1, then 2. I wave at the guard too.',
+            '🎲 Talk the guard down - rolled 31 vs 42 (Speech check, d100 roll under) - SUCCESS',
+            '🎲 Slip past the gate - rolled 31 vs 30 (Stealth check, d100 roll under) - PARTIAL SUCCESS',
+        ].join('\n'));
+        const numberedReply = promptText(app.provider.calls.slice(beforeNumbers).find(call => !isCompanionCall(call))).join('\n');
+        expect(numberedReply).toContain('Talk the guard down: SUCCESS');
+        expect(numberedReply).toContain('Slip past the gate: PARTIAL SUCCESS');
+        await expect(page.locator('#chat .mes[is_user="true"]').last().locator('.neco-dice-chip')).toHaveCount(2);
+        await expect(page.locator('#send_textarea')).toHaveValue('');
+        await shot(page, `dice-${viewport}-${tag.toLowerCase()}-chat.png`);
     });
 }
 
