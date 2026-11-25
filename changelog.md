@@ -39,6 +39,7 @@
 - **Scratchpad** can hold a spoken conversation now. Press **Talk mode** beside **Dictate**, speak, and your turn is sent when you pause; replies are read aloud and it listens again, with **Send now**, **Interrupt** and **End talk** in a bar above the message box and **Talk mode pause** under **Context → Dictation**.
 - The **Companions** panel keeps your place steady while you scroll up, reopen it or get live updates, loading off-screen cards in the background so opening stays fast.
 - **Scratchpad** quick prompts now sit in one scrolling row with arrows at each end, on desktop as well as phones, with **Edit quick prompts** pinned beside it; once a session has messages the row folds into a slim **Quick prompts** bar you can open again with one press.
+- **Dice Roller** has **Auto roll** and **Auto send** under **Roll options**, so a fresh roll waits after every reply and lands after your message when you send it, without touching the message box; tagged choices from **CYOA Choices with Skill Checks** and **Doors with Fate Checks** get a matching d100 roll that those agents use in place of their hidden one.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -243,6 +244,7 @@
 - PR #979 (2026-11-25) `feat(scratchpad): add hands-free talk mode`
 - PR #980 (2026-11-25) `fix(companions): render panel cards in background to stop scroll jumps`
 - PR #981 (2026-11-25) `feat(scratchpad): fit quick prompts on one row that folds away`
+- PR #982 (2026-11-25) `feat(dice): add Auto roll and Auto send to the Dice Roller`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
