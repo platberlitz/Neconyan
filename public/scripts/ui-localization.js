@@ -34,7 +34,14 @@ function templateIndex(dictionary) {
         const parts = key.split(placeholder);
         if (parts.length < 3 || parts.filter((_, i) => i % 2 === 0).join('').replace(/\s/g, '').length < 3) continue;
         const order = parts.filter((_, i) => i % 2 === 1);
-        const pattern = parts.map((part, i) => i % 2 ? '(.+?)' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
+        const isSeparatedRight = idx => idx + 2 < parts.length && parts[idx + 1] === '' && !value.includes(`\${${parts[idx]}}\${${parts[idx + 2]}}`);
+        const isSeparatedLeft = idx => idx >= 2 && parts[idx - 1] === '' && !value.includes(`\${${parts[idx - 2]}}\${${parts[idx]}}`);
+        const pattern = parts.map((part, i) => {
+            if (i % 2 === 0) return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (isSeparatedRight(i)) return /[a-zA-Z]$/.test(parts[i - 1]) ? '([a-z]*)' : '(.+?)';
+            if (isSeparatedLeft(i) && !/[a-zA-Z]$/.test(parts[i - 3])) return '(.+?)';
+            return '(.*?)';
+        }).join('');
         const template = { expression: new RegExp(`^${pattern}$`, 's'), order, value, fixed: parts.filter((_, i) => i % 2 === 0).join('').length };
         const prefix = parts[0].slice(0, 2);
         if (prefix.length < 2) index.leading.push(template);

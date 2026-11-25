@@ -22,7 +22,7 @@ import { escapeHtml, eventSource, event_types, getContext, power_user } from './
 import { autoRecolorHintShown, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, searchTerm, selectedCharacterKeys, setAutoRecolorHintShown, setCharacterColors, setGroupProfiles, setSearchTerm, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { analyzeColorImport, analyzeSettingsImport, analyzeStylePackImport, applyCardData, applyColorImport, applySettingsImport, applyStylePackImport, archiveStoredColorData, deleteCustomGradientPreset, disableAutoSync, enableAutoSync, exportColors, exportSettings, getArchivedColorData, getCurrentStorageScope, getCustomGradientPresets, getLegendPosition, getPinnedPersonaColors, getStorageKey, getStorageKeyForScope, getStorageLabelForKey, getStorageScopeDescriptor, getStoredColorDataFingerprint, getStylePackRegistry, getUserColorDataStore, markCardCharactersKept, markCurrentPersonaKept, normalizeColorDataEntry, normalizeToggleSettings, readCardData, removePinnedCharacterKey, renameCustomGradientPreset, renamePinnedPersonaColor, resolveCustomGradientPresetName, restoreAllSettingsToDefaults, restoreArchivedColorData, restorePinnedPersonaColor, saveCustomGradientPreset, saveData, saveLegendPosition, saveToCard, switchColorStorageScope, syncPinnedPersonaColors, updateAutoSyncUI } from './storage.js';
 import { buildStylePackEnvelope } from './style-pack-adapter.js';
-import { escapeAttr, getGoogleFontFamily, htmlToNode, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
+import { escapeAttr, formatCleanedMessagesToast, formatRandomizedColorsToast, formatSetGroupToast, getGoogleFontFamily, htmlToNode, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
 import { AUTO_HIGH_ATTRIBUTION_CONFIDENCE, cancelStreamingAttributionVerification, clearAutoAttributionVerificationQueue, getAttributionVerifyPasses, queueAutoAttributionVerificationForRenderedMessages, runAttributionVerification, verifyLatestAttributionsWithLLM, verifyVisibleAttributionsWithLLM } from './verify.js';
 
 export const DYNAMIC_CONTROL_HELP_TEXT = Object.freeze({
@@ -5493,7 +5493,7 @@ function bindSettingsPanelControls($) {
         } else if (action === 'randomize') {
             runSelectedCharacterMutation(randomizeCharacterColors, {
                 noChangeMessage: 'No selected colors changed. Locked characters were skipped.',
-                successMessage: result => `Randomized ${result.changedKeys.length} unlocked color${result.changedKeys.length === 1 ? '' : 's'}${result.skippedLockedKeys.length ? `; skipped ${result.skippedLockedKeys.length} locked` : ''}.`,
+                successMessage: result => formatRandomizedColorsToast(result.changedKeys.length, result.skippedLockedKeys.length),
             });
         } else if (action === 'delete') {
             deleteSelectedCharacters(e.currentTarget);
@@ -5538,7 +5538,7 @@ function bindSettingsPanelControls($) {
         if (!group) { toast.info('Choose a group label, or use Clear group.'); return; }
         runSelectedCharacterMutation(keys => setCharacterGroup(keys, group), {
             noChangeMessage: 'All selected characters already use that group.',
-            successMessage: result => `Set group for ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}${result.profileAppliedKeys.length ? `; applied its profile to ${result.profileAppliedKeys.length}` : ''}.`,
+            successMessage: result => formatSetGroupToast(result.changedKeys.length, result.profileAppliedKeys.length),
         });
     };
     $('dc-bulk-set-group').onclick = setSelectedGroup;
@@ -5591,9 +5591,8 @@ function bindSettingsPanelControls($) {
         try {
             const report = await applyChatColorMarkupCleanup({ fontTags });
             if (report.undo) {
-                const swipeText = report.swipeCount ? ` (${report.swipeCount} swipe${report.swipeCount === 1 ? '' : 's'})` : '';
                 // Whole-chat edits keep their undo even when routine toasts are reduced.
-                showUndoToast(`Cleaned ${report.messageCount} message${report.messageCount === 1 ? '' : 's'}${swipeText}.`, () => { void report.undo(); }, { always: true });
+                showUndoToast(formatCleanedMessagesToast(report.messageCount, report.swipeCount), () => { void report.undo(); }, { always: true });
             }
         } catch (error) {
             console.error('[Dialogue Colors] Message cleanup failed:', error);
