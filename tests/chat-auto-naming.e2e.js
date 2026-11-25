@@ -130,6 +130,42 @@ for (const phone of [false, true]) {
     });
 }
 
+for (const phone of [false, true]) {
+    const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} says so once with an error toast when the chat cannot be named`, async ({ app }) => {
+        let replies = 0;
+        app.provider.mode.reply = body => ({ choices: [{ finish_reason: 'stop', message: {
+            role: 'assistant',
+            content: JSON.stringify(body.messages || '').includes(LABEL_PROMPT) ? '' : `Nova answers ${++replies}.`,
+        } }] });
+        const labelCalls = () => app.provider.calls.filter(isLabelCall).length;
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.power_user.auto_label_chat_threshold = 3;
+        } });
+        const page = await openChat(account);
+        const original = await chatId(page);
+
+        await exchange(page, 'Begin the story.', 1);
+        const toast = page.locator('#toast-container .toast-error').filter({ hasText: 'Could not name this chat automatically' });
+        await expect(toast).toHaveCount(1, { timeout: 30000 });
+        await expect(toast).toContainText('The model did not return a usable chat label.');
+        await expect(page.locator('dialog.popup[open]')).toHaveCount(0);
+        if (SCREENSHOTS) await page.screenshot({ path: path.join(SCREENSHOTS, `failure-toast-${viewport}.png`) });
+        expect(await chatId(page)).toBe(original);
+
+        // One failure per chat: later messages neither retry the title nor repeat the toast.
+        const attempts = labelCalls();
+        await toast.click();
+        await expect(toast).toHaveCount(0, { timeout: 10000 });
+        await exchange(page, 'Keep going.', 2);
+        await page.waitForTimeout(3000);
+        expect(labelCalls()).toBe(attempts);
+        await expect(page.locator('#toast-container .toast-error')).toHaveCount(0);
+        expect((await chatFiles(app, account)).names).toEqual([original]);
+    });
+}
+
 test('the switch, a custom count and a manual name are respected', async ({ app }) => {
     const provider = useProvider(app);
     const account = await app.account({ activeConnection: true, configureSettings(saved) {

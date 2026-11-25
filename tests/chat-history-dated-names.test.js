@@ -291,6 +291,23 @@ describe('automatic chat naming wiring', () => {
         expect(source).toMatch(/reloadCurrent: 'saved',\s+canCommit,\s+showErrorPopup: false,/);
     });
 
+    test('a failed background name shows an error toast instead of failing silently', () => {
+        expect(source).toMatch(/rename: renameChatAutomatically,\s+onError: reportChatAutoNameFailure,/);
+        const toastr = { error: jest.fn() };
+        const context = vm.createContext({
+            String,
+            console: { warn: jest.fn() },
+            toastr,
+            t: (strings, ...values) => `T:${String.raw({ raw: strings }, ...values)}`,
+        });
+        vm.runInContext(source.match(/^function reportChatAutoNameFailure\([\s\S]*?^}/m)[0], context);
+        context.reportChatAutoNameFailure(new Error('The model did not return a usable chat label.'));
+        expect(toastr.error).toHaveBeenCalledWith('The model did not return a usable chat label.', 'T:Could not name this chat automatically');
+        context.reportChatAutoNameFailure('provider offline');
+        expect(toastr.error).toHaveBeenLastCalledWith('provider offline', 'T:Could not name this chat automatically');
+        expect(context.console.warn).toHaveBeenCalledTimes(2);
+    });
+
     test('refreshes the top bar, chat bar and bottom bar titles after a rename', () => {
         const tabs = readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
         expect(tabs.match(/eventTypes\.CHAT_CHANGED,\n\s+eventTypes\.CHAT_RENAMED,/g)).toHaveLength(3);
