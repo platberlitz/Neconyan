@@ -29,6 +29,7 @@
 - Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
 - Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
 - **Scratchpad** can now rewrite, add and delete messages in a **Conversation** chat, and edit your preset there too once you tick **Current preset**. Each change has **Try first** before you save and **Undo** after.
+- Non-English alerts in **Dialogue Colors** now use complete translated sentences instead of gluing English plural endings or untranslated undo prompts onto status messages.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -221,6 +222,7 @@
 - PR #966 (2026-11-25) `fix(i18n): isolate colliding UI keys, remove dead symbolic keys, and realign hotkey translations`
 - PR #967 (2026-11-25) `fix(i18n): keep Meower pickers and Scratchpad session names and web sources as written`
 - PR #970 (2026-11-25) `fix(i18n): translate tour macro paragraphs, missing runtime labels, 404 page, and server crash cause`
+- PR #971 (2026-11-25) `fix(i18n): replace Dialogue Colors plural-ending template holes and translate undo toast`
 - PR #972 (2026-11-25) `fix(changelog): give each PR its own highlights file`
 
 ### Local Commits
