@@ -1670,6 +1670,21 @@ describe('companion tracker panel', () => {
             scrollTop = 0;
             panel.refreshCompanionPanel();
             expect(group.hidden).toBe(true);
+
+            // Closing the panel hides it with display:none, which resets scrollTop in real browsers.
+            // Reopening in the same chat restores the saved scroll offset; switching chats clears it.
+            panelNode.scrollHeight = 1200;
+            scrollTop = 420;
+            panel.closeCompanionPanel();
+            scrollTop = 0;
+            panel.openCompanionPanel();
+            expect(scrollTop).toBe(420);
+
+            panel.closeCompanionPanel();
+            scrollTop = 0;
+            await eventSource.emit('chat_changed');
+            panel.openCompanionPanel();
+            expect(scrollTop).toBe(0);
         } finally {
             globalThis.requestAnimationFrame = previousFrame;
         }

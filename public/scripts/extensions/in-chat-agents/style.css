@@ -1603,9 +1603,11 @@ body.neconyan-companion-resizing {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
+/* display: none keeps the closed panel out of the render tree; visibility: hidden
+   inherits through every card and makes WebKit restyle the whole panel on reopen,
+   even when off-screen cards use content-visibility: auto. */
 .ica--tpanel:not(.is-open) {
-    visibility: hidden;
-    pointer-events: none;
+    display: none;
 }
 
 .ica--tpanel-header {

@@ -317,6 +317,13 @@ describe('agent workbench state', () => {
         expect(rule).toMatch(/contain-intrinsic-size: auto \d+px;/);
     });
 
+    test('closed companion panel uses display none instead of inherited visibility', () => {
+        const rule = styleSource.match(/^\.ica--tpanel:not\(\.is-open\) \{[^}]*\}/m)?.[0] ?? '';
+        expect(rule).toContain('display: none;');
+        expect(rule).not.toContain('visibility:');
+        expect(rule).not.toContain('pointer-events:');
+    });
+
     test('the master switch persists off even when recovery blocks Agent execution', () => {
         const settings = { enabled: true };
         const messages = [];

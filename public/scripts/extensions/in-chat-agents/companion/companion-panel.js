@@ -120,6 +120,7 @@ let panelInitialized = false;
 let livePreview = null;
 let previewResultsSignature = '';
 let panelOpen = false;
+let panelSavedScrollTop = 0;
 let panelLocked = getStoredPanelLocked();
 let handleHidden = getStoredHandleHidden();
 let panelLauncher = getStoredPanelLauncher();
@@ -1641,7 +1642,9 @@ export function openCompanionPanel() {
         globalThis.NeconyanNotes?.hide?.();
     }
 
-    if (!panelOpen) returnFocus = document.activeElement;
+    const wasOpen = panelOpen;
+    if (!wasOpen) returnFocus = document.activeElement;
+    const restoreScrollTop = !wasOpen ? panelSavedScrollTop : 0;
     if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
     }
@@ -1659,6 +1662,12 @@ export function openCompanionPanel() {
             globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
         },
     });
+    if (restoreScrollTop > 0) {
+        const panelNode = document.getElementById?.('ica--tracker-panel') ?? $('#ica--tracker-panel')[0];
+        if (panelNode) {
+            panelNode.scrollTop = restoreScrollTop;
+        }
+    }
     notifyDiceCompanionHostsChanged();
     // The panel only gains its height once it is shown, so measure again on the next frame.
     schedulePanelJumpSync();
@@ -1667,10 +1676,14 @@ export function openCompanionPanel() {
 
 export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
+    const panel = $('#ica--tracker-panel');
+    if (panelOpen) {
+        panelSavedScrollTop = panel[0]?.scrollTop || 0;
+    }
+    stopPanelBottomFollow?.();
     panelOpen = false;
     activePanelResizeStop?.();
     syncCompanionPanelDock();
-    const panel = $('#ica--tracker-panel');
     setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
@@ -2299,6 +2312,9 @@ export function initCompanionPanel() {
     const refreshEvents = [event_types.CHAT_CHANGED, event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED].filter(Boolean);
     for (const eventName of refreshEvents) {
         eventSource.on(eventName, () => {
+            if (eventName === event_types.CHAT_CHANGED) {
+                panelSavedScrollTop = 0;
+            }
             // Chat changes must reach the windows synchronously; a stale note is worse than a repaint.
             refreshCompanionWindows();
             if (panelOpen) {
