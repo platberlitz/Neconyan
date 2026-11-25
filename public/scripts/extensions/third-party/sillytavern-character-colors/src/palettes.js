@@ -14,7 +14,7 @@ import { GRADIENT_GENERATOR_ALGORITHM, advanceGradientGenerator, generateSeededG
 import { escapeHtml, generateQuietPrompt, getContext, power_user } from './st-api.js';
 import { characterColors, expandedCharacterRows, groupProfiles, setCharacterColors, setExpandedCharacterRows, setGroupProfiles, setSwapMode, settings, swapMode } from './state.js';
 import { getAutoSyncRecord, isPlainObject, persistLocalModuleChange, saveData, saveGlobalSettingsSnapshot } from './storage.js';
-import { ASSIGNED_COLOR_MIN_DELTA_E, VALID_STYLES, colorDistance, hexToHsl, hslToHex, normalizeAliases, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, toast } from './utils.js';
+import { ASSIGNED_COLOR_MIN_DELTA_E, VALID_STYLES, colorDistance, formatConflictRepairToast, hexToHsl, hslToHex, normalizeAliases, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, toast } from './utils.js';
 
 export const COLOR_THEMES = {
     pastel: [[340, 70, 75], [200, 70, 75], [120, 50, 70], [45, 80, 70], [280, 60, 75], [170, 60, 70], [20, 80, 75], [240, 60, 75]],
@@ -392,7 +392,9 @@ export function regenerateAllGradients() {
     }
     applyLiveColorChangesFromSnapshot(snapshot, changedKeys);
     commit();
-    toast.success(`Re-randomized ${changedKeys.length} gradient${changedKeys.length === 1 ? '' : 's'}`);
+    toast.success(changedKeys.length === 1
+        ? `Re-randomized ${changedKeys.length} gradient`
+        : `Re-randomized ${changedKeys.length} gradients`);
     return changedKeys;
 }
 
@@ -401,8 +403,10 @@ export function autoResolveConflicts() {
     const result = repairPerceptualConflicts();
     if (result.partialAnalysis) toast.warning('Conflict repair was not run because the bounded analysis is partial. Review the report or reduce the active character set.');
     else if (!result.initialConflictCount) toast.info('No conflicts found');
-    else if (!result.changedKeys.length) toast.warning(`No safe repair was found; ${result.unresolvedCount} conflict${result.unresolvedCount === 1 ? '' : 's'} remain.`);
-    else toast.success(`Recolored ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}; ${result.unresolvedCount} conflict${result.unresolvedCount === 1 ? '' : 's'} remain.`);
+    else if (!result.changedKeys.length) toast.warning(result.unresolvedCount === 1
+        ? `No safe repair was found; ${result.unresolvedCount} conflict remains.`
+        : `No safe repair was found; ${result.unresolvedCount} conflicts remain.`);
+    else toast.success(formatConflictRepairToast(result.changedKeys.length, result.unresolvedCount));
     return result;
 }
 

@@ -22,7 +22,7 @@ import { escapeHtml, eventSource, event_types, getContext, power_user } from './
 import { autoRecolorHintShown, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, searchTerm, selectedCharacterKeys, setAutoRecolorHintShown, setCharacterColors, setGroupProfiles, setSearchTerm, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { analyzeColorImport, analyzeSettingsImport, analyzeStylePackImport, applyCardData, applyColorImport, applySettingsImport, applyStylePackImport, archiveStoredColorData, deleteCustomGradientPreset, disableAutoSync, enableAutoSync, exportColors, exportSettings, getArchivedColorData, getCurrentStorageScope, getCustomGradientPresets, getLegendPosition, getPinnedPersonaColors, getStorageKey, getStorageKeyForScope, getStorageLabelForKey, getStorageScopeDescriptor, getStoredColorDataFingerprint, getStylePackRegistry, getUserColorDataStore, markCardCharactersKept, markCurrentPersonaKept, normalizeColorDataEntry, normalizeToggleSettings, readCardData, removePinnedCharacterKey, renameCustomGradientPreset, renamePinnedPersonaColor, resolveCustomGradientPresetName, restoreAllSettingsToDefaults, restoreArchivedColorData, restorePinnedPersonaColor, saveCustomGradientPreset, saveData, saveLegendPosition, saveToCard, switchColorStorageScope, syncPinnedPersonaColors, updateAutoSyncUI } from './storage.js';
 import { buildStylePackEnvelope } from './style-pack-adapter.js';
-import { escapeAttr, formatCleanedMessagesToast, formatRandomizedColorsToast, formatSetGroupToast, getGoogleFontFamily, htmlToNode, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
+import { escapeAttr, formatCleanedMessagesToast, formatDeletedCharactersToast, formatRandomizedColorsToast, formatRestoredTablesToast, formatSetGroupToast, getGoogleFontFamily, htmlToNode, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
 import { AUTO_HIGH_ATTRIBUTION_CONFIDENCE, cancelStreamingAttributionVerification, clearAutoAttributionVerificationQueue, getAttributionVerifyPasses, queueAutoAttributionVerificationForRenderedMessages, runAttributionVerification, verifyLatestAttributionsWithLLM, verifyVisibleAttributionsWithLLM } from './verify.js';
 
 export const DYNAMIC_CONTROL_HELP_TEXT = Object.freeze({
@@ -971,7 +971,7 @@ export async function showStorageManager() {
     });
     if (decision.value === 'restore') {
         const result = await restoreArchivedColorData();
-        if (result.ok) toast.success(`Restored ${result.count} stored color table${result.count === 1 ? '' : 's'}.${result.skipped ? ` Skipped ${result.skipped} key${result.skipped === 1 ? '' : 's'} that now exist.` : ''}`);
+        if (result.ok) toast.success(formatRestoredTablesToast(result.count, result.skipped));
         else if (result.error && result.rollbackPersisted === false) toast.error('Restore failed, and its recovery could not be saved reliably. Export your colors before reloading.');
         else if (result.error) toast.error('The archived tables could not be restored safely.');
         else toast.info('No archived color tables could be restored.');
@@ -982,7 +982,9 @@ export async function showStorageManager() {
     if (!selected.length) { toast.info('Select at least one inactive table.'); return; }
     const labels = entries.filter(entry => selected.includes(entry.key)).map(entry => entry.label);
     const confirmed = await confirmReviewedAction({
-        title: `Archive ${selected.length} stored color table${selected.length === 1 ? '' : 's'}?`,
+        title: selected.length === 1
+            ? `Archive ${selected.length} stored color table?`
+            : `Archive ${selected.length} stored color tables?`,
         description: 'This replaces any previous storage archive. You can restore this batch from Storage Manager until another batch is archived.',
         detailsHtml: `<p class="dc-review-names">${labels.map(escapeHtml).join('<br>')}</p>`,
         confirmLabel: 'Archive selected',
@@ -994,7 +996,9 @@ export async function showStorageManager() {
         if (selected.includes(entry.key)) reviewedFingerprints[entry.key] = entry.fingerprint;
     }
     const result = await archiveStoredColorData(selected, reviewedFingerprints);
-    if (result.ok) toast.success(`Archived ${result.count} stored color table${result.count === 1 ? '' : 's'}.`);
+    if (result.ok) toast.success(result.count === 1
+        ? `Archived ${result.count} stored color table.`
+        : `Archived ${result.count} stored color tables.`);
     else if (result.error === 'context_changed') toast.error('The selected tables changed after review. Review them again before archiving.');
     else if (result.rollbackPersisted === false) toast.error('Archive failed, and its recovery could not be saved reliably. Export your colors before reloading.');
     else toast.error('The selected tables could not be archived safely.');
@@ -1328,7 +1332,9 @@ async function acceptAllHighConfidenceAttributionReviews(opener) {
         return 0;
     }
     const confirmed = await confirmReviewedAction({
-        title: `Accept ${candidates.length} high-confidence suggestion${candidates.length === 1 ? '' : 's'}?`,
+        title: candidates.length === 1
+            ? `Accept ${candidates.length} high-confidence suggestion?`
+            : `Accept ${candidates.length} high-confidence suggestions?`,
         description: `Each suggestion is at least ${Math.round(AUTO_HIGH_ATTRIBUTION_CONFIDENCE * 100)}% confident and targets an existing speaker. This keeps the default review-all policy unchanged.`,
         detailsHtml: `<p class="dc-review-names">${candidates.slice(0, 12).map(presentation => `Message ${presentation.messageIndex}: ${escapeHtml(getKnownReviewSpeakerName(presentation.review.proposedSpeaker))}`).join('<br>')}${candidates.length > 12 ? `<br>and ${candidates.length - 12} more` : ''}</p>`,
         confirmLabel: 'Accept high-confidence',
@@ -1363,7 +1369,9 @@ async function acceptAllProposedAttributionReviews(opener) {
         return 0;
     }
     const confirmed = await confirmReviewedAction({
-        title: `Accept all ${candidates.length} proposed suggestion${candidates.length === 1 ? '' : 's'}?`,
+        title: candidates.length === 1
+            ? `Accept all ${candidates.length} proposed suggestion?`
+            : `Accept all ${candidates.length} proposed suggestions?`,
         description: 'All pending proposed suggestions for known speakers will be applied to local dialogue colors.',
         detailsHtml: `<p class="dc-review-names">${candidates.slice(0, 12).map(presentation => `Message ${presentation.messageIndex}: ${escapeHtml(getKnownReviewSpeakerName(presentation.review.proposedSpeaker))}`).join('<br>')}${candidates.length > 12 ? `<br>and ${candidates.length - 12} more` : ''}</p>`,
         confirmLabel: 'Accept all proposed',
@@ -1383,7 +1391,7 @@ async function acceptAllProposedAttributionReviews(opener) {
         }
         if (await acceptAttributionReviewFromUi(presentation, '', { quiet: true })) accepted++;
     }
-    if (accepted > 0) toast.success(`Accepted ${accepted} proposed suggestion${accepted !== 1 ? 's' : ''}.`);
+    if (accepted > 0) toast.success(accepted === 1 ? `Accepted ${accepted} proposed suggestion.` : `Accepted ${accepted} proposed suggestions.`);
     return accepted;
 }
 
@@ -3031,7 +3039,9 @@ function applyGradientGalleryPreset() {
     commit();
     repaintDomAfterCharacterDataChange(0);
     renderGradientPresetGallery('', 'apply');
-    toast.success(`Applied colors and gradient to ${changedKeys.length} character${changedKeys.length === 1 ? '' : 's'}.`);
+    toast.success(changedKeys.length === 1
+        ? `Applied colors and gradient to ${changedKeys.length} character.`
+        : `Applied colors and gradient to ${changedKeys.length} characters.`);
 }
 
 function renameGradientGalleryPreset() {
@@ -3411,8 +3421,8 @@ export function refreshGroupProfileControls() {
     const renameButton = document.getElementById('dc-group-profile-rename-button');
     const deleteButton = document.getElementById('dc-group-profile-delete');
     if (status) status.textContent = profile
-        ? `Saved profile; ${targetCount} current group member${targetCount === 1 ? '' : 's'}.`
-        : name ? `No saved profile; ${targetCount} current group member${targetCount === 1 ? '' : 's'}.` : 'Choose or enter a group label.';
+        ? (targetCount === 1 ? `Saved profile; ${targetCount} current group member.` : `Saved profile; ${targetCount} current group members.`)
+        : name ? (targetCount === 1 ? `No saved profile; ${targetCount} current group member.` : `No saved profile; ${targetCount} current group members.`) : 'Choose or enter a group label.';
     if (saveButton) saveButton.textContent = profile ? 'Save profile' : 'Create profile';
     if (applyButton) {
         applyButton.textContent = `Apply to existing (${targetCount})`;
@@ -3498,7 +3508,7 @@ async function applyGroupProfileToExisting(opener) {
     const reviewedProfile = JSON.stringify(profile);
     const reviewedMembers = JSON.stringify(keys.map(key => [key, characterColors[key]?.group ?? '']));
     const confirmed = await confirmReviewedAction({
-        title: `Apply profile to ${keys.length} character${keys.length === 1 ? '' : 's'}?`,
+        title: keys.length === 1 ? `Apply profile to ${keys.length} character?` : `Apply profile to ${keys.length} characters?`,
         description: `The selected fields from “${profile.name}” will be copied into every current member of that group. Later profile edits will not alter them.`,
         detailsHtml: `<p class="dc-review-names">${keys.slice(0, 12).map(key => escapeHtml(characterColors[key].name)).join(', ')}${keys.length > 12 ? `, and ${keys.length - 12} more` : ''}</p>`,
         confirmLabel: 'Apply profile',
@@ -3516,7 +3526,9 @@ async function applyGroupProfileToExisting(opener) {
     if (!result.changedKeys.length) { toast.info('All group members already match the saved fields.'); return; }
     applyLiveColorChangesFromSnapshot(snapshot, result.changedKeys, { saveImmediately: true, repaintStyles: true });
     commit();
-    toast.success(`Applied the profile to ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`);
+    toast.success(result.changedKeys.length === 1
+        ? `Applied the profile to ${result.changedKeys.length} character.`
+        : `Applied the profile to ${result.changedKeys.length} characters.`);
 }
 
 function getBulkStyleFieldMask() {
@@ -4304,7 +4316,9 @@ async function reviewAndApplyStylePack(analysis, opener, binding = captureUiMuta
         renderStylePackRegistry();
         const message = result.unchanged
             ? 'No library items changed because existing conflicts were kept.'
-            : `Installed ${result.installed} style-library item${result.installed === 1 ? '' : 's'}.`;
+            : (result.installed === 1
+                ? `Installed ${result.installed} style-library item.`
+                : `Installed ${result.installed} style-library items.`);
         announceStylePack(message);
         toast.success(message);
     } else {
@@ -4403,7 +4417,9 @@ async function deleteSelectedCharacters(opener) {
     if (!removableKeys.length) { toast.info('All selected characters are kept. Unkeep them before deleting.'); return; }
     const review = captureCharacterRemovalReview(selectedKeys);
     const confirmed = await confirmReviewedAction({
-        title: `Delete ${removableKeys.length} selected character${removableKeys.length === 1 ? '' : 's'}?`,
+        title: removableKeys.length === 1
+            ? `Delete ${removableKeys.length} selected character?`
+            : `Delete ${removableKeys.length} selected characters?`,
         description: `${removableKeys.length} selected character${removableKeys.length === 1 ? '' : 's'} will be deleted. ${keptKeys.length ? `${keptKeys.length} kept ${keptKeys.length === 1 ? 'character is' : 'characters are'} protected.` : 'No kept characters are affected.'}`,
         detailsHtml: `<p class="dc-review-names">${removableKeys.slice(0, 12).map(key => escapeHtml(characterColors[key].name)).join(', ')}${removableKeys.length > 12 ? `, and ${removableKeys.length - 12} more` : ''}</p>`,
         confirmLabel: 'Delete selected',
@@ -4420,10 +4436,7 @@ async function deleteSelectedCharacters(opener) {
     const restore = createRestoreSnapshot();
     const result = runSelectedCharacterMutation(deleteCharacterKeys);
     if (!result.removedKeys?.length) return;
-    const keptText = result.keptKeys.length
-        ? ` Kept ${result.keptKeys.length} pinned character${result.keptKeys.length === 1 ? '' : 's'}.`
-        : '';
-    showUndoToast(`Deleted ${result.removedKeys.length} selected character${result.removedKeys.length === 1 ? '' : 's'}.${keptText}`, restore);
+    showUndoToast(formatDeletedCharactersToast(result.removedKeys.length, result.keptKeys.length), restore);
     requestAnimationFrame(() => document.getElementById('dc-select-visible')?.focus({ preventScroll: true }));
 }
 
@@ -5473,22 +5486,30 @@ function bindSettingsPanelControls($) {
         if (action === 'lock') {
             runSelectedCharacterMutation(keys => setCharacterLock(keys, true), {
                 noChangeMessage: 'All selected characters are already locked.',
-                successMessage: result => `Locked ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+                successMessage: result => result.changedKeys.length === 1
+                    ? `Locked ${result.changedKeys.length} character.`
+                    : `Locked ${result.changedKeys.length} characters.`,
             });
         } else if (action === 'unlock') {
             runSelectedCharacterMutation(keys => setCharacterLock(keys, false), {
                 noChangeMessage: 'All selected characters are already unlocked.',
-                successMessage: result => `Unlocked ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+                successMessage: result => result.changedKeys.length === 1
+                    ? `Unlocked ${result.changedKeys.length} character.`
+                    : `Unlocked ${result.changedKeys.length} characters.`,
             });
         } else if (action === 'keep') {
             runSelectedCharacterMutation(keys => setCharacterKeep(keys, true), {
                 noChangeMessage: 'All selected characters are already kept.',
-                successMessage: result => `Kept ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+                successMessage: result => result.changedKeys.length === 1
+                    ? `Kept ${result.changedKeys.length} character.`
+                    : `Kept ${result.changedKeys.length} characters.`,
             });
         } else if (action === 'unkeep') {
             runSelectedCharacterMutation(keys => setCharacterKeep(keys, false), {
                 noChangeMessage: 'All selected characters are already unkept.',
-                successMessage: result => `Unkept ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+                successMessage: result => result.changedKeys.length === 1
+                    ? `Unkept ${result.changedKeys.length} character.`
+                    : `Unkept ${result.changedKeys.length} characters.`,
             });
         } else if (action === 'randomize') {
             runSelectedCharacterMutation(randomizeCharacterColors, {
@@ -5528,7 +5549,9 @@ function bindSettingsPanelControls($) {
                 return { ...result, changedKeys: [...changedKeys] };
             }, {
                 noChangeMessage: 'The selected characters already match the copied style fields.',
-                successMessage: result => `Pasted style to ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+                successMessage: result => result.changedKeys.length === 1
+                    ? `Pasted style to ${result.changedKeys.length} character.`
+                    : `Pasted style to ${result.changedKeys.length} characters.`,
             });
         }
     };
@@ -5544,7 +5567,9 @@ function bindSettingsPanelControls($) {
     $('dc-bulk-set-group').onclick = setSelectedGroup;
     $('dc-bulk-clear-group').onclick = () => runSelectedCharacterMutation(keys => setCharacterGroup(keys, ''), {
         noChangeMessage: 'The selected characters do not have a group.',
-        successMessage: result => `Cleared group for ${result.changedKeys.length} character${result.changedKeys.length === 1 ? '' : 's'}.`,
+        successMessage: result => result.changedKeys.length === 1
+            ? `Cleared group for ${result.changedKeys.length} character.`
+            : `Cleared group for ${result.changedKeys.length} characters.`,
     });
     ['dc-bulk-style-primary', 'dc-bulk-style-gradient', 'dc-bulk-style-font', 'dc-bulk-style-text'].forEach(id => {
         $(id).onchange = () => updateBulkToolbar();
@@ -5848,7 +5873,9 @@ function bindSettingsPanelControls($) {
             const count = existing.preview?.characterCount ?? 0;
             const confirmed = await confirmReviewedAction({
                 title: 'Replace saved card data?',
-                description: `This card already stores ${count} character${count === 1 ? '' : 's'}. Its saved Dialogue Colors payload will be replaced with the current table.`,
+                description: count === 1
+                    ? `This card already stores ${count} character. Its saved Dialogue Colors payload will be replaced with the current table.`
+                    : `This card already stores ${count} characters. Its saved Dialogue Colors payload will be replaced with the current table.`,
                 confirmLabel: 'Replace card data',
                 danger: true,
                 opener,
@@ -5963,7 +5990,7 @@ function bindSettingsPanelControls($) {
         });
         if (!count) { toast.info('Every character is already locked.'); return; }
         saveHistory();
-        saveData(); updateCharList(); toast.info(`Locked ${count} character${count === 1 ? '' : 's'}.`);
+        saveData(); updateCharList(); toast.info(count === 1 ? `Locked ${count} character.` : `Locked ${count} characters.`);
     };
     $('dc-unlock-all').onclick = () => {
         let count = 0;
@@ -5975,7 +6002,7 @@ function bindSettingsPanelControls($) {
         });
         if (!count) { toast.info('Every character is already unlocked.'); return; }
         saveHistory();
-        saveData(); updateCharList(); toast.info(`Unlocked ${count} character${count === 1 ? '' : 's'}.`);
+        saveData(); updateCharList(); toast.info(count === 1 ? `Unlocked ${count} character.` : `Unlocked ${count} characters.`);
     };
     $('dc-reset').onclick = async e => {
         const unlockedCount = Object.values(characterColors).filter(entry => !entry.locked).length;
@@ -6007,7 +6034,7 @@ function bindSettingsPanelControls($) {
         if (!changed) { toast.info('No unlocked colors to reset'); return; }
         applyLiveColorChangesFromSnapshot(snapshot, changedKeys);
         commit();
-        showUndoToast(`Reset ${changed} unlocked color${changed !== 1 ? 's' : ''}.`, restore);
+        showUndoToast(changed === 1 ? `Reset ${changed} unlocked color.` : `Reset ${changed} unlocked colors.`, restore);
     };
     let searchFrame = 0;
     $('dc-search').oninput = e => {

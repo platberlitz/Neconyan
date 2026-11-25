@@ -36,6 +36,32 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
         assert.ok(keys.has(caption), `missing ${caption}`);
         assert.equal(english[caption], caption, `missing English caption: ${caption}`);
     }
+    for (const caption of [
+        'Click this toast to undo.',
+        'Recolored ${0} message.',
+        'Recolored ${0} messages.',
+        'Recolored ${0} character; ${1} conflicts remain.',
+        'Restored ${0} stored color tables. Skipped ${1} keys that now exist.',
+        'Deleted ${0} selected characters. Kept ${1} pinned characters.',
+        'Verified DOM colors: applied ${0} corrections, queued ${1} suggestions for review.',
+        'Verification stopped after ${0} messages: the provider request failed. Applied ${1} corrections and queued ${2} suggestions before stopping.',
+    ]) {
+        assert.ok(keys.has(caption), `missing M102b caption: ${caption}`);
+        assert.equal(english[caption], caption, `missing M102b English caption: ${caption}`);
+    }
+    for (const retired of [
+        'Recolored ${0} message${1}.',
+        'Recolored ${0} character${1}; ${2} conflict${3} remain.',
+        'Restored ${0} stored color table${1}.${2}',
+        'Skipped ${0} key${1} that now exist.',
+        'Deleted ${0} selected character${1}.${2}',
+        'Kept ${0} pinned character${1}.',
+        'Verified DOM colors: applied ${0} correction${1}, queued ${2} suggestion${3} for review.',
+        'Verification stopped after ${0} message${1}: the provider request failed.${2}',
+    ]) {
+        assert.ok(!keys.has(retired), `retired M102b key still collected: ${retired}`);
+        assert.ok(!Object.hasOwn(english, retired), `retired M102b key still in en.json: ${retired}`);
+    }
     const group5Captions = [
         'A **macro** is a short instruction inside double braces, such as **{{char}}**. It becomes text when a prompt is built. This page lets you look up the syntax, try it and keep macros of your own.',
         'The syntax switches control comparisons in **{{if}}** and repairs for macros written for other apps. Their help buttons explain exactly what changes.',

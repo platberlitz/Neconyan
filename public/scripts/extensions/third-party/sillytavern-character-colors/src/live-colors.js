@@ -1332,7 +1332,9 @@ export async function applyToolCallMessageRepair(options = {}) {
     commit();
     queueChatSave();
     console.info('[Dialogue Colors] Restored tool-call messages this extension had colorized.', report);
-    toast.info(`Restored ${count} tool-call message${count === 1 ? '' : 's'} this extension had colorized.`);
+    toast.info(count === 1
+        ? `Restored ${count} tool-call message this extension had colorized.`
+        : `Restored ${count} tool-call messages this extension had colorized.`);
     for (const index of report.repairedIndices) await refreshMessageDom(index, chat[index]);
     return report;
 }
@@ -1388,7 +1390,9 @@ export async function applyHtmlBreakingSpanRepair(options = {}) {
     queueChatSave();
     console.info('[Dialogue Colors] Removed color tags this extension had spliced into HTML elements.', report);
     if (!options.silent) {
-        toast.info(`Repaired ${count} message${count === 1 ? '' : 's'} whose HTML this extension had broken.`);
+        toast.info(count === 1
+            ? `Repaired ${count} message whose HTML this extension had broken.`
+            : `Repaired ${count} messages whose HTML this extension had broken.`);
     }
     for (const index of report.repairedIndices) await refreshMessageDom(index, chat[index]);
     return report;
@@ -1426,7 +1430,9 @@ export async function applyOverreachingSpanRepair(options = {}) {
     queueChatSave();
     console.info('[Dialogue Colors] Re-scoped color spans that ran past the dialogue they opened on.', report);
     if (!options.silent) {
-        toast.info(`Trimmed color spans in ${count} message${count === 1 ? '' : 's'}.`);
+        toast.info(count === 1
+            ? `Trimmed color spans in ${count} message.`
+            : `Trimmed color spans in ${count} messages.`);
     }
     for (const index of report.repairedIndices) await refreshMessageDom(index, chat[index]);
     return report;
@@ -1733,11 +1739,15 @@ export async function recolorAllMessages() {
         if (recoloredCount > 0) {
             const saveConfirmed = await queueCapturedChatSave(chatBinding, { immediate: true });
             if (isCapturedChatBindingCurrent(chatBinding)) {
-                if (saveConfirmed) toast.info(`Recolored ${recoloredCount} message${recoloredCount !== 1 ? 's' : ''}.`);
-                else toast.warning(`Recolored ${recoloredCount} message${recoloredCount !== 1 ? 's' : ''}; the host did not confirm the chat save.`);
+                if (saveConfirmed) toast.info(recoloredCount === 1 ? `Recolored ${recoloredCount} message.` : `Recolored ${recoloredCount} messages.`);
+                else toast.warning(recoloredCount === 1
+                    ? `Recolored ${recoloredCount} message; the host did not confirm the chat save.`
+                    : `Recolored ${recoloredCount} messages; the host did not confirm the chat save.`);
             }
         } else if (ambiguousSkippedCount > 0) {
-            toast.info(`No messages recolored; skipped ${ambiguousSkippedCount} ambiguous legacy color mapping${ambiguousSkippedCount !== 1 ? 's' : ''}.`);
+            toast.info(ambiguousSkippedCount === 1
+                ? `No messages recolored; skipped ${ambiguousSkippedCount} ambiguous legacy color mapping.`
+                : `No messages recolored; skipped ${ambiguousSkippedCount} ambiguous legacy color mappings.`);
         } else {
             toast.info('No messages needed recoloring.');
         }
@@ -1887,7 +1897,9 @@ export async function colorizeMessages(targetMode = 'all') {
             void queueCapturedChatSave(run.binding);
         }
         if (eligibleEntries.length > 0) {
-            toast.info(`Colorizing ${eligibleEntries.length} message${eligibleEntries.length !== 1 ? 's' : ''} in batches...`, '', { timeOut: 3000 });
+            toast.info(eligibleEntries.length === 1
+                ? `Colorizing ${eligibleEntries.length} message in batches...`
+                : `Colorizing ${eligibleEntries.length} messages in batches...`, '', { timeOut: 3000 });
             const { batches, directFallback } = partitionColorizeEntries(eligibleEntries);
             const fallbackEntries = [...directFallback];
             const skipIndividualLlm = new Set(directFallback);
@@ -2060,7 +2072,9 @@ export async function colorizeMessages(targetMode = 'all') {
             if (saveConfirmed) toast.info(message);
             else toast.warning(message);
         } else if (skippedNoColor > 0) {
-            toast.info(`No uncolored dialogue found; ${skippedNoColor} message${skippedNoColor !== 1 ? 's' : ''} skipped (no known speaker/color could be resolved).`);
+            toast.info(skippedNoColor === 1
+                ? `No uncolored dialogue found; ${skippedNoColor} message skipped (no known speaker/color could be resolved).`
+                : `No uncolored dialogue found; ${skippedNoColor} messages skipped (no known speaker/color could be resolved).`);
         } else {
             toast.info('No uncolored messages found.');
         }

@@ -231,7 +231,7 @@ describe('empty holes and Dialogue Colors localization', () => {
             ['ja-jp', '1件のメッセージの色を再適用しました（ホストがチャットの保存を確認しませんでした）。'],
             ['tr-tr', '1 mesaj yeniden renklendirildi; ana uygulama sohbet kaydını onaylamadı.'],
             ['it-it', 'Messaggi ricolorati: 1; l\'host non ha confermato il salvataggio della chat.'],
-            ['fr-fr', 'Recolored 1 message; the host did not confirm the chat save.'],
+            ['fr-fr', '1 message recoloré ; l\'hôte n\'a pas confirmé l\'enregistrement du chat.'],
         ];
         for (const [language, expected] of recoloredCases) {
             const dictionary = loadShippedDictionary(language);
@@ -242,7 +242,7 @@ describe('empty holes and Dialogue Colors localization', () => {
             [
                 'de-de',
                 '1 Nachricht eingefärbt; der Host hat das Speichern des Chats nicht bestätigt.',
-                '3 Nachrichts eingefärbt; der Host hat das Speichern des Chats nicht bestätigt.',
+                '3 Nachrichten eingefärbt; der Host hat das Speichern des Chats nicht bestätigt.',
             ],
             [
                 'it-it',
@@ -257,7 +257,7 @@ describe('empty holes and Dialogue Colors localization', () => {
             [
                 'ja-jp',
                 '1件のメッセージを色分けしました（ホストがチャットの保存を確認しませんでした）。',
-                '3件sのメッセージを色分けしました（ホストがチャットの保存を確認しませんでした）。',
+                '3件のメッセージを色分けしました（ホストがチャットの保存を確認しませんでした）。',
             ],
         ];
         for (const [language, expectedOne, expectedThree] of colorizedCases) {
@@ -289,31 +289,76 @@ describe('empty holes and Dialogue Colors localization', () => {
         const cases = [
             [
                 'Colorized 3 messages (2 skipped - no speaker/color match).',
-                '3 mesaj renklendirildi (2 skipped - no speaker/color match).',
+                '3 mesaj renklendirildi (2 atlandı - eşleşen konuşmacı/renk yok).',
             ],
             [
                 'Colorized 3 messages (2 skipped - no speaker/color match); the host did not confirm the chat save.',
-                '3 mesaj renklendirildi (2 skipped - no speaker/color match); ana uygulama sohbet kaydını onaylamadı.',
+                '3 mesaj renklendirildi (2 atlandı - eşleşen konuşmacı/renk yok); ana uygulama sohbet kaydını onaylamadı.',
             ],
             [
                 'Randomized 3 unlocked colors; skipped 2 locked.',
-                '3 kilitlenmemiş renk rastgeleleştirildi; skipped 2 locked.',
+                '3 kilitlenmemiş renk rastgeleleştirildi; 2 kilitli atlandı.',
             ],
             [
                 'Set group for 3 characters; applied its profile to 2.',
-                '3 karakter için grup ayarlandı; applied its profile to 2.',
+                '3 karakter için grup ayarlandı; profili 2 karaktere uygulandı.',
             ],
             [
                 'Cleaned 3 messages (2 swipes).',
-                '3 mesaj temizlendi (2 swipes).',
+                '3 mesaj temizlendi (2 kaydırma).',
             ],
             [
-                'Cleaned 3 messages (2 swipes). Click this toast to undo.',
-                '3 mesaj temizlendi (2 swipes). Click this toast to undo.',
+                'Click this toast to undo.',
+                'Geri almak için bu bildirime tıklayın.',
             ],
         ];
         for (const [input, expected] of cases) {
             expect(localizeString(input, turkish)).toBe(expected);
         }
+    });
+
+    test('L10N-41 Dialogue Colors plural templates translate cleanly across all 17 languages without leaks', () => {
+        expect(SHIPPED_LANGUAGES).toHaveLength(17);
+
+        const inputs = [
+            'Recolored 1 message.',
+            'Recolored 3 messages.',
+            'Colorized 1 message.',
+            'Colorized 3 messages.',
+            'Restored 1 stored color table.',
+            'Restored 3 stored color tables. Skipped 2 keys that now exist.',
+            'Deleted 1 selected character.',
+            'Deleted 3 selected characters. Kept 2 pinned characters.',
+            'Verified DOM colors: applied 1 correction, queued 1 suggestion for review.',
+            'Verified DOM colors: applied 3 corrections, queued 2 suggestions for review.',
+            'Click this toast to undo.',
+        ];
+
+        for (const language of SHIPPED_LANGUAGES) {
+            const dictionary = loadShippedDictionary(language);
+            const cognateLeaks = [];
+            for (const input of inputs) {
+                const localized = localizeString(input, dictionary);
+                expect(localized).not.toBe(input);
+                expect(localized).not.toMatch(/\d+(?:s|es)\b|\b(?:stored color|pinned|selected|for review|applied|queued|Click this toast to undo)\b|\$\{\d+\}|(?<!\.)\.\.(?!\.)/);
+                if (!['fr-fr', 'it-it'].includes(language) && /\b(?:message|messages|correction|corrections|suggestion|suggestions|character|characters|table|tables|key|keys)\b/i.test(localized)) {
+                    cognateLeaks.push(`${language}: ${input} -> ${localized}`);
+                }
+            }
+            expect(cognateLeaks).toEqual([]);
+            expect(localizeString('Restored 3 stored color tables. Skipped 2 keys that now exist.', dictionary)).toContain('3');
+            expect(localizeString('Restored 3 stored color tables. Skipped 2 keys that now exist.', dictionary)).toContain('2');
+            expect(localizeString('Deleted 3 selected characters. Kept 2 pinned characters.', dictionary)).toContain('3');
+            expect(localizeString('Deleted 3 selected characters. Kept 2 pinned characters.', dictionary)).toContain('2');
+            expect(localizeString('Verified DOM colors: applied 3 corrections, queued 2 suggestions for review.', dictionary)).toContain('3');
+            expect(localizeString('Verified DOM colors: applied 3 corrections, queued 2 suggestions for review.', dictionary)).toContain('2');
+        }
+
+        const german = loadShippedDictionary('de-de');
+        expect(localizeString('Recolored 3 messages.', german)).toBe('3 Nachrichten umgefärbt.');
+        expect(localizeString('Restored 3 stored color tables. Skipped 2 keys that now exist.', german)).toBe('3 gespeicherte Farbtabellen wiederhergestellt. 2 Schlüssel übersprungen, die jetzt existieren.');
+        expect(localizeString('Deleted 3 selected characters. Kept 2 pinned characters.', german)).toBe('3 ausgewählte Charaktere gelöscht. 2 angepinnte Charaktere behalten.');
+        expect(localizeString('Verified DOM colors: applied 3 corrections, queued 2 suggestions for review.', german)).toBe('DOM-Farben überprüft: 3 Korrekturen angewendet, 2 Vorschläge zur Überprüfung eingereiht.');
+        expect(localizeString('Click this toast to undo.', german)).toBe('Zum Rückgängigmachen auf diese Meldung klicken.');
     });
 });
