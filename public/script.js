@@ -17635,6 +17635,12 @@ async function renameChatAutomatically(target, { signal, canCommit }) {
     });
 }
 
+/** A background naming failure says so once per chat, without the blocking popup a manual rename shows. */
+function reportChatAutoNameFailure(error) {
+    console.warn('Could not name the chat automatically:', error);
+    toastr.error(String(error?.message || error), t`Could not name this chat automatically`);
+}
+
 const chatAutoNamer = createChatAutoNamer({
     isEnabled: () => power_user.auto_label_chat !== false,
     getThreshold: () => power_user.auto_label_chat_threshold,
@@ -17645,6 +17651,7 @@ const chatAutoNamer = createChatAutoNamer({
     isAgentWorkPending,
     waitForAgentWorkIdle,
     rename: renameChatAutomatically,
+    onError: reportChatAutoNameFailure,
 });
 
 /** A rename someone else made is final for that chat, even when the new name looks like a date. */

@@ -19756,6 +19756,7 @@
   "Enter a new chat name:": "Enter a new chat name:",
   "Delete chat?": "Delete chat?",
   "Auto-name Chat": "Auto-name Chat",
+  "Could not name this chat automatically": "Could not name this chat automatically",
   "Delete saved chats for the current character or group. The open chat is protected.": "Delete saved chats for the current character or group. The open chat is protected.",
   "Delete older": "Delete older",
   "No saved chats can be deleted for this character or group.": "No saved chats can be deleted for this character or group.",
