@@ -324,7 +324,7 @@ import {
     formatInstructModeStoryString,
     getInstructStoppingSequences,
 } from './scripts/instruct-mode.js';
-import { initLocales, showLanguageChoicePrompt, t } from './scripts/i18n.js';
+import { initLocales, localizeMessage, showLanguageChoicePrompt, t } from './scripts/i18n.js';
 import { describeServedCodeChange, hasServedCodeChanged, isPlaceholderPackageVersion } from './scripts/server-restart-monitor.js';
 import { getFriendlyTokenizerName, getTokenCount, getTokenCountAsync, initTokenizers, saveTokenCache } from './scripts/tokenizers.js';
 import {
@@ -1495,7 +1495,7 @@ async function firstLoadInit() {
     try {
         initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
             getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
-            getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle });
+            getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle, localizeMessage });
     } catch { /* Diagnostics must never prevent application startup. */ }
     setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {

@@ -62,6 +62,9 @@
 - PR #807 (2026-11-21) `perf(streaming): patch streamed text instead of replacing it`
 - PR #808 (2026-11-21) `perf(shell): skip unchanged message action scans`
 - PR #809 (2026-11-21) `perf(mewmory): skip prompt history while memory is off`
+- PR #810 (2026-11-21) `perf(server): trace only API requests`
+- PR #811 (2026-11-21) `perf(server): skip compression inside the phone apps`
+- PR #812 (2026-11-21) `perf(server): reuse the rewritten home page`
 - PR #813 (2026-11-21) `perf(server): keep the settings parse after a save`
 - PR #814 (2026-11-21) `perf(thumbnails): stop enlarging small portraits`
 - PR #815 (2026-11-21) `perf(jobs): select from the shared job ledger`
@@ -139,12 +142,15 @@
 - PR #887 (2026-11-23) `test: fix remaining tests-folder lint errors`
 - PR #888 (2026-11-23) `refactor(i18n): remove the retired select2 name selector`
 - PR #889 (2026-11-23) `fix(lorebooks): preserve names in the additional lorebooks picker`
+- PR #890 (2026-11-23) `fix(connections): preserve user-named folder headings`
 - PR #891 (2026-11-23) `fix(purrks): preserve chosen names in bulk-delete captions`
 - PR #892 (2026-11-23) `fix(i18n): keep the tracked characters list label translated`
 - PR #893 (2026-11-23) `fix(server): explain out-of-memory stops and start again after a crash`
 - PR #894 (2026-11-23) `fix(browser): record why a page reloaded and keep the keep-alive honest`
+- PR #895 (2026-11-23) `fix(i18n): remove obsolete checkpoint tooltip entries`
 - PR #896 (2026-11-23) `fix(i18n): match the English checkpoint tooltip to its translation key`
 - PR #897 (2026-11-23) `perf(chats): hold fewer copies of a chat while saving and loading`
+- PR #898 (2026-11-23) `fix(i18n): correct the Icelandic solo DM delete label`
 - PR #899 (2026-11-23) `fix(i18n): preserve names in the primary lorebook picker`
 - PR #900 (2026-11-23) `fix(i18n): make the structured prefill slot hint translatable`
 - PR #901 (2026-11-23) `test(chat): verify the intended Tide message reaches the lower edge`
@@ -204,6 +210,7 @@
 - PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
 - PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
+- PR #958 (2026-11-25) `ci(miso): hold merge-ready verdict when fork workflows await approval or fail without jobs`
 - PR #959 (2026-11-25) `fix(companions): stop the panel freezing when opened in busy chats`
 - PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 - PR #961 (2026-11-25) `fix(i18n): protect Meower and Scratchpad text, translate textarea placeholders, keep TTS disabled values, and guard against invisible characters`
@@ -213,6 +220,8 @@
 - PR #965 (2026-11-25) `feat(scratchpad): change messages and the preset in Conversation`
 - PR #966 (2026-11-25) `fix(i18n): isolate colliding UI keys, remove dead symbolic keys, and realign hotkey translations`
 - PR #967 (2026-11-25) `fix(i18n): keep Meower pickers and Scratchpad session names and web sources as written`
+- PR #970 (2026-11-25) `fix(i18n): translate tour macro paragraphs, missing runtime labels, 404 page, and server crash cause`
+- PR #972 (2026-11-25) `fix(changelog): give each PR its own highlights file`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

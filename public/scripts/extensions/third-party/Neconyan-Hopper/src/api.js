@@ -123,7 +123,11 @@ export function updateSession(sessionId, patch) {
     if (!current) {
         throw new Error('That timeline session no longer exists.');
     }
-    const sessions = { ...settings.sessions, [sessionId]: { ...current, ...patch, id: sessionId } };
+    const merged = { ...current, ...patch, id: sessionId };
+    if (Object.hasOwn(patch, 'name') && !Object.hasOwn(patch, 'defaultNameIndex')) {
+        delete merged.defaultNameIndex;
+    }
+    const sessions = { ...settings.sessions, [sessionId]: merged };
     const next = updateSettings({ sessions });
     const session = next.sessions[sessionId];
     if (next.activeSessionId === sessionId && session.personaId) {
@@ -172,9 +176,12 @@ export function createSession({ name = '', type = '', personaId = '', invited = 
     while (settings.sessions[id]) {
         id = `${id}x`;
     }
+    const index = Object.keys(settings.sessions).length + 1;
+    const trimmedName = typeof name === 'string' ? name.trim().slice(0, 80) : '';
     const session = {
         id,
-        name: name || `Timeline ${Object.keys(settings.sessions).length + 1}`,
+        name: trimmedName || `Timeline ${index}`,
+        ...(trimmedName ? {} : { defaultNameIndex: index }),
         type: type || 'Open timeline',
         personaId: personaId || context.userAvatar || '',
         invited,

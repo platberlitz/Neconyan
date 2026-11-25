@@ -1388,7 +1388,8 @@ function getFixTrackersUnavailableMessage() {
         return 'No tracker or connected companion agents are installed. Add one from Templates first.';
     }
     if (!hasAnyFixableAgents()) {
-        return `No tracker or connected companion agents are enabled for ${getAgentChatScopeLabel().toLowerCase()}.`;
+        const scope = getAgentChatScopeLabel() === 'Group chats' ? t`group chats` : t`individual chats`;
+        return t`No tracker or connected companion agents are enabled for ${scope}.`;
     }
     return '';
 }
@@ -3675,9 +3676,13 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
         : loading ? 'Loading your agents...'
             : feedback ? feedback.text : blocked ? 'Agent setup or library needs recovery' : !enabled ? 'Agents paused'
                 : enabledCount ? 'Ready for the next reply' : 'No automatic agents enabled';
-    const scope = getGlobalSettings().separateRecentChats ? getAgentChatScopeLabel().toLowerCase() : 'all chats';
+    const scope = getGlobalSettings().separateRecentChats
+        ? (getAgentChatScopeLabel() === 'Group chats' ? t`group chats` : t`individual chats`)
+        : t`all chats`;
     const hasReply = getLastAssistantMessageIndex() >= 0;
-    values.push(['#ica--run-status', status], ['#ica--scope-description', `Agent switches apply to ${scope}.${hasReply ? '' : ' Open a chat to run an agent on its latest reply.'}`]);
+    const scopeSummary = t`Agent switches apply to ${scope}.`;
+    const scopeDescription = hasReply ? scopeSummary : `${scopeSummary} ${t`Open a chat to run an agent on its latest reply.`}`;
+    values.push(['#ica--run-status', status], ['#ica--scope-description', scopeDescription]);
     for (const [selector, value] of values) {
         const element = document.querySelector(selector);
         if (element && element.textContent !== String(value)) element.textContent = String(value);
@@ -7684,9 +7689,10 @@ registerSettingsSetupTask('in-chat-agents first start', new Promise(resolve => {
         persistExtensionState();
         renderAgentList();
         syncToolAgentRegistrations();
+        const scope = getAgentChatScopeLabel() === 'Group chats' ? t`group chats` : t`individual chats`;
         toastr.info(separated
-            ? `Agent toggles are now scoped to ${getAgentChatScopeLabel().toLowerCase()}. Switch chat types to configure the other scope.`
-            : 'Agent toggles are shared across Individual and Group chats again.');
+            ? t`Agent toggles are now scoped to ${scope}. Switch chat types to configure the other scope.`
+            : t`Agent toggles are shared across Individual and Group chats again.`);
     });
     $('#ica--promptTransformShowNotifications').on('change', function () {
         setGlobalSettings({ promptTransformShowNotifications: $(this).prop('checked') });

@@ -266,6 +266,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => state.enabled,
             getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            t: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
             updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
@@ -298,6 +299,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => true,
             getGlobalSettings: () => ({ enabled: true, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            t: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
             updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);

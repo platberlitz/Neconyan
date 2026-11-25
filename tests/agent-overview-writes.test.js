@@ -90,6 +90,7 @@ function createRuntime() {
         areAgentsGloballyEnabled: () => state.enabled,
         getGlobalSettings: () => ({ enabled: state.globalEnabled, separateRecentChats: state.separateRecentChats }),
         getAgentChatScopeLabel: () => 'Individual chats',
+        t: (strings, ...values) => strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), ''),
         getLastAssistantMessageIndex: () => state.lastAssistantIndex,
         isCurrentAgentWorkspace: () => state.currentWorkspace,
         lastManualRunFeedback: null,
