@@ -1,4 +1,5 @@
 import { getRequestHeaders } from '../script.js';
+import { translate } from './i18n.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from './popup.js';
 import { renderTemplateAsync } from './templates.js';
 import { ensureImageFormatSupported, getBase64Async, humanFileSize } from './utils.js';
@@ -553,7 +554,7 @@ async function changePassword(handle, callback) {
         template.find('input[name="confirm"]').on('input', function () {
             confirmPassword = String($(this).val());
         });
-        const result = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', { okButton: 'Change', cancelButton: 'Cancel', wide: false, large: false });
+        const result = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', { okButton: translate('Change', 'scoped.action.change'), cancelButton: 'Cancel', wide: false, large: false });
         if (result === POPUP_RESULT.CANCELLED || result === POPUP_RESULT.NEGATIVE) {
             throw new Error('Change password cancelled');
         }
@@ -682,7 +683,7 @@ async function resetSettings(handle, callback) {
 async function changeName(handle, name, callback) {
     try {
         const template = $(await renderTemplateAsync('changeName'));
-        const result = await callGenericPopup(template, POPUP_TYPE.INPUT, name, { okButton: 'Change', cancelButton: 'Cancel', wide: false, large: false });
+        const result = await callGenericPopup(template, POPUP_TYPE.INPUT, name, { okButton: translate('Change', 'scoped.action.change'), cancelButton: 'Cancel', wide: false, large: false });
 
         if (!result) {
             throw new Error('Change name cancelled');

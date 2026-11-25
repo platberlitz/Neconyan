@@ -211,6 +211,7 @@
 - PR #963 (2026-11-25) `fix(i18n): fold Turkish dotted I in search and mark untranslated uppercase headings`
 - PR #964 (2026-11-25) `feat(companions): resize the docked panel beside the chat`
 - PR #965 (2026-11-25) `feat(scratchpad): change messages and the preset in Conversation`
+- PR #966 (2026-11-25) `fix(i18n): isolate colliding UI keys, remove dead symbolic keys, and realign hotkey translations`
 - PR #967 (2026-11-25) `fix(i18n): keep Meower pickers and Scratchpad session names and web sources as written`
 
 ### Local Commits

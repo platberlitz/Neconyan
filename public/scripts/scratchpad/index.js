@@ -7,7 +7,7 @@ import { getActiveGenerationAcknowledgement, messageFormatting, saveSettings } f
 import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { event_types, eventSource } from '../events.js';
 import { extension_settings } from '../extensions.js';
-import { t } from '../i18n.js';
+import { t, translate } from '../i18n.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { append, clear, h, formatBytes } from '../notebooks/dom.js';
@@ -1642,7 +1642,7 @@ function renderChat() {
             randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
-            iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
+            iconButton(translate('Change', 'scoped.action.change'), () => selectTab('context'), { className: 'scratchpad-link' }),
             historyCount() ? iconButton(t`History`, () => void openChangeHistory(), { icon: 'fa-clock-rotate-left', className: 'scratchpad-link scratchpad-history-button', title: t`Change history (${historyCount()})` }) : null,
         ]);
     }

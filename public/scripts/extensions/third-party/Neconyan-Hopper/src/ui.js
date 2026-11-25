@@ -204,7 +204,7 @@ function sessionDisplayName(session) {
     return session?.name ?? '';
 }
 
-function button(label, className, onClick, { iconName = '', title = '', ariaLabel = '', pressed = null, disabled = false, focusKey = label, attrs = {} } = {}) {
+function button(label, className, onClick, { iconName = '', title = '', ariaLabel = '', pressed = null, disabled = false, focusKey = label, attrs = {}, labelAttrs = {} } = {}) {
     const node = el('button', {
         className,
         attrs: {
@@ -217,7 +217,7 @@ function button(label, className, onClick, { iconName = '', title = '', ariaLabe
             disabled: disabled ? 'disabled' : null,
         },
         on: { click: onClick },
-    }, iconName ? [icon(iconName), el('span', { text: label })] : [el('span', { text: label })]);
+    }, iconName ? [icon(iconName), el('span', { text: label, attrs: labelAttrs })] : [el('span', { text: label, attrs: labelAttrs })]);
     return node;
 }
 
@@ -1896,9 +1896,16 @@ function profileView() {
             ]),
             el('div', { className: 'sbtw-profile-actions' }, [
                 canFollow
-                    ? button(following.has(account.key) ? 'Following' : 'Follow',
+                    ? button(following.has(account.key) ? 'Following' : translate('Follow', 'scoped.hopper.follow'),
                         `sbtw-btn ${following.has(account.key) ? 'sbtw-btn-quiet' : 'sbtw-btn-primary'}`,
-                        () => toggleFollow(account.key), { focusKey: `follow:${account.key}`, disabled: Boolean(mutationTask) })
+                        () => toggleFollow(account.key), {
+                            focusKey: `follow:${account.key}`,
+                            disabled: Boolean(mutationTask),
+                            ...(following.has(account.key) ? {} : {
+                                attrs: { 'data-i18n': '[title]scoped.hopper.follow' },
+                                labelAttrs: { 'data-i18n': 'scoped.hopper.follow' },
+                            }),
+                        })
                     : null,
                 account.kind === KIND_CHARACTER
                     ? button('New profile', 'sbtw-btn sbtw-btn-quiet', () => void rewriteProfile(account.key), {
@@ -2812,7 +2819,12 @@ function whoToFollow() {
                 el('button', { className: 'sbtw-name', text: account.name, attrs: { type: 'button', 'data-focus-key': `name:${account.key}`, 'data-i18n-ignore': '' }, on: { click: () => showProfile(account.key) } }),
                 el('span', { className: 'sbtw-handle', text: `@${account.handle}`, attrs: { 'data-i18n-ignore': '' } }),
             ]),
-            button('Follow', 'sbtw-btn sbtw-btn-quiet', () => toggleFollow(account.key), { focusKey: `follow:${account.key}`, disabled: Boolean(mutationTask) }),
+            button(translate('Follow', 'scoped.hopper.follow'), 'sbtw-btn sbtw-btn-quiet', () => toggleFollow(account.key), {
+                focusKey: `follow:${account.key}`,
+                disabled: Boolean(mutationTask),
+                attrs: { 'data-i18n': '[title]scoped.hopper.follow' },
+                labelAttrs: { 'data-i18n': 'scoped.hopper.follow' },
+            }),
         ])),
     ]);
 }

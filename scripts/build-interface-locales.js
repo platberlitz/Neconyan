@@ -23,10 +23,11 @@ const add = (key, value = key) => {
 };
 const metadata = JSON.parse(fs.readFileSync(path.join(root, 'locales/lang.json'), 'utf8'));
 const locales = metadata.filter(item => item.lang !== 'en');
+const isSymbolicBaseKey = key => /^[a-zA-Z0-9_]+$/.test(key) && key.includes('_');
 // Every base dictionary feeds the catalogue, whichever languages are selected for translation below.
 for (const locale of locales) {
     const data = JSON.parse(fs.readFileSync(path.join(root, `locales/${locale.lang}.json`), 'utf8'));
-    for (const [key, value] of Object.entries(data)) if (typeof value === 'string') add(key);
+    for (const [key, value] of Object.entries(data)) if (typeof value === 'string' && !isSymbolicBaseKey(key)) add(key);
 }
 // NECONYAN_TRANSLATION_LANGS narrows which supplements are translated, never the catalogue.
 const requested = process.env.NECONYAN_TRANSLATION_LANGS?.split(',').map(code => code.trim()).filter(Boolean);

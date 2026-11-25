@@ -1,4 +1,4 @@
-/* global window, document, globalThis, localStorage */
+/* global window, document, globalThis, localStorage, Element */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -527,12 +527,23 @@ async function openSlicedRenderer(page, fileMap, lang) {
             sources[name] = decl;
         }
     }
-    const { dictionary, scoped } = await assembledLocale(lang);
+    const readJson = async filePath => JSON.parse(await readFile(new URL(filePath, import.meta.url), 'utf8'));
+    const [base, supplement, aliases] = await Promise.all([
+        readJson(`../public/locales/${lang}.json`),
+        readJson(`../public/locales/neconyan/${lang}.json`),
+        readJson('../public/locales/neconyan/en-aliases.json'),
+    ]);
     await page.setContent('<main id="root"></main>');
+    const assemblySource = await readFile(new URL('../public/scripts/locale-assembly.js', import.meta.url), 'utf8');
+    await page.addScriptTag({
+        type: 'module',
+        content: `${assemblySource}\nwindow.assembleLocaleData = assembleLocaleData;\nwindow.tableForKey = tableForKey;`,
+    });
     await page.addScriptTag({ type: 'module', content: `${await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8')}\nwindow.localizeControls = localizeControls;` });
-    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    await page.waitForFunction(() => typeof window.localizeControls === 'function' && typeof window.assembleLocaleData === 'function');
     await page.addScriptTag({ content: await readFile(new URL('../public/lib/jquery-3.5.1.min.js', import.meta.url), 'utf8') });
-    await page.evaluate(([slicedSources, dict, scopedDict]) => {
+    const assembled = await page.evaluate(([slicedSources, localeInputs]) => {
+        const { dictionary: dict, scoped } = window.assembleLocaleData(localeInputs);
         const target = {};
         const noop = () => undefined;
         const scope = new Proxy(target, {
@@ -549,22 +560,45 @@ async function openSlicedRenderer(page, fileMap, lang) {
                 scope[name] = new Function('scope', `with (scope) { return (${code}); }`)(scope);
             }
         }
-        const translate = (text, key = null) => (key && key.startsWith('scoped.') ? scopedDict[key] : dict[key || text]) || text;
+        const translate = (text, key = null) => {
+            const lookupKey = key || text;
+            const table = window.tableForKey(lookupKey, dict, scoped);
+            return table?.[lookupKey] || text;
+        };
         const t = (strings, ...values) => translate(
             strings.reduce((result, part, i) => result + part + (values[i] !== undefined ? `\${${i}}` : ''), ''),
         ).replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
+        const translateElement = element => {
+            const keys = element.getAttribute('data-i18n')?.split(';') ?? [];
+            for (const key of keys) {
+                const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/s);
+                if (attributeMatch) {
+                    const localizedValue = window.tableForKey(attributeMatch[2], dict, scoped)?.[attributeMatch[2]];
+                    if (localizedValue || localizedValue === '') element.setAttribute(attributeMatch[1], localizedValue);
+                } else {
+                    const localizedValue = window.tableForKey(key, dict, scoped)?.[key];
+                    if (localizedValue || localizedValue === '') element.textContent = localizedValue;
+                }
+            }
+        };
+        const applyLocale = (root = document) => {
+            if (root instanceof Element && root.hasAttribute('data-i18n')) translateElement(root);
+            root.querySelectorAll('[data-i18n]').forEach(translateElement);
+            window.localizeControls(root, dict);
+        };
         scope.translate = translate;
         scope.t = t;
-        window.renderHarness = { scope, dictionary: dict, scoped: scopedDict, t, translate };
-    }, [sources, dictionary, scoped]);
-    return dictionary;
+        window.renderHarness = { scope, dictionary: dict, scoped, t, translate, translateElement, applyLocale };
+        return dict;
+    }, [sources, { base, supplement, catalogue: aliases }]);
+    return assembled;
 }
 
 test('Meower real renderers protect user and model content while keeping UI fallbacks and composer frames translatable (tr-tr)', async ({ page }) => {
     const trDict = await openSlicedRenderer(page, {
         '../public/scripts/extensions/third-party/Neconyan-Hopper/src/api.js': ['listPersonas'],
         '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': [
-            'el', 'icon', 'hostTag', 'button', 'field', 'checkbox', 'settingsGroup',
+            'el', 'icon', 'hostTag', 'sessionDisplayName', 'button', 'field', 'checkbox', 'settingsGroup',
             'bodyNode', 'pollVotersNode', 'pollNode', 'imageNode', 'engagementNode',
             'replyNode', 'repostedReplyNode', 'postNode', 'quoteNode',
             'replyComposer', 'attachMentionPicker', 'timelineView',
@@ -1505,4 +1539,126 @@ test('L10N-56: server crash notice and report reader localise unclean-previous-e
 
     expect(result.noticeText).toContain(dictionary[k23]);
     expect(result.readerSummary).toContain(dictionary[k23]);
+});
+
+test('Meower Follow button isolates ko-kr social Follow from the OpenAI instruction fragment', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js': ['el', 'icon', 'translate', 'button', 'profileView', 'whoToFollow'],
+    }, 'ko-kr');
+
+    const result = await page.evaluate(() => {
+        const { scope, t, translate, applyLocale } = window.renderHarness;
+        globalThis.SillyTavern = { getContext: () => ({ t, translate }) };
+        const me = { key: 'persona:me', kind: 'persona', name: 'Me', handle: 'me' };
+        const charAcc = { key: 'char:c1', kind: 'character', name: 'Nori', handle: 'nori' };
+        Object.assign(scope, {
+            KIND_CHARACTER: 'character',
+            mutationTask: null,
+            followingKeys: () => new Set(),
+            personaAccount: () => me,
+            accountFor: key => (key === charAcc.key ? charAcc : key === me.key ? me : null),
+            avatarNode: () => document.createElement('div'),
+            avatarButton: () => document.createElement('div'),
+            plural: (n, word) => `${n} ${word}`,
+            section: () => document.createElement('section'),
+            state: {
+                profileKey: charAcc.key,
+                accounts: [me, charAcc],
+                session: { follows: {}, posts: [], interactions: [] },
+                feed: { posts: [], interactions: [] },
+                busy: false,
+            },
+        });
+        const root = document.getElementById('root');
+        root.append(scope.profileView(), scope.whoToFollow());
+        applyLocale(root);
+        const buttons = [...root.querySelectorAll('[data-focus-key="follow:char:c1"]')];
+        return buttons.map(btn => ({ text: btn.textContent.trim(), title: btn.title }));
+    });
+
+    expect(result).toEqual([
+        { text: '팔로우', title: '팔로우' },
+        { text: '팔로우', title: '팔로우' },
+    ]);
+});
+
+test('Scratchpad Change button uses verb scoped.action.change in tr-tr', async ({ page }) => {
+    await openSlicedRenderer(page, {
+        '../public/scripts/notebooks/dom.js': ['h', 'append', 'clear'],
+        '../public/scripts/scratchpad/index.js': ['renderChat'],
+    }, 'tr-tr');
+
+    const buttonText = await page.evaluate(() => {
+        const { scope, applyLocale } = window.renderHarness;
+        const summary = document.createElement('div');
+        const pinnedNote = document.createElement('button');
+        pinnedNote.append(document.createElement('span'));
+        Object.assign(scope, {
+            app: { source: { kind: 'chat', key: 'c1' }, assistant: 'miso', el: { summary, pinnedNote } },
+            activeSession: () => null,
+            currentSettings: () => ({}),
+            assistantInfo: () => ({ id: 'miso', name: 'Miso' }),
+            sessionAssistants: () => ['miso'],
+            randomReplyEnabled: () => false,
+            contextSummary: () => 'Reading 10 messages',
+            historyCount: () => 0,
+            iconButton: (label, _onClick, { className = '' } = {}) => scope.h('button', { class: className, text: label }),
+            renderOverview: () => undefined,
+            renderMessages: () => undefined,
+            renderComposer: () => undefined,
+        });
+        document.getElementById('root').append(summary);
+        scope.renderChat();
+        applyLocale(summary);
+        return summary.querySelector('.scratchpad-link').textContent.trim();
+    });
+
+    expect(buttonText).toBe('Değiştir');
+});
+
+test('hotkeys.html (is-is), help.html (fr-fr) and Contrastive_search_txt [title] (de-de) render aligned scoped and tooltip translations', async ({ page }) => {
+    const [hotkeysHtml, helpHtml, indexHtml] = await Promise.all([
+        readFile(new URL('../public/scripts/templates/hotkeys.html', import.meta.url), 'utf8'),
+        readFile(new URL('../public/scripts/templates/help.html', import.meta.url), 'utf8'),
+        readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+    ]);
+    const contrastiveMatch = indexHtml.match(/<div[^>]*data-i18n="\[title\]Contrastive_search_txt"[^>]*>/);
+    expect(contrastiveMatch).toBeTruthy();
+
+    await openSlicedRenderer(page, {}, 'is-is');
+    const isResult = await page.evaluate(html => {
+        const root = document.getElementById('root');
+        root.innerHTML = html;
+        window.renderHarness.applyLocale(root);
+        return {
+            key7: root.querySelector('[data-i18n="help_hotkeys_7"]').textContent.trim(),
+            key9: root.querySelector('[data-i18n="help_hotkeys_9"]').textContent.trim(),
+            key19_1: root.querySelector('[data-i18n="help_hotkeys_19_1"]').textContent.trim(),
+            key20: root.querySelector('[data-i18n="help_hotkeys_20"]').textContent.trim(),
+        };
+    }, hotkeysHtml);
+    expect(isResult).toEqual({
+        key7: 'Hægri',
+        key9: 'Enter',
+        key19_1: 'Skruna neðst í spjallið',
+        key20: 'Markdown flýtileiðir',
+    });
+
+    await openSlicedRenderer(page, {}, 'fr-fr');
+    const frKbd = await page.evaluate(html => {
+        const root = document.getElementById('root');
+        root.innerHTML = html;
+        window.renderHarness.applyLocale(root);
+        return [...root.querySelectorAll('.necoHelpList--keys kbd[data-i18n="scoped.key.enter"]')].map(node => node.textContent.trim());
+    }, helpHtml);
+    expect(frKbd).toEqual(['Entrée', 'Entrée', 'Entrée']);
+
+    await openSlicedRenderer(page, {}, 'de-de');
+    const deTitle = await page.evaluate(snippet => {
+        const root = document.getElementById('root');
+        root.innerHTML = `${snippet}</div>`;
+        window.renderHarness.applyLocale(root);
+        return root.querySelector('[data-i18n="[title]Contrastive_search_txt"]').getAttribute('title');
+    }, contrastiveMatch[0]);
+    expect(deTitle).toContain('Ein Sampler, der Vielfalt fördert');
 });
