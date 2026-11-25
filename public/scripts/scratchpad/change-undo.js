@@ -306,6 +306,7 @@ export async function undoChange(entry, source = null) {
         case 'conversation-edit':
         case 'conversation-insert':
         case 'conversation-delete':
+            requireChat(undo, source);
             return (await import('./conversation-changes.js')).undoConversationChange(undo, { conflict });
         case 'mewmory':
             return undoMewmory(undo, source);

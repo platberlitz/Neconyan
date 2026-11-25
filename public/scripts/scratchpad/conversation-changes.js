@@ -112,7 +112,13 @@ export async function conversationChatPlan(change, source, { conflict, isCurrent
         if (after >= 0 && !anchor) fail(`Message #${after} is no longer in this Conversation.`);
         const expected = anchor ? snapshot(anchor) : null;
         const speaker = change.speaker === 'user' ? 'user' : 'character';
-        const name = change.name || (speaker === 'user' ? sourceUserName(source) : (sourceCharacters(source)[0]?.name || 'Character'));
+        const members = speaker === 'character' ? sourceCharacters(source) : [];
+        const wanted = String(change.name || '').trim().toLowerCase();
+        const matched = speaker === 'character' && wanted
+            ? members.find(member => String(member?.name || '').trim().toLowerCase() === wanted)
+            : null;
+        const name = matched?.name || change.name || (speaker === 'user' ? sourceUserName(source) : (members[0]?.name || 'Character'));
+        const isPartner = Boolean(source.groupId && matched?.avatar && String(matched.avatar) !== String(source.avatar));
         return {
             target: after >= 0 ? `After message #${after}` : 'At the start of the Conversation',
             field: `New message from ${name}`,
@@ -124,7 +130,9 @@ export async function conversationChatPlan(change, source, { conflict, isCurrent
                 if (after >= 0 && !sameSnapshot(live.messages[after], expected)) conflict();
                 const text = String(edited ?? '');
                 if (!text.trim()) fail(t`A new message needs some text.`);
-                const message = modules.threads.createConversationMessage({ role: speaker, name, mes: text });
+                const message = modules.threads.createConversationMessage(isPartner
+                    ? { role: 'partner', name, mes: text, extra: { partner_avatar: String(matched.avatar) } }
+                    : { role: speaker, name, mes: text });
                 const previous = liveMessages(live);
                 const next = liveMessages(live);
                 next.splice(after + 1, 0, message);
@@ -132,6 +140,7 @@ export async function conversationChatPlan(change, source, { conflict, isCurrent
                 return {
                     undo: {
                         kind: 'conversation-insert',
+                        chatKey: source.key,
                         ...target,
                         id: String(message.id),
                         index: after + 1,
@@ -168,6 +177,7 @@ export async function conversationChatPlan(change, source, { conflict, isCurrent
                 return {
                     undo: {
                         kind: 'conversation-edit',
+                        chatKey: source.key,
                         ...target,
                         id: expected.id,
                         index,
@@ -197,9 +207,13 @@ export async function conversationChatPlan(change, source, { conflict, isCurrent
             return {
                 undo: {
                     kind: 'conversation-delete',
+                    chatKey: source.key,
                     ...target,
                     id: expected.id,
                     index,
+                    length: next.length,
+                    previous: index > 0 ? snapshot(next[index - 1]) : null,
+                    next: index < next.length ? snapshot(next[index]) : null,
                     message: removed,
                 },
             };
@@ -226,8 +240,12 @@ export async function undoConversationChange(undo, { conflict }) {
         if (found < 0 || !sameSnapshot(messages[found], undo.message)) conflict('message');
         next.splice(found, 1);
     } else if (undo.kind === 'conversation-delete') {
-        if (found >= 0 || !undo.message || Number(undo.index) > messages.length) conflict('chat');
-        next.splice(Number(undo.index), 0, clone(undo.message));
+        const index = Number(undo.index);
+        if (found >= 0 || !undo.message || !Number.isInteger(index) || index < 0 || index > messages.length) conflict('chat');
+        if (undo.length !== undefined && messages.length !== Number(undo.length)) conflict('chat');
+        if (undo.previous && !sameSnapshot(messages[index - 1], undo.previous)) conflict('chat');
+        if (undo.next && !sameSnapshot(messages[index], undo.next)) conflict('chat');
+        next.splice(index, 0, clone(undo.message));
     } else {
         refuseUndo(t`Automatic undo is not available for this change.`);
     }

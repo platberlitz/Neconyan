@@ -8,11 +8,12 @@ let nextId = 1;
 const getActiveConversationBranch = jest.fn((avatar, options) => (store.branch && avatar === 'Nova.png' && options.create === false && options.branchId === store.branch.id ? store.branch : null));
 const saveConversationMessageThread = jest.fn(({ messages }) => { store.branch.messages = structuredClone(messages); });
 const persistConversationStoreNow = jest.fn(async () => saveResult);
-const createConversationMessage = jest.fn(({ role, name, mes }) => ({ id: `new-${nextId++}`, role, name, mes, extra: {} }));
+let mockedCharacters = [{ name: 'Nova', avatar: 'Nova.png' }];
+const createConversationMessage = jest.fn(({ role, name, mes, extra = {} }) => ({ id: `new-${nextId++}`, role, name, mes, extra }));
 
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), ''), translate: text => text }));
 jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({
-    sourceCharacters: () => [{ name: 'Nova' }],
+    sourceCharacters: () => mockedCharacters,
     sourceUserName: () => 'Sam',
 }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({ getActiveConversationBranch }));
@@ -37,6 +38,7 @@ const plan = value => conversationChatPlan(normaliseChange(value), source, tools
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockedCharacters = [{ name: 'Nova', avatar: 'Nova.png' }];
     current = true;
     saveResult = true;
     nextId = 1;
@@ -58,7 +60,7 @@ describe('Conversation message changes', () => {
         expect(messages()[1]).toEqual({ id: 'm1', role: 'character', name: 'Nova', mes: 'Hi, Sam. The tide is in.', extra: {} });
         expect(saveConversationMessageThread).toHaveBeenCalledWith(expect.objectContaining({ avatar: 'Nova.png', branchId: 'b1', groupId: '', personaId: 'sam.png' }));
         expect(persistConversationStoreNow).toHaveBeenCalledTimes(1);
-        expect(result.undo).toEqual({ kind: 'conversation-edit', avatar: 'Nova.png', branchId: 'b1', groupId: '', personaId: 'sam.png', id: 'm1', index: 1, role: 'character', name: 'Nova', before: 'Hi, Sam.', after: 'Hi, Sam. The tide is in.' });
+        expect(result.undo).toEqual({ kind: 'conversation-edit', chatKey: 'conversation:t:b1', avatar: 'Nova.png', branchId: 'b1', groupId: '', personaId: 'sam.png', id: 'm1', index: 1, role: 'character', name: 'Nova', before: 'Hi, Sam.', after: 'Hi, Sam. The tide is in.' });
 
         await undoConversationChange(result.undo, { conflict });
         expect(messages()[1].mes).toBe('Hi, Sam.');
@@ -154,5 +156,33 @@ describe('Conversation message changes', () => {
         conversationState.conversationReplyBusy = false;
         store.branch = null;
         await expect(undoConversationChange(result.undo, { conflict })).rejects.toThrow('no longer exists');
+    });
+
+    test('delete undo stops when surrounding messages changed after the deletion', async () => {
+        const removed = await (await plan({ type: 'chat', action: 'delete', message: 1 })).commit();
+        messages()[1].mes = 'Edited neighbour.';
+        await expect(undoConversationChange(removed.undo, { conflict })).rejects.toBeInstanceOf(UndoConflictError);
+
+        messages()[1].mes = 'How was the harbour?';
+        messages().push({ id: 'm3', role: 'character', name: 'Nova', mes: 'Extra reply.', extra: {} });
+        await expect(undoConversationChange(removed.undo, { conflict })).rejects.toBeInstanceOf(UndoConflictError);
+    });
+
+    test('group Conversation insert marks a non-lead member as a partner with its avatar', async () => {
+        mockedCharacters = [{ name: 'Nova', avatar: 'Nova.png' }, { name: 'Kip', avatar: 'Kip.png' }];
+        const groupSource = { ...source, groupId: 'grp-1' };
+        const review = await conversationChatPlan(
+            normaliseChange({ type: 'chat', action: 'insert', after: 0, speaker: 'character', name: 'kip', text: 'I brought tea.' }),
+            groupSource,
+            tools,
+        );
+        expect(review).toMatchObject({ field: 'New message from Kip' });
+        await review.commit('I brought tea.');
+        expect(createConversationMessage).toHaveBeenLastCalledWith({
+            role: 'partner',
+            name: 'Kip',
+            mes: 'I brought tea.',
+            extra: { partner_avatar: 'Kip.png' },
+        });
     });
 });
