@@ -11,7 +11,7 @@ import { debounce_timeout } from '../../constants.js';
 import { SlashCommandEnumValue, enumTypes } from '../../slash-commands/SlashCommandEnumValue.js';
 import { enumIcons } from '../../slash-commands/SlashCommandCommonEnumsProvider.js';
 import { POPUP_TYPE, callGenericPopup } from '../../popup.js';
-import { applyLocale, localizeMessage, t, translate } from '/scripts/i18n.js';
+import { applyLocale, localizeMessage, t } from '/scripts/i18n.js';
 import { registerExtensionCapability } from '../../neconyan-conversation/extension-capabilities.js';
 
 const UPDATE_INTERVAL = 1000;
@@ -130,7 +130,7 @@ function normalizeSavedVoiceId(voiceId, availableVoices = []) {
     if (hasProviderVoice) {
         return voiceId;
     }
-    const localizedDisabled = typeof translate === 'function' ? translate(DISABLED_VOICE_MARKER) : DISABLED_VOICE_MARKER;
+    const localizedDisabled = typeof localizeMessage === 'function' ? localizeMessage(DISABLED_VOICE_MARKER) : DISABLED_VOICE_MARKER;
     if (voiceId === localizedDisabled || LOCALIZED_DISABLED_VOICE_LABELS.has(voiceId)) {
         return DISABLED_VOICE_MARKER;
     }
