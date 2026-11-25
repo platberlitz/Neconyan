@@ -220,6 +220,7 @@
 - PR #965 (2026-11-25) `feat(scratchpad): change messages and the preset in Conversation`
 - PR #966 (2026-11-25) `fix(i18n): isolate colliding UI keys, remove dead symbolic keys, and realign hotkey translations`
 - PR #967 (2026-11-25) `fix(i18n): keep Meower pickers and Scratchpad session names and web sources as written`
+- PR #970 (2026-11-25) `fix(i18n): translate tour macro paragraphs, missing runtime labels, 404 page, and server crash cause`
 - PR #972 (2026-11-25) `fix(changelog): give each PR its own highlights file`
 
 ### Local Commits
