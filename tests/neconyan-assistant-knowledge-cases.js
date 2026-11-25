@@ -477,6 +477,7 @@ export const refreshedKnowledgeCases = [
     ['How do I make Dice Roller auto send the roll with my message?', 'tools.dice-roller-auto', 'without putting it in the message box'],
     ['Does Dice Roller work with CYOA skill check choices?', 'tools.dice-roller-auto', 'in place of the hidden roll'],
     ['Can the Dice Roller roll my CYOA choices?', 'tools.dice-roller-auto', 'd100 roll under that target'],
+    ['Can I type 1 or 1, then 2 to pick a CYOA choice and have Dice Roller roll it?', 'tools.dice-roller-auto', 'starts with its number'],
     ['Can persona messages get expressions automatically?', 'images.expression-personas', 'classifies new persona messages automatically'],
     ['Does persona expression classification delay Send?', 'images.expression-personas', 'does not delay Send'],
     ['What does Active Tool Chain do?', 'generation.tool-reasoning', 'Each tool call keeps its own saved reasoning'],

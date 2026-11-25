@@ -17,8 +17,10 @@ import {
     getSkillCheckOutcome,
     getTargetForDifficulty,
     isSameSkillCheck,
+    parseChoiceReferences,
     parseRollLines,
     parseSkillCheck,
+    parseSkillChoices,
     resolveTarget,
     rollDice,
     rollSkillCheck,
@@ -306,6 +308,18 @@ describe('dice roller companion wiring', () => {
             expect(template.prompt).toContain('carries a 🎲 dice line');
         }
     });
+
+    test('as companions, CYOA and Doors write only their choices and leave the check to the reply', () => {
+        for (const [slug, tag, heading] of [
+            ['cyoa-choices-skill-checks', 'CHOICES', '## CYOA Skill Check Resolution'],
+            ['doors-fate-checks', 'DOORS', '## Fate Check Resolution'],
+        ]) {
+            const { prompt } = JSON.parse(readRepoFile(`public/scripts/extensions/in-chat-agents/templates/${slug}.json`));
+            const section = prompt.slice(prompt.indexOf(heading) + heading.length).trimStart();
+            expect(section.startsWith(`As a companion task, the [${tag}] block is your whole result`)).toBe(true);
+            expect(section.indexOf('using the 🎲 dice line')).toBeLessThan(section.indexOf('{{roll:1d100}}'));
+        }
+    });
 });
 
 describe('Dice Roller skill checks', () => {
@@ -315,6 +329,36 @@ describe('Dice Roller skill checks', () => {
         expect(parseSkillCheck('[Nerve 140 / 100] Jump')).toMatchObject({ skill: 'Nerve', target: 100 });
         expect(parseSkillCheck('Talk the guard down')).toBeNull();
         expect(parseSkillCheck('[Speech 42/20] Talk')).toBeNull();
+    });
+
+    test('reads the numbered tagged choices a reply or Companion note offers', () => {
+        const choices = parseSkillChoices([
+            '[CHOICES]',
+            '1. **[Speech 42/100]** Talk the guard down',
+            '2) [Stealth 30/100] Slip past the gate',
+            '3. Wait and watch',
+            '- 4. Force the door **[Strength 60/100]**',
+            '[/CHOICES]',
+        ].join('\n'));
+        expect([...choices.keys()]).toEqual([1, 2, 4]);
+        expect(choices.get(1)).toEqual({ skill: 'Speech', target: 42, action: 'Talk the guard down' });
+        expect(choices.get(2)).toEqual({ skill: 'Stealth', target: 30, action: 'Slip past the gate' });
+        expect(choices.get(4)).toEqual({ skill: 'Strength', target: 60, action: 'Force the door' });
+    });
+
+    test('reads the choice numbers a message starts with, and leaves other numbers alone', () => {
+        expect(parseChoiceReferences('1')).toEqual([1]);
+        expect(parseChoiceReferences('1, then 2')).toEqual([1, 2]);
+        expect(parseChoiceReferences('1, then 2. I also wave at the guard.')).toEqual([1, 2]);
+        expect(parseChoiceReferences('2 and then 1 while humming')).toEqual([2, 1]);
+        expect(parseChoiceReferences('Option 3 & #1')).toEqual([3, 1]);
+        expect(parseChoiceReferences('1. I draw my sword first')).toEqual([1]);
+        expect(parseChoiceReferences('1 then 1')).toEqual([1]);
+        expect(parseChoiceReferences('I pick 2')).toEqual([]);
+        expect(parseChoiceReferences('100 goblins')).toEqual([]);
+        expect(parseChoiceReferences('1.5 metres away')).toEqual([]);
+        expect(parseChoiceReferences('3:00, we meet')).toEqual([]);
+        expect(parseChoiceReferences('[Speech 42/100] Talk')).toEqual([]);
     });
 
     test('scores a d100 roll under the target with the agents\' bands', () => {

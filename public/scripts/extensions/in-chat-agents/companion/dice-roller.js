@@ -32,14 +32,16 @@ import {
     normaliseModifier,
     normaliseSides,
     isSameSkillCheck,
+    parseChoiceReferences,
     parseRollLines,
     parseSkillCheck,
+    parseSkillChoices,
     resolveTarget,
     rollDice,
     rollSkillCheck,
 } from './dice.js';
 import { registerComposerSendHook } from '../../../composer-send-hooks.js';
-import { isDiceRollerAgent } from './companion-shared.js';
+import { COMPANION_RESULTS_EXTRA_KEY, isDiceRollerAgent } from './companion-shared.js';
 import { setDiceCompanionRunner } from './dice-companion-local.js';
 import {
     DICE_COMPANION_COMPOSER_REQUEST_EVENT,
@@ -810,7 +812,8 @@ function rollAfterReply(_messageId, type) {
 /**
  * Auto send: the roll goes into the sent message after the typed text, and
  * the message box is left alone. A message carrying a CYOA or Doors skill tag
- * gets that check rolled.
+ * gets that check rolled, and so does a message that starts with the numbers
+ * of tagged choices, such as '1, then 2', one roll per choice.
  */
 function addRollAfterMessage({ text, type }) {
     if (!widget || type !== 'normal' || !String(text ?? '').trim()) {
@@ -823,15 +826,55 @@ function addRollAfterMessage({ text, type }) {
     if (!settings.autoSend || !getActiveDiceAgent()) {
         return null;
     }
-    const check = parseSkillCheck(text);
+    const tagged = parseSkillCheck(text);
+    const [check = null, ...laterChecks] = tagged ? [tagged] : getChosenSkillChecks(text);
     const ready = widget.takeForSend({ rollIfNeeded: settings.autoRoll || Boolean(check), check });
     if (!ready) {
         return null;
     }
+    const laterLines = laterChecks.map(later => formatRollLine(rollSkillCheck(later)));
     return {
-        text: ready.line,
+        text: [ready.line, ...laterLines].join('\n'),
         onSent: () => widget?.markSent(ready.rolled, { clearAction: true }),
     };
+}
+
+function getCompanionNotes(message) {
+    const swipeExtra = !message.is_user && Array.isArray(message.swipe_info)
+        ? message.swipe_info[message.swipe_id]?.extra
+        : null;
+    const results = swipeExtra && COMPANION_RESULTS_EXTRA_KEY in swipeExtra
+        ? swipeExtra[COMPANION_RESULTS_EXTRA_KEY]
+        : message.extra?.[COMPANION_RESULTS_EXTRA_KEY];
+    return Object.values(results && typeof results === 'object' ? results : {})
+        .filter(result => result?.status === 'done')
+        .map(result => String(result.content ?? ''));
+}
+
+/** The tagged choices offered since the person last wrote, in a reply or its Companion notes. */
+function findOfferedSkillChoices() {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        const message = chat[index];
+        if (!message || message.is_user) {
+            break;
+        }
+        for (const text of [...getCompanionNotes(message), message.mes]) {
+            const choices = parseSkillChoices(text);
+            if (choices.size) {
+                return choices;
+            }
+        }
+    }
+    return new Map();
+}
+
+function getChosenSkillChecks(text) {
+    const numbers = parseChoiceReferences(text);
+    if (!numbers.length) {
+        return [];
+    }
+    const choices = findOfferedSkillChoices();
+    return numbers.map(number => choices.get(number)).filter(Boolean);
 }
 
 function decorateTextNode(node) {

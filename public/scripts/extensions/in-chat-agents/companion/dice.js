@@ -215,6 +215,53 @@ export function parseSkillCheck(text) {
     };
 }
 
+const CHOICE_ROW_PATTERN = /^\s*(?:[-*+]\s+)?(\d{1,2})[.):]\s*(.+)$/u;
+const CHOICE_NUMBER = String.raw`(?:(?:option|choice|door|number)\s*)?#?(\d{1,2})(?!\d|[.,:]\d)(?=$|[\s.,;!?)&+/-])`;
+const FIRST_CHOICE_REFERENCE = new RegExp(String.raw`^\s*${CHOICE_NUMBER}`, 'iu');
+const NEXT_CHOICE_REFERENCE = new RegExp(String.raw`^[.)]?(?:\s*(?:,|;|&|\+|\/|->|-|>|\band\b|\bthen\b))*\s*${CHOICE_NUMBER}`, 'iu');
+const MAX_CHOICE_REFERENCES = 5;
+
+/**
+ * Numbered choices that carry a skill tag, as the CYOA and Doors agents list
+ * them: `1. **[Speech 42/100]** Talk the guard down`.
+ * @param {string} text Reply or Companion note text.
+ * @returns {Map<number, { skill: string, target: number, action: string }>}
+ */
+export function parseSkillChoices(text) {
+    const choices = new Map();
+    for (const line of String(text ?? '').split(/\r?\n/u)) {
+        const row = CHOICE_ROW_PATTERN.exec(line);
+        const check = row ? parseSkillCheck(row[2]) : null;
+        const number = Number(row?.[1]);
+        if (check && !choices.has(number)) {
+            const before = cleanAction(row[2].slice(0, row[2].indexOf('[')).replace(/[*_`]/g, ''));
+            choices.set(number, { ...check, action: check.action || before });
+        }
+    }
+    return choices;
+}
+
+/**
+ * The choice numbers a message starts with: '1', '1, then 2', 'Option 3 and 1'.
+ * Anything after them is the person's own action.
+ * @param {string} text Message text.
+ * @returns {number[]}
+ */
+export function parseChoiceReferences(text) {
+    const numbers = [];
+    let rest = String(text ?? '');
+    let match = FIRST_CHOICE_REFERENCE.exec(rest);
+    while (match && numbers.length < MAX_CHOICE_REFERENCES) {
+        const number = Number(match[1]);
+        if (!numbers.includes(number)) {
+            numbers.push(number);
+        }
+        rest = rest.slice(match[0].length);
+        match = NEXT_CHOICE_REFERENCE.exec(rest);
+    }
+    return numbers;
+}
+
 /** The agents' rules: roll under the target on a d100; 1 and 100 are criticals. */
 export function getSkillCheckOutcome(roll, target) {
     if (roll === 1) {
