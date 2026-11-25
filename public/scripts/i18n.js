@@ -347,7 +347,7 @@ export function applyLocale(root = document) {
 }
 
 function addLanguagesToDropdown() {
-    const selects = document.querySelectorAll('#ui_language_select, #onboarding_ui_language_select');
+    const selects = document.querySelectorAll('#ui_language_select');
     for (const select of selects) {
         addLanguageOptions(select, langs);
         const browserOption = select.querySelector('option[value=""]');
@@ -387,7 +387,7 @@ export async function initLocales(installationData) {
     addLanguagesToDropdown();
     updateSecretDisplay();
 
-    $('#ui_language_select, #onboarding_ui_language_select').on('change', function () {
+    $('#ui_language_select').on('change', function () {
         saveLanguagePreference(String($(this).val()));
         location.reload();
     });

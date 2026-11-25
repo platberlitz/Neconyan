@@ -328,6 +328,7 @@ function applyLayout() {
     renderPaneTabs();
     const width = Number(readPrefs().width) || 440;
     document.body.style.setProperty('--neco-notes-beside-width', `${clampWidth(width)}px`);
+    document.dispatchEvent(new Event('neconyan:notes-visibility'));
 }
 
 function setWritingFullscreen(enabled) {

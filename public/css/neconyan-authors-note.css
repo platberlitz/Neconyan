@@ -58,7 +58,7 @@ body.neconyan #floatingPrompt .an-panel-title {
     background: none;
     box-shadow: none;
     color: var(--neco-ink, var(--SmartThemeBodyColor));
-    font-family: 'Fredoka One', var(--mainFontFamily), sans-serif;
+    font-family: var(--sb-font-display, 'Fredoka One', var(--mainFontFamily), sans-serif);
     font-size: 18px;
     font-weight: 400;
     line-height: 1.2;

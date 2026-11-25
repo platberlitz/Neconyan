@@ -17,10 +17,13 @@
 - When the page reloads itself for an update, it tells you once instead of just quietly doing it.
 - The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
 - **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
+- The **Companions** panel now docks beside the chat instead of covering it. Opening **Scratchpad** or **Notes** takes the space instead, so the chat stays readable.
 - The **Companions** panel opens without freezing the app for a few seconds when you run a lot of themed companions, and its buttons respond straight away.
 - Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
 - Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
+- Turkish and Vietnamese headings no longer mix thin letters into heavy words. The Turkish letters ğ, ş and İ match the rest, and Vietnamese headings are bold all the way through.
+- Turn on **Companion notes** in **Scratchpad**'s **Context** tab and it reads the finished notes your Companions wrote on the shared messages, like trackers, **Plot Compass** and **Memory Shard**. It's off by default in Roleplay, and **Scratchpad** can ask for it with a **Share with the assistant** card.
 - Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
 
 ### Merged Staging PRs
@@ -194,6 +197,10 @@
 - PR #952 (2026-11-24) `docs(changelog): add Turkish to the v1.6.0 highlights`
 - PR #953 (2026-11-24) `feat(scratchpad): undo saved changes and keep a change history`
 - PR #954 (2026-11-24) `fix(mewmory): stop counting hidden reply data as prompt text`
+- PR #955 (2026-11-25) `feat(companions): dock the panel beside the chat`
+- PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
+- PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
+- PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

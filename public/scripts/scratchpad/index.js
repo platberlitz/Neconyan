@@ -71,7 +71,7 @@ import { buildTryRehearsalRequest, canTryProposalInRehearsal } from './rehearsal
 import { assistantFeedbackTone, DEFAULT_FEEDBACK_TONE, FEEDBACK_TONES, isFeedbackTone, normaliseFeedbackTone } from './feedback-tone.js';
 import { feedbackToneLabel, feedbackToneSlider } from './tone-slider.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261205-scratchpad-change-history';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261206-companion-panel-beside';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -187,7 +187,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false, agents: false, regex: false, cssSnippets: false, dialogueColors: false, mewmory: false, problems: false, appEvidence: false, appSource: false, lastPrompt: false, companionNotes: false },
     loreOverrides: {},
     lorebook: '',
     connection: { kind: 'current' },
@@ -3289,6 +3289,7 @@ function renderContext({ force = true } = {}) {
             roleplay || app.source.kind === 'conversation' ? checkbox(t`Last prompt sent`, include.lastPrompt === true, value => setInclude('lastPrompt', value),
                 t`Shares the exact prompt last sent to the model for this chat, with keys, passwords and hidden lorebook entries removed.`) : null,
             checkbox(t`Agents`, include.agents === true, value => setInclude('agents', value), t`Shares the name, description and prompt of every saved Agent, so an assistant can suggest edits to them.`),
+            roleplay ? checkbox(t`Companion notes`, include.companionNotes === true, value => setInclude('companionNotes', value), t`Shares the finished notes Companion agents wrote on the shared messages, such as trackers, Plot Compass and Memory Shards. Notes on hidden messages are shared only when their Companion keeps them in chat history.`) : null,
             checkbox(t`Regexes`, include.regex === true, value => setInclude('regex', value), t`Shares the name, Find pattern and replacement of every global regex script, so an assistant can suggest edits to them.`),
             checkbox(t`CSS Snippets`, include.cssSnippets === true, value => setInclude('cssSnippets', value), t`Shares the name and CSS of every saved snippet, so an assistant can suggest edits to them.`),
             checkbox(t`Dialogue Colors`, include.dialogueColors === true, value => setInclude('dialogueColors', value), t`Shares the name and colour of every character in the colour table in use, so an assistant can suggest new colours.`)),

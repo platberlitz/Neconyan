@@ -959,6 +959,34 @@ describe('companion tracker panel', () => {
         expect(panel.buildPanelHtml()).toContain('panel-hide-handle');
     });
 
+    test('docks the panel beside the chat only for desktop left and right edges', async () => {
+        const panel = await importPanel();
+        const classes = new Set();
+        globalThis.document.body.classList = {
+            toggle: jest.fn((name, force) => {
+                if (force) classes.add(name);
+                else classes.delete(name);
+                return Boolean(force);
+            }),
+        };
+
+        panel.syncCompanionPanelDock({ open: true, edge: 'right', phone: false });
+        expect([...classes].sort()).toEqual(['neconyan-companion-beside', 'neconyan-companion-beside-right']);
+
+        panel.syncCompanionPanelDock({ open: true, edge: 'left', phone: false });
+        expect([...classes].sort()).toEqual(['neconyan-companion-beside', 'neconyan-companion-beside-left']);
+
+        panel.syncCompanionPanelDock({ open: true, edge: 'top', phone: false });
+        expect(classes.size).toBe(0);
+
+        panel.syncCompanionPanelDock({ open: true, edge: 'right', phone: true });
+        expect(classes.size).toBe(0);
+
+        panel.syncCompanionPanelDock({ open: true, edge: 'right', phone: false });
+        panel.syncCompanionPanelDock({ open: false, edge: 'right', phone: false });
+        expect(classes.size).toBe(0);
+    });
+
     test('restores the top bar choice, puts its button in the bar slot, and removes it when switched back', async () => {
         accountStorageValues.set('ica--tracker-panel-launcher', 'topbar');
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
@@ -1086,6 +1114,62 @@ describe('companion tracker panel', () => {
         globalThis.matchMedia = jest.fn(() => ({ matches: false }));
         expect(panel.shouldShowCompanionPanelHandle()).toBe(false);
         delete globalThis.matchMedia;
+    });
+
+    test('gives the side to Scratchpad or Notes when either opens beside the chat', async () => {
+        const hideScratchpad = jest.fn();
+        const hideNotes = jest.fn();
+        globalThis.NeconyanScratchpad = { hide: hideScratchpad };
+        globalThis.NeconyanNotes = { hide: hideNotes };
+        const panelElement = {
+            on: jest.fn(() => panelElement),
+            html: jest.fn(() => panelElement),
+            toggle: jest.fn(() => panelElement),
+            attr: jest.fn(() => panelElement),
+            addClass: jest.fn(() => panelElement),
+            removeClass: jest.fn(() => panelElement),
+            0: {
+                addEventListener: jest.fn(), dataset: {}, scrollHeight: 0, clientHeight: 0, scrollTop: 0,
+                querySelectorAll: jest.fn(() => []),
+                querySelector: jest.fn(() => null),
+                getBoundingClientRect: jest.fn(() => ({ height: 0, top: 0, bottom: 0, left: 0, right: 0, width: 0 })),
+                contains: jest.fn(() => false),
+            },
+        };
+        const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement), attr: jest.fn(() => handleElement) };
+        const elementStub = () => ({
+            length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn(),
+            attr: jest.fn(), addClass: jest.fn(), removeClass: jest.fn(),
+        });
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) return { append: jest.fn() };
+            if (arg === '#ica--tracker-panel') return panelElement;
+            if (arg === '#ica--tracker-panel-handle') return handleElement;
+            return elementStub();
+        });
+
+        try {
+            const panel = await importPanel();
+            panel.initCompanionPanel();
+            panel.openCompanionPanel();
+
+            expect(hideScratchpad).toHaveBeenCalled();
+            expect(hideNotes).toHaveBeenCalled();
+
+            const listeners = new Map(globalThis.document.addEventListener.mock.calls);
+            globalThis.document.body.classList = { contains: name => name === 'neconyan-scratchpad-open' };
+            listeners.get('neconyan:scratchpad-visibility')();
+            expect(panelElement.removeClass).toHaveBeenCalledWith('is-open');
+
+            panel.openCompanionPanel();
+            panelElement.removeClass.mockClear();
+            globalThis.document.body.classList = { contains: name => name === 'neconyan-notes-open' };
+            listeners.get('neconyan:notes-visibility')();
+            expect(panelElement.removeClass).toHaveBeenCalledWith('is-open');
+        } finally {
+            delete globalThis.NeconyanScratchpad;
+            delete globalThis.NeconyanNotes;
+        }
     });
 
     test('a real MutationObserver drives both wand items across Conversation Mode changes without stacking observers', async () => {

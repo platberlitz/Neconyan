@@ -1,0 +1,24 @@
+{
+  "family": "Neconyan Heading Letters",
+  "style": "Regular",
+  "source": "https://github.com/google/fonts/tree/be2838a23fd2918408e22b25c54135da76525ff6/ofl/fredokaone",
+  "filename": "NeconyanHeadingLetters-Regular.woff2",
+  "bytes": 1460,
+  "sha256": "c11256e3fd47618387fd2df628e1ec482bf8446588e216f64994400bc8f2e723",
+  "licence": "OFL-1.1",
+  "processing": "Modified from Fredoka One (OFL-1.1); renamed because the licence reserves the name Fredoka. Five glyphs only.",
+  "derivedFrom": {
+    "family": "Fredoka One",
+    "filename": "FredokaOne-Regular.ttf",
+    "sha256": "a2fbb1416510efe20330272bc182d667efe1507db5faecde893084fb15953973"
+  },
+  "recipe": [
+    "Units per em 1000; line metrics, advance widths and hinting tables copied from Fredoka One.",
+    "s with cedilla: s plus the font's cedilla moved 27 left; S with cedilla: S plus the cedilla moved 24 right (outlines merged in both).",
+    "I with dot above: I plus the dot of Fredoka One's i (its second contour) moved 1 right and 200 up.",
+    "g with breve: g plus a drawn breve centred at x 303, top at y 773; G with breve: G plus the breve centred at x 354, top at y 973.",
+    "The breve is an arc of a circle 400 wide and 183 high including a 108 thick stroke with round ends (400 is the width of the font's caron).",
+    "Name table 'Neconyan Heading Letters' (ids 1, 4, 6); packed as woff2.",
+    "Tools: fontTools and skia-pathops."
+  ]
+}

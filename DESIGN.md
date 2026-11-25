@@ -57,6 +57,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 
 - Body: `--mainFontFamily: 'Nunito', 'Figtree', system-ui, ...` (variable weight 200 to 1000, bundled in `public/webfonts/Nunito`). Messages, inputs, lists, settings, buttons.
 - Display: `--sb-font-display: 'Fredoka One', var(--mainFontFamily)`. Headings h1 to h6, the top bar title, the rail brand, settings tab labels.
+- Fredoka One lacks ğ Ğ ş Ş İ, so a small second face ('Neconyan Heading Letters', in `public/webfonts/FredokaOne/heading-letters`) supplies them. Fredoka One has no Vietnamese letters beyond Latin-1 either, so Vietnamese headings and other display text (brand, rail, settings tabs) use the bundled Nunito at weight 900 as 'Nunito Heading'. A font picked in the drawer still wins.
 - A font picked in the Google Font drawer lands inline on `:root` and then applies everywhere, headings included. 'Default (Nunito + Fredoka One)' restores the pairing.
 - Sizes: 15px body, 13px controls, 12px labels and pills, 11px metadata. Weights: 500 controls, 600 titles, 700 toast titles.
 

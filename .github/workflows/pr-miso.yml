@@ -14,6 +14,7 @@ on:
     types: [submitted, dismissed]
 
 permissions:
+  actions: read
   checks: read
   contents: read
   issues: write
