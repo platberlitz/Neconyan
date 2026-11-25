@@ -32,6 +32,8 @@
 - Non-English alerts in **Dialogue Colors** now use complete translated sentences instead of gluing English plural endings or untranslated undo prompts onto status messages.
 - You don't have to wait for a **Scratchpad** reply to finish before writing the next message. Type it and press **Queue follow-up**: it waits in **Queued next** and goes out as soon as the reply is done, and pauses instead if you stop the reply or it fails.
 - Non-English tooltips, **Pawthfinder** diagnostics, and extension status messages across **Lorebook**, **In-Chat Agents**, and core tools now use complete singular and plural translations instead of mixed English suffixes.
+- Non-English languages now keep your persona, group, connection profile and session names, **Scratchpad** web search sources, and **Meower** voter and trend tooltips as written.
+- Fixed translated button, keycap and tooltip labels across **Meower**, **Scratchpad** and the **Hotkeys** help guide where shared English words or shifted hotkey entries previously showed the wrong phrase.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -228,6 +230,7 @@
 - PR #971 (2026-11-25) `fix(i18n): replace Dialogue Colors plural-ending template holes and translate undo toast`
 - PR #972 (2026-11-25) `fix(changelog): give each PR its own highlights file`
 - PR #973 (2026-11-25) `fix(i18n): replace core, Lorebook, and Pawthfinder plural-ending template holes`
+- PR #974 (2026-11-25) `docs(changelog): add two missing localisation highlights`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
