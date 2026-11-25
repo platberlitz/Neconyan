@@ -201,6 +201,7 @@
 - PR #956 (2026-11-24) `fix(i18n): stop thin letters in Turkish and Vietnamese headings`
 - PR #957 (2026-11-25) `chore(ui): remove dead onboarding modal markup and language selector binding`
 - PR #960 (2026-11-25) `feat(scratchpad): read Companion notes in Roleplay`
+- PR #962 (2026-11-25) `fix(i18n): match empty template holes and split adjacent Dialogue Colors toast templates`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
