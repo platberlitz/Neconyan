@@ -34,6 +34,7 @@
 - Non-English tooltips, **Pawthfinder** diagnostics, and extension status messages across **Lorebook**, **In-Chat Agents**, and core tools now use complete singular and plural translations instead of mixed English suffixes.
 - Non-English languages now keep your persona, group, connection profile and session names, **Scratchpad** web search sources, and **Meower** voter and trend tooltips as written.
 - Fixed translated button, keycap and tooltip labels across **Meower**, **Scratchpad** and the **Hotkeys** help guide where shared English words or shifted hotkey entries previously showed the wrong phrase.
+- General **Scratchpad** can share up to 8 lorebooks at once now. Pick each one from **Add a lorebook** under **Share a lorebook**, press **Remove** to drop one, and assistants can suggest edits to any of them.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -231,6 +232,7 @@
 - PR #972 (2026-11-25) `fix(changelog): give each PR its own highlights file`
 - PR #973 (2026-11-25) `fix(i18n): replace core, Lorebook, and Pawthfinder plural-ending template holes`
 - PR #974 (2026-11-25) `docs(changelog): add two missing localisation highlights`
+- PR #975 (2026-11-25) `feat(scratchpad): share several lorebooks by hand in General`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`

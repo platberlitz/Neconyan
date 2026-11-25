@@ -1,1 +1,0 @@
-General **Scratchpad** can share up to 8 lorebooks at once now. Pick each one from **Add a lorebook** under **Share a lorebook**, press **Remove** to drop one, and assistants can suggest edits to any of them.
