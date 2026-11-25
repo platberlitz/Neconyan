@@ -264,7 +264,16 @@ function collectIndexTargets(versionTargets) {
     }
 }
 
-function writeJsonFile(filePath, value, spaces) {
+function detectJsonIndent(contents, fallback = 2) {
+    const match = /^[[{]\r?\n([ \t]+)\S/.exec(contents);
+    if (!match) {
+        return fallback;
+    }
+    return match[1].includes('\t') ? '\t' : match[1].length;
+}
+
+function writeJsonFile(filePath, value) {
+    const spaces = detectJsonIndent(fs.readFileSync(filePath, 'utf8'));
     fs.writeFileSync(filePath, `${JSON.stringify(value, null, spaces)}\n`);
 }
 
@@ -304,7 +313,7 @@ function applyVersions(versionTargets, dryRun) {
         }
 
         if (applyTemplateVersion(template, target.targetVersion, getRelativePath(filePath), dryRun)) {
-            writeJsonFile(filePath, template, 4);
+            writeJsonFile(filePath, template);
         }
     }
 
@@ -321,7 +330,7 @@ function applyVersions(versionTargets, dryRun) {
     }
 
     if (indexChanged) {
-        writeJsonFile(indexPath, indexEntries, 4);
+        writeJsonFile(indexPath, indexEntries);
     }
 }
 
