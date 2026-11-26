@@ -940,7 +940,7 @@ export class ToolManager {
                     <li>The <code>parameters</code> argument MUST be a JSON-serialized object with a valid JSON schema.</li>
                     <li>The unnamed argument MUST be a closure that accepts the function parameters as local script variables.</li>
                 </ul>
-                <div>See <a target="_blank" href="https://json-schema.org/learn/">json-schema.org</a> and <a target="_blank" href="https://platform.openai.com/docs/guides/function-calling">OpenAI Function Calling</a> for more information.</div>
+                <div>See <a target="_blank" rel="noopener noreferrer" href="https://json-schema.org/learn/">json-schema.org</a> and <a target="_blank" rel="noopener noreferrer" href="https://platform.openai.com/docs/guides/function-calling">OpenAI Function Calling</a> for more information.</div>
                 <div>Example:</div>
                 <pre><code>/let key=echoSchema
 {

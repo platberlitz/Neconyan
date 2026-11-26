@@ -1176,8 +1176,9 @@ export function setWorldInfoSettings(settings, data) {
     }
 
     world_names.forEach((item, i) => {
-        $('#world_info').append(`<option value='${i}'${selected_world_info.includes(item) ? ' selected' : ''}>${item}</option>`);
-        $('#world_editor_select').append(`<option value='${i}'>${item}</option>`);
+        const isSelected = selected_world_info.includes(item);
+        $('#world_info').append(new Option(item, String(i), isSelected, isSelected));
+        $('#world_editor_select').append(new Option(item, String(i)));
     });
 
     $('#world_info_sort_order').val(accountStorage.getItem(SORT_ORDER_KEY) || '0');
@@ -2848,7 +2849,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     // Regardless of whether success is displayed or not. Make sure the delete button is available.
     // Do not put this code behind.
     $('#world_popup_delete').off('click').on('click', async () => {
-        const confirmation = await Popup.show.confirm(`Delete the World/Lorebook: "${name}"?`, 'This action is irreversible!');
+        const confirmation = await Popup.show.confirm(`Delete the World/Lorebook: "${escapeHtml(name)}"?`, 'This action is irreversible!');
         if (!confirmation) {
             return;
         }
@@ -6635,7 +6636,7 @@ export async function importEmbeddedWorldInfo(skipPopup = false) {
     const persistedBookName = existingBookName ?? bookName;
 
     if (!skipPopup) {
-        const confirmation = await Popup.show.confirm(t`Are you sure you want to import '${persistedBookName}'?`, world_names.includes(persistedBookName) ? t`It will overwrite the World/Lorebook with the same name.` : '');
+        const confirmation = await Popup.show.confirm(t`Are you sure you want to import '${escapeHtml(persistedBookName)}'?`, world_names.includes(persistedBookName) ? t`It will overwrite the World/Lorebook with the same name.` : '');
         if (!confirmation) {
             return;
         }

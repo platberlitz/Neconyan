@@ -1899,9 +1899,9 @@ class PromptManager {
         const prompt = this.getPromptById(identifier);
         const textareaIdentifier = `${identifier}_prompt_quick_edit_textarea`;
         const html = `<div class="range-block m-t-1">
-                        <div class="justifyLeft">${title}</div>
+                        <div class="justifyLeft">${escapeHtml(title)}</div>
                         <div class="wide100p">
-                            <textarea id="${textareaIdentifier}" class="text_pole textarea_compact" rows="6" placeholder="">${prompt.content}</textarea>
+                            <textarea id="${escapeHtml(textareaIdentifier)}" class="text_pole textarea_compact" rows="6" placeholder="">${escapeHtml(prompt.content)}</textarea>
                         </div>
                     </div>`;
 
@@ -2085,7 +2085,7 @@ class PromptManager {
             let drawerHTML = `
         <div class="inline-drawer ${this.configuration.prefix}prompt_manager_prompt">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <span>Name: ${escapeHtml(title)}, Role: ${role}, Tokens: ${tokens}</span>
+                <span>Name: ${escapeHtml(title)}, Role: ${escapeHtml(role)}, Tokens: ${escapeHtml(tokens)}</span>
                 <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
             </div>
             <div class="inline-drawer-content" style="white-space: pre-wrap;">${escapeHtml(content)}</div>

@@ -2252,6 +2252,23 @@ export async function getOneCharacter(avatarUrl, { isCurrent = () => true, allow
     return false;
 }
 
+/**
+ * Checks that a character source link is an absolute http(s) URL.
+ * @param {unknown} value Candidate link
+ * @returns {boolean} True when the link may be shown and opened
+ */
+function isHttpCharacterSourceUrl(value) {
+    if (typeof value !== 'string' || !value.trim()) {
+        return false;
+    }
+    try {
+        const url = new URL(value.trim());
+        return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
 export function getCharacterSource(chId = this_chid) {
     const character = characters[chId];
 
@@ -2279,8 +2296,8 @@ export function getCharacterSource(chId = this_chid) {
 
     const sourceUrl = characters[chId]?.data?.extensions?.source_url;
 
-    if (sourceUrl) {
-        return sourceUrl;
+    if (sourceUrl && isHttpCharacterSourceUrl(sourceUrl)) {
+        return sourceUrl.trim();
     }
 
     const risuId = characters[chId]?.data?.extensions?.risuai?.source;
@@ -5660,6 +5677,13 @@ function balanceStreamingMarkdown(text) {
 
 // Neconyan: Extracted HTML sanitization to allow reuse in streaming and final render paths.
 export function sanitizeMessageHtml(mes, sanitizerOverrides = {}, character = characters[this_chid]) {
+    const overrides = sanitizerOverrides && typeof sanitizerOverrides === 'object' ? sanitizerOverrides : {};
+    // System UI messages (welcome screen) keep their real ids; everything else gets DOM clobbering protection.
+    const sanitizeNamedProps = typeof overrides.SANITIZE_NAMED_PROPS === 'boolean'
+        ? overrides.SANITIZE_NAMED_PROPS
+        : !overrides.MESSAGE_ALLOW_SYSTEM_UI;
+    const forbidTags = Array.isArray(overrides.FORBID_TAGS) ? overrides.FORBID_TAGS : [];
+    const forbidAttr = Array.isArray(overrides.FORBID_ATTR) ? overrides.FORBID_ATTR : [];
     /** @type {DOMPurify.Config} */
     const config = {
         RETURN_DOM: false,
@@ -5668,12 +5692,16 @@ export function sanitizeMessageHtml(mes, sanitizerOverrides = {}, character = ch
         MESSAGE_SANITIZE: true,
         ADD_TAGS: ['custom-style', CARD_SCRIPT_MARKER_TAG],
         ADD_ATTR: ['style'], // Allow inline CSS effects from model-generated message spans.
-        ...sanitizerOverrides,
+        ...overrides,
+        SANITIZE_NAMED_PROPS: sanitizeNamedProps,
+        // Raw <style> is always forbidden (card styles travel as <custom-style>), and data-i18n can't rewrite attributes later.
+        FORBID_TAGS: [...new Set(['style', ...forbidTags])],
+        FORBID_ATTR: [...new Set(['data-i18n', ...forbidAttr])],
     };
     mes = bindPortraitUrls(mes, character);
     mes = encodeStyleTags(mes);
     mes = DOMPurify.sanitize(mes, config);
-    return decodeStyleTags(mes, { prefix: '.mes_text ' });
+    return decodeStyleTags(mes, sanitizeNamedProps ? { prefix: '.mes_text ', idPrefix: 'user-content-' } : { prefix: '.mes_text ' });
 }
 
 /**
@@ -22853,23 +22881,25 @@ jQuery(async function () {
             } break;
             case 'character_source': {
                 const source = getCharacterSource(this_chid);
-                if (source && isValidUrl(source)) {
+                if (source && isValidUrl(source) && isHttpCharacterSourceUrl(source)) {
                     const url = new URL(source);
-                    const confirm = await Popup.show.confirm('Open Source', `<span>Do you want to open the link to ${url.hostname} in a new tab?</span><var>${url}</var>`);
+                    const confirm = await Popup.show.confirm('Open Source', `<span>Do you want to open the link to ${escapeHtml(url.hostname)} in a new tab?</span><var>${escapeHtml(url.toString())}</var>`);
                     if (confirm) {
-                        window.open(source, '_blank');
+                        window.open(url.toString(), '_blank', 'noopener,noreferrer');
                     }
                 } else {
                     toastr.info('This character doesn\'t seem to have a source.');
                 }
             } break;
             case 'replace_update': {
-                let onlineUrl = getCharacterSource(this_chid);
+                const characterSource = getCharacterSource(this_chid);
+                let onlineUrl = isHttpCharacterSourceUrl(characterSource) ? characterSource : '';
+                const safeOnlineUrl = escapeHtml(onlineUrl);
 
                 const POPUP_RESULT_URL = POPUP_RESULT.CUSTOM1, POPUP_RESULT_FILE = POPUP_RESULT.CUSTOM2;
                 const result = await Popup.show.confirm(t`Replace Character`,
                     `<p>${t`Choose a new character card to replace this character with.`}</p>` +
-                    `<p>${t`You can also replace this character with the one from the online source.`}${onlineUrl ? `<br />This character was downloaded from: <var>${onlineUrl}</var>` : ''}</p>` +
+                    `<p>${t`You can also replace this character with the one from the online source.`}${onlineUrl ? `<br />This character was downloaded from: <var>${safeOnlineUrl}</var>` : ''}</p>` +
                     `<p>${t`All chats, assets and group memberships will be preserved, but local changes to the character data will be lost.`}<br />${t`Proceed?`}</p>`,
                     {
                         okButton: false,
@@ -22914,7 +22944,7 @@ jQuery(async function () {
                     case POPUP_RESULT_URL: {
                         const inputUrl = await Popup.show.input(t`Replace Character from URL`,
                             `<p>${t`Enter the URL of the character card to replace this character with.`}</p>` +
-                            (onlineUrl ? `<p>${t`This character was downloaded from: <var>${onlineUrl}</var>`}</p>` : ''),
+                            (onlineUrl ? `<p>${t`This character was downloaded from: <var>${safeOnlineUrl}</var>`}</p>` : ''),
                             onlineUrl);
                         if (!inputUrl) {
                             break;

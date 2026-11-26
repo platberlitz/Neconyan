@@ -82,7 +82,7 @@ class NovelTtsProvider {
         let voiceSelect = $('#tts-novel-custom-voices-select');
         voiceSelect.empty();
         this.settings.customVoices.forEach(voice => {
-            voiceSelect.append(`<option>${voice}</option>`);
+            voiceSelect.append(new Option(voice, voice));
         });
     }
 

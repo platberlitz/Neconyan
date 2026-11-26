@@ -1,4 +1,3 @@
-import { DOMPurify } from '../lib.js';
 import { amount_gen, eventSource, event_types, getRequestHeaders, max_context, online_status, setGenerationParamsFromPreset } from '../script.js';
 import { textgenerationwebui_settings as textgen_settings, textgen_types } from './textgen-settings.js';
 import { tokenizers } from './tokenizers.js';
@@ -843,11 +842,17 @@ function getMancerModelTemplate(option) {
     const creditsPerCompletion = model.limits?.completion * model.pricing?.completion;
     const creditsTotal = Math.round(creditsPerPrompt + creditsPerCompletion).toFixed(0);
 
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.name)}</strong> | <span>${model.limits?.context} ctx</span> / <span>${model.limits?.completion} res</span> | <small>Credits per request (max): ${creditsTotal}</small></div>
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const line = $('<div>').append(
+        $('<strong>').text(String(model.name ?? '')),
+        ' | ',
+        $('<span>').text(`${model.limits?.context} ctx`),
+        ' / ',
+        $('<span>').text(`${model.limits?.completion} res`),
+        ' | ',
+        $('<small>').text(`Credits per request (max): ${creditsTotal}`),
+    );
+    return $('<div>', { class: 'flex-container flexFlowColumn' }).append(line);
 }
 
 function getTogetherModelTemplate(option) {
@@ -857,12 +862,14 @@ function getTogetherModelTemplate(option) {
         return option.text;
     }
 
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.id)}</strong> | <span>${model.context_length || '???'} tokens</span></div>
-            <div><small>${DOMPurify.sanitize(model.description)}</small></div>
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const heading = $('<div>').append(
+        $('<strong>').text(String(model.id ?? '')),
+        ' | ',
+        $('<span>').text(`${model.context_length || '???'} tokens`),
+    );
+    const description = $('<div>').append($('<small>').text(String(model.description ?? '')));
+    return $('<div>', { class: 'flex-container flexFlowColumn' }).append(heading, description);
 }
 
 function getOpenRouterModelTemplate(option) {
@@ -877,11 +884,13 @@ function getOpenRouterModelTemplate(option) {
 
     const price = 0 === Number(model.pricing?.prompt) ? 'Free' : `${tokens_rounded}k t/$ `;
 
-    return $((`
-        <div class="flex-container flexFlowColumn" title="${DOMPurify.sanitize(model.id)}">
-            <div><strong>${DOMPurify.sanitize(model.name)}</strong> | ${model.context_length} ctx | <small>${price}</small></div>
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const line = $('<div>').append(
+        $('<strong>').text(String(model.name ?? '')),
+        document.createTextNode(` | ${model.context_length} ctx | `),
+        $('<small>').text(price),
+    );
+    return $('<div>', { class: 'flex-container flexFlowColumn' }).attr('title', String(model.id ?? '')).append(line);
 }
 
 async function downloadOllamaModel() {
@@ -894,7 +903,7 @@ async function downloadOllamaModel() {
         }
 
         const html = `Enter a model tag, for example <code>llama2:latest</code>.<br>
-        See <a target="_blank" href="https://ollama.ai/library">Library</a> for available models.`;
+        See <a target="_blank" rel="noopener noreferrer" href="https://ollama.ai/library">Library</a> for available models.`;
         const name = await callGenericPopup(html, POPUP_TYPE.INPUT, '', { okButton: 'Download' });
 
         if (!name) {

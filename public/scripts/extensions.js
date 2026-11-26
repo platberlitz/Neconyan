@@ -1337,11 +1337,11 @@ function generateExtensionHtml(name, manifest, isActive, isDisabled, isExternal,
     const toggleLabel = escapeHtml(t`Turn ${displayName} on or off`);
     const toggleElement = isActive || isDisabled
         ? `<label class="extension_toggle" title="${toggleLabel}">
-            <input type="checkbox" role="switch" aria-label="${toggleLabel}" data-name="${name}" class="${isActive ? 'toggle_disable' : 'toggle_enable'} ${checkboxClass}" ${isActive ? 'checked' : ''}>
+            <input type="checkbox" role="switch" aria-label="${toggleLabel}" data-name="${escapeHtml(name)}" class="${isActive ? 'toggle_disable' : 'toggle_enable'} ${checkboxClass}" ${isActive ? 'checked' : ''}>
             <span class="extension_toggle_state" aria-hidden="true">${isActive ? t`On` : t`Off`}</span>
         </label>`
         : `<label class="extension_toggle" title="${escapeHtml(t`This extension could not be loaded, so it cannot be turned on.`)}">
-            <input type="checkbox" role="switch" aria-label="${escapeHtml(t`${displayName} could not be loaded`)}" data-name="${name}" class="extension_missing ${checkboxClass}" disabled>
+            <input type="checkbox" role="switch" aria-label="${escapeHtml(t`${displayName} could not be loaded`)}" data-name="${escapeHtml(name)}" class="extension_missing ${checkboxClass}" disabled>
             <span class="extension_toggle_state" aria-hidden="true">${t`Unavailable`}</span>
         </label>`;
     const description = getExtensionManagerDescription(name, manifest);
@@ -1353,19 +1353,19 @@ function generateExtensionHtml(name, manifest, isActive, isDisabled, isExternal,
         ? t`Installed for everyone on this server`
         : extensionType === 'local' ? t`Installed for you` : '';
 
-    let deleteButton = isExternal ? `<button class="btn_delete menu_button" data-name="${externalId}" data-i18n="[title]Delete" title="Delete"><i class="fa-fw fa-solid fa-trash-can"></i></button>` : '';
-    let cleanButton = (isExternal || isNative) && hasExtensionHook(externalId, 'clean') ? `<button class="btn_clean menu_button" data-name="${externalId}" data-i18n="[title]Clean extension data" title="Clean extension data"><i class="fa-fw fa-solid fa-broom"></i></button>` : '';
-    let reinstallButton = isExternal ? `<button class="btn_reinstall menu_button" data-name="${externalId}" data-i18n="[title]Reinstall" title="Reinstall"><i class="fa-fw fa-solid fa-rotate-right"></i></button>` : '';
-    let updateButton = isExternal ? `<button class="btn_update menu_button displayNone" data-name="${externalId}" title="Update available"><i class="fa-solid fa-download fa-fw"></i></button>` : '';
-    let moveButton = isExternal && isUserAdmin ? `<button class="btn_move menu_button" data-name="${externalId}" data-i18n="[title]Move" title="Move"><i class="fa-solid fa-folder-tree fa-fw"></i></button>` : '';
-    let branchButton = isExternal && isUserAdmin ? `<button class="btn_branch menu_button" data-name="${externalId}" data-i18n="[title]Switch branch" title="Switch branch"><i class="fa-solid fa-code-branch fa-fw"></i></button>` : '';
-    let syncButton = manifest.auto_update === true && !isExternal && !isNative && isUserAdmin ? `<button class="btn_sync menu_button" data-name="${externalId}" title="Sync from upstream"><i class="fa-solid fa-arrows-rotate fa-fw"></i></button>` : '';
+    let deleteButton = isExternal ? `<button class="btn_delete menu_button" data-name="${escapeHtml(externalId)}" data-i18n="[title]Delete" title="Delete"><i class="fa-fw fa-solid fa-trash-can"></i></button>` : '';
+    let cleanButton = (isExternal || isNative) && hasExtensionHook(externalId, 'clean') ? `<button class="btn_clean menu_button" data-name="${escapeHtml(externalId)}" data-i18n="[title]Clean extension data" title="Clean extension data"><i class="fa-fw fa-solid fa-broom"></i></button>` : '';
+    let reinstallButton = isExternal ? `<button class="btn_reinstall menu_button" data-name="${escapeHtml(externalId)}" data-i18n="[title]Reinstall" title="Reinstall"><i class="fa-fw fa-solid fa-rotate-right"></i></button>` : '';
+    let updateButton = isExternal ? `<button class="btn_update menu_button displayNone" data-name="${escapeHtml(externalId)}" title="Update available"><i class="fa-solid fa-download fa-fw"></i></button>` : '';
+    let moveButton = isExternal && isUserAdmin ? `<button class="btn_move menu_button" data-name="${escapeHtml(externalId)}" data-i18n="[title]Move" title="Move"><i class="fa-solid fa-folder-tree fa-fw"></i></button>` : '';
+    let branchButton = isExternal && isUserAdmin ? `<button class="btn_branch menu_button" data-name="${escapeHtml(externalId)}" data-i18n="[title]Switch branch" title="Switch branch"><i class="fa-solid fa-code-branch fa-fw"></i></button>` : '';
+    let syncButton = manifest.auto_update === true && !isExternal && !isNative && isUserAdmin ? `<button class="btn_sync menu_button" data-name="${escapeHtml(externalId)}" title="Sync from upstream"><i class="fa-solid fa-arrows-rotate fa-fw"></i></button>` : '';
     // if external, wrap the name in a link to the repo
 
     const actionsHtml = [updateButton, syncButton, branchButton, moveButton, cleanButton, reinstallButton, deleteButton].join('');
 
     const extensionHtml = `
-        <div class="extension_block${isNative ? ' extension_native' : ''}" data-name="${externalId}" data-extension-type="${DOMPurify.sanitize(extensionType)}" data-enabled="${isActive}">
+        <div class="extension_block${isNative ? ' extension_native' : ''}" data-name="${escapeHtml(externalId)}" data-extension-type="${DOMPurify.sanitize(extensionType)}" data-enabled="${isActive}">
             <div class="extension_icon">${extensionIcon}</div>
             <div class="extension_text_block">
                 <span class="extension_title">${originHtml}<span class="${isActive ? 'extension_enabled' : isDisabled ? 'extension_disabled' : 'extension_missing'}"><span class="extension_name">${safeDisplayName}</span> <span class="extension_version">${DOMPurify.sanitize(displayVersion)}</span></span>${isExternal || isNative ? '</a>' : ''}</span>

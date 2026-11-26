@@ -2271,10 +2271,19 @@ function updateGroupAvatar(group) {
  */
 function isValidImageUrl(url) {
     // check if empty dict
-    if (!url || Object.keys(url).length === 0) {
+    if (!url || typeof url !== 'string' || Object.keys(url).length === 0) {
         return false;
     }
-    return isDataURL(url) || (url && (url.startsWith('user') || url.startsWith('/user')));
+    // Quotes, angle brackets, whitespace and control characters never belong in an avatar URL.
+    // eslint-disable-next-line no-control-regex
+    if (/["'<>`\s\u0000-\u001f\u007f]/.test(url)) {
+        return false;
+    }
+    if (url.slice(0, 5).toLowerCase() === 'data:') {
+        // Only raster images: an SVG or HTML data URL can carry script.
+        return isDataURL(url) && /^data:image\/(?:png|jpeg|jpg|webp|gif|avif);base64,[a-z0-9+/]+=*$/i.test(url);
+    }
+    return url.startsWith('user') || url.startsWith('/user');
 }
 
 /**
@@ -2284,11 +2293,13 @@ function isValidImageUrl(url) {
  */
 function getGroupAvatar(group) {
     if (!group) {
-        return $(`<div class="avatar"><img src="${default_avatar}"></div>`);
+        return $('<div class="avatar"></div>').append($('<img>').attr('src', default_avatar));
     }
     // if isDataURL or if it's a valid local file url
     if (isValidImageUrl(group.avatar_url)) {
-        return $(`<div class="avatar" data-i18n-ignore title="${t`[Group] ${group.name}`}"><img src="${group.avatar_url}"></div>`);
+        return $('<div class="avatar" data-i18n-ignore></div>')
+            .attr('title', t`[Group] ${group.name}`)
+            .append($('<img>').attr('src', group.avatar_url));
     }
 
     const memberAvatars = [];

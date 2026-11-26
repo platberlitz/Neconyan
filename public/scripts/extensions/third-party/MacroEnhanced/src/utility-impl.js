@@ -376,6 +376,9 @@ export function jsonGet(jsonText, path) {
         const key = typeof segment === 'number' && Array.isArray(value) && segment < 0
             ? value.length + segment
             : segment;
+        if (!Object.hasOwn(value, key)) {
+            return '';
+        }
         value = value[key];
     }
 

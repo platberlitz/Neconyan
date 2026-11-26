@@ -11,6 +11,8 @@ function isMainPage() {
 function invoke(bridge, method, args = [], token = callerToken) {
     if (!isMainPage() || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return false;
     const target = globalThis[bridge];
+    // An element named like the bridge (DOM clobbering) is never the native object.
+    if (typeof globalThis.Node === 'function' && target instanceof globalThis.Node) return false;
     if (typeof target?.[method] !== 'function') return false;
     return target[method](token, ...args);
 }
@@ -85,6 +87,8 @@ export async function saveAndroidBlob(url, name) {
     let opened = false;
     try {
         if (!isMainPage() || !token) return false;
+        // Only page-generated downloads; never fetch an arbitrary URL with the bridge token.
+        if (!String(url).startsWith('blob:')) return false;
         const blob = await (await globalThis.fetch(url)).blob();
         if (blob.size > 1024 ** 3) throw new Error(t`This browser-generated export exceeds 1 GiB. For a full data backup, use Save a backup of my data in Server.`);
         if (invoke('NeconyanExport', 'beginExport', [name || 'Neconyan-export', blob.size], token) !== true) throw new Error(t`Finish the current export or check available storage before trying again.`);

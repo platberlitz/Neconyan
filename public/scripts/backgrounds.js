@@ -30,6 +30,30 @@ const PNG_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkY
 const PNG_PIXEL_BLOB = new Blob([Uint8Array.from(atob(PNG_PIXEL), c => c.charCodeAt(0))], { type: 'image/png' });
 const PLACEHOLDER_IMAGE = `url('data:image/png;base64,${PNG_PIXEL}')`;
 
+/**
+ * Wraps a URL in a double-quoted CSS url() so quotes, backslashes and newlines cannot end the string.
+ * @param {string} value URL
+ * @returns {string} CSS url() value
+ */
+function cssUrlValue(value) {
+    const escaped = String(value ?? '')
+        .replace(/[\\"]/g, '\\$&')
+        .replace(/[\n\r\f]/g, char => `\\${char.charCodeAt(0).toString(16)} `);
+    return `url("${escaped}")`;
+}
+
+/**
+ * Escapes a value for use inside a quoted CSS attribute selector.
+ * @param {string} value Raw value
+ * @returns {string} Escaped value
+ */
+function cssSelectorValue(value) {
+    const text = String(value ?? '');
+    return typeof globalThis.CSS?.escape === 'function'
+        ? globalThis.CSS.escape(text)
+        : text.replace(/[\\"'\]\n\r\f]/g, char => `\\${char.charCodeAt(0).toString(16)} `);
+}
+
 const THUMBNAIL_COLUMNS_MIN = 2;
 const THUMBNAIL_COLUMNS_MAX = 8;
 const THUMBNAIL_COLUMNS_MAX_MOBILE = 3;
@@ -984,7 +1008,7 @@ function createFolderTileElement(folder) {
     // Set cover image (async, update when resolved)
     getFolderCoverUrl(folder).then(coverUrl => {
         if (coverUrl) {
-            tile.find('.bg_folder_tile_cover').css('background-image', `url("${coverUrl}")`);
+            tile.find('.bg_folder_tile_cover').css('background-image', cssUrlValue(coverUrl));
         }
     });
 
@@ -1499,8 +1523,8 @@ async function onSetFolderCover(bgFile) {
                 // Update the DOM tile cover image
                 const coverUrl = await getFolderCoverUrl(folder);
                 if (coverUrl) {
-                    $(`.bg_folder_tile[data-folder-id="${folder.id}"] .bg_folder_tile_cover`)
-                        .css('background-image', `url('${coverUrl}')`);
+                    $(`.bg_folder_tile[data-folder-id="${cssSelectorValue(folder.id)}"] .bg_folder_tile_cover`)
+                        .css('background-image', cssUrlValue(coverUrl));
                 }
             }
             toastr.success(t`Folder cover updated`);
@@ -1618,7 +1642,7 @@ async function resolveImageUrl(bg, isCustom, isAnimated = null) {
             ? bg
             : getThumbnailUrl('bg', bg);
 
-    return `url("${thumbnailUrl}")`;
+    return cssUrlValue(thumbnailUrl);
 }
 
 async function setBackground(bg, url) {

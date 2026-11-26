@@ -651,9 +651,11 @@ async function onDeleteNoteProfile(slotName) {
         return;
     }
 
+    // Escaped inline: tests/authors-note-input.test.js runs this file in a sandbox without utils.js.
+    const safeName = String(current.profile.name ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const confirmed = isCharaNote
-        ? await Popup.show.confirm(t`Delete note`, t`Delete the note "${current.profile.name}"? This cannot be undone.`)
-        : await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${current.profile.name}"? This cannot be undone.`);
+        ? await Popup.show.confirm(t`Delete note`, t`Delete the note "${safeName}"? This cannot be undone.`)
+        : await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${safeName}"? This cannot be undone.`);
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE || !isCurrent()) {
         return;
     }

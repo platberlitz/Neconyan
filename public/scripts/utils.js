@@ -1999,6 +1999,10 @@ export async function extractTextFromOffice(blob) {
  */
 export function setValueByPath(obj, path, value) {
     const keyParts = path.split('.');
+    // Neconyan: never walk into or overwrite prototype slots (inline so sliced copies stay self-contained).
+    if (keyParts.some(part => part === '__proto__' || part === 'constructor' || part === 'prototype')) {
+        return;
+    }
     let currentObject = obj;
 
     for (let i = 0; i < keyParts.length - 1; i++) {
@@ -2022,12 +2026,15 @@ export function setValueByPath(obj, path, value) {
  */
 export function deleteValueByPath(obj, path) {
     const keyParts = path.split('.');
+    if (keyParts.some(part => part === '__proto__' || part === 'constructor' || part === 'prototype')) {
+        return;
+    }
     let currentObject = obj;
 
     for (let i = 0; i < keyParts.length - 1; i++) {
         const part = keyParts[i];
 
-        if (!currentObject || typeof currentObject !== 'object') {
+        if (!currentObject || typeof currentObject !== 'object' || !Object.hasOwn(currentObject, part)) {
             return;
         }
 
@@ -2355,13 +2362,17 @@ export async function checkOverwriteExistingData(type, existingNames, name, { in
         return true;
     }
 
-    const overwrite = interactive && await Popup.show.confirm(`${type} ${actionName}`, `<p>A ${type.toLowerCase()} with the same name already exists:<br />${existing}</p>Do you want to overwrite it?`);
+    // Neconyan: names come from imported files; escape them before they reach popup and toast markup.
+    const safeType = escapeHtml(type);
+    const safeAction = escapeHtml(actionName);
+    const safeExisting = escapeHtml(existing);
+    const overwrite = interactive && await Popup.show.confirm(`${safeType} ${safeAction}`, `<p>A ${escapeHtml(type.toLowerCase())} with the same name already exists:<br />${safeExisting}</p>Do you want to overwrite it?`);
     if (!overwrite) {
-        toastr.warning(`${type} ${actionName.toLowerCase()} cancelled. A ${type.toLowerCase()} with the same name already exists:<br />${existing}`, `${type} ${actionName}`, { escapeHtml: false });
+        toastr.warning(`${safeType} ${escapeHtml(actionName.toLowerCase())} cancelled. A ${escapeHtml(type.toLowerCase())} with the same name already exists:<br />${safeExisting}`, `${safeType} ${safeAction}`, { escapeHtml: false });
         return false;
     }
 
-    toastr.info(`Overwriting Existing ${type}:<br />${existing}`, `${type} ${actionName}`, { escapeHtml: false });
+    toastr.info(`Overwriting Existing ${safeType}:<br />${safeExisting}`, `${safeType} ${safeAction}`, { escapeHtml: false });
 
     // If there is an action to delete the existing data, do it, as the name might be slightly different so file name would not be the same
     if (deleteAction) {

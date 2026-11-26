@@ -4514,11 +4514,13 @@ function getOpenRouterModelTemplate(option) {
 
     const price = 0 === Number(model.pricing?.prompt) ? 'Free' : `${tokens_rounded}k t/$ `;
 
-    return $((`
-        <div class="flex-container flexFlowColumn" title="${DOMPurify.sanitize(model.id)}">
-            <div><strong>${DOMPurify.sanitize(model.name)}</strong> | ${model.context_length} ctx | <small>${price}</small></div>
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const line = $('<div>').append(
+        $('<strong>').text(String(model.name ?? '')),
+        document.createTextNode(` | ${model.context_length} ctx | `),
+        $('<small>').text(price),
+    );
+    return $('<div>', { class: 'flex-container flexFlowColumn' }).attr('title', String(model.id ?? '')).append(line);
 }
 
 function calculateOpenRouterCost() {
@@ -4559,24 +4561,22 @@ function getElectronHubModelTemplate(option) {
     const outputPrice = model.pricing?.output;
     const price = inputPrice && outputPrice ? `$${inputPrice}/$${outputPrice} in/out Mtoken` : 'Unknown';
 
-    const visionIcon = model.metadata?.vision ? '<i class="fa-solid fa-eye fa-sm" title="This model supports vision"></i>' : '';
-    const reasoningIcon = model.metadata?.reasoning ? '<i class="fa-solid fa-brain fa-sm" title="This model supports reasoning"></i>' : '';
-    const toolCallsIcon = model.metadata?.function_call ? '<i class="fa-solid fa-wrench fa-sm" title="This model supports function tools"></i>' : '';
-    const premiumIcon = model?.premium_model ? '<i class="fa-solid fa-crown fa-sm" title="This model requires a subscription"></i>' : '';
+    const icons = [
+        [model.metadata?.vision, 'eye', 'This model supports vision'],
+        [model.metadata?.reasoning, 'brain', 'This model supports reasoning'],
+        [model.metadata?.function_call, 'wrench', 'This model supports function tools'],
+        [model?.premium_model, 'crown', 'This model requires a subscription'],
+    ].filter(([enabled]) => enabled).map(([, icon, title]) => $('<i>', { class: `fa-solid fa-${icon} fa-sm`, title }));
 
-    const iconsContainer = document.createElement('span');
-    iconsContainer.insertAdjacentHTML('beforeend', visionIcon);
-    iconsContainer.insertAdjacentHTML('beforeend', reasoningIcon);
-    iconsContainer.insertAdjacentHTML('beforeend', toolCallsIcon);
-    iconsContainer.insertAdjacentHTML('beforeend', premiumIcon);
-
-    const capabilities = (iconsContainer.children.length) ? ` | ${iconsContainer.innerHTML}` : '';
-
-    return $((`
-        <div class="flex-container alignItemsBaseline" title="${DOMPurify.sanitize(model.id)}">
-            <strong>${DOMPurify.sanitize(model.name)}</strong> | ${model.tokens} ctx | <small>${price}</small>${capabilities}
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const row = $('<div>', { class: 'flex-container alignItemsBaseline' }).attr('title', String(model.id ?? ''));
+    row.append(
+        $('<strong>').text(String(model.name ?? '')),
+        document.createTextNode(` | ${model.tokens} ctx | `),
+        $('<small>').text(price),
+    );
+    if (icons.length) row.append(document.createTextNode(' | '), ...icons);
+    return row;
 }
 
 function calculateElectronHubCost() {
@@ -4622,22 +4622,21 @@ function getChutesModelTemplate(option) {
     }
 
     const contextLength = model.context_length || model.max_model_len || 'Unknown';
-    const visionIcon = model.input_modalities?.includes('image') ? '<i class="fa-solid fa-eye fa-sm" title="This model supports vision"></i>' : '';
-    const reasoningIcon = model.supported_features?.includes('reasoning') ? '<i class="fa-solid fa-brain fa-sm" title="This model supports reasoning"></i>' : '';
-    const toolCallsIcon = model.supported_features?.includes('structured_outputs') ? '<i class="fa-solid fa-wrench fa-sm" title="This model supports function tools"></i>' : '';
+    const icons = [
+        [model.input_modalities?.includes('image'), 'eye', 'This model supports vision'],
+        [model.supported_features?.includes('reasoning'), 'brain', 'This model supports reasoning'],
+        [model.supported_features?.includes('structured_outputs'), 'wrench', 'This model supports function tools'],
+    ].filter(([enabled]) => enabled).map(([, icon, title]) => $('<i>', { class: `fa-solid fa-${icon} fa-sm`, title }));
 
-    const iconsContainer = document.createElement('span');
-    iconsContainer.insertAdjacentHTML('beforeend', visionIcon);
-    iconsContainer.insertAdjacentHTML('beforeend', reasoningIcon);
-    iconsContainer.insertAdjacentHTML('beforeend', toolCallsIcon);
-
-    const capabilities = (iconsContainer.children.length) ? ` | ${iconsContainer.innerHTML}` : '';
-
-    return $((`
-        <div class="flex-container alignItemsBaseline" title="${DOMPurify.sanitize(model.id)}">
-            <strong>${DOMPurify.sanitize(model.id)}</strong> | ${contextLength} ctx | <small>${price}</small>${capabilities}
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const row = $('<div>', { class: 'flex-container alignItemsBaseline' }).attr('title', String(model.id ?? ''));
+    row.append(
+        $('<strong>').text(String(model.id ?? '')),
+        document.createTextNode(` | ${contextLength} ctx | `),
+        $('<small>').text(price),
+    );
+    if (icons.length) row.append(document.createTextNode(' | '), ...icons);
+    return row;
 }
 
 function getNanoGptModelTemplate(option) {
@@ -5275,7 +5274,7 @@ function appendOpenRouterOptions(model_list, groupModels = false, sort = false) 
 
     if (groupModels) {
         model_list.forEach((models, vendor) => {
-            const optgroup = $(`<optgroup label="${vendor}">`);
+            const optgroup = $('<optgroup>').attr('label', vendor);
 
             models.forEach((model) => {
                 appendOption(model, optgroup);
@@ -5413,7 +5412,7 @@ function appendAimlapiOptions(model_list) {
     };
 
     model_list.forEach((models, vendor) => {
-        const optgroup = $(`<optgroup label="${vendor}">`);
+        const optgroup = $('<optgroup>').attr('label', vendor);
 
         models.forEach((model) => {
             appendOption(model, optgroup);
@@ -5432,11 +5431,12 @@ function getAimlapiModelTemplate(option) {
 
     const vendor = model.id.split('/')[0];
 
-    return $((`
-        <div class="flex-container flexFlowColumn" title="${DOMPurify.sanitize(model.id)}">
-            <div><strong>${DOMPurify.sanitize(model.info?.name || model.name || model.id)}</strong> | ${vendor}</div>
-        </div>
-    `));
+    // Neconyan: provider catalogue fields are untrusted; build the row as text nodes.
+    const line = $('<div>').append(
+        $('<strong>').text(String(model.info?.name || model.name || model.id)),
+        document.createTextNode(` | ${vendor}`),
+    );
+    return $('<div>', { class: 'flex-container flexFlowColumn' }).attr('title', String(model.id ?? '')).append(line);
 }
 
 /**
@@ -9974,7 +9974,9 @@ $('#delete_custom_endpoint').on('click', async function () {
         return;
     }
 
-    const confirmed = await callGenericPopup(t`Delete endpoint profile '${presetName}'? The URL and model stay in the fields.`, POPUP_TYPE.CONFIRM);
+    // Neconyan: escape inline so this handler keeps no helper dependency.
+    const safePresetName = presetName.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
+    const confirmed = await callGenericPopup(t`Delete endpoint profile '${safePresetName}'? The URL and model stay in the fields.`, POPUP_TYPE.CONFIRM);
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
         return;
     }
@@ -10440,10 +10442,10 @@ function updateVertexAIServiceAccountStatus(isValid = false, message = '') {
     }
 
     if (isValid && message) {
-        infoSpan.html(`<i class="fa-solid fa-check-circle" style="color: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor)));"></i> ${message}`);
+        infoSpan.html('<i class="fa-solid fa-check-circle" style="color: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor)));"></i> ').append($('<span>').text(message));
         statusDiv.show();
     } else if (!isValid && message) {
-        infoSpan.html(`<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning, #ffb46b);"></i> ${message}`);
+        infoSpan.html('<i class="fa-solid fa-exclamation-triangle" style="color: var(--warning, #ffb46b);"></i> ').append($('<span>').text(message));
         statusDiv.show();
     } else {
         statusDiv.hide();

@@ -1161,7 +1161,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
 
-const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://platberlitz.github.io/neconyan-docs/workspace/characters/#set-up-your-persona" target="_blank"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
+const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://platberlitz.github.io/neconyan-docs/workspace/characters/#set-up-your-persona" target="_blank" rel="noopener noreferrer"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
 
 const NN_SHELLS = Object.freeze({
     left: {
@@ -5946,9 +5946,22 @@ function syncShellStyleAssistantArt() {
     if (style.textContent !== css) style.textContent = css;
 }
 
+/**
+ * Reads a bridge object the native app puts on window. An element whose id or name matches (DOM clobbering)
+ * is never treated as the bridge.
+ * @param {string} name
+ * @returns {any}
+ */
+function readNativeHostGlobal(name) {
+    const value = globalThis[name];
+    if (typeof Node !== 'undefined' && value instanceof Node) return undefined;
+    if (typeof HTMLCollection !== 'undefined' && value instanceof HTMLCollection) return undefined;
+    return value;
+}
+
 function applyFrontendIcon(iconId = nnState.frontendIcon) {
     const normalizedIconId = normalizeFrontendIcon(iconId);
-    const iconController = window.NeconyanFrontendIcon;
+    const iconController = readNativeHostGlobal('NeconyanFrontendIcon');
 
     if (iconController?.apply) {
         iconController.apply(normalizedIconId);
@@ -7193,7 +7206,14 @@ function createDesktopQuickActionButton(item) {
             'aria-label': t`Open ${action.label}`,
         },
     });
-    button.innerHTML = `<i class="fa-solid ${action.icon || NN_MOBILE_QUICK_ACTION_ICON_FALLBACK}" aria-hidden="true"></i><span>${action.label}</span>`;
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid';
+    const iconTokens = String(action.icon || NN_MOBILE_QUICK_ACTION_ICON_FALLBACK).split(/\s+/).filter(token => /^[a-z0-9-]+$/i.test(token));
+    icon.classList.add(...(iconTokens.length ? iconTokens : [NN_MOBILE_QUICK_ACTION_ICON_FALLBACK]));
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = String(action.label ?? '');
+    button.replaceChildren(icon, label);
     button.addEventListener('click', () => activateMobileQuickAction(action));
     return button;
 }
@@ -8623,17 +8643,22 @@ function createChatFileButton(chatFile, currentChatId, onSelect, { compact = fal
 
     const dateLabel = formatChatTimestamp(chatFile.lastMessage);
     button.classList.toggle('is-current', chatFile.fileName === currentChatId);
-    button.innerHTML = `
-        <div class="sb-chat-file-head">
-            <strong class="sb-chat-file-title">${chatFile.fileName}</strong>
-            <small>${dateLabel || ''}</small>
-        </div>
-        <span class="sb-chat-file-preview">${chatFile.preview}</span>
-        <div class="sb-chat-file-meta">
-            <small>${chatFile.chatItems ? `${chatFile.chatItems} msg` : ''}</small>
-            <small>${chatFile.fileSize || ''}</small>
-        </div>
-    `;
+    // File names, previews and sizes come from saved chats, so they are set as text, never parsed as HTML.
+    const head = createElement('div', { className: 'sb-chat-file-head' });
+    const title = createElement('strong', { className: 'sb-chat-file-title' });
+    title.textContent = String(chatFile.fileName ?? '');
+    const date = createElement('small');
+    date.textContent = String(dateLabel || '');
+    head.append(title, date);
+    const preview = createElement('span', { className: 'sb-chat-file-preview' });
+    preview.textContent = String(chatFile.preview ?? '');
+    const meta = createElement('div', { className: 'sb-chat-file-meta' });
+    const count = createElement('small');
+    count.textContent = chatFile.chatItems ? `${chatFile.chatItems} msg` : '';
+    const size = createElement('small');
+    size.textContent = String(chatFile.fileSize || '');
+    meta.append(count, size);
+    button.replaceChildren(head, preview, meta);
 
     button.addEventListener('click', () => {
         void onSelect(chatFile.fileName);
@@ -14540,7 +14565,7 @@ function renderServerAdminStatus(data) {
     }
 
     setServerAdminPill(refs.statusPill, pillLabel, pillTone);
-    const hasAndroidInstaller = typeof window.NeconyanAndroid?.installUpdate === 'function';
+    const hasAndroidInstaller = typeof readNativeHostGlobal('NeconyanAndroid')?.installUpdate === 'function';
     const updateMode = isAndroidInstall ? (androidRelease.canUpdate && hasAndroidInstaller ? 'apk' : '')
         : isIosInstall ? (iosRelease.canUpdate && iosRelease.releaseUrl ? 'ipa' : '')
             : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
@@ -15245,7 +15270,7 @@ async function handleServerAdminUpdate() {
     if (refs.updateButton?.dataset.sbUpdateMode === 'apk') {
         const version = state.lastStatusData?.androidRelease?.latestVersion;
         try {
-            if (typeof window.NeconyanAndroid?.installUpdate !== 'function' || !version) {
+            if (typeof readNativeHostGlobal('NeconyanAndroid')?.installUpdate !== 'function' || !version) {
                 throw new Error('Open the Neconyan Android app to install this APK update.');
             }
             if (requestAndroidUpdate(version) !== true) throw new Error(t`Android controls are not ready. Reload this page and try again.`);
@@ -15259,7 +15284,7 @@ async function handleServerAdminUpdate() {
     if (refs.updateButton?.dataset.sbUpdateMode === 'ipa') {
         const releaseUrl = String(state.lastStatusData?.iosRelease?.releaseUrl || '');
         // The iPhone app opens links to other sites in Safari.
-        if (/^https:\/\/github\.com\//.test(releaseUrl)) window.open(releaseUrl, '_blank', 'noopener');
+        if (/^https:\/\/github\.com\//.test(releaseUrl)) window.open(releaseUrl, '_blank', 'noopener,noreferrer');
         setServerAdminMessage(refs.updateNote, 'Download the IPA from the release page, then install it over this copy with your sideloading tool.');
         return;
     }
@@ -15573,7 +15598,7 @@ function buildServerAdminPanel() {
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
     statusCard.append(statusHeader, statusGrid, folderList, statusNote, changedFiles, sourceDetails);
-    if (typeof globalThis.NeconyanExport?.saveDataBackup === 'function') {
+    if (typeof readNativeHostGlobal('NeconyanExport')?.saveDataBackup === 'function') {
         const backup = createElement('button', { className: 'menu_button sb-server-action', text: 'Save a backup of my data', attrs: { type: 'button' } });
         backup.addEventListener('click', async () => {
             backup.disabled = true;
@@ -16718,7 +16743,7 @@ function injectSillyTavernImportCard() {
     });
 
     zipButton.addEventListener('click', async () => {
-        if (!window.webkit?.messageHandlers?.neconyanImport) {
+        if (!readNativeHostGlobal('webkit')?.messageHandlers?.neconyanImport) {
             zipFileInput.click();
             return;
         }

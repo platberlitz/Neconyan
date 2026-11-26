@@ -5,7 +5,7 @@ import { canGroupMemberSee } from './group-chat-visibility.js';
 import { rememberGroupSpeaker } from './group-chat-speakers.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
 import { refreshGroupHeardBadges } from './group-chat-heard-editor.js';
-import { addLongPressEvent } from './utils.js';
+import { addLongPressEvent, escapeHtml } from './utils.js';
 import { callGenericPopup, POPUP_TYPE } from './popup.js';
 import { SWIPE_DIRECTION } from './constants.js';
 import { t } from './i18n.js';
@@ -105,7 +105,7 @@ export async function openGroupSpeakerMenu(avatar) {
         const count = await catchUpGroupMember(avatar);
         if (count) toastr.success(t`${name} now remembers what was said.`);
     } else if (action === 10) {
-        const confirmed = await callGenericPopup(t`${name} will no longer remember anything said in this chat so far. You can give it back with Catch up on what was said.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Forget`, cancelButton: t`Cancel` });
+        const confirmed = await callGenericPopup(t`${escapeHtml(name)} will no longer remember anything said in this chat so far. You can give it back with Catch up on what was said.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Forget`, cancelButton: t`Cancel` });
         if (!confirmed || selected_group !== group.id || getCurrentChatId() !== chatId) return;
         if (is_send_press || is_group_generating) {
             toastr.info(t`Wait for the current reply to finish.`);

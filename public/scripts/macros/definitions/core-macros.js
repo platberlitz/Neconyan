@@ -9,6 +9,35 @@ import { ELSE_MARKER } from '../engine/macro-console.js';
 
 export { ELSE_MARKER };
 
+// Keep repeated and rolled output bounded, as MacroEnhanced's {{repeat}} does.
+const MAX_REPEAT_COUNT = 1000;
+const MAX_ROLL_DICE = 1000;
+const MAX_ROLL_SIDES = 1000000;
+
+/**
+ * @param {unknown} count
+ * @returns {number} A whole number from 0 to MAX_REPEAT_COUNT.
+ */
+export function clampMacroRepeatCount(count) {
+    const value = Math.trunc(Number(count ?? 1));
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(value, MAX_REPEAT_COUNT);
+}
+
+/**
+ * Checks the dice count and sides of a droll formula before it is rolled, so a huge formula cannot allocate
+ * millions of rolls. Formulas droll itself rejects are left to droll.validate.
+ * @param {string} formula
+ * @returns {boolean}
+ */
+export function isRollFormulaWithinLimits(formula) {
+    const match = String(formula ?? '').trim().match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+    if (!match) return true;
+    const dice = match[1] ? Number(match[1]) : 1;
+    const sides = Number(match[2]);
+    return dice <= MAX_ROLL_DICE && sides <= MAX_ROLL_SIDES;
+}
+
 /**
  * Registers SillyTavern's core built-in macros in the MacroRegistry.
  *
@@ -33,7 +62,7 @@ export function registerCoreMacros() {
         description: 'Returns one or more spaces. One space by default, more if the count argument is specified.',
         returns: 'One or more spaces.',
         exampleUsage: ['{{space}}', '{{space::4}}'],
-        handler: ({ unnamedArgs: [count] }) => ' '.repeat(Number(count ?? 1)),
+        handler: ({ unnamedArgs: [count] }) => ' '.repeat(clampMacroRepeatCount(count)),
     });
 
     // {{newline}} -> '\n'
@@ -51,7 +80,7 @@ export function registerCoreMacros() {
         description: 'Inserts one or more newlines. One newline by default, more if the count argument is specified.',
         returns: 'One or more \\n.',
         exampleUsage: ['{{newline}}', '{{newline::2}}'],
-        handler: ({ unnamedArgs: [count] }) => '\n'.repeat(Number(count ?? 1)),
+        handler: ({ unnamedArgs: [count] }) => '\n'.repeat(clampMacroRepeatCount(count)),
     });
 
     // {{noop}} -> ''
@@ -324,7 +353,7 @@ export function registerCoreMacros() {
                 formula = `1d${formula}`;
             }
 
-            const isValid = droll.validate(formula);
+            const isValid = isRollFormulaWithinLimits(formula) && droll.validate(formula);
             if (!isValid) {
                 warn(`Invalid roll formula: ${formula}`);
                 return '';

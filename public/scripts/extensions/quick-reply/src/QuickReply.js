@@ -1741,15 +1741,18 @@ export class QuickReply {
             this.editorExecuteProgress.classList.add('qr--error');
             this.editorExecuteProgress.classList.remove('qr--paused');
             if (ex instanceof SlashCommandParserError) {
-                this.editorExecuteErrors.innerHTML = `
-                    <div>${ex.message}</div>
-                    <div>Line: ${ex.line} Column: ${ex.column}</div>
-                    <pre style="text-align:left;">${ex.hint}</pre>
-                `;
+                const message = document.createElement('div');
+                message.textContent = ex.message;
+                const position = document.createElement('div');
+                position.textContent = `Line: ${ex.line} Column: ${ex.column}`;
+                const hint = document.createElement('pre');
+                hint.style.textAlign = 'left';
+                hint.textContent = ex.hint;
+                this.editorExecuteErrors.replaceChildren(message, position, hint);
             } else {
-                this.editorExecuteErrors.innerHTML = `
-                    <div>${ex.message}</div>
-                `;
+                const message = document.createElement('div');
+                message.textContent = ex.message;
+                this.editorExecuteErrors.replaceChildren(message);
             }
         }
         if (noSyntax) {

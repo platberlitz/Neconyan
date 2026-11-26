@@ -64,6 +64,31 @@ import { onboardingExperimentalMacroEngine } from '../macros/engine/MacroDiagnos
  * @property {string} [fullText] - The currently written full text.
  */
 
+/**
+ * Creates a `<code>` element showing typed text as plain text.
+ * @param {string} text
+ * @returns {HTMLElement}
+ */
+function createCodeElement(text) {
+    const code = document.createElement('code');
+    code.textContent = String(text ?? '');
+    return code;
+}
+
+/**
+ * Fills a list item with a `code - description` usage example, keeping typed names as plain text.
+ * @param {HTMLElement} li
+ * @param {string} example
+ */
+function appendUsageExample(li, example) {
+    const separator = example.lastIndexOf(' - ');
+    if (separator === -1) {
+        li.append(createCodeElement(example));
+        return;
+    }
+    li.append(createCodeElement(example.slice(0, separator)), ` - ${example.slice(separator + 3)}`);
+}
+
 export class EnhancedMacroAutoCompleteOption extends AutoCompleteOption {
     /** @type {MacroDefinition} */
     #macro;
@@ -347,10 +372,11 @@ export class EnhancedMacroAutoCompleteOption extends AutoCompleteOption {
         info.append(icon);
 
         const text = document.createElement('span');
-        const closingHint = this.#context.isScopedContentOptional
-            ? `Can optionally close with <code>{{/${this.#context.scopedMacroName}}}</code>`
-            : `Close with <code>{{/${this.#context.scopedMacroName}}}</code>`;
-        text.innerHTML = `Typing <strong>scoped content</strong> for <code>{{${this.#context.scopedMacroName}}}</code>. ${closingHint}`;
+        const scopedMacroName = this.#context.scopedMacroName;
+        const closingHint = this.#context.isScopedContentOptional ? '. Can optionally close with ' : '. Close with ';
+        const strong = document.createElement('strong');
+        strong.textContent = 'scoped content';
+        text.append('Typing ', strong, ' for ', createCodeElement(`{{${scopedMacroName}}}`), closingHint, createCodeElement(`{{/${scopedMacroName}}}`));
         info.append(text);
 
         return info;
@@ -696,7 +722,7 @@ export class VariableShorthandAutoCompleteOption extends AutoCompleteOption {
         ];
         for (const ex of examples) {
             const li = document.createElement('li');
-            li.innerHTML = `<code>${ex.split(' - ')[0]}</code> - ${ex.split(' - ')[1]}`;
+            appendUsageExample(li, ex);
             exampleList.append(li);
         }
         details.append(exampleList);
@@ -819,7 +845,7 @@ export class VariableNameAutoCompleteOption extends AutoCompleteOption {
 
             const warningText = document.createElement('p');
             warningText.style.cssText = 'margin: 0 0 8px 0;';
-            warningText.innerHTML = `The name <code>${this.#varName}</code> cannot be used with variable shorthand syntax.`;
+            warningText.append('The name ', createCodeElement(this.#varName), ' cannot be used with variable shorthand syntax.');
             warningBox.append(warningText);
 
             const rulesText = document.createElement('p');
@@ -834,9 +860,10 @@ export class VariableNameAutoCompleteOption extends AutoCompleteOption {
 
         // Header
         const header = document.createElement('h3');
-        header.innerHTML = this.#isNewVariable
-            ? `<code>${prefix}${this.#varName}</code> (New ${scopeLabel} Variable)`
-            : `<code>${prefix}${this.#varName}</code> ${scopeLabel} Variable`;
+        header.append(
+            createCodeElement(`${prefix}${this.#varName}`),
+            this.#isNewVariable ? ` (New ${scopeLabel} Variable)` : ` ${scopeLabel} Variable`,
+        );
         details.append(header);
 
         // Description
@@ -877,7 +904,7 @@ export class VariableNameAutoCompleteOption extends AutoCompleteOption {
         ];
         for (const ex of examples) {
             const li = document.createElement('li');
-            li.innerHTML = `<code>${ex.split(' - ')[0]}</code> - ${ex.split(' - ')[1]}`;
+            appendUsageExample(li, ex);
             usageList.append(li);
         }
         details.append(usageList);
@@ -1137,7 +1164,9 @@ export class VariableValueContextAutoCompleteOption extends AutoCompleteOption {
         // Current value being typed
         if (this.#currentValue) {
             const currentNote = document.createElement('p');
-            currentNote.innerHTML = `<em>Currently typing:</em> <code>${this.#currentValue}</code>`;
+            const label = document.createElement('em');
+            label.textContent = 'Currently typing:';
+            currentNote.append(label, ' ', createCodeElement(this.#currentValue));
             details.append(currentNote);
         }
 
@@ -1303,7 +1332,7 @@ export class MacroClosingTagAutoCompleteOption extends AutoCompleteOption {
 
         // Header
         const header = document.createElement('h3');
-        header.innerHTML = `Close <code>{{${this.#macroName}}}</code>`;
+        header.append('Close ', createCodeElement(`{{${this.#macroName}}}`));
         details.append(header);
 
         // Description

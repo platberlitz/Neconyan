@@ -10,7 +10,12 @@ function stored() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
 }
 
-function iosBridge() { return window.webkit?.messageHandlers?.neconyanNotifications; }
+// An element whose id or name matches a bridge (DOM clobbering) is never the native object.
+function nativeGlobal(name) {
+    const value = window[name];
+    return typeof Node !== 'undefined' && value instanceof Node ? undefined : value;
+}
+function iosBridge() { return nativeGlobal('webkit')?.messageHandlers?.neconyanNotifications; }
 function nativeState() {
     if (iosBridge()) return iosBridge().postMessage({ action: 'status' });
     return Promise.resolve(androidNotificationState());
@@ -78,7 +83,7 @@ export async function initPushNotifications({ owner, headers }) {
     }
     const refresh = async () => {
         const result = await nativeState();
-        if (window.NeconyanExport && !result) {
+        if (nativeGlobal('NeconyanExport') && !result) {
             toggle.disabled = true;
             update(t`Waiting for native notification support.`);
             return;
