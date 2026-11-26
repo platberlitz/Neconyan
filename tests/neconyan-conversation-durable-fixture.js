@@ -309,7 +309,13 @@ export const test = base.extend({
         try { await app.start(initialServerOptions); await use(app); }
         finally {
             await app.release();
-            for (const context of contexts) await context.close();
+            for (const context of contexts) {
+                for (const page of context.pages()) {
+                    await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+                }
+                await context.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+                await context.close();
+            }
             await app.stop();
             provider.server.closeAllConnections();
             await new Promise(resolve => provider.server.close(resolve));

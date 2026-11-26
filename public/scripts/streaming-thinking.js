@@ -16,6 +16,15 @@ function hasRenderedBox(element) {
 export class StreamingThinkingIndicator {
     /** @type {HTMLElement|null} */
     #element = null;
+    /** @type {boolean} */
+    #announce;
+
+    /**
+     * @param {{ announce?: boolean }} [options] Set announce: false when the host message already owns a role="status" live region.
+     */
+    constructor({ announce = true } = {}) {
+        this.#announce = announce;
+    }
 
     /**
      * Show the fallback only while there is no visible output or reasoning header.
@@ -33,7 +42,7 @@ export class StreamingThinkingIndicator {
         if (!text) return;
         const element = document.createElement('span');
         element.className = 'mes_reasoning_header neconyan-streaming-thinking';
-        element.setAttribute('role', 'status');
+        if (this.#announce) element.setAttribute('role', 'status');
         element.textContent = t`Thinking...`;
         text.before(element);
         this.#element = element;

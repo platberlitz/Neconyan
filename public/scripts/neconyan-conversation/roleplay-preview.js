@@ -68,7 +68,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let stopped = false;
     let frozen = false;
     let rewriteWaitingSince = 0;
-    const thinkingIndicator = new StreamingThinkingIndicator();
+    // The preview row already announces progress through its dedicated role="status" node.
+    const thinkingIndicator = new StreamingThinkingIndicator({ announce: false });
     const diagnosticHandle = {};
     let diagnosticStage = null;
     let reportedStage = null;
@@ -201,7 +202,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
         const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length;
         const finishDraw = () => {
-            const status = node.querySelector('[role="status"]');
+            const status = node.querySelector('[data-roleplay-stage-status]') || node.querySelector('[role="status"]');
             const label = labels[latest.stage] || labels.preparing;
             if (status.textContent !== label) status.textContent = label;
             const icon = node.querySelector('[data-roleplay-stage-icon]');
@@ -244,6 +245,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 const status = document.createElement('small');
                 status.className = 'sr-only';
                 status.setAttribute('role', 'status');
+                status.setAttribute('data-roleplay-stage-status', '');
                 node.querySelector('.name_text').parentElement.append(status);
                 const icon = document.createElement('i');
                 icon.setAttribute('data-roleplay-stage-icon', '');

@@ -404,6 +404,9 @@ class PromptManager {
         // Currently selected prompt shown in the editor pane.
         this.selectedPromptId = null;
 
+        // Unsaved new-prompt draft currently open in the editor; preserved across async redraws until saved or cleared.
+        this.pendingNewPromptId = null;
+
         // Prompt to scroll into view after the next render (just added or put back).
         this.pendingRevealPromptId = null;
         this.pendingRevealEditor = false;
@@ -873,6 +876,9 @@ class PromptManager {
                 this.updatePromptWithPromptEditForm(newPrompt);
                 if (!newPrompt.name?.trim()) newPrompt.name = t`Untitled prompt`;
                 this.addPrompt(newPrompt, promptId);
+                if (this.pendingNewPromptId === promptId) {
+                    this.pendingNewPromptId = null;
+                }
                 const placement = /** @type {HTMLSelectElement} */(document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_placement'));
                 this.appendPrompt(this.getPromptById(promptId), this.activeCharacter, placement?.value ?? null);
                 this.pendingRevealPromptId = promptId;
@@ -1029,6 +1035,7 @@ class PromptManager {
             this.clearEditForm();
             this.clearInspectForm();
             this.selectedPromptId = prompt.identifier;
+            this.pendingNewPromptId = prompt.identifier;
             this.activePopupArea = 'edit';
 
             this.loadPromptIntoEditForm(prompt, { placeAfter });
@@ -2191,9 +2198,23 @@ class PromptManager {
     }
 
     /**
+     * Whether the open editor holds an unsaved new-prompt draft rather than a saved entry.
+     * @param {string | null} [promptId]
+     * @returns {boolean}
+     */
+    isPendingNewPromptDraft(promptId = this.selectedPromptId) {
+        return Boolean(
+            promptId
+            && this.pendingNewPromptId === promptId
+            && (this.activePopupArea === 'edit' || this.activePopupArea === 'preview'),
+        );
+    }
+
+    /**
      * Clears all input fields in the edit form.
      */
     clearEditForm() {
+        this.pendingNewPromptId = null;
         const editArea = document.getElementById(this.configuration.prefix + 'prompt_manager_popup_edit');
         editArea.style.display = 'none';
 
@@ -2454,7 +2475,7 @@ class PromptManager {
             }
         }
 
-        if (this.selectedPromptId && this.selectedPromptId !== RUNTIME_AGENTS_IDENTIFIER && !this.getPromptById(this.selectedPromptId)) {
+        if (this.selectedPromptId && this.selectedPromptId !== RUNTIME_AGENTS_IDENTIFIER && !this.getPromptById(this.selectedPromptId) && !this.isPendingNewPromptDraft()) {
             this.hidePopup();
             this.clearEditForm();
             this.clearInspectForm();
@@ -2462,9 +2483,11 @@ class PromptManager {
             this.activePopupArea = '';
         }
 
-        const editorWasBesideList = this.isDesktopSplitLayout() && this.getPopupElement()?.parentElement === this.getEditorHost();
-        this.restorePopupToOrigin();
+        const popup = this.getPopupElement();
+        const editorWasBesideList = this.isDesktopSplitLayout() && popup?.parentElement === this.getEditorHost();
         const focused = document.activeElement;
+        const focusWasInPopup = popup instanceof HTMLElement && focused instanceof HTMLElement && popup.contains(focused);
+        this.restorePopupToOrigin();
         const focusedRow = focused?.closest?.('[data-pm-identifier]');
         if (this.listElement?.contains(focused) && focused.matches('.prompt-manager-pin-action, .prompt-manager-toggle-action') && focused.promptScope && this.isPromptScopeCurrent(focused.promptScope)) {
             this.pendingListFocus = {
@@ -2500,6 +2523,9 @@ class PromptManager {
 
         this.bindDragLockButton();
         this.syncPopupPlacement();
+        if (focusWasInPopup && popup.contains(focused) && document.activeElement !== focused) {
+            focused.focus({ preventScroll: true });
+        }
         this.syncEditorPaneState();
         this.syncListSelection();
         // Neconyan: an editor opened before the list was drawn only reaches its pane now, so reveal it as showPopup would.

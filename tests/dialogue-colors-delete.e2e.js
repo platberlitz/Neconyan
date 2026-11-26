@@ -9,22 +9,37 @@ async function openDialogueColours(app, phone = false) {
     const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
     if (phone) await installIPhoneSafari(account.context, { standalone: true });
     const page = await account.open({ workspace: false });
-    await page.evaluate(async ({ avatar, extension }) => {
-        const core = await import('/script.js');
-        await core.getCharacters();
-        await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
-        core.chat[0].mes = '"Please let me leave," Durable Nova said.';
-        await core.saveChatConditional();
-        await core.reloadCurrentChat();
-        const { settings } = await import(`${extension}/state.js`);
-        Object.assign(settings, {
-            coloringEngine: 'llm', keepCardCharacter: false, autoPersonaCharacter: false,
-            llmAttributionCheck: false, disableToasts: true,
+    await page.evaluate(({ avatar, extension }) => {
+        const state = { done: false, error: null };
+        window.__dcDeleteSetup = state;
+        (async () => {
+            const core = await import('/script.js');
+            await core.getCharacters();
+            await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+            core.chat[0].mes = '"Please let me leave," Durable Nova said.';
+            await core.saveChatConditional();
+            await core.reloadCurrentChat();
+            const { settings } = await import(`${extension}/state.js`);
+            Object.assign(settings, {
+                coloringEngine: 'llm', keepCardCharacter: false, autoPersonaCharacter: false,
+                llmAttributionCheck: false, disableToasts: true,
+            });
+            const { addCharacter } = await import(`${extension}/ui.js`);
+            addCharacter('Kept Friend', '#ffbb88', { keep: true });
+            window.NeconyanExtensions.focusUnit('Dialogue Colors');
+        })().catch(error => {
+            state.error = error instanceof Error ? (error.stack || error.message) : String(error);
+        }).finally(() => {
+            state.done = true;
         });
-        const { addCharacter } = await import(`${extension}/ui.js`);
-        addCharacter('Kept Friend', '#ffbb88', { keep: true });
-        window.NeconyanExtensions.focusUnit('Dialogue Colors');
     }, { avatar: account.avatar, extension });
+    await expect.poll(() => page.evaluate(() => Boolean(window.__dcDeleteSetup?.done)), { timeout: 60000 }).toBe(true);
+    const setupError = await page.evaluate(() => {
+        const error = window.__dcDeleteSetup?.error ?? null;
+        delete window.__dcDeleteSetup;
+        return error;
+    });
+    if (setupError) throw new Error(`openDialogueColours failed: ${setupError}`);
     if (phone) await applyIOSOnlyCss(page);
     return page;
 }

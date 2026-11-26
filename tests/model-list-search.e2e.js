@@ -8,11 +8,13 @@ for (const phone of [false, true]) {
         const page = await context.newPage();
         try {
             const family = await readFile(new URL('../public/scripts/model-family.js', import.meta.url), 'utf8');
+            const fuzzy = await readFile(new URL('../public/scripts/util/fuzzy-search.js', import.meta.url), 'utf8');
             const source = await readFile(new URL('../public/scripts/model-list-search.js', import.meta.url), 'utf8');
             await page.setContent('<select id="models"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select>');
             await page.addScriptTag({ type: 'module', content: `
                 const t = (strings, ...values) => strings.reduce((text, part, index) => text + (values[index - 1] ?? '') + part);
                 ${family}
+                ${fuzzy}
                 ${source.replace(/^import .*;\n/gm, '')}
                 window.modelSearch = { attachModelListSearch, refreshModelListSearch };
             ` });

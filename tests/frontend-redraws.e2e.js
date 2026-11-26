@@ -13,6 +13,7 @@ function source(file, ...names) {
 
 const common = `
     const t = (strings, ...values) => strings.reduce((text, part, i) => text + part + (values[i] ?? ''), '');
+    ${source('util/fuzzy-search.js', 'foldSearchText')}
     function mutations(root) {
         const observer = new MutationObserver(records => { observer.total += records.length; });
         observer.total = 0;
