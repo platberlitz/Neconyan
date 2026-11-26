@@ -12,6 +12,10 @@ const CAT_ART = `<svg class="sbterm-kitty" viewBox="0 0 32 28" width="32" height
     <path class="sbterm-kitty-marking" d="M6 6h2v2h4v6H6Zm14 4h4V8h2v10h-6Z"/>
     <path class="sbterm-kitty-outline" d="M9 15h2v3H9Zm12 0h2v3h-2Zm-6 3h2v2h-2Zm-2 3h2v1h2v-1h2v2h-6ZM0 18h6v2H0Zm26 0h6v2h-6Z"/>
 </svg>`;
+const PERSON_ART = `<svg class="sbterm-person" viewBox="0 0 32 28" width="32" height="28" aria-hidden="true" focusable="false" shape-rendering="crispEdges">
+    <path d="M12 3h8v2h2v8h-2v2h-8v-2h-2V5h2Z"/>
+    <path d="M10 17h12v2h2v2h2v5H6v-5h2v-2h2Z"/>
+</svg>`;
 
 const PALETTES = [
     ['phosphor-green', 'Phosphor Green'],
@@ -67,7 +71,7 @@ const PALETTE_IDS = PALETTES.map(([id]) => id);
 // — wins in both densities. Since Full chrome is the shipped density, null
 // already means "on out of the box" while leaving Terminal something to strip;
 // forcing them true made the two densities near-identical.
-const DEFAULTS = { version: 4, enabled: false, palette: 'inherit', crt: false, minimal: false, topbarVisible: null, avatarVisible: true, avatarTint: false, chatTopbarVisible: null, bottomBarVisible: null };
+const DEFAULTS = { version: 4, enabled: false, palette: 'inherit', crt: false, minimal: false, topbarVisible: null, avatarVisible: true, avatarTint: false, chatTopbarVisible: null, bottomBarVisible: null, kittyless: null };
 
 const SHELL_DESTINATIONS = {
     workspace: ['left'],
@@ -104,6 +108,8 @@ const COMMAND_OPTIONS = [
     ['crt off', 'Disable the CRT overlay'],
     ['avatar-tint on', 'Tint avatars to the active palette'],
     ['avatar-tint off', 'Show avatars in their original colours'],
+    ['kittyless on', 'Hide the cats in Termeownal UI'],
+    ['kittyless off', 'Show the cats in Termeownal UI'],
     ...PALETTES.map(([id, name]) => [`palette ${id}`, `Use the ${name} palette`]),
     ...Object.keys(SHELL_DESTINATIONS)
         .filter(destination => !destination.startsWith('open-'))
@@ -173,6 +179,7 @@ let conversationObserver = null;
 let observedConversationTimeline = null;
 let conversationStatusTimer = null;
 let autocompleteObserver = null;
+let kittylessObserver = null;
 let conversationAutocomplete = null;
 let conversationAutocompleteInput = null;
 let conversationAutocompletePendingInput = null;
@@ -238,6 +245,7 @@ function ensureSettings() {
         avatarTint: typeof settings.avatarTint === 'boolean' ? settings.avatarTint : DEFAULTS.avatarTint,
         chatTopbarVisible: typeof settings.chatTopbarVisible === 'boolean' ? settings.chatTopbarVisible : null,
         bottomBarVisible: typeof settings.bottomBarVisible === 'boolean' ? settings.bottomBarVisible : null,
+        kittyless: typeof settings.kittyless === 'boolean' ? settings.kittyless : null,
     };
 
     for (const [key, value] of Object.entries(normalized)) {
@@ -252,6 +260,30 @@ function ensureSettings() {
 
 function getSettings() {
     return ensureSettings().settings;
+}
+
+// The app-wide Hide cats choice (switch or Kittyless Shell Style), or null before the host has loaded.
+function appKittyless() {
+    const chosen = globalThis.NeconyanShell?.isKittylessChosen?.();
+    return typeof chosen === 'boolean' ? chosen : null;
+}
+
+// What the Hide cats (Kittyless) box shows: our own choice, else the app-wide one.
+function shownKittyless(settings) {
+    return typeof settings.kittyless === 'boolean'
+        ? settings.kittyless
+        : appKittyless() ?? document.documentElement.dataset.sbKittyless === 'true';
+}
+
+// Choosing what the app-wide switch already says goes back to following it (null).
+function setKittyless(value) {
+    const chosen = appKittyless();
+    return updateSettings({ kittyless: chosen !== null && value === chosen ? null : value });
+}
+
+// The host stays the only writer of data-sb-kittyless; we only hand it our choice while we are on.
+function syncHostKittyless(enabled, settings) {
+    globalThis.NeconyanShell?.setKittylessOverride?.(enabled && typeof settings.kittyless === 'boolean' ? settings.kittyless : null);
 }
 
 function save() {
@@ -309,6 +341,7 @@ function apply() {
     document.body.classList.toggle('sbterm-avatar-tinted', enabled && settings.avatarTint);
     document.body.classList.toggle('sbterm-chat-topbar-hidden', enabled && !chatTopbarVisible);
     document.body.classList.toggle('sbterm-bottom-bar-hidden', enabled && !bottomBarVisible);
+    syncHostKittyless(enabled, settings);
 
     syncBottomBar(enabled, bottomBarVisible);
 
@@ -422,6 +455,7 @@ function renderDrawer() {
         checkboxRow('sbterm-show-bottom-bar', 'Show chat bottom bar', settings.bottomBarVisible ?? densityDefault, value => updateSettings({ bottomBarVisible: value })),
         checkboxRow('sbterm-show-avatar', 'Show chat avatars', settings.avatarVisible, value => updateSettings({ avatarVisible: value })),
         checkboxRow('sbterm-avatar-tint', 'Tint avatars to palette', settings.avatarTint, value => updateSettings({ avatarTint: value })),
+        checkboxRow('sbterm-kittyless', 'Hide cats (Kittyless)', shownKittyless(settings), value => setKittyless(value)),
         el('small', 'sbterm-command-hint', 'Navigate from either prompt with /sbterm. Type /sbterm and use autocomplete.'),
     );
 
@@ -452,6 +486,7 @@ function syncDrawer() {
         'sbterm-show-bottom-bar': settings.bottomBarVisible ?? densityDefault,
         'sbterm-show-avatar': settings.avatarVisible,
         'sbterm-avatar-tint': settings.avatarTint,
+        'sbterm-kittyless': shownKittyless(settings),
     };
     for (const [id, value] of Object.entries(visibility)) {
         const box = document.getElementById(id);
@@ -482,7 +517,7 @@ function ensureStatusline() {
     mascot.type = 'button';
     mascot.setAttribute('aria-label', 'Open Agents Quick Access');
     mascot.setAttribute('title', 'Open Agents Quick Access');
-    mascot.innerHTML = CAT_ART;
+    mascot.innerHTML = CAT_ART + PERSON_ART;
 
     const copy = el('div', 'sbterm-banner-copy');
     copy.appendChild(el('strong', 'sbterm-banner-title', 'Termeownal UI'));
@@ -895,6 +930,17 @@ async function runSbtermCommand(_named, unnamed) {
         updateSettings({ avatarTint: enabled });
         notify(`Avatar tint ${enabled ? 'enabled' : 'disabled'}.`, 'success');
         return String(enabled);
+    }
+
+    if (input === 'kittyless on' || input === 'kittyless off') {
+        const hidden = input.endsWith('on');
+        setKittyless(hidden);
+        if (hidden) {
+            notify('Cats hidden in Termeownal UI.', 'success');
+        } else {
+            notify('Cats shown in Termeownal UI.', 'success');
+        }
+        return String(hidden);
     }
 
     if (input.startsWith('palette ')) {
@@ -1390,6 +1436,15 @@ function unbindEvents() {
     autocompleteObserver = null;
 }
 
+// Follow the app-wide Hide cats switch live, so the box updates without reopening the drawer.
+function watchHostKittyless() {
+    if (typeof MutationObserver === 'undefined' || kittylessObserver) {
+        return;
+    }
+    kittylessObserver = new MutationObserver(() => syncDrawer());
+    kittylessObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-sb-kittyless'] });
+}
+
 function init() {
     if (active) {
         renderDrawer();
@@ -1404,6 +1459,7 @@ function init() {
     const { changed } = ensureSettings();
     if (changed) save();
     bindHostEvents();
+    watchHostKittyless();
     registerCommands();
     renderDrawer();
     if (getSettings().enabled) rebuildDom();
@@ -1413,6 +1469,9 @@ function init() {
 
 function deactivate() {
     active = false;
+    syncHostKittyless(false, {});
+    kittylessObserver?.disconnect();
+    kittylessObserver = null;
     renderSequence += 1;
     tokenSequence += 1;
     unregisterCommands();

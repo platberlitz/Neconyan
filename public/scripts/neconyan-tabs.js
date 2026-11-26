@@ -180,7 +180,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261214-terminal-calico-ears', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261214-terminal-kittyless', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261117-persona-label-wrap', id: 'deferred-personas-css' },
@@ -548,7 +548,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261214-terminal-calico-ears';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261214-terminal-kittyless';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1505,6 +1505,7 @@ const nnState = {
     // Read before this start-up can write the sb-theme mirror: its presence means this device ran Neconyan before.
     hadDeviceTheme: safeGetItem(NN_STORAGE_KEYS.theme) !== null,
     kittyless: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.kittyless), false),
+    kittylessOverride: null,
     tourButtonsHidden: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.tourButtonsHidden), false),
     frontendIcon: normalizeFrontendIcon(safeGetItem(NN_STORAGE_KEYS.frontendIcon)),
     panelLook: null,
@@ -5833,6 +5834,11 @@ function setShellTheme(themeId, { persist = true } = {}) {
 }
 
 function isKittylessActive() {
+    return typeof nnState.kittylessOverride === 'boolean' ? nnState.kittylessOverride : isKittylessChosen();
+}
+
+// What the Hide cats switch and the Kittyless style say, ignoring a Termeownal UI override.
+function isKittylessChosen() {
     return nnState.theme === 'kittyless' || nnState.kittyless;
 }
 
@@ -5882,6 +5888,21 @@ function setKittylessEnabled(enabled, { persist = true } = {}) {
 
     updateThemePickerUi();
 }
+
+// Termeownal UI is the only caller: it hands over its own Hide cats choice while it is on (null follows the app-wide one).
+function setKittylessOverride(value) {
+    const next = typeof value === 'boolean' ? value : null;
+    if (nnState.kittylessOverride === next) {
+        return;
+    }
+
+    nnState.kittylessOverride = next;
+    syncKittylessStylesheet();
+    updateThemePickerUi();
+}
+
+// Registered at module level so the functions exist before any extension activates.
+globalThis.NeconyanShell = Object.assign(/** @type {any} */ (globalThis.NeconyanShell || {}), { setKittylessOverride, isKittylessChosen });
 
 // Tour buttons are created by several lazy modules, so one injected rule hides them wherever they appear.
 const NN_TOUR_BUTTON_SELECTOR = '.neconyan-tool-tour-button, .neconyan-lorebook-tour-button, .neconyan-tool-tour-invite, .neconyan-lorebook-tour-invite, [data-action="replay-tutorial"]';
@@ -18695,15 +18716,18 @@ function updateThemePickerUi() {
     const kittylessInput = document.getElementById('sb-kittyless-enabled-input');
     if (kittylessInput instanceof HTMLInputElement) {
         const styleHidesCats = nnState.theme === 'kittyless';
-        kittylessInput.checked = isKittylessActive();
+        const termeownalOwnsCats = typeof nnState.kittylessOverride === 'boolean';
+        kittylessInput.checked = isKittylessChosen();
         kittylessInput.disabled = styleHidesCats;
         kittylessInput.closest('.sb-mobile-nav-choice')?.classList.toggle('is-selected', kittylessInput.checked);
         kittylessInput.closest('.sb-kittyless-setting')?.classList.toggle('is-disabled', styleHidesCats);
         const caption = document.getElementById('sb-kittyless-caption');
         if (caption) {
-            caption.textContent = styleHidesCats
-                ? 'The Kittyless style always hides the cats. Pick another style to choose for yourself.'
-                : 'Hide the cats, ears, paws and sleeping animals while keeping the style you picked.';
+            caption.textContent = termeownalOwnsCats
+                ? 'Termeownal UI is using its own Hide cats choice. This switch applies when Termeownal UI is off.'
+                : styleHidesCats
+                    ? 'The Kittyless style always hides the cats. Pick another style to choose for yourself.'
+                    : 'Hide the cats, ears, paws and sleeping animals while keeping the style you picked.';
         }
     }
 

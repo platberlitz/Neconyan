@@ -440,6 +440,7 @@ export const refreshedKnowledgeCases = [
     ['What is the Neconyan updated notice that says The page reloaded to load the new version?', 'navigation.update-ready-reload', 'It shows once, closes by itself and has Dismiss'],
     ['Where did Bulk Edit go on the Regexes page?', 'tools.regex', 'Select several adds tick boxes'],
     ['Where do I choose the Termeownal Sakura Latte or Catppuccin Mocha palette?', 'tools.terminal', 'including the newer Catppuccin Mocha'],
+    ['How do I hide the cats in Termeownal UI?', 'tools.terminal', 'its own Hide cats (Kittyless) switch'],
     ['Where is Redo cleanup in Character Expressions now?', 'images.expression-generation', 'Under More image tools, Redo cleanup'],
     ['Where is Show expressions in phone chat under Display and choices?', 'images.expression-phone', 'Display and choices and enable Show expressions in phone chat'],
     ['Can my character description expand another backgroundInstructions placeholder?', 'images.expression-prompts', 'macro text inside a character card is never expanded again'],

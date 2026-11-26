@@ -81,18 +81,41 @@ describe('Termeownal UI round controls', () => {
     });
 });
 
-describe('Termeownal UI hides every Calico ear', () => {
+describe('Termeownal UI shows the ears where they fit and hides them under Kittyless', () => {
     const calico = fs.readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-calico.css'), 'utf8');
+    const kittylessSource = fs.readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-kittyless.css'), 'utf8');
     const hosts = '.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity';
+    const earHosts = [
+        '#right-nav-panel .sb-character-shell-header.neconyan-cat-panel',
+        '#right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel',
+        '#right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel',
+        '#form_sheld.neconyan-cat-panel',
+        '#send_form.neconyan-cat-panel',
+        '#sb_conversation_form.sb-conversation-composer.neconyan-cat-panel',
+        '#neconyan-home-host .welcomeRecentShell.neconyan-cat-panel',
+        '#ica--settings .ica--workspace-main.neconyan-cat-panel',
+    ];
 
     test('Calico draws its ears on exactly these hosts', () => {
         expect(calico).toContain(`body.neconyan :is(${hosts})::before,\nbody.neconyan :is(${hosts})::after {\n    content: '';\n    display: block;`);
     });
 
-    test('Terminal hides the same hosts with a more specific selector and no !important', () => {
-        const rule = `html body.neconyan.sbterm :is(${hosts})::before,\nhtml body.neconyan.sbterm :is(${hosts})::after,\nhtml body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {\n    display: none;\n}`;
+    test('Terminal drops the blanket ear hide and keeps only the Home rule', () => {
+        expect(styleSource).not.toContain(`:is(${hosts})::`);
+        const rule = 'html body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {\n    display: none;\n}';
+        expect(styleSource).toContain(rule);
+    });
+
+    test('one commented rule hides the ears on the hosts with no room', () => {
+        const selectors = earHosts.flatMap(host => [`html body.neconyan.sbterm ${host}::before`, `html body.neconyan.sbterm ${host}::after`]);
+        const rule = `${selectors.join(',\n')} {\n    display: none;\n}`;
         const at = styleSource.indexOf(rule);
         expect(at).toBeGreaterThan(-1);
         expect(styleSource.slice(at, at + rule.length)).not.toContain('!important');
+        expect(styleSource.slice(Math.max(0, at - 600), at)).toMatch(/\/\*[^*]*keeps its own layout[^*]*\*\/\s*$/);
+    });
+
+    test('Kittyless hides the ears under Termeownal UI too', () => {
+        expect(kittylessSource).toContain(`:root[data-sb-kittyless='true'] body.neconyan :is(${hosts})::before,\n:root[data-sb-kittyless='true'] body.neconyan :is(${hosts})::after,`);
     });
 });
