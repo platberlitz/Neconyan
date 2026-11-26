@@ -66,7 +66,8 @@ for (const phone of [false, true]) {
         await page.evaluate(() => window.toastr.clear());
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).hideScratchpad());
 
-        // A card that defines an id in its own HTML can use that id in its CSS.
+        // A card that defines an id in its own HTML can use that id in its CSS. Messages prefix
+        // the id with user-content- and rewrite the card's selector to match.
         const created = await account.context.request.post('/api/characters/create', {
             headers: account.headers,
             data: {
@@ -83,7 +84,7 @@ for (const phone of [false, true]) {
             await context.getCharacters();
             await context.selectCharacterById(context.characters.findIndex(item => item.avatar === avatar), { switchMenu: false });
         }, avatar);
-        const probe = page.locator('.mes_text #color-probe');
+        const probe = page.locator('.mes_text #user-content-color-probe');
         await expect(probe).toBeVisible();
         const colour = await probe.evaluate(element => getComputedStyle(element).color);
         expect(colour).toBe('rgb(12, 34, 56)');

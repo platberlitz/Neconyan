@@ -613,7 +613,10 @@ for (const afterAcceptance of [false, true]) {
 for (const change of ['profile', 'branch', 'edit', 'delete']) {
     test(`manual regeneration rejects a ${change} change during image preparation`, async ({ app }) => {
         const account = await app.account();
-        const imageUrl = '/img/neconyan/sleeping-tiger-right.webp?manual-preparation';
+        // Conversation only shows and fetches saved user images, so upload the picture rather than pointing at an app asset.
+        const image = await fs.readFile(new URL('../public/img/neconyan/sleeping-tiger-right.webp', import.meta.url));
+        const uploaded = await account.post('/api/images/upload', { image: image.toString('base64'), format: 'webp', filename: 'manual-preparation' });
+        const imageUrl = `/${uploaded.path.replace(/^\/+/, '')}?manual-preparation`;
         await account.changeStore(store => {
             const messages = store.characters[account.threadKey].branches.main.messages;
             messages[0].extra = { image_url: imageUrl, conversation_mode_image: true };

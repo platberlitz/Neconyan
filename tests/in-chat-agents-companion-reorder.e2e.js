@@ -5,49 +5,37 @@ import { parse } from 'acorn';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const panelSource = read('../public/scripts/extensions/in-chat-agents/companion/companion-panel.js');
-const panelDeclarations = parse(panelSource, { ecmaVersion: 'latest', sourceType: 'module' }).body
+const panelBody = parse(panelSource, { ecmaVersion: 'latest', sourceType: 'module' }).body
     .map(node => node.declaration ?? node)
-    .filter(node => node.type !== 'ImportDeclaration' && (node.type === 'VariableDeclaration'
-        || [
-            'renderPanel',
-            'applyPanelSearch',
-            'applyPanelReorder',
-            'setupPanelSortable',
-            'armPanelSortable',
-            'refreshCompanionPanel',
-            'observePanelJumpSize',
-            'syncPanelJumpButtons',
-            'schedulePanelJumpSync',
-            'getCompanionPanelNode',
-            'getPanelAgentSections',
-            'getPanelSectionAgentId',
-            'isPanelSectionFiltered',
-            'isPanelSectionHidden',
-            'isPanelSectionCacheable',
-            'isPanelSectionRendered',
-            'measureCardContentBlockSize',
-            'setCardIntrinsicBlockSize',
-            'clearCardIntrinsicBlockSize',
-            'clearPanelCardHeightCache',
-            'syncPanelHeightCacheWidth',
-            'cachePanelSectionHeight',
-            'flushPendingMeasuredCards',
-            'needsManualOverflowAnchor',
-            'setPanelOverflowAnchorDisabled',
-            'capturePanelScrollTrackAnchor',
-            'compensateManualScrollAnchor',
-            'snapshotRenderedPanelCardHeights',
-            'applyCachedCardIntrinsicHeights',
-            'restorePanelAnchor',
-            'cancelPanelAnchorSettle',
-            'schedulePanelAnchorSettle',
-            'pausePanelHydrationFrame',
-            'stopPanelHydration',
-            'isPanelHydrationPaused',
-            'hasUnhydratedPanelCards',
-            'schedulePanelHydration',
-            'runPanelHydrationSlice',
-        ].includes(node.id?.name)))
+    .filter(node => node.type !== 'ImportDeclaration');
+const panelFunctions = new Map(panelBody.filter(node => node.type === 'FunctionDeclaration').map(node => [node.id.name, node]));
+// The page below defines these on window, so the fixture must not load the real ones over them.
+const stubbedPanelFunctions = new Set(['buildPanelHtml', 'getStoredPanelLocked', 'getStoredHandleHidden', 'getStoredPanelLauncher', 'getStoredPanelWidth']);
+
+function forEachIdentifier(node, visit) {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'Identifier') visit(node.name);
+    for (const value of Object.values(node)) {
+        for (const child of Array.isArray(value) ? value : [value]) {
+            if (child && typeof child === 'object') forEachIdentifier(child, visit);
+        }
+    }
+}
+
+// Load every module-level helper that rendering and refreshing the panel can reach, so a new helper in
+// companion-panel.js does not break this fixture with a ReferenceError.
+const neededPanelFunctions = new Set(['renderPanel', 'refreshCompanionPanel']);
+const pendingPanelNodes = [...panelBody.filter(node => node.type === 'VariableDeclaration'), ...[...neededPanelFunctions].map(name => panelFunctions.get(name))];
+while (pendingPanelNodes.length) {
+    forEachIdentifier(pendingPanelNodes.pop(), name => {
+        if (panelFunctions.has(name) && !stubbedPanelFunctions.has(name) && !neededPanelFunctions.has(name)) {
+            neededPanelFunctions.add(name);
+            pendingPanelNodes.push(panelFunctions.get(name));
+        }
+    });
+}
+const panelDeclarations = panelBody
+    .filter(node => node.type === 'VariableDeclaration' || neededPanelFunctions.has(node.id?.name))
     .map(node => panelSource.slice(node.start, node.end)).join('\n');
 
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
@@ -74,6 +62,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 window.foldSearchText = value => String(value ?? '').toLowerCase();
                 window.captureVisibleMessageAnchor = () => null;
                 window.restoreVisibleMessageAnchor = () => {};
+                window.measureVisibleMessageAnchorShift = () => null;
                 // companion-panel.js imports this from companion-windows.js, which this fixture does not load.
                 window.refreshCompanionWindows = () => {};
                 // Dice widgets are outside this reorder fixture, but panel rendering preserves them.

@@ -1,4 +1,4 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, CSS */
 import { expect, test } from '@playwright/test';
 
 test.describe('message formatting inline styles', () => {
@@ -27,8 +27,8 @@ test.describe('message formatting inline styles', () => {
             host.style.top = '0';
             host.innerHTML = html;
             document.body.appendChild(host);
-            const scaleStretch = host.querySelector('#scale-stretch');
-            const fontStretch = host.querySelector('#font-stretch');
+            const scaleStretch = host.querySelector('#user-content-scale-stretch');
+            const fontStretch = host.querySelector('#user-content-font-stretch');
             const scaleStyle = scaleStretch?.getAttribute('style') ?? '';
             const fontStretchStyle = fontStretch?.getAttribute('style') ?? '';
             const scaleComputed = scaleStretch ? getComputedStyle(scaleStretch) : null;
@@ -72,5 +72,76 @@ test.describe('message formatting inline styles', () => {
         expect(result.fontStretchOpacity).toBe('0.7');
         expect(result.fontStretchTextShadow).not.toBe('none');
         expect(result.fontStretchBackgroundImage).toBe('none');
+    });
+
+    test('keeps labels, ARIA, image maps and SVG paint pointing at ids after they gain the user-content- prefix', async ({ page }) => {
+        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.readyState === 'complete', { timeout: 0 });
+
+        const result = await page.evaluate(async () => {
+            const mod = await import('/script.js');
+            const html = mod.messageFormatting(
+                [
+                    '<input type="checkbox" id="tab-a" class="toggle"><label for="tab-a" id="tab-label">Open</label>',
+                    '<div class="panel" aria-labelledby="tab-label tab-hint"><span id="tab-hint">Hint</span></div>',
+                    '<svg width="40" height="20"><defs><linearGradient id="grad"><stop offset="0" stop-color="rgb(0, 128, 0)"/></linearGradient><clipPath id="clip"><rect width="10" height="10"/></clipPath></defs>',
+                    '<rect id="paint-rect" width="20" height="20" fill="url(#grad)" style="clip-path: url(#clip)"/></svg>',
+                    '<img id="map-img" usemap="#spots" src="/img/logo.png"><map name="spots"><area id="spot" href="#tab-a" shape="rect" coords="0,0,1,1"></map>',
+                    '<style>.toggle:checked ~ .panel { color: rgb(1, 2, 3); } #paint-rect { stroke: url(#grad); }</style>',
+                ].join(''),
+                'Bob',
+                false,
+                false,
+                123,
+                {},
+                false,
+            );
+
+            const host = document.createElement('div');
+            host.className = 'mes_text';
+            host.style.position = 'fixed';
+            host.style.left = '0';
+            host.style.top = '0';
+            host.innerHTML = html;
+            document.body.appendChild(host);
+            try {
+                const label = host.querySelector('label');
+                const checkbox = host.querySelector('input[type="checkbox"]');
+                label.click();
+                const referenced = (attribute, element) => (element?.getAttribute(attribute) ?? '').trim().split(/\s+/).every(id => id && host.querySelector(`[id="${CSS.escape(id)}"]`));
+                const urlTarget = value => {
+                    const id = /url\(\s*['"]?#([^'")\s]+)/.exec(value ?? '')?.[1];
+                    return Boolean(id && host.querySelector(`[id="${CSS.escape(id)}"]`));
+                };
+                const rect = host.querySelector('rect[fill]');
+                const map = host.querySelector('map');
+                const usemap = host.querySelector('img')?.getAttribute('usemap') ?? '';
+                return {
+                    checkboxId: checkbox?.id ?? null,
+                    checkedByLabel: checkbox?.checked ?? false,
+                    labelFor: label?.htmlFor ?? null,
+                    ariaLabelled: referenced('aria-labelledby', host.querySelector('[aria-labelledby]')),
+                    fillTarget: urlTarget(rect?.getAttribute('fill')),
+                    clipTarget: urlTarget(rect?.getAttribute('style')),
+                    strokeTarget: urlTarget(getComputedStyle(rect).stroke),
+                    usemapMatches: usemap === `#${map?.getAttribute('name')}`,
+                    areaTarget: Boolean(host.querySelector(`[id="${CSS.escape((host.querySelector('area')?.getAttribute('href') ?? '').slice(1))}"]`)),
+                };
+            } finally {
+                host.remove();
+            }
+        });
+
+        expect(result).toEqual({
+            checkboxId: 'user-content-tab-a',
+            checkedByLabel: true,
+            labelFor: 'user-content-tab-a',
+            ariaLabelled: true,
+            fillTarget: true,
+            clipTarget: true,
+            strokeTarget: true,
+            usemapMatches: true,
+            areaTarget: true,
+        });
     });
 });
