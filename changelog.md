@@ -53,6 +53,7 @@
 - **Termeownal UI** no longer shows the Calico cat ears above Home, cards and panels.
 - Reopening the **Companion Panel** after new replies update its cards now keeps your place on tall cards like Chatroom and stops the panel's opening slide from shifting the list further down.
 - The **Companion Panel** now stays on the card you were reading when you reopen it while a new turn's notes are still coming in, instead of dropping you far below it.
+- **Termeownal UI** shows the cat ears where they fit its own layout and has its own **Hide cats (Kittyless)** switch in its settings.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -273,6 +274,7 @@
 - PR #995 (2026-11-26) `fix(terminal-ui): hide the Calico cat ears under Termeownal UI`
 - PR #996 (2026-11-26) `fix(companion-panel): keep reopen position across slide-in and resizes`
 - PR #997 (2026-11-26) `fix(companion-panel): hold reopen position while notes finish`
+- PR #998 (2026-11-26) `feat(terminal-ui): bring back the cat ears and add a Hide cats switch`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
