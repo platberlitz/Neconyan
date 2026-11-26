@@ -50,6 +50,7 @@
 - Tightened security across local connections, imports, chat and card rendering, extensions, Docker and the mobile apps, blocking untrusted websites from reaching a local server, isolating custom styles and cards more strictly, capping oversized archives and images, and keeping `.secret_key` out of keyless Android rescue backups.
 - **Automatic chat naming** now works with thinking models such as Gemini 4 Neon, which used to spend the whole title allowance thinking and come back empty.
 - Non-English languages now translate the bundled **Agents** starter kits, template names and descriptions in the **Agent library** and **Agents** list.
+- **Termeownal UI** no longer shows the Calico cat ears above Home, cards and panels.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -267,6 +268,7 @@
 - PR #992 (2026-11-26) `fix(ui): keep the left cat ear solid on cards with a backdrop`
 - PR #993 (2026-11-26) `fix(i18n): translate bundled agent templates and starter kits`
 - PR #994 (2026-11-26) `fix(chat-naming): give thinking models room to write the title`
+- PR #995 (2026-11-26) `fix(terminal-ui): hide the Calico cat ears under Termeownal UI`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
