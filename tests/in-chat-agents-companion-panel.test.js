@@ -191,7 +191,7 @@ describe('companion tracker panel', () => {
             refreshCompanionCards: jest.fn(),
             isSilentCompanionAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? agent?.id ?? '') === 'tpl-message-inbox-companion'),
             isSuppressedCompanionResult: jest.fn((agentId, result) =>
-                ['PHONE_NONE', 'phone-none', 'TRACKER_NONE', 'tracker-none'].includes(String(result?.content ?? '').trim())),
+                ['PHONE_NONE', 'phone-none', 'TRACKER_NONE', 'tracker-none', 'LEVELUP_NONE', 'levelup-none', 'STATS_NONE', 'stats-none'].includes(String(result?.content ?? '').trim())),
         }));
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({
