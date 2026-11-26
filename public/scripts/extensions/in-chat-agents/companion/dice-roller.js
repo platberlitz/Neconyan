@@ -680,7 +680,7 @@ function isHostVisible(host, messageIndex) {
     }
     const panel = host.closest('#ica--tracker-panel');
     if (panel) {
-        if (panel.getAttribute('aria-hidden') === 'true') {
+        if (panel.getAttribute('aria-hidden') === 'true' || isAgentHidden(host.dataset.necoDiceAgent)) {
             return false;
         }
         const currentChat = chat?.[messageIndex];
@@ -750,7 +750,7 @@ function syncHost() {
     }
 
     const surface = host.dataset.necoDiceSurface || 'card';
-    if (!autoRolled && surface !== 'card' && settings.rollOnOpen && !widget.state.result && !widget.state.rolling) {
+    if (!autoRolled && surface !== 'card' && settings.rollOnOpen && !isAgentHidden(agentId) && !widget.state.result && !widget.state.rolling) {
         autoRolled = true;
         globalThis.setTimeout(() => widget?.roll(), 0);
     }
@@ -784,20 +784,20 @@ function handleLocalRun(agentId, messageIndex = -1) {
     return { agentId, messageIndex, changed: false, local: true, result: null };
 }
 
-function getActiveDiceAgent({ allowHidden = false } = {}) {
+function getActiveDiceAgent() {
     if (!areAgentsGloballyEnabled()) {
         return null;
     }
     const current = getAgentById(widget?.state.agentId);
     const agent = isDiceRollerAgent(current) ? current : getEnabledAgents().find(isDiceRollerAgent);
-    if (!agent || !isAgentEnabledForCurrentScope(agent) || (!allowHidden && isAgentHidden(agent.id))) {
+    if (!agent || !isAgentEnabledForCurrentScope(agent) || isAgentHidden(agent.id)) {
         return null;
     }
     return agent;
 }
 
 function ensureWaitingRoll() {
-    if (settings.autoRoll && widget?.needsRoll() && getActiveDiceAgent({ allowHidden: true })) {
+    if (settings.autoRoll && widget?.needsRoll() && getActiveDiceAgent()) {
         widget.roll({ check: null });
     }
 }

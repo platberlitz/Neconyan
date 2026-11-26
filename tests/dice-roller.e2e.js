@@ -313,6 +313,72 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
     });
 }
 
+async function foldedToHeader(section) {
+    return section.evaluate(node => {
+        const style = getComputedStyle(node);
+        const head = node.querySelector('.ica--tpanel-agent-head').getBoundingClientRect().height;
+        const frame = ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth']
+            .reduce((sum, key) => sum + parseFloat(style[key]), 0);
+        return { height: node.getBoundingClientRect().height, headerAndFrame: head + frame };
+    });
+}
+
+for (const [viewport, phone] of [['phone', true], ['desktop', false]]) {
+    test(`${viewport} a hidden dice companion folds to its header like the others and rolls nothing by itself`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true });
+        const page = await openChat(account);
+        await waitForAgents(page);
+        const id = await enableDice(page);
+        // Hidden on an earlier visit, before the dice were ever shown.
+        await page.evaluate(async id => {
+            const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            store.setHiddenAgentIds([id]);
+        }, id);
+        await page.evaluate(() => { Math.random = () => 0.85; });
+        const panel = await openCompanionPanel(page);
+        const section = panel.locator(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+        await expect(section).toHaveAttribute('data-hidden', 'true');
+        await expect(section.locator('.ica--tpanel-agent-name')).toContainText('Dice Roller');
+        // Only the header stays, so opening the panel shows no roller and rolls nothing.
+        await expect(section.locator('.ica--tpanel-dice-hint')).toHaveCount(0);
+        await expect(page.locator('.neco-dice')).toHaveCount(0);
+        const folded = await foldedToHeader(section);
+        expect(Math.abs(folded.height - folded.headerAndFrame), JSON.stringify(folded)).toBeLessThanOrEqual(1);
+        await shot(page, `dice-${viewport}-hidden.png`);
+
+        // Shown again, it rolls on first sight with the dice of that moment.
+        await page.evaluate(() => { Math.random = () => 0.1; });
+        await section.locator('[data-action="panel-hide"]').click();
+        await expect(section).toHaveAttribute('data-hidden', 'false');
+        const widget = section.locator('.neco-dice');
+        await expect(widget.locator('.neco-dice-outcome')).toContainText('Failure');
+        await expect(section.locator('.ica--tpanel-dice-hint')).toBeVisible();
+
+        // That roll goes out while the dice are hidden again; Auto roll waits for them to be shown.
+        await widget.locator('.neco-dice-options summary').click();
+        await widget.getByRole('checkbox', { name: 'Auto roll' }).check();
+        await widget.getByRole('button', { name: 'Add to message', exact: true }).click();
+        await expect(page.locator('#send_textarea')).toHaveValue(/Rolled 3 vs 12/);
+        await openCompanionPanel(page);
+        await section.locator('[data-action="panel-hide"]').click();
+        await expect(section).toHaveAttribute('data-hidden', 'true');
+        await expect(page.locator('.neco-dice')).toHaveCount(0);
+        await closeCompanionPanel(page);
+        await page.evaluate(() => { Math.random = () => 0.85; });
+        const before = app.provider.calls.length;
+        await page.locator('#send_but').click();
+        await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBeGreaterThan(before);
+        await expect.poll(() => page.locator('#chat .mes').count(), { timeout: 60000 }).toBeGreaterThanOrEqual(3);
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
+
+        await openCompanionPanel(page);
+        await section.locator('[data-action="panel-hide"]').click();
+        await expect(widget).toBeVisible();
+        await expect(widget).not.toHaveClass(/is-rolling/);
+        expect(await widget.locator('.neco-dice-outcome').textContent()).toContain('Failure');
+    });
+}
+
 const COMPANION_TASK = 'Complete only this companion task';
 
 function choiceBlock(tag) {
