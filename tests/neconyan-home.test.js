@@ -279,6 +279,7 @@ describe('Neconyan Home', () => {
         expect(calico).toContain('background: url(\'../img/neconyan/ear-left.webp\')');
         expect(calico).toContain('background: url(\'../img/neconyan/ear-right.webp\')');
         expect(calico).toContain('transform: translateY(-100%) skewX(-7deg)');
+        expect(calico).toContain('::before { left: 10%; opacity: 1; border-radius: 0; right: auto; bottom: auto; transform: translateY(-100%) skewX(-7deg); }');
         expect(calico).toContain('animation: neconyan-ear-twitch-left 320ms ease-in-out');
         expect(calico).toContain('animation: neconyan-ear-press-left 260ms ease-out');
         expect(calico).toContain('body.neconyan.reduced-motion');

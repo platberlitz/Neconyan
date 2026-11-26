@@ -180,7 +180,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261214-dice-options-padding', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261214-recent-chats-ear', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261117-persona-label-wrap', id: 'deferred-personas-css' },
@@ -548,7 +548,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261214-dice-options-padding';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261214-recent-chats-ear';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

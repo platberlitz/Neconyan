@@ -205,7 +205,7 @@ body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel
     transition: transform 160ms ease;
 }
 
-body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before { left: 10%; transform: translateY(-100%) skewX(-7deg); }
+body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before { left: 10%; opacity: 1; border-radius: 0; right: auto; bottom: auto; transform: translateY(-100%) skewX(-7deg); }
 body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after { right: 10%; transform: translateY(-100%) skewX(7deg); }
 body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before {
     border: 0;
