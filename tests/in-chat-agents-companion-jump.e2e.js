@@ -609,3 +609,133 @@ for (const width of [393, 1280]) {
         }
     });
 }
+
+for (const width of [393, 1280]) {
+    test(`companion panel keeps a middle card in place while a new turn's notes finish after reopen at ${width}px`, async ({ browser }) => {
+        const phone = width === 393;
+        const context = await browser.newContext({
+            viewport: { width, height: phone ? 852 : 900 },
+            hasTouch: phone,
+            reducedMotion: 'no-preference',
+            serviceWorkers: 'block',
+        });
+        const page = await context.newPage();
+        const prefix = `e2e-live-reopen-${width}-${Date.now()}-`;
+        const total = 24;
+        const targetIndex = 12;
+        const targetId = `${prefix}${String(targetIndex).padStart(2, '0')}`;
+
+        try {
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = {
+                    ...settings.accountStorage,
+                    'NeconyanTutorialStatus.v1': 'skipped',
+                    'NeconyanTutorialHidden.v1': 'true',
+                };
+            });
+            await page.goto('/');
+            await page.waitForFunction(() => Boolean(window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready')), { timeout: 60_000 });
+            await page.waitForFunction(() => {
+                const status = document.querySelector('#ica--run-status');
+                return status && !status.textContent.includes('Loading your agents...');
+            }, { timeout: 30_000 });
+
+            // Every note changes height from one turn to the next, so a height saved from the last turn is wrong for this one.
+            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const ctx = window.SillyTavern.getContext();
+                window.__liveReopenNote = (turn, index) => Array.from(
+                    { length: 4 + ((index * 7 + turn * 5) % 19) },
+                    (_, line) => `<p>Turn ${turn} note ${index} line ${line + 1}: steady layout check.</p>`,
+                ).join('');
+                const results = {};
+                for (let index = 0; index < total; index++) {
+                    const id = `${prefix}${String(index).padStart(2, '0')}`;
+                    const name = index === targetIndex ? 'Chatroom' : `Companion ${String(index + 1).padStart(2, '0')}`;
+                    await store.saveAgent({
+                        id,
+                        name,
+                        enabled: true,
+                        execution: 'companion',
+                        category: 'companion',
+                        injection: { order: index * 10 },
+                        companion: { displayMode: 'panel', format: 'html' },
+                    });
+                    results[id] = { status: 'done', agentName: name, content: window.__liveReopenNote(1, index), timestamp: Date.now() };
+                }
+                ctx.chat.push({ name: 'Assistant', is_user: false, is_system: false, mes: 'Turn 1 reply.', extra: { inChatAgentCompanionResults: results } });
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.openCompanionPanel();
+            }, { prefix, total, targetIndex });
+
+            const panel = page.locator('#ica--tracker-panel');
+            await expect(panel).toHaveClass(/is-open/);
+            await expect.poll(() => page.evaluate(() => document.querySelectorAll('#ica--tracker-panel .ica--tpanel-agent.is-hydrated').length), { timeout: 15_000 }).toBeGreaterThanOrEqual(total);
+
+            const targetTop = () => page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller?.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                if (!scroller || !card) return null;
+                return Math.round(card.getBoundingClientRect().top - scroller.getBoundingClientRect().top);
+            }, targetId);
+            const emitResultsUpdated = () => page.evaluate(async () => {
+                const { COMPANION_RESULTS_UPDATED_EVENT } = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+                const ctx = window.SillyTavern.getContext();
+                await ctx.eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT, { messageIndex: ctx.chat.length - 1 });
+            });
+
+            await page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                scroller.scrollTop = Math.max(0, card.offsetTop - 30);
+            }, targetId);
+            await page.waitForTimeout(300);
+            const before = await targetTop();
+            expect(before).toBe(30);
+
+            await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
+            await expect(panel).not.toHaveClass(/is-open/, { timeout: 5_000 });
+
+            // A new turn starts while the panel is closed: every note is waiting.
+            await page.evaluate(({ prefix, total }) => {
+                const ctx = window.SillyTavern.getContext();
+                const previous = ctx.chat[ctx.chat.length - 1].extra.inChatAgentCompanionResults;
+                const results = {};
+                for (let index = 0; index < total; index++) {
+                    const id = `${prefix}${String(index).padStart(2, '0')}`;
+                    results[id] = { status: 'pending', agentName: previous[id].agentName, content: '', timestamp: Date.now() };
+                }
+                ctx.chat.push({ name: 'Assistant', is_user: false, is_system: false, mes: 'Turn 2 reply.', extra: { inChatAgentCompanionResults: results } });
+            }, { prefix, total });
+            await emitResultsUpdated();
+
+            await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
+            // No wait for the slide to end: the first notes land while the panel is still opening.
+            await page.waitForTimeout(120);
+            expect(Math.abs(await targetTop() - before), 'position right after reopening').toBeLessThanOrEqual(4);
+
+            // The notes finish one at a time, above and below the reader, while the panel is open.
+            for (let step = 0; step < total; step++) {
+                const index = (step * 5) % total;
+                await page.evaluate(({ prefix, index }) => {
+                    const ctx = window.SillyTavern.getContext();
+                    const results = ctx.chat[ctx.chat.length - 1].extra.inChatAgentCompanionResults;
+                    const id = `${prefix}${String(index).padStart(2, '0')}`;
+                    results[id] = { ...results[id], status: 'done', content: window.__liveReopenNote(2, index), timestamp: Date.now() };
+                }, { prefix, index });
+                await emitResultsUpdated();
+                await page.waitForTimeout(90);
+                expect(Math.abs(await targetTop() - before), `position after note ${index} finished`).toBeLessThanOrEqual(4);
+            }
+
+            await page.waitForTimeout(1500);
+            expect(Math.abs(await targetTop() - before), 'position once everything settled').toBeLessThanOrEqual(4);
+        } finally {
+            await page.evaluate(async prefix => {
+                const { getAgents, deleteAgent } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                for (const agent of getAgents().filter(agent => agent.id.startsWith(prefix))) await deleteAgent(agent.id);
+            }, prefix).catch(() => {});
+            await context.close();
+        }
+    });
+}
