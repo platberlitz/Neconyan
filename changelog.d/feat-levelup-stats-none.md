@@ -1,1 +1,0 @@
-**Level Up Companion** and **User-based Stats Generator** answer with a short 'nothing changed' line on quiet turns instead of rewriting the whole block, so they spend far fewer tokens, and your last stat sheet stays on screen.
