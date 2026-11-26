@@ -242,7 +242,7 @@ for (const phone of [true, false]) {
                 } },
             ]);
             await page.evaluate(async ({ avatar, chatName }) => {
-                await (await import('/script.js')).openSavedCharacterChat(avatar, chatName);
+                if (!await (await import('/script.js')).openSavedCharacterChat(avatar, chatName)) throw new Error(`${chatName} did not open.`);
                 (await import('/scripts/extensions/in-chat-agents/companion/companion-ui.js')).refreshCompanionCards();
             }, { avatar, chatName });
             await page.evaluate(() => window.toastr?.remove());
@@ -263,6 +263,8 @@ for (const phone of [true, false]) {
                 await page.evaluate(async () => { void (await import('/script.js')).Generate('normal', { skipNativeRoleplay: true }); });
             }
             await expect(page.locator('#chat .mes').last()).toContainText('The guard pockets the pass.', { timeout: 60000 });
+            // The reply shows before Generate saves the chat, and the next chat only opens once Generate has finished.
+            await expect.poll(() => page.evaluate(async () => !(await import('/script.js')).is_send_press), { timeout: 30000 }).toBe(true);
             expect(app.provider.calls.length).toBeGreaterThan(calls);
             const prompt = JSON.stringify(app.provider.calls.at(-1).messages);
             expect(prompt).toContain('[User\'s chosen direction]\\n1. Mira bribes the night guard with a forged pass.');
