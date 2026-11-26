@@ -305,6 +305,9 @@ body.neconyan.neconyan-notes-beside #sheld {
 .notes-app .notes-folder-row .notes-choice {
     border-radius: 999px;
     padding-inline: 14px;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .notes-app .notes-notebook-row .notes-choice:not([aria-pressed="true"]) {
