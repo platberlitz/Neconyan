@@ -14,9 +14,15 @@ const refreshChatViewportBaseline = jest.fn();
 const changeMessageTextForReader = jest.fn((getTextElement, mutate) => ({ result: mutate(), kept: true }));
 const renderedEvents = [];
 const thinking = { update: jest.fn(), clear: jest.fn() };
+const thinkingOptions = [];
 
 jest.unstable_mockModule('../public/scripts/streaming-thinking.js', () => ({
-    StreamingThinkingIndicator: class { constructor() { return thinking; } },
+    StreamingThinkingIndicator: class {
+        constructor(options) {
+            thinkingOptions.push(options);
+            return thinking;
+        }
+    },
 }));
 
 jest.unstable_mockModule('../public/script.js', () => ({
@@ -171,6 +177,9 @@ class FakeElement {
 
     querySelector(selector) {
         if (selector === '.name_text') return this.nameText;
+        if (selector === '[data-roleplay-stage-status]') {
+            return this.nameText?.parentElement?.children.find(child => child.attributes.has('data-roleplay-stage-status')) ?? null;
+        }
         if (selector === '[role="status"]') {
             return this.nameText?.parentElement?.children.find(child => child.attributes.get('role') === 'status') ?? null;
         }
@@ -407,6 +416,7 @@ describe('Roleplay preview rendering', () => {
             const node = renderedEvents.at(-1).element;
             const status = node.querySelector('[role="status"]');
             const icon = node.querySelector('[data-roleplay-stage-icon]');
+            expect(status).toBe(node.querySelector('[data-roleplay-stage-status]'));
             expect(status.textContent).toBe(label);
             expect(status.className).toBe('sr-only');
             expect(icon.className).toContain(iconClass);
@@ -451,6 +461,7 @@ describe('Roleplay preview rendering', () => {
         await waitForFirstDraw();
         const node = renderedEvents.at(-1).element;
         expect(thinking.update).toHaveBeenLastCalledWith(node, true);
+        expect(thinkingOptions.at(-1)).toEqual({ announce: false });
         const patch = end === 'prose' ? { text: 'First words' }
             : end === 'reasoning' ? { reasoning: 'Considering' } : { stage: 'companions' };
         stream.send({ preview: { childId: 'reply', stage: 'generating', text: '', ...patch } });

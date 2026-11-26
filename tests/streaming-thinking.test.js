@@ -86,4 +86,13 @@ describe('stream-owned Thinking label', () => {
         indicator.clear();
         expect(next.parent.children).toEqual([]);
     });
+
+    test('omits role="status" when the host message already owns a status live region', () => {
+        const node = message();
+        const indicator = new StreamingThinkingIndicator({ announce: false });
+        indicator.update(node, true);
+        const label = node.parent.children[0];
+        expect(label.textContent).toBe('Thinking...');
+        expect(label.setAttribute).not.toHaveBeenCalledWith('role', 'status');
+    });
 });
