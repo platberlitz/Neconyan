@@ -83,12 +83,17 @@ for (const phone of [false, true]) {
         const account = await app.account({ phone });
         const { page, card } = await showImporter(account);
         const key = randomUUID();
+        const earlierArchive = archiver('zip'); const earlierChunks = [];
+        earlierArchive.on('data', chunk => earlierChunks.push(chunk));
+        earlierArchive.append('Earlier backup placeholder', { name: 'default-user/user/files/earlier.txt' });
+        await earlierArchive.finalize();
+        const earlierBuffer = Buffer.concat(earlierChunks);
         const earlier = await account.context.request.post('/api/operations/import-input', { headers: account.headers,
-            multipart: { key, avatar: { name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.from('Earlier upload') } } });
+            multipart: { key, avatar: { name: 'default-user.zip', mimeType: 'application/zip', buffer: earlierBuffer } } });
         expect(earlier.ok()).toBe(true);
         const receipt = await earlier.json();
         await page.evaluate(pending => localStorage.setItem('neconyan-account-import-upload:default-user', JSON.stringify(pending)),
-            { key, inputId: receipt.inputId, file: { name: 'default-user.zip', size: 14, lastModified: 1 } });
+            { key, inputId: receipt.inputId, file: { name: 'default-user.zip', size: earlierBuffer.length, lastModified: 1 } });
         const archive = archiver('zip'); const chunks = [];
         archive.on('data', chunk => chunks.push(chunk));
         archive.append('Replacement backup attachment', { name: 'default-user/user/files/replacement.txt' });

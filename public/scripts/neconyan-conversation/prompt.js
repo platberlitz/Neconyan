@@ -43,6 +43,19 @@ import {
     getConversationFileAttachments,
     getConversationMediaAttachments,
 } from './thread-store.js';
+import {
+    getFetchableConversationImagePath,
+    getSafeConversationMediaUrl,
+    isConversationExternalMediaAllowed,
+    isExternalHttpMediaUrl,
+    isSafeConversationDataImageUrl,
+} from './media-url-policy.js';
+
+export function isConversationMediaExternalAllowed() {
+    const avatar = getCurrentCharAvatar();
+    const entityId = (avatar && getConversationGroupIdForAvatar(avatar)) || avatar;
+    return isConversationExternalMediaAllowed(power_user, entityId);
+}
 
 export function formatConversationFileSize(size) {
     const bytes = Number(size);
@@ -71,30 +84,39 @@ export function renderConversationAttachments(container, message) {
 
     const wrapper = document.createElement('div');
     wrapper.className = 'sb-conversation-attachments';
+    const allowExternal = isConversationMediaExternalAllowed();
 
     media.forEach((attachment) => {
+        const title = String(attachment.title || '').trim();
+        const type = String(attachment.type || 'image');
+        const url = getSafeConversationMediaUrl(attachment.url, {
+            allowExternal,
+            kind: type === 'video' || type === 'audio' ? 'media' : 'image',
+        });
+        if (!url) {
+            return;
+        }
+
         const figure = document.createElement('figure');
         figure.className = 'sb-conversation-media-attachment';
 
-        const title = String(attachment.title || '').trim();
-        const type = String(attachment.type || 'image');
         if (type === 'video') {
             const video = document.createElement('video');
-            video.src = attachment.url;
+            video.src = url;
             video.controls = true;
             video.preload = 'metadata';
             video.title = title;
             figure.appendChild(video);
         } else if (type === 'audio') {
             const audio = document.createElement('audio');
-            audio.src = attachment.url;
+            audio.src = url;
             audio.controls = true;
             audio.preload = 'metadata';
             audio.title = title;
             figure.appendChild(audio);
         } else {
             const img = document.createElement('img');
-            img.src = attachment.url;
+            img.src = url;
             img.alt = title || 'Uploaded image';
             img.loading = 'lazy';
             figure.appendChild(img);
@@ -110,9 +132,13 @@ export function renderConversationAttachments(container, message) {
     });
 
     files.forEach((file) => {
+        const url = getSafeConversationMediaUrl(file.url, { allowExternal, kind: 'file' });
+        if (!url) {
+            return;
+        }
         const link = document.createElement('a');
         link.className = 'sb-conversation-file-attachment';
-        link.href = file.url;
+        link.href = url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.download = file.name || '';
@@ -135,7 +161,9 @@ export function renderConversationAttachments(container, message) {
         wrapper.appendChild(link);
     });
 
-    container.appendChild(wrapper);
+    if (wrapper.childElementCount) {
+        container.appendChild(wrapper);
+    }
 }
 
 function getConversationLocalTimeContext(now = new Date()) {
@@ -188,14 +216,28 @@ export async function convertImageUrlToBase64(imageUrl) {
     if (typeof imageUrl !== 'string' || !imageUrl) {
         return '';
     }
-    if (imageUrl.startsWith('data:')) {
-        return imageUrl;
+    if (/^data:/i.test(imageUrl)) {
+        return isSafeConversationDataImageUrl(imageUrl) ? imageUrl.trim() : '';
+    }
+
+    const localPath = getFetchableConversationImagePath(imageUrl);
+    const external = !localPath && isExternalHttpMediaUrl(imageUrl);
+    if (!localPath && !(external && isConversationMediaExternalAllowed())) {
+        return '';
     }
 
     try {
-        const response = await fetch(imageUrl, { method: 'GET', cache: 'force-cache' });
+        const response = await fetch(localPath || imageUrl, {
+            method: 'GET',
+            cache: 'force-cache',
+            ...(external ? { credentials: 'omit' } : {}),
+        });
         if (!response.ok) {
             throw new Error(`Failed to fetch image: status ${response.status}`);
+        }
+        const contentType = String(response.headers?.get?.('content-type') || '').trim().toLowerCase();
+        if (!contentType.startsWith('image/') || contentType.startsWith('image/svg')) {
+            throw new Error(`Refusing non-image response: ${contentType || 'unknown type'}`);
         }
         const blob = await response.blob();
         return await new Promise((resolve, reject) => {
@@ -206,7 +248,7 @@ export async function convertImageUrlToBase64(imageUrl) {
         });
     } catch (error) {
         console.error('Conversation Mode: failed to convert image to base64', error);
-        return imageUrl;
+        return external ? imageUrl : '';
     }
 }
 

@@ -48,6 +48,8 @@ import { getConversationMessageAvatar, getConversationMessageReceipt } from './p
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
 import { getConnectionProfiles } from './personas.js';
 import { buildConversationPromptMessages, buildConversationSystemPrompt, fetchConversationLorebook, renderConversationAttachments } from './prompt.js';
+import { getConversationMediaSettings, getSafeConversationMediaUrl, isConversationExternalMediaAllowed } from './media-url-policy.js';
+import { stripForeignPortraitUrls, strictReplySanitizerOverrides } from './reply-sanitizer.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, schedulePalsRailRender, scheduleTimelineRender } from './render-scheduler.js';
 import { escapeHtmlAttribute, escapeHtmlText, getConversationMessageExtraFingerprint, hashConversationRenderFingerprint } from './render-utils.js';
 import { getConversationReplyMaxTokens } from './schedule.js';
@@ -514,7 +516,8 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
     const text = document.createElement('div');
     text.className = 'sb-conversation-message-text';
     if (message.mes) {
-        text.innerHTML = messageFormatting(message.mes, message.name, false, message.role === 'user', -1, {}, false);
+        text.innerHTML = messageFormatting(message.mes, message.name, false, message.role === 'user', -1, strictReplySanitizerOverrides(), false);
+        stripForeignPortraitUrls(text);
         highlightConversationMentions(text, avatar);
     }
 
@@ -523,8 +526,14 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
         'sb-conversation-message-reply-preview',
     );
 
-    const imageUrl = message.extra?.image_url;
-    if (typeof imageUrl === 'string' && imageUrl) {
+    const imageUrl = getSafeConversationMediaUrl(message.extra?.image_url, {
+        allowExternal: isConversationExternalMediaAllowed(
+            getConversationMediaSettings(),
+            groupId || avatar,
+        ),
+        kind: 'image',
+    });
+    if (imageUrl) {
         const figure = document.createElement('figure');
         figure.className = 'sb-conversation-image-preview';
         const img = document.createElement('img');

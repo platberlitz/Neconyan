@@ -2,7 +2,7 @@ import { getRequestHeaders } from '../script.js';
 import { translate } from './i18n.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from './popup.js';
 import { renderTemplateAsync } from './templates.js';
-import { ensureImageFormatSupported, getBase64Async, humanFileSize } from './utils.js';
+import { ensureImageFormatSupported, escapeHtml, getBase64Async, humanFileSize } from './utils.js';
 
 /**
  * @type {import('../../src/users.js').UserViewModel} Logged in user
@@ -718,7 +718,7 @@ async function changeName(handle, name, callback) {
 async function restoreSnapshot(name, callback) {
     try {
         const confirm = await callGenericPopup(
-            `Are you sure you want to restore the settings from "${name}"?`,
+            `Are you sure you want to restore the settings from "${escapeHtml(name)}"?`,
             POPUP_TYPE.CONFIRM,
             '',
             { okButton: 'Restore', cancelButton: 'Cancel', wide: false, large: false },

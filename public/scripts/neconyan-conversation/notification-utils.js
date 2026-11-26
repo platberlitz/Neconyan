@@ -1,3 +1,5 @@
+import { isSafeObjectKey } from './object-keys.js';
+
 /** Undefined means legacy state; an empty or trimmed boundary precedes this history. */
 export function countConversationUnread(messages, readThrough) {
     if (typeof readThrough !== 'string') return null;
@@ -20,7 +22,7 @@ export function setConversationThreadUnreadCount(threadStore, count, { branchId 
     const branches = threadStore?.branches && typeof threadStore.branches === 'object' ? threadStore.branches : {};
     const unread = normalizeConversationUnreadCount(count);
     if (branchId) {
-        if (!branches[branchId] || typeof branches[branchId] !== 'object') {
+        if (!isSafeObjectKey(branchId) || !Object.hasOwn(branches, branchId) || !branches[branchId] || typeof branches[branchId] !== 'object') {
             return false;
         }
         if (normalizeConversationUnreadCount(branches[branchId].unread) === unread) return false;
@@ -29,7 +31,7 @@ export function setConversationThreadUnreadCount(threadStore, count, { branchId 
     }
 
     const activeBranchId = threadStore?.activeBranchId;
-    if (unread > 0 && activeBranchId && branches[activeBranchId]) {
+    if (unread > 0 && isSafeObjectKey(activeBranchId) && Object.hasOwn(branches, activeBranchId) && branches[activeBranchId]) {
         if (normalizeConversationUnreadCount(branches[activeBranchId].unread) === unread) return false;
         branches[activeBranchId].unread = unread;
         return true;

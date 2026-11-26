@@ -993,7 +993,7 @@ export function bindConversationChromeControls(sheld) {
                 const genBtn = target;
                 const personaId = getConversationPersonaId();
                 genBtn.setAttribute('disabled', '');
-                toastr.info(`Generating schedule for ${character.name}…`);
+                toastr.info(`Generating schedule for ${character.name}…`, '', SAFE_TOAST_OPTIONS);
                 try {
                     const groupId = getConversationGroupIdForAvatar(genAvatar);
                     const schedule = await generateCharacterSchedule(character, { groupId, personaId });
@@ -1004,7 +1004,7 @@ export function bindConversationChromeControls(sheld) {
                             renderScheduleDisplay();
                             updateConversationChrome(genSettings);
                         }
-                        toastr.success(`Schedule generated for ${character.name}.`);
+                        toastr.success(`Schedule generated for ${character.name}.`, '', SAFE_TOAST_OPTIONS);
                     } else {
                         toastr.warning('The schedule came back empty. Try again.');
                     }
@@ -1013,7 +1013,7 @@ export function bindConversationChromeControls(sheld) {
                         toastr.info('The schedule is still being written on the server. It appears here when it is saved.');
                     } else {
                         console.error('Schedule generation error:', err);
-                        toastr.error(`Could not make the schedule. ${err?.message || ''}`.trim());
+                        toastr.error(`Could not make the schedule. ${err?.message || ''}`.trim(), '', SAFE_TOAST_OPTIONS);
                     }
                 } finally {
                     conversationState.scheduleGenerationBusy = false;
@@ -1250,7 +1250,7 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     applySettingsToPanel(settings);
     scheduleInterfaceRefresh({ syncControls: true });
     if (showToast && enable && !wasEnabled) {
-        toastr.info(`Conversation Mode activated for ${character.name || 'Character'}.`);
+        toastr.info(`Conversation Mode activated for ${character.name || 'Character'}.`, '', SAFE_TOAST_OPTIONS);
     }
     if (!savedOnly && (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false)) setTimeout(() => {
         if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {

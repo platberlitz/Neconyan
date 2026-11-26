@@ -24,14 +24,25 @@ export function normalizeLocator(value) {
     const chat = value.chat.replace(/\.jsonl$/, '');
     const avatar = value.group ? '' : value.avatar;
     if (!chat.trim() || sanitize(chat) !== chat || (avatar && sanitize(avatar) !== avatar)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
+    if (value.group !== true && /^\.*$/.test(avatar.replace('.png', ''))) fail('Invalid chat path: Mewmory could not work out which chat this is.');
     return { chat, avatar, group: value.group === true };
+}
+
+function isStrictChild(parent, target) {
+    return path.dirname(path.resolve(target)) === path.resolve(parent);
 }
 
 export function chatPath(directories, locator) {
     locator = normalizeLocator(locator);
-    return locator.group
-        ? path.join(directories.groupChats, locator.chat + '.jsonl')
-        : path.join(directories.chats, locator.avatar.replace('.png', ''), locator.chat + '.jsonl');
+    if (locator.group) {
+        const filename = path.join(directories.groupChats, locator.chat + '.jsonl');
+        if (!isStrictChild(directories.groupChats, filename)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
+        return filename;
+    }
+    const folder = path.join(directories.chats, locator.avatar.replace('.png', ''));
+    const filename = path.join(folder, locator.chat + '.jsonl');
+    if (!isStrictChild(directories.chats, folder) || !isStrictChild(folder, filename)) fail('Invalid chat path: Mewmory could not work out which chat this is.');
+    return filename;
 }
 
 export function statePath(directories, locator) {

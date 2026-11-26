@@ -70,6 +70,9 @@ jobs:
           app-id: ${{ vars.ST_BOT_APP_ID }}
           private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Mark Issues/PRs without Activity
         # Close Stale Issues and PRs
@@ -128,6 +131,9 @@ jobs:
           app-id: ${{ vars.ST_BOT_APP_ID }}
           private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Mark Issues/PRs Awaiting User Response
         # Close Stale Issues and PRs
@@ -179,6 +185,9 @@ jobs:
           app-id: ${{ vars.ST_BOT_APP_ID }}
           private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Mark Issues with Alternative Exists
         # Close Stale Issues and PRs

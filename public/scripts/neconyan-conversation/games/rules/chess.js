@@ -943,7 +943,7 @@ function parseMoveReply(state, text) {
     }
 
     // 'e2e4' has no separator, so the split form is tried first and the tight form second.
-    const coordinate = source.match(/\b([a-h][1-8])\s*(?:-|to|:|\s|>)\s*([a-h][1-8])\b/i)
+    const coordinate = source.match(/\b([a-h][1-8])(?:\s*(?:-|to|:|>)\s*|\s+)([a-h][1-8])\b/i)
         || source.match(/\b([a-h][1-8])([a-h][1-8])([qrbn])?\b/i);
     if (coordinate) {
         const from = squareIndex(coordinate[1]);

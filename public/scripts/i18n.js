@@ -171,7 +171,7 @@ export function translate(text, key = null) {
     if (trackMissingDynamicTranslate && table && !Object.hasOwn(table, translationKey)) {
         trackMissingDynamicTranslate.add(translationKey);
     }
-    return table?.[translationKey] || text;
+    return (table && Object.hasOwn(table, translationKey) ? table[translationKey] : '') || text;
 }
 
 /**
@@ -232,20 +232,47 @@ function findLang(language) {
 
 /**
  * Translates a given element based on its data-i18n attribute.
+ * The helpers live inside this function because tests run it on its own (tests/neconyan-native-workspaces.test.js).
  * @param {Element} element The element to translate
  */
 function translateElement(element) {
+    // Attributes a data-i18n="[attr]key" tag may write. Anything else (class, id, style, href, src, on*) is ignored,
+    // so markup that reaches the page from a message or card cannot use translations to set it.
+    const translatableAttributes = [
+        'title', 'placeholder', 'aria-label', 'aria-description', 'alt', 'label', 'value',
+        'data-tooltip', 'data-empty-text', 'no_desc_text', 'no_items_text', 'no_favs', 'no_connection_text',
+        'no_characters_text', 'missing_key_text', 'group_empty_text', 'external_piece_text',
+    ];
+    const isTranslatableAttribute = (attributeName) => {
+        const name = String(attributeName || '').trim().toLowerCase();
+        return translatableAttributes.includes(name) || /^popup-button-[a-z]+$/.test(name);
+    };
+    // Reads an own entry of the locale table, never an inherited property such as 'constructor'.
+    const readLocaleEntry = (entryKey) => {
+        const table = lookupTable(entryKey);
+        if (!table || !Object.hasOwn(table, entryKey)) return undefined;
+        const value = table[entryKey];
+        return typeof value === 'string' ? value : undefined;
+    };
+    // User-authored content never runs through data-i18n (a textarea itself may still translate its placeholder).
+    // [data-i18n-ignore] is not skipped: it guards visible-text matching in ui-localization.js, and preset selects
+    // in index.html carry both it and real data-i18n keys.
+    if (typeof element?.closest === 'function' && (
+        element.closest('.mes_text, #creator_notes_spoiler') !== null ||
+        element.parentElement?.closest('textarea')
+    )) return;
     const keys = element.getAttribute('data-i18n')?.split(';') ?? []; // An observed attribute may have been removed.
     for (const key of keys) {
         // Neconyan: only a leading tag names an attribute; its caption may span multiple lines.
         const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/s); // [attribute]key
         if (attributeMatch) { // attribute-tagged key
-            const localizedValue = lookupTable(attributeMatch[2])?.[attributeMatch[2]];
+            if (!isTranslatableAttribute(attributeMatch[1])) continue;
+            const localizedValue = readLocaleEntry(attributeMatch[2]);
             if (localizedValue || localizedValue === '') {
                 element.setAttribute(attributeMatch[1], localizedValue);
             }
         } else { // No attribute tag, treat as 'text'
-            const localizedValue = lookupTable(key)?.[key];
+            const localizedValue = readLocaleEntry(key);
             if (localizedValue || localizedValue === '') {
                 element.textContent = localizedValue;
             }

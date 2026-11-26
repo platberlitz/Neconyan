@@ -1,6 +1,18 @@
 import { getExtensionCapability } from '../neconyan-conversation/extension-capabilities.js';
 import { element, button, textField } from './fields.js';
 import { creatorPortraitPrompt, buildCreatorImagePromptRequest, parseCreatorImagePrompt } from './portrait-prompt.js';
+import { isSafeCreatorImageDataUrl } from './media-url.js';
+
+/** Decodes a stored portrait without fetching, so a restored draft cannot point the crop at any address. */
+export function creatorDataUrlBlob(dataUrl) {
+    if (!isSafeCreatorImageDataUrl(dataUrl)) throw new Error('Choose a PNG, JPEG or WebP smaller than 20 MiB.');
+    const comma = dataUrl.indexOf(',');
+    const type = dataUrl.slice(5, dataUrl.indexOf(';')).toLowerCase().replace('image/jpg', 'image/jpeg');
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    return new Blob([bytes], { type });
+}
 
 export async function creatorPortraitBytes(blob, square = false) {
     if (!/^image\/(png|jpeg|webp)$/.test(blob.type) || blob.size > 20 * 1024 * 1024) throw new Error('Choose a PNG, JPEG or WebP smaller than 20 MiB.');
@@ -100,12 +112,12 @@ export function renderPortrait(workspace, main) {
     const gallery = element('div', 'creator-portraits');
     for (const media of draft.media) {
         const card = element('section', 'creator-portrait');
-        const image = element('img'); image.src = media.dataUrl; image.alt = media.label || 'Portrait candidate';
+        const image = element('img'); if (isSafeCreatorImageDataUrl(media.dataUrl)) image.src = media.dataUrl; image.alt = media.label || 'Portrait candidate';
         const select = button(draft.selectedMedia === media.id ? 'Selected portrait' : 'Use portrait', () => workspace.edit(next => { next.selectedMedia = media.id; }, true, { record: false }), draft.selectedMedia === media.id, 'creator-chip-btn');
         select.setAttribute('aria-pressed', String(draft.selectedMedia === media.id));
         const controls = element('div', 'creator-actions');
         controls.append(select, button('Crop square', () => workspace.run(async () => {
-            const blob = await (await fetch(media.dataUrl)).blob();
+            const blob = creatorDataUrlBlob(media.dataUrl);
             const dataUrl = await creatorPortraitBytes(blob, true);
             workspace.session.assertOwner();
             if (workspace.session.draft.id !== draft.id || !workspace.session.draft.media.some(item => item.id === media.id)) throw new Error('This portrait changed. Reopen it before cropping.');

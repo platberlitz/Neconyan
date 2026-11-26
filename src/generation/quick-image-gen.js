@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 
+import nodeFetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 
 import { SETTINGS_FILE, MEDIA_EXTENSIONS } from '../constants.js';
@@ -52,6 +54,58 @@ import { a1111BaseUrl, buildA1111ImageRequest } from './quick-image-gen-a1111.js
  */
 
 export const QUICK_IMAGE_GEN_EXTENSION_ID = 'quick-image-gen';
+
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+/**
+ * Server-side fetch for Quick Image Gen provider calls. node-fetch sends through the
+ * http/https global agents, so the private address whitelist and the request proxy
+ * apply; the built-in fetch bypasses both. Native FormData and web stream bodies are
+ * encoded first because node-fetch only understands its own, and the answer is
+ * returned as a standard Response so the shared helpers can read it with getReader().
+ * @param {string|URL} resource Request address
+ * @param {RequestInit} [init] Request options
+ * @returns {Promise<Response>}
+ */
+export async function quickImageGenFetch(resource, init = {}) {
+    const options = /** @type {Record<string, any>} */ ({ ...init });
+    if (options.body instanceof FormData) {
+        const encoded = new Response(options.body);
+        const headers = new Headers(options.headers);
+        headers.set('content-type', String(encoded.headers.get('content-type')));
+        options.headers = Object.fromEntries(headers);
+        options.body = Buffer.from(await encoded.arrayBuffer());
+    } else if (options.body instanceof ReadableStream) {
+        options.body = Readable.fromWeb(/** @type {any} */ (options.body));
+    } else if (options.headers instanceof Headers) {
+        options.headers = Object.fromEntries(options.headers);
+    }
+    const response = await nodeFetch(resource instanceof URL ? resource.href : String(resource), options);
+    const body = response.body && !NULL_BODY_STATUSES.has(response.status)
+        ? /** @type {ReadableStream} */ (Readable.toWeb(/** @type {Readable} */ (response.body)))
+        : null;
+    const converted = new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: [...response.headers],
+    });
+    Object.defineProperties(converted, {
+        url: { value: response.url },
+        redirected: { value: response.redirected },
+    });
+    return converted;
+}
+
+/**
+ * Uses the injected fetch when a caller provides one, and the filtered node-fetch
+ * client otherwise. Callers that forward the built-in fetch as a plain default are
+ * treated as not injecting one, so they cannot bypass the request filter.
+ * @param {Function|undefined} fetchImpl Injected fetch
+ * @returns {Function}
+ */
+export function resolveQuickImageGenFetch(fetchImpl) {
+    return typeof fetchImpl === 'function' && fetchImpl !== globalThis.fetch ? fetchImpl : quickImageGenFetch;
+}
 
 const ROUTEWAY_MODEL_SIZES = {
     'flux-1-schnell': ['1024x1024', '1792x1024', '1024x1792', '1024x768', '768x1024', '1080x1350'],
@@ -682,7 +736,8 @@ async function withProviderDeadline(provider, settings, signal, operation) {
  * With deferDownload, a provider that answers with an image address returns { url }
  * instead, so the caller can save the address before downloading it.
  */
-export async function generateQuickImageGenImage({ directories, prompt, negative = '', signal, fetch: fetchImpl = globalThis.fetch, settings, deferDownload = false } = {}) {
+export async function generateQuickImageGenImage({ directories, prompt, negative = '', signal, fetch: injectedFetch, settings, deferDownload = false } = {}) {
+    const fetchImpl = resolveQuickImageGenFetch(injectedFetch);
     if (!directories?.root) throw fail('No account directories were provided for image generation.', { status: 500, recoverable: false });
     if (!String(prompt || '').trim()) throw fail('An image prompt is required.', { status: 400, recoverable: false });
     const resolvedSettings = settings && typeof settings === 'object' ? settings : readQuickImageGenSettings(directories);
@@ -706,7 +761,8 @@ export async function generateQuickImageGenImage({ directories, prompt, negative
 }
 
 /** Download an image address saved from an earlier provider answer. No provider request is sent. */
-export async function downloadQuickImageGenImage({ url, prompt, negative = '', signal, fetch: fetchImpl = globalThis.fetch, settings } = {}) {
+export async function downloadQuickImageGenImage({ url, prompt, negative = '', signal, fetch: injectedFetch, settings } = {}) {
+    const fetchImpl = resolveQuickImageGenFetch(injectedFetch);
     const provider = String(settings?.provider || '');
     if (!Object.hasOwn(PROVIDER_GENERATORS, provider) || typeof url !== 'string' || !/^https?:/i.test(url)) {
         throw fail('The saved image address cannot be used.', { status: 409, code: 'QIG_RESULT_RECOVERY', recoverable: false });

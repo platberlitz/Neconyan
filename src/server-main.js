@@ -135,9 +135,9 @@ app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
 setCrashContext({ requests: getRecentRequests, activity: getDiagnosticServerActivity });
 
 // CORS Settings //
-const corsEnabled = getConfigValue('cors.enabled', true, 'boolean');
+const corsEnabled = getConfigValue('cors.enabled', false, 'boolean');
 if (corsEnabled) {
-    const corsOrigin = getConfigValue('cors.origin', 'null');
+    const corsOrigin = getConfigValue('cors.origin', []);
     const corsMethods = getConfigValue('cors.methods', ['OPTIONS']);
     const corsAllowedHeaders = getConfigValue('cors.allowedHeaders', []);
     const corsExposedHeaders = getConfigValue('cors.exposedHeaders', []);
@@ -185,6 +185,16 @@ if (isBunRuntime()) {
         next();
     });
 }
+
+// Mark the session cookie Secure on HTTPS. req.secure honours 'trust proxy', so a
+// spoofed X-Forwarded-Proto from an untrusted client is ignored, and it matches the
+// check the cookies library makes before it will send a Secure cookie.
+app.use((req, _res, next) => {
+    if (req.secure && req.sessionOptions) {
+        req.sessionOptions.secure = true;
+    }
+    next();
+});
 
 if (cliArgs.whitelistMode) {
     const whitelistMiddleware = await getWhitelistMiddleware();
@@ -579,7 +589,7 @@ const accountImportUploadMiddleware = multer({
     },
 }).single('avatar');
 app.use((req, res, next) => {
-    const middleware = req.path === '/api/operations/import-input'
+    const middleware = req.method === 'POST' && req.path === '/api/operations/import-input'
         ? accountImportUploadMiddleware
         : defaultUploadMiddleware;
     middleware(req, res, next);
@@ -587,11 +597,16 @@ app.use((req, res, next) => {
 app.use(multerMonkeyPatch);
 
 app.get('/version', async function (_, response) {
-    const data = await getVersion();
-    response.send({
-        ...data,
-        serverBootId: getServerBootId(),
-    });
+    try {
+        const data = await getVersion();
+        response.send({
+            ...data,
+            serverBootId: getServerBootId(),
+        });
+    } catch (error) {
+        console.warn('Could not read the server version:', error);
+        response.sendStatus(500);
+    }
 });
 
 app.get('/api/whats-new', async function (_, response) {

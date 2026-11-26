@@ -5,6 +5,7 @@ import { groups } from './group-chats.js';
 import { t, translate } from './i18n.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { power_user } from './power-user.js';
+import { escapeHtml } from './utils.js';
 import {
     addTagsToEntity,
     chooseBogusFolder,
@@ -760,7 +761,7 @@ function renderAiSection(container, run) {
             nameInput.focus();
         }));
         promptActions.append(button(t`Delete`, 'fa-trash-can', async () => {
-            const confirmed = await Popup.show.confirm(t`Delete this prompt?`, chosen.name);
+            const confirmed = await Popup.show.confirm(t`Delete this prompt?`, escapeHtml(chosen.name));
             if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
             const current = getSettings();
             current.ai.customPrompts = current.ai.customPrompts.filter(entry => entry.id !== chosen.id);

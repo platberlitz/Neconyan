@@ -5,6 +5,7 @@ import { DEFAULT_AVATAR_PATH } from './constants.js';
 import { extractFileFromZipBuffer } from './util.js';
 
 const BYAF_MAX_JSON_BYTES = 16 * 1024 * 1024;
+const BYAF_MAX_TOTAL_JSON_BYTES = 32 * 1024 * 1024;
 const BYAF_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 const BYAF_MAX_TOTAL_IMAGE_BYTES = 256 * 1024 * 1024;
 const BYAF_MAX_SCENARIOS = 64;
@@ -19,12 +20,33 @@ export class ByafParser {
      */
     #data;
 
+    /** Uncompressed JSON bytes read so far from this archive. */
+    #jsonBytes = 0;
+
     /**
      * Creates an instance of ByafParser.
      * @param {ArrayBufferLike} data BYAF ZIP buffer
      */
     constructor(data) {
         this.#data = data;
+    }
+
+    /**
+     * Reads one JSON entry while keeping the whole archive under the JSON byte budget.
+     * @param {string} entryPath Archive path
+     * @returns {Promise<Buffer|null>} Entry bytes, or null when missing or over budget
+     */
+    async #readJsonEntry(entryPath) {
+        const remainingBytes = BYAF_MAX_TOTAL_JSON_BYTES - this.#jsonBytes;
+        if (remainingBytes <= 0) {
+            console.warn('Warning: BYAF JSON files exceeded the total unpacked size limit');
+            return null;
+        }
+        const buffer = await extractFileFromZipBuffer(this.#data, entryPath, { maxEntryBytes: Math.min(BYAF_MAX_JSON_BYTES, remainingBytes) });
+        if (buffer) {
+            this.#jsonBytes += buffer.length;
+        }
+        return buffer;
     }
 
     /**
@@ -151,7 +173,7 @@ export class ByafParser {
             throw new Error('This BYAF file does not say which character it contains.');
         }
 
-        const characterBuffer = await extractFileFromZipBuffer(this.#data, characterPath, { maxEntryBytes: BYAF_MAX_JSON_BYTES });
+        const characterBuffer = await this.#readJsonEntry(characterPath);
         if (!characterBuffer) {
             throw new Error('This BYAF file is damaged: its character data could not be read.');
         }
@@ -180,9 +202,18 @@ export class ByafParser {
         }
 
         const scenarios = [];
+        const scenarioPaths = [...new Set(scenariosArray
+            .filter(scenarioPath => typeof scenarioPath === 'string' && scenarioPath.trim())
+            .map(scenarioPath => path.posix.normalize(scenarioPath.replace(/\\/g, '/')).replace(/^(\.\/)+/, '')))]
+            .slice(0, BYAF_MAX_SCENARIOS);
 
-        for (const scenarioPath of scenariosArray.slice(0, BYAF_MAX_SCENARIOS)) {
-            const scenarioBuffer = await extractFileFromZipBuffer(this.#data, scenarioPath, { maxEntryBytes: BYAF_MAX_JSON_BYTES });
+        // One entry at a time: each read is bounded by the shared JSON budget.
+        for (const scenarioPath of scenarioPaths) {
+            if (this.#jsonBytes >= BYAF_MAX_TOTAL_JSON_BYTES) {
+                console.warn('Warning: BYAF scenarios exceeded the total unpacked size limit');
+                break;
+            }
+            const scenarioBuffer = await this.#readJsonEntry(scenarioPath);
             if (!scenarioBuffer) {
                 console.warn('Warning: failed to extract BYAF scenario JSON');
             }
@@ -332,7 +363,7 @@ export class ByafParser {
      * @private
      */
     async getManifest() {
-        const manifestBuffer = await extractFileFromZipBuffer(this.#data, 'manifest.json', { maxEntryBytes: BYAF_MAX_JSON_BYTES });
+        const manifestBuffer = await this.#readJsonEntry('manifest.json');
         if (!manifestBuffer) {
             throw new Error('This BYAF file is damaged: its details file (manifest.json) could not be read.');
         }

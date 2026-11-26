@@ -23,6 +23,7 @@ import {
 } from './notifications.js';
 import { isConversationGroupSpeakerEligible } from './partners-utils.js';
 import { schedulePalsRailRender } from './render-scheduler.js';
+import { CONVERSATION_SAFE_TOAST_OPTIONS } from './toast-options.js';
 import { beginConversationNarration, narrateConversationMessage, playConversationNarration } from './tts.js';
 
 const CLAIM_ENDPOINT = '/api/neconyan-conversation/presentation/claim';
@@ -105,7 +106,7 @@ async function narrate(record, message, isStillVisible, token) {
         }
         refusedNotices.add(noticeKey);
         const provider = record.provider || 'This provider';
-        globalThis.toastr?.warning?.(`Automatic narration is unavailable: ${provider} speech runs only in a browser. Use Speak on a message to hear it.`);
+        globalThis.toastr?.warning?.(`Automatic narration is unavailable: ${provider} speech runs only in a browser. Use Speak on a message to hear it.`, '', CONVERSATION_SAFE_TOAST_OPTIONS);
         return;
     }
     if (record.status === 'failed') {

@@ -1,3 +1,4 @@
+import { stripCreatorCodeFence } from './code-fence.js';
 /** Use public card details, never draft notes or provider instructions, as image reference. */
 export function buildCreatorPortraitPrompt(draft) {
     const card = draft.card?.data ?? {};
@@ -38,7 +39,7 @@ export function parseCreatorImagePrompt(output, supportsNegative) {
         return { prompt };
     }
     let result;
-    try { result = JSON.parse(String(output).trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1')); } catch { throw new Error('The model did not return complete positive and negative prompts. Try again; your prompts are unchanged.'); }
+    try { result = JSON.parse(stripCreatorCodeFence(output)); } catch { throw new Error('The model did not return complete positive and negative prompts. Try again; your prompts are unchanged.'); }
     if (typeof result?.prompt !== 'string' || !result.prompt.trim() || typeof result.negativePrompt !== 'string') throw new Error('The model did not return valid positive and negative prompts. Try again; your prompts are unchanged.');
     return { prompt: result.prompt.trim(), negativePrompt: result.negativePrompt.trim() };
 }

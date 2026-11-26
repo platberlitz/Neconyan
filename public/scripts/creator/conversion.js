@@ -3,6 +3,7 @@ import { creatorProposal, creatorTextValue, validCreatorProposalValue } from './
 import { creatorTargetsSignature, creatorTargetValue } from './formats.js';
 import { creatorGuidance } from './guidance.js';
 import { resolveCreatorAnswers } from './questions.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 export function creatorWritingSteps(draft, fields, alternateCount = Number(creatorTargetValue(draft.writing?.targets, 'greetingCount')) - 1) {
     const steps = [];
@@ -58,7 +59,7 @@ export function creatorStepMessages(draft, proposal) {
 export function mergeCreatorStep(draft, proposal, output) {
     if (['questions', 'answers'].includes(proposal.plan.phase)) throw new Error('Choose Generate after reviewing the questions.');
     let result;
-    try { result = JSON.parse(String(output).trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1')); } catch { throw new Error('This step returned incomplete text. Continue writing to retry it; finished steps are saved.'); }
+    try { result = JSON.parse(stripCreatorCodeFence(output)); } catch { throw new Error('This step returned incomplete text. Continue writing to retry it; finished steps are saved.'); }
     if (!result?.fields || typeof result.fields !== 'object' || Array.isArray(result.fields)) throw new Error('This step returned no fields. Continue writing to retry it.');
     const next = structuredClone(proposal);
     const step = next.plan.steps[next.plan.next];

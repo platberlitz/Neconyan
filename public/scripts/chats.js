@@ -618,7 +618,7 @@ export async function appendFileContent(message, messageText) {
  * @copyright https://github.com/kwaroran/risuAI
  */
 export function encodeStyleTags(text) {
-    const styleRegex = /<style>(.+?)<\/style>/gims;
+    const styleRegex = /<style(?:\s[^>]*)?>([\s\S]*?)<\/style\s*>/gi;
     return text.replaceAll(styleRegex, (_, match) => {
         return `<custom-style>${encodeURIComponent(match)}</custom-style>`;
     });
@@ -895,10 +895,11 @@ const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
  * @param {string} text Message text
  * @param {object} options Options object
  * @param {string} options.prefix Prefix the selectors with this value
+ * @param {string} [options.idPrefix] Prefix id selectors with this value (matches DOMPurify SANITIZE_NAMED_PROPS)
  * @returns {string} Sanitized message text
  * @copyright https://github.com/kwaroran/risuAI
  */
-export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
+export function decodeStyleTags(text, { prefix, idPrefix } = { prefix: '.mes_text ' }) {
     const sourceText = String(text ?? '');
     if (!/<custom-style[\s>]/i.test(sourceText)) {
         return sourceText;
@@ -1056,76 +1057,250 @@ export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
         return out;
     }
 
-    function sanitizeRule(rule) {
+    const NESTED_SELECTOR_PSEUDOS = new Set(['has', 'not', 'where', 'is', 'matches', 'any', '-webkit-any', '-moz-any']);
+    // At-rules that may sit inside a style rule without leaving the parent's scope.
+    const NESTED_GROUP_RULE_TYPES = new Set(['media', 'supports', 'container', 'layer', 'starting-style']);
+    const CSS_IDENT_PATTERN = '((?:[\\w-]|\\\\[0-9a-fA-F]{1,6}\\s?|\\\\[^\\n0-9a-fA-F])+)';
+    const classSelectorRegex = new RegExp(`\\.${CSS_IDENT_PATTERN}`, 'g');
+    const idSelectorRegex = new RegExp(`#${CSS_IDENT_PATTERN}`, 'g');
+    const idPrefixValue = typeof idPrefix === 'string' ? idPrefix : '';
+
+    function skipQuoted(source, start) {
+        const quote = source[start];
+        let i = start + 1;
+        while (i < source.length) {
+            if (source[i] === '\\') {
+                i += 2;
+                continue;
+            }
+            if (source[i] === quote) {
+                return i + 1;
+            }
+            i++;
+        }
+        return source.length;
+    }
+
+    function findClosingParen(source, openIndex) {
+        let depth = 0;
+        for (let i = openIndex; i < source.length; i++) {
+            const ch = source[i];
+            if (ch === '\\') {
+                i++;
+            } else if (ch === '"' || ch === '\'') {
+                i = skipQuoted(source, i) - 1;
+            } else if (ch === '(') {
+                depth++;
+            } else if (ch === ')') {
+                depth--;
+                if (depth === 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    // A nested selector stays inside its parent only when '&' leads it or is absent (implicit '& ').
+    // '&' inside :has()/:is()/:not()/:where() or after another compound ('body &') selects ancestors.
+    function nestedSelectorEscapesScope(selector) {
+        const source = String(selector ?? '').trim();
+        let depth = 0;
+        let seenContent = false;
+        for (let i = 0; i < source.length; i++) {
+            const ch = source[i];
+            if (ch === '\\') {
+                i++;
+                seenContent = true;
+            } else if (ch === '"' || ch === '\'') {
+                i = skipQuoted(source, i) - 1;
+                seenContent = true;
+            } else if (ch === '(' || ch === '[') {
+                depth++;
+                seenContent = true;
+            } else if (ch === ')' || ch === ']') {
+                depth = Math.max(0, depth - 1);
+            } else if (ch === '&') {
+                if (depth > 0 || seenContent) {
+                    return true;
+                }
+                // Only the leading '&' anchors the selector; later ones sit below it.
+                return false;
+            } else if (!/\s/.test(ch)) {
+                seenContent = true;
+            }
+        }
+        return false;
+    }
+
+    function sanitizeTopLevelSelector(selector) {
+        const cleaned = sanitizeSelector(selector).trim();
+        if (!cleaned) {
+            return '';
+        }
+        // '.mes_text + x' and '.mes_text ~ x' would style the host elements beside the message.
+        if (prefix && /^[+~]/.test(cleaned)) {
+            return '';
+        }
+        return prefix + cleaned;
+    }
+
+    function sanitizeNestedSelector(selector) {
+        if (nestedSelectorEscapesScope(selector)) {
+            return '';
+        }
+        return sanitizeSelector(selector).trim();
+    }
+
+    function sanitizeRule(rule, nested = false) {
         if (Array.isArray(rule.selectors)) {
             const nextSelectors = [];
             for (let i = 0; i < rule.selectors.length; i++) {
                 const cleanedSelector = stripLeadingImportStatement(rule.selectors[i]);
-                if (cleanedSelector) {
-                    nextSelectors.push(prefix + sanitizeSelector(cleanedSelector));
+                if (!cleanedSelector) {
+                    continue;
+                }
+                const sanitizedSelector = nested ? sanitizeNestedSelector(cleanedSelector) : sanitizeTopLevelSelector(cleanedSelector);
+                if (sanitizedSelector) {
+                    nextSelectors.push(sanitizedSelector);
                 }
             }
             rule.selectors = nextSelectors;
         }
-        if (!mediaAllowed && Array.isArray(rule.declarations) && rule.declarations.length > 0) {
-            rule.declarations = rule.declarations.filter(declaration => !checkExternalCssUrl(declaration?.value));
+        if (Array.isArray(rule.declarations)) {
+            rule.declarations = sanitizeBlockEntries(rule.declarations, true);
         }
     }
 
     function sanitizeSelector(selector) {
-        // Handle pseudo-classes that can contain nested selectors
-        const pseudoClasses = ['has', 'not', 'where', 'is', 'matches', 'any'];
-        const pseudoRegex = new RegExp(`:(${pseudoClasses.join('|')})\\(([^)]+)\\)`, 'g');
-
-        // First, sanitize any nested selectors within pseudo-classes
-        selector = selector.replace(pseudoRegex, (match, pseudoClass, content) => {
-            // Recursively sanitize the content within the pseudo-class
-            const sanitizedContent = sanitizeSimpleSelector(content);
-            return `:${pseudoClass}(${sanitizedContent})`;
-        });
-
-        // Then sanitize the main selector parts
-        return sanitizeSimpleSelector(selector);
+        const source = String(selector ?? '');
+        let output = '';
+        let segmentStart = 0;
+        let i = 0;
+        while (i < source.length) {
+            const ch = source[i];
+            if (ch === '\\') {
+                i += 2;
+                continue;
+            }
+            if (ch === '"' || ch === '\'') {
+                i = skipQuoted(source, i);
+                continue;
+            }
+            if (ch === ':') {
+                const pseudoMatch = /^:([\w-]+)\(/.exec(source.slice(i, i + 32));
+                if (pseudoMatch && NESTED_SELECTOR_PSEUDOS.has(pseudoMatch[1].toLowerCase())) {
+                    const openIndex = i + pseudoMatch[0].length - 1;
+                    const closeIndex = findClosingParen(source, openIndex);
+                    const innerEnd = closeIndex === -1 ? source.length : closeIndex;
+                    output += sanitizeSimpleSelector(source.slice(segmentStart, i));
+                    output += `:${pseudoMatch[1]}(${sanitizeSelector(source.slice(openIndex + 1, innerEnd))})`;
+                    i = closeIndex === -1 ? source.length : closeIndex + 1;
+                    segmentStart = i;
+                    continue;
+                }
+            }
+            i++;
+        }
+        output += sanitizeSimpleSelector(source.slice(segmentStart));
+        return output;
     }
 
     function sanitizeSimpleSelector(selector) {
         // Split by spaces but preserve complex selectors
         return selector.split(/\s+/).map((part) => {
             // Handle class selectors, but preserve pseudo-classes and other complex parts
-            return part.replace(/\.([\w-]+)/g, (match, className) => {
+            let sanitizedPart = part.replace(classSelectorRegex, (match, className) => {
                 // Don't modify if it's already prefixed with 'custom-'
                 if (className.startsWith('custom-')) {
                     return match;
                 }
                 return `.custom-${className}`;
             });
+            if (idPrefixValue) {
+                sanitizedPart = sanitizedPart.replace(idSelectorRegex, (match, idName) => {
+                    return idName.startsWith(idPrefixValue) ? match : `#${idPrefixValue}${idName}`;
+                });
+            }
+            return sanitizedPart;
         }).join(' ');
     }
 
-    function sanitizeRuleSet(ruleSet) {
-        if (Array.isArray(ruleSet.selectors) || Array.isArray(ruleSet.declarations)) {
-            sanitizeRule(ruleSet);
+    function sanitizeGroupRule(group, nested) {
+        if (!nested && Array.isArray(group.selectors)) {
+            sanitizeRule(group, false);
+        } else if (Array.isArray(group.declarations)) {
+            group.declarations = sanitizeBlockEntries(group.declarations, true);
         }
-
-        if (Array.isArray(ruleSet.keyframes)) {
-            for (const keyframe of ruleSet.keyframes) {
-                sanitizeRuleSet(keyframe);
-            }
-        }
-
-        if (Array.isArray(ruleSet.rules)) {
-            ruleSet.rules = ruleSet.rules.filter(rule => rule && rule.type !== 'import');
-
-            for (const mediaRule of ruleSet.rules) {
-                sanitizeRuleSet(mediaRule);
-            }
-
-            ruleSet.rules = ruleSet.rules.filter(rule => {
-                if (rule.type === 'rule' && Array.isArray(rule.selectors) && rule.selectors.length === 0) {
-                    return false;
+        if (Array.isArray(group.keyframes)) {
+            for (const keyframe of group.keyframes) {
+                if (keyframe && Array.isArray(keyframe.declarations)) {
+                    keyframe.declarations = sanitizeBlockEntries(keyframe.declarations, true);
                 }
-                return !isImportRule(rule);
-            });
+            }
+        }
+        if (Array.isArray(group.rules)) {
+            group.rules = sanitizeBlockEntries(group.rules, nested);
+        }
+    }
+
+    /**
+     * Sanitises the entries of a stylesheet, at-rule or style rule block.
+     * @param {object[]} entries Parsed CSS entries
+     * @param {boolean} nested True inside a style rule, where nested rules are relative to the parent
+     * @returns {object[]} Entries that are kept
+     */
+    function sanitizeBlockEntries(entries, nested) {
+        const kept = [];
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            switch (entry.type) {
+                case 'comment':
+                    kept.push(entry);
+                    break;
+                case 'declaration':
+                    // Bare declarations in a top-level group rule (such as @scope (body)) style its root.
+                    if (!nested) {
+                        break;
+                    }
+                    if (!mediaAllowed && checkExternalCssUrl(entry.value)) {
+                        break;
+                    }
+                    kept.push(entry);
+                    break;
+                case 'rule':
+                    if (isImportRule(entry)) {
+                        break;
+                    }
+                    sanitizeRule(entry, nested);
+                    if (Array.isArray(entry.selectors) && entry.selectors.length === 0) {
+                        break;
+                    }
+                    kept.push(entry);
+                    break;
+                case 'import':
+                    break;
+                default:
+                    // Nested @import, @scope and other at-rules can reach outside the parent rule.
+                    if (nested && !NESTED_GROUP_RULE_TYPES.has(entry.type)) {
+                        break;
+                    }
+                    sanitizeGroupRule(entry, nested);
+                    if (Array.isArray(entry.rules) && entry.rules.length === 0) {
+                        break;
+                    }
+                    kept.push(entry);
+                    break;
+            }
+        }
+        return kept;
+    }
+
+    function sanitizeRuleSet(ruleSet) {
+        if (Array.isArray(ruleSet.rules)) {
+            ruleSet.rules = sanitizeBlockEntries(ruleSet.rules, false);
         }
     }
 
@@ -1240,14 +1415,20 @@ class StylesPreference {
 export function formatCreatorNotes(text, avatarId) {
     const preference = new StylesPreference(avatarId);
     const sanitizeStyles = !preference.get();
-    const decodeStyleParam = { prefix: sanitizeStyles ? '#creator_notes_spoiler ' : '' };
+    // Ids in the notes are prefixed (SANITIZE_NAMED_PROPS), so scoped card CSS follows them.
+    const decodeStyleParam = sanitizeStyles
+        ? { prefix: '#creator_notes_spoiler ', idPrefix: 'user-content-' }
+        : { prefix: '' };
     /** @type {DOMPurify.Config} */
     const config = {
         RETURN_DOM: false,
         RETURN_DOM_FRAGMENT: false,
         RETURN_TRUSTED_TYPE: false,
         MESSAGE_SANITIZE: true,
+        SANITIZE_NAMED_PROPS: true,
         ADD_TAGS: ['custom-style'],
+        FORBID_TAGS: ['style'],
+        FORBID_ATTR: ['data-i18n'],
     };
 
     let html = converter.makeHtml(substituteParams(text));
@@ -2481,15 +2662,45 @@ export function registerFileConverter(mimeType, converter) {
 }
 
 export function addDOMPurifyHooks() {
+    const NAMED_PROPS_PREFIX = 'user-content-';
+    const EXTERNAL_URL_ATTRIBUTES = ['href', 'xlink:href', 'src', 'poster', 'data', 'action', 'formaction', 'ping', 'background', 'cite', 'longdesc'];
+
     DOMPurify.addHook('afterSanitizeAttributes', function (node, _, config) {
-        // Allow target="_blank" in links.
-        if ('target' in node) {
+        // Allow target="_blank" in links, unless the caller forbids the target attribute.
+        const targetForbidden = Array.isArray(config?.FORBID_ATTR) && config.FORBID_ATTR.includes('target');
+        if ('target' in node && !targetForbidden) {
             node.setAttribute('target', '_blank');
-            node.setAttribute('rel', 'noopener');
+            node.setAttribute('rel', 'noopener noreferrer');
+        }
+
+        if (!(node instanceof Element)) {
+            return;
+        }
+
+        // Keep in-message anchors working once DOMPurify prefixes ids (SANITIZE_NAMED_PROPS).
+        if (config?.SANITIZE_NAMED_PROPS && (node.nodeName === 'A' || node.nodeName === 'AREA')) {
+            const href = node.getAttribute('href');
+            if (href && href.length > 1 && href.startsWith('#') && !href.startsWith(`#${NAMED_PROPS_PREFIX}`)) {
+                node.setAttribute('href', `#${NAMED_PROPS_PREFIX}${href.slice(1)}`);
+            }
+        }
+
+        // Strict mode (sandboxed card scripts): never keep a URL that points at another origin.
+        if (config?.MESSAGE_BLOCK_EXTERNAL_URLS) {
+            for (const attributeName of EXTERNAL_URL_ATTRIBUTES) {
+                const value = node.getAttribute(attributeName);
+                if (value && isExternalMediaUrl(value)) {
+                    node.removeAttribute(attributeName);
+                }
+            }
+            const srcset = node.getAttribute('srcset');
+            if (srcset && srcset.split(',').some(candidate => isExternalMediaUrl(candidate.trim().split(/\s+/)[0]))) {
+                node.removeAttribute('srcset');
+            }
         }
 
         // Mark message-authored styles here, before extensions add their own formatting.
-        if (config.MESSAGE_SANITIZE && node instanceof Element && (
+        if (config.MESSAGE_SANITIZE && (
             node.getAttribute('style')?.trim() ||
             (node.classList.length && Array.from(node.classList).some(name => name.startsWith('custom-')))
         )) {
@@ -2508,9 +2719,11 @@ export function addDOMPurifyHooks() {
             return;
         }
 
+        const blockExternalMedia = () => Boolean(config.MESSAGE_BLOCK_EXTERNAL_URLS) || !isExternalMediaAllowed();
+
         switch (data.attrName) {
             case 'class': {
-                if (data.attrValue) {
+                if (data.attrValue && !config.MESSAGE_PRESERVE_CLASSES) {
                     data.attrValue = data.attrValue.split(' ').map((v) => {
                         if (v.startsWith('fa-') || v.startsWith('note-') || v === 'monospace') {
                             return v;
@@ -2522,7 +2735,7 @@ export function addDOMPurifyHooks() {
                 break;
             }
             case 'style': {
-                if (data.attrValue && !isExternalMediaAllowed()) {
+                if (data.attrValue && blockExternalMedia()) {
                     const sanitizedStyle = sanitizeInlineStyleExternalMedia(data.attrValue);
                     if (!sanitizedStyle) {
                         data.keepAttr = false;
@@ -2533,7 +2746,7 @@ export function addDOMPurifyHooks() {
                 break;
             }
             case 'background': {
-                if (data.attrValue && !isExternalMediaAllowed() && (isExternalMediaUrl(data.attrValue) || hasExternalCssUrl(data.attrValue))) {
+                if (data.attrValue && blockExternalMedia() && (isExternalMediaUrl(data.attrValue) || hasExternalCssUrl(data.attrValue))) {
                     console.warn('External media blocked', data.attrValue);
                     data.keepAttr = false;
                 }
@@ -2544,6 +2757,12 @@ export function addDOMPurifyHooks() {
 
     DOMPurify.addHook('uponSanitizeElement', (node, _, config) => {
         if (!config.MESSAGE_SANITIZE) {
+            return;
+        }
+
+        // Raw <style> (HTML or SVG) never survives message sanitising; card styles travel as <custom-style>.
+        if (String(node?.nodeName || '').toUpperCase() === 'STYLE') {
+            node.remove();
             return;
         }
 
@@ -2579,7 +2798,8 @@ export function addDOMPurifyHooks() {
             }
         }
 
-        const isMediaAllowed = isExternalMediaAllowed();
+        const forceBlockExternal = Boolean(config.MESSAGE_BLOCK_EXTERNAL_URLS);
+        const isMediaAllowed = !forceBlockExternal && isExternalMediaAllowed();
         if (isMediaAllowed) {
             return;
         }
@@ -2662,7 +2882,7 @@ export function addDOMPurifyHooks() {
                 break;
         }
 
-        if (mediaBlocked) {
+        if (mediaBlocked && !forceBlockExternal) {
             const entityId = getCurrentEntityId();
             const warningShownKey = `mediaWarningShown:${entityId}`;
 

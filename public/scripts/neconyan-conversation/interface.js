@@ -38,6 +38,7 @@ import { renderConversationTimeline, updateConversationNotificationSettingsVisib
 import { getActiveTypingParticipants, getLastConversationPreview, isLastConversationPreviewValue, updateLastPreviewFromConversation } from './typing.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, scheduleTimelineRender } from './render-scheduler.js';
 import { hashConversationRenderFingerprint, setUserTextSlot } from './render-utils.js';
+import { escapeToastText } from './toast-options.js';
 
 function buildBranchListFingerprint(characterStore, activeBranchId) {
     return Object.entries(characterStore?.branches || {})
@@ -677,7 +678,7 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
             return;
         }
         const detail = String(error?.message || '').trim();
-        globalThis.toastr?.error?.(detail.startsWith('Could not') ? detail : `Could not rewrite the reply. ${detail || 'Try again.'}`);
+        globalThis.toastr?.error?.(escapeToastText(detail.startsWith('Could not') ? detail : `Could not rewrite the reply. ${detail || 'Try again.'}`));
     } finally {
         if (buttonElement instanceof HTMLElement) {
             buttonElement.classList.remove('fa-spinner', 'fa-spin');

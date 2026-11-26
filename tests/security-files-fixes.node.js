@@ -1,9 +1,12 @@
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { finished } from 'node:stream/promises';
 import { test } from 'node:test';
 import archiver from 'archiver';
@@ -317,8 +320,66 @@ test('FN-MEDIUM-2: extension install/switch and server-admin switch-branch rejec
     execFileSync('git', ['commit', '-m', 'remote evil symlink'], { cwd: upstreamRepo });
     execFileSync('git', ['checkout', 'main'], { cwd: upstreamRepo });
 
-    execFileSync('git', ['remote', 'add', 'origin', upstreamRepo], { cwd: extRepo });
-    execFileSync('git', ['fetch', 'origin'], { cwd: extRepo });
+    const gitHttpServer = http.createServer((req, res) => {
+        const url = new URL(req.url, 'http://placeholder');
+        const child = spawn('git', ['http-backend'], {
+            env: {
+                PATH: process.env.PATH,
+                GIT_PROJECT_ROOT: root,
+                GIT_HTTP_EXPORT_ALL: '1',
+                PATH_INFO: url.pathname,
+                QUERY_STRING: url.search.slice(1),
+                REQUEST_METHOD: req.method,
+                CONTENT_TYPE: req.headers['content-type'] ?? '',
+                REMOTE_ADDR: '127.0.0.1',
+                ...(req.headers['content-length'] ? { CONTENT_LENGTH: req.headers['content-length'] } : {}),
+                ...(req.headers['content-encoding'] ? { HTTP_CONTENT_ENCODING: req.headers['content-encoding'] } : {}),
+                ...(req.headers['git-protocol'] ? { GIT_PROTOCOL: req.headers['git-protocol'] } : {}),
+            },
+        });
+        req.pipe(child.stdin);
+        let pending = Buffer.alloc(0);
+        let headersSent = false;
+        child.stdout.on('data', chunk => {
+            if (headersSent) {
+                res.write(chunk);
+                return;
+            }
+            pending = Buffer.concat([pending, chunk]);
+            const end = pending.indexOf('\r\n\r\n');
+            if (end === -1) return;
+            let status = 200;
+            const headers = {};
+            for (const line of pending.subarray(0, end).toString().split('\r\n')) {
+                const sep = line.indexOf(':');
+                const key = line.slice(0, sep).trim();
+                const value = line.slice(sep + 1).trim();
+                if (key.toLowerCase() === 'status') status = Number.parseInt(value, 10);
+                else headers[key] = value;
+            }
+            res.writeHead(status, headers);
+            headersSent = true;
+            res.write(pending.subarray(end + 4));
+        });
+        child.stdout.on('end', () => {
+            if (!headersSent) res.writeHead(500);
+            res.end();
+        });
+        child.on('error', () => {
+            if (!res.headersSent) res.writeHead(500);
+            res.end();
+        });
+    });
+    await new Promise(resolve => gitHttpServer.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => {
+        gitHttpServer.closeAllConnections?.();
+        gitHttpServer.close(() => resolve());
+    }));
+    const gitHttpPort = gitHttpServer.address().port;
+    const upstreamUrl = `http://127.0.0.1:${gitHttpPort}/upstream-repo/.git`;
+
+    execFileSync('git', ['remote', 'add', 'origin', upstreamUrl], { cwd: extRepo });
+    await execFileAsync('git', ['fetch', 'origin'], { cwd: extRepo });
     execFileSync('git', ['reset', '--hard', 'origin/main'], { cwd: extRepo });
     execFileSync('git', ['branch', '--set-upstream-to=origin/main', 'main'], { cwd: extRepo });
 

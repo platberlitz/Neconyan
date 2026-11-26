@@ -5,6 +5,7 @@ import { callGenericPopup, POPUP_TYPE } from '../popup.js';
 import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
 import { foldSearchText } from '../util/fuzzy-search.js';
+import { escapeHtml } from './escape-html.js';
 
 const button = (text, onclick, options = {}) => h('button', { type: 'button', class: 'menu_button scratchpad-library-button', text, onclick, ...options });
 const field = (label, input) => h('label', { class: 'scratchpad-field' }, h('span', { text: label }), input);
@@ -109,7 +110,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
                     list('edit', saved.id);
                 }), { class: 'menu_button menu_button_primary scratchpad-library-button' }),
                 owned ? button(t`Delete`, () => void run(async () => {
-                    const confirmed = await callGenericPopup(t`Delete '${profile.name}' from your assistants? Sessions that already use them keep their own copy.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
+                    const confirmed = await callGenericPopup(t`Delete '${escapeHtml(profile.name)}' from your assistants? Sessions that already use them keep their own copy.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
                     if (!confirmed) return;
                     const result = await api.deleteAssistant(profile.id, library.revision);
                     checkAccount();

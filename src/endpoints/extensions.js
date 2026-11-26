@@ -6,11 +6,11 @@ import { promisify } from 'node:util';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { CheckRepoActions, simpleGit } from 'simple-git';
 
 import { PUBLIC_DIRECTORIES } from '../constants.js';
 import { getConfigValue, isValidUrl } from '../util.js';
-import { createGitClient } from '../git/client.js';
+// Namespace import: test mocks of this module may provide only createGitClient.
+import * as gitClient from '../git/client.js';
 import { getNativeExtension, getNativeExtensionAliases, getNativeExtensionIds, isNativeExtension } from '../neconyan-native-extensions.js';
 
 const gitBackend = getConfigValue('git.backend', 'auto');
@@ -223,13 +223,120 @@ async function getRemoteDefaultBranch(git) {
 
 const extensionRepoBootstraps = new Map();
 const EXTENSION_REPO_STAGING_PREFIX = '.neconyan-ext-';
+const EXISTING_METADATA_ERROR = 'The extension has existing Git metadata that could not be opened.';
+const NOT_MANAGED_WITH_GIT = 'This extension is not managed with Git.';
 
-export async function ensureExtensionRepo(extensionPath, isGlobal = false) {
+/**
+ * An error whose message can be shown to the user with the given HTTP status.
+ * @param {number} status
+ * @param {string} message
+ * @param {unknown} [cause]
+ */
+function publicGitError(status, message, cause) {
+    return Object.assign(new Error(message, cause ? { cause } : undefined), { publicStatus: status });
+}
+
+/**
+ * Whether the extension folder has its own real `.git` directory (not a file, a symbolic link
+ * or a parent repository found by Git's discovery).
+ * @param {string} extensionPath
+ * @returns {boolean}
+ */
+export function hasRealExtensionGitDir(extensionPath) {
+    const metadata = fs.lstatSync(path.join(extensionPath, '.git'), { throwIfNoEntry: false });
+    return Boolean(metadata && metadata.isDirectory() && !metadata.isSymbolicLink());
+}
+
+/**
+ * Opens Git for an extension folder with the hardened configuration and environment.
+ * @param {string} extensionPath
+ * @param {string | null} [resolve] Pinned address entry for network commands
+ */
+function openExtensionGit(extensionPath, resolve = null) {
+    return gitClient.createSafeSimpleGit(extensionPath, { timeout: OPTIONS.timeout, resolve });
+}
+
+/**
+ * Refuses to continue unless Git sees the extension folder itself as the repository root.
+ * @param {import('simple-git').SimpleGit} git
+ * @param {string} extensionPath
+ */
+async function assertExtensionRepoRoot(git, extensionPath) {
+    const topLevel = String(await git.revparse(['--show-toplevel'])).trim();
+    if (!topLevel || fs.realpathSync(topLevel) !== fs.realpathSync(extensionPath)) {
+        throw new Error(`The Git repository for ${extensionPath} is not rooted at the extension folder.`);
+    }
+}
+
+/**
+ * Validates a Git remote address and turns refusals into user-facing errors.
+ * @param {string} remoteUrl
+ * @param {{ allowPrivate?: boolean }} options
+ */
+async function validateExtensionRemote(remoteUrl, { allowPrivate = false } = {}) {
+    try {
+        return await gitClient.validateGitRemote(remoteUrl, { allowPrivate });
+    } catch (error) {
+        const status = error?.status === 403 ? 403 : 400;
+        throw publicGitError(status, error?.message || 'That extension address is not allowed.', error);
+    }
+}
+
+/**
+ * Reads the extension's `origin` address, checks it is an allowed HTTP(S) address and returns a Git
+ * instance pinned to the validated address for fetches and pulls.
+ * @param {import('simple-git').SimpleGit} git Local Git instance for the extension
+ * @param {string} extensionPath
+ * @param {{ allowPrivate?: boolean }} options
+ */
+async function openExtensionRemote(git, extensionPath, { allowPrivate = false } = {}) {
+    const remoteUrls = String(await git.raw(['remote', 'get-url', '--all', 'origin']).catch(() => ''))
+        .split(/\r?\n/)
+        .map(value => value.trim())
+        .filter(Boolean);
+    if (remoteUrls.length !== 1) {
+        throw publicGitError(400, 'The extension must have one http:// or https:// Git address.');
+    }
+
+    const target = await validateExtensionRemote(remoteUrls[0], { allowPrivate });
+    return {
+        git: openExtensionGit(extensionPath, gitClient.getGitCurlResolveEntry(target)),
+        remoteUrl: remoteUrls[0],
+    };
+}
+
+/**
+ * Opens an extension repository for local Git commands after checking it has its own `.git`
+ * directory and that Git resolves it to the extension folder.
+ * @param {string} extensionPath
+ */
+async function openExtensionRepo(extensionPath) {
+    if (!hasRealExtensionGitDir(extensionPath)) {
+        throw publicGitError(400, NOT_MANAGED_WITH_GIT);
+    }
+    const git = openExtensionGit(extensionPath);
+    try {
+        await assertExtensionRepoRoot(git, extensionPath);
+    } catch (error) {
+        throw publicGitError(400, NOT_MANAGED_WITH_GIT, error);
+    }
+    return git;
+}
+
+/**
+ * Makes sure an extension has its own Git repository, bootstrapping one for global extensions
+ * that list their repository in the manifest.
+ * @param {string} extensionPath
+ * @param {boolean} [isGlobal]
+ * @param {{ allowPrivate?: boolean }} [options]
+ * @returns {Promise<boolean>} False when the extension is not managed with Git
+ */
+export async function ensureExtensionRepo(extensionPath, isGlobal = false, { allowPrivate = false } = {}) {
     const key = fs.realpathSync(extensionPath);
     if (extensionRepoBootstraps.has(key)) {
         return extensionRepoBootstraps.get(key);
     }
-    const pending = bootstrapExtensionRepo(key, isGlobal);
+    const pending = bootstrapExtensionRepo(key, isGlobal, { allowPrivate });
     extensionRepoBootstraps.set(key, pending);
     try {
         return await pending;
@@ -238,14 +345,21 @@ export async function ensureExtensionRepo(extensionPath, isGlobal = false) {
     }
 }
 
-async function bootstrapExtensionRepo(extensionPath, isGlobal) {
-    const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
-    if (await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT)) {
-        return true;
-    }
+async function bootstrapExtensionRepo(extensionPath, isGlobal, { allowPrivate = false } = {}) {
     const metadataPath = path.join(extensionPath, '.git');
-    if (fs.lstatSync(metadataPath, { throwIfNoEntry: false })) {
-        throw new Error('The extension has existing Git metadata that could not be opened.');
+    const metadata = fs.lstatSync(metadataPath, { throwIfNoEntry: false });
+    if (metadata) {
+        // Only a real .git directory inside the extension counts. A .git file or symbolic link
+        // could point Git at another repository.
+        if (!hasRealExtensionGitDir(extensionPath)) {
+            throw publicGitError(400, EXISTING_METADATA_ERROR);
+        }
+        try {
+            await assertExtensionRepoRoot(openExtensionGit(extensionPath), extensionPath);
+        } catch (error) {
+            throw publicGitError(400, EXISTING_METADATA_ERROR, error);
+        }
+        return true;
     }
 
     if (!isGlobal) {
@@ -258,10 +372,15 @@ async function bootstrapExtensionRepo(extensionPath, isGlobal) {
         return false;
     }
 
+    const target = await validateExtensionRemote(repoUrl, { allowPrivate });
+
     // Prepare everything beside the extension, on the same volume as the final rename.
     // A failed fetch or a locked file must never alter the installed extension.
     const stagingPath = fs.mkdtempSync(path.join(path.dirname(extensionPath), EXTENSION_REPO_STAGING_PREFIX));
-    const stagedGit = simpleGit({ baseDir: stagingPath, ...OPTIONS });
+    const stagedGit = gitClient.createSafeSimpleGit(stagingPath, {
+        timeout: OPTIONS.timeout,
+        resolve: gitClient.getGitCurlResolveEntry(target),
+    });
 
     try {
         await stagedGit.init();
@@ -345,11 +464,10 @@ export function rejectBundledThirdPartyExtension(extensionName, response, action
 
 /**
  * This function checks if the local repository is up-to-date with the remote repository.
- * @param {string} extensionPath - The path of the extension folder
+ * @param {import('simple-git').SimpleGit} git - Git instance from openExtensionRemote, pinned to the validated remote
  * @returns {Promise<Object>} - Returns the extension information as an object
  */
-async function checkIfRepoIsUpToDate(extensionPath) {
-    const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+async function checkIfRepoIsUpToDate(git) {
     await git.fetch('origin');
     const currentBranch = await git.branch();
 
@@ -453,7 +571,8 @@ router.post('/install', async (request, response) => {
             return response.status(400).send('Extension addresses must start with http:// or https://.');
         }
 
-        const git = createGitClient({ backend: gitBackend });
+        const git = gitClient.createGitClient({ backend: gitBackend });
+        const allowPrivate = request.user?.profile?.admin === true;
 
         // make sure the third-party directory exists
         if (!fs.existsSync(path.join(request.user.directories.extensions))) {
@@ -480,7 +599,7 @@ router.post('/install', async (request, response) => {
 
         try {
             const { validateOutboundTarget } = await import('../safe-http.js');
-            await validateOutboundTarget(parsedUrl, { allowPrivate: request.user?.profile?.admin === true });
+            await validateOutboundTarget(parsedUrl, { allowPrivate });
         } catch (urlError) {
             const status = urlError?.status === 403 ? 403 : 400;
             return response.status(status).send(urlError.message || 'That extension address is not allowed.');
@@ -493,11 +612,20 @@ router.post('/install', async (request, response) => {
             return response.status(409).send('An extension with that name already exists.');
         }
 
-        const cloneOptions = { depth: 1 };
+        // The clone validates the address again and connects only to the validated address.
+        const cloneOptions = { depth: 1, remotePolicy: { allowPrivate } };
         if (branch) {
             cloneOptions.branch = branch;
         }
-        await git.clone(parsedUrl.href, extensionPath, cloneOptions);
+        try {
+            await git.clone(parsedUrl.href, extensionPath, cloneOptions);
+        } catch (cloneError) {
+            await fs.promises.rm(extensionPath, { recursive: true, force: true });
+            if (cloneError?.status === 403) {
+                return response.status(403).send(cloneError.message);
+            }
+            throw cloneError;
+        }
         console.info(`Extension has been cloned to ${extensionPath} from ${parsedUrl.href} at ${branch || '(default)'} branch`);
 
         try {
@@ -556,14 +684,14 @@ router.post('/update', async (request, response) => {
             return response.status(404).send('That extension folder is missing.');
         }
 
-        await ensureExtensionRepo(extensionPath, global);
-
-        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
-        const isRepo = await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
-        if (!isRepo) {
-            throw new Error(`Directory is not a Git repository at ${extensionPath}`);
+        const allowPrivate = request.user?.profile?.admin === true;
+        if (!await ensureExtensionRepo(extensionPath, global, { allowPrivate })) {
+            return response.status(400).send(NOT_MANAGED_WITH_GIT);
         }
+
+        const localGit = await openExtensionRepo(extensionPath);
+        const { git } = await openExtensionRemote(localGit, extensionPath, { allowPrivate });
+        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(git);
 
         const autoStash = getConfigValue('autoStashBeforePull', false, 'boolean');
         const gitStatus = await git.status();
@@ -647,6 +775,9 @@ router.post('/update', async (request, response) => {
         return response.send({ shortCommitHash, extensionPath, isUpToDate, remoteUrl, stashed, stashPopWarning });
     } catch (error) {
         console.error('Updating extension failed', error);
+        if (error?.publicStatus) {
+            return response.status(error.publicStatus).send(error.message);
+        }
         if (error?.rollbackFailed) {
             return response.status(500).send('Could not safely roll back the rejected extension update without overwriting local changes. Local edits and stashes were preserved.');
         }
@@ -681,9 +812,13 @@ router.post('/branches', async (request, response) => {
             return response.status(404).send('That extension folder is missing.');
         }
 
-        await ensureExtensionRepo(extensionPath, global);
+        const allowPrivate = request.user?.profile?.admin === true;
+        if (!await ensureExtensionRepo(extensionPath, global, { allowPrivate })) {
+            return response.status(400).send(NOT_MANAGED_WITH_GIT);
+        }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+        const localGit = await openExtensionRepo(extensionPath);
+        const { git } = await openExtensionRemote(localGit, extensionPath, { allowPrivate });
         // Unshallow the repository if it is shallow
         const isShallow = await git.revparse(['--is-shallow-repository']) === 'true';
         if (isShallow) {
@@ -704,6 +839,9 @@ router.post('/branches', async (request, response) => {
         return response.send(result);
     } catch (error) {
         console.error('Getting branches failed', error);
+        if (error?.publicStatus) {
+            return response.status(error.publicStatus).send(error.message);
+        }
         return response.status(500).send('Could not load the extension versions. Try again in a moment.');
     }
 });
@@ -738,9 +876,13 @@ router.post('/switch', async (request, response) => {
             return response.status(404).send('That extension folder is missing.');
         }
 
-        await ensureExtensionRepo(extensionPath, global);
+        const allowPrivate = request.user?.profile?.admin === true;
+        if (!await ensureExtensionRepo(extensionPath, global, { allowPrivate })) {
+            return response.status(400).send(NOT_MANAGED_WITH_GIT);
+        }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+        // Switching only uses branches that are already on disk, so no network address is needed.
+        const git = await openExtensionRepo(extensionPath);
         const branches = await git.branchLocal();
         const priorState = await captureExtensionGitState(git);
 
@@ -802,6 +944,9 @@ router.post('/switch', async (request, response) => {
         return response.sendStatus(204);
     } catch (error) {
         console.error('Switching branches failed', error);
+        if (error?.publicStatus) {
+            return response.status(error.publicStatus).send(error.message);
+        }
         return response.status(500).send('Could not change the extension version. Try again in a moment.');
     }
 });
@@ -894,31 +1039,36 @@ router.post('/version', async (request, response) => {
             return response.status(404).send('That extension folder is missing.');
         }
 
-        await ensureExtensionRepo(extensionPath, global);
+        const allowPrivate = request.user?.profile?.admin === true;
+        const notManaged = { currentBranchName: '', currentCommitHash: '', isUpToDate: true, remoteUrl: '' };
+        // The extension list asks every extension for its version, so a folder without its own
+        // repository gets the empty answer rather than an error.
+        if (!await ensureExtensionRepo(extensionPath, global, { allowPrivate })) {
+            return response.send(notManaged);
+        }
 
-        const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
+        let git;
         let currentCommitHash;
         try {
-            const isRepo = await git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
-            if (!isRepo) {
-                throw new Error(`Directory is not a Git repository at ${extensionPath}`);
-            }
+            git = await openExtensionRepo(extensionPath);
             currentCommitHash = await git.revparse(['HEAD']);
         } catch (error) {
-            // it is not a git repo, or has no commits yet, or is a bare repo
-            // not possible to update it, most likely can't get the branch name either
-            return response.send({ currentBranchName: '', currentCommitHash: '', isUpToDate: true, remoteUrl: '' });
+            // No commits yet, or Git does not see the folder as its own repository.
+            return response.send(notManaged);
         }
 
         const currentBranch = await git.branch();
         // get only the working branch
         const currentBranchName = currentBranch.current;
-        await git.fetch('origin');
+        const { git: remoteGit } = await openExtensionRemote(git, extensionPath, { allowPrivate });
         console.debug(extensionNameSanitized, currentBranchName, currentCommitHash);
-        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(extensionPath);
+        const { isUpToDate, remoteUrl } = await checkIfRepoIsUpToDate(remoteGit);
 
         return response.send({ currentBranchName, currentCommitHash, isUpToDate, remoteUrl });
     } catch (error) {
+        if (error?.publicStatus) {
+            return response.status(error.publicStatus).send(error.message);
+        }
         console.error('Getting extension version failed', error);
         return response.status(500).send('Could not check the extension. Try again in a moment.');
     }

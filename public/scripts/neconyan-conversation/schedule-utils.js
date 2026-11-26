@@ -294,7 +294,7 @@ export function normalizeEditedSchedule(edited, generatedAt = Date.now()) {
 }
 
 export function parseScheduleTimeRange(range) {
-    const match = String(range || '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?\s*(?:[-–—]|to)\s*(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+    const match = String(range || '').trim().match(/^(\d{1,2}):(\d{2})\s*(?:(am|pm)\s*)?(?:[-–—]|to)\s*(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
     if (!match) {
         return null;
     }
@@ -357,7 +357,7 @@ export function getCurrentActivityFromSchedule(schedule, avatar = '', now = new 
 }
 
 export function parseDurationToMs(text) {
-    const matches = String(text || '').matchAll(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|h|m)(?![a-z])/gi);
+    const matches = String(text || '').matchAll(/(?<!\d)(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|h|m)(?![a-z])/gi);
     let minutes = 0;
     for (const [, amount, unit] of matches) minutes += Number(amount) * (unit.toLowerCase()[0] === 'h' ? 60 : 1);
     return Number.isFinite(minutes * 60000) ? minutes * 60000 : 0;

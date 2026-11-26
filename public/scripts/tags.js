@@ -392,6 +392,38 @@ const TAG_FOLDER_TYPES = {
 };
 const TAG_FOLDER_DEFAULT_TYPE = 'NONE';
 
+const SAFE_TAG_HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const SAFE_TAG_FUNCTION_COLOR = /^(?:rgba?|hsla?)\((?:[\d.%,\s/]|deg)*\)$/i;
+const SAFE_TAG_NAMED_COLOR = /^[a-z]+$/i;
+
+/**
+ * Returns a tag colour when it is a plain CSS colour, or an empty string for anything else.
+ * @param {unknown} value Tag colour from settings, a backup or a picker
+ * @returns {string} Safe colour or ''
+ */
+function safeTagColor(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    const color = value.trim();
+    return SAFE_TAG_HEX_COLOR.test(color) || SAFE_TAG_FUNCTION_COLOR.test(color) || SAFE_TAG_NAMED_COLOR.test(color) ? color : '';
+}
+
+/**
+ * Clears tag colours that are not plain CSS colours, for tags restored from a file.
+ * @param {Tag[]} tagList Tags to check
+ */
+function sanitizeTagColors(tagList) {
+    for (const tag of tagList) {
+        if (!tag || typeof tag !== 'object') continue;
+        for (const key of ['color', 'color2']) {
+            if (tag[key] !== undefined && safeTagColor(tag[key]) !== tag[key]) {
+                tag[key] = safeTagColor(tag[key]);
+            }
+        }
+    }
+}
+
 /**
  * @typedef {object} Tag - Object representing a tag
  * @property {string} id - The id of the tag (As a kind of has string. This is used whenever the tag is referenced or linked, as the name might change)
@@ -582,7 +614,7 @@ function getTagBlock(tag, entities, hidden = 0, isUseless = false) {
     const template = FOLDER_TEMPLATE.clone();
     template.addClass(tagFolder.class);
     template.attr({ 'tagid': tag.id, 'id': `BogusFolder${tag.id}` });
-    template.find('.avatar').css({ 'background-color': tag.color, 'color': tag.color2 }).attr({ title: t`[Folder] ${tag.name}`, 'data-i18n-ignore': '' });
+    template.find('.avatar').css({ 'background-color': safeTagColor(tag.color), 'color': safeTagColor(tag.color2) }).attr({ title: t`[Folder] ${tag.name}`, 'data-i18n-ignore': '' });
     template.find('.ch_name').text(tag.name).attr('title', `[Folder] ${tag.name}`);
     template.find('.bogus_folder_hidden_counter').text(hidden > 0 ? `${hidden} hidden` : '');
     template.find('.bogus_folder_counter').text(`${count} ` + (count != 1 ? t`characters` : t`character`));
@@ -1361,8 +1393,8 @@ function appendTagToList(listElement, tag, { removable = false, isFilter = false
     tagElement.attr('id', tag.id);
 
     //tagElement.css('color', 'var(--SmartThemeBodyColor)');
-    tagElement.css('background-color', tag.color);
-    tagElement.css('color', tag.color2);
+    tagElement.css('background-color', safeTagColor(tag.color));
+    tagElement.css('color', safeTagColor(tag.color2));
 
     tagElement.find('.tag_name').text(tag.name);
     const removeButton = tagElement.find('.tag_remove');
@@ -2199,6 +2231,7 @@ async function restoreTagManagerBackup(data) {
         groups,
         overwrite,
     });
+    sanitizeTagColors(tags);
     const warnings = [...restoreResult.warnings];
 
     const notesResult = applyNotesImportPayload({
@@ -2442,8 +2475,8 @@ function appendViewTagToList(list, tag, count, record = null) {
     template.find('.tag_view_name').text(tag.name);
     template.find('.tag_view_name').addClass('tag');
 
-    template.find('.tag_view_name').css('background-color', tag.color);
-    template.find('.tag_view_name').css('color', tag.color2);
+    template.find('.tag_view_name').css('background-color', safeTagColor(tag.color));
+    template.find('.tag_view_name').css('color', safeTagColor(tag.color2));
 
     const tagAsFolderId = tag.id + '-tag-folder';
     const colorPickerId = tag.id + '-tag-color';
@@ -2453,7 +2486,7 @@ function appendViewTagToList(list, tag, count, record = null) {
         .addClass('tag-color')
         .attr({
             id: colorPickerId,
-            color: tag.color || 'rgba(0, 0, 0, 0.5)',
+            color: safeTagColor(tag.color) || 'rgba(0, 0, 0, 0.5)',
             'data-default-color': 'rgba(0, 0, 0, 0.5)',
             'button-width': '32px',
             'button-height': '32px',
@@ -2465,7 +2498,7 @@ function appendViewTagToList(list, tag, count, record = null) {
         .addClass('tag-color2')
         .attr({
             id: colorPicker2Id,
-            color: tag.color2 || power_user.main_text_color,
+            color: safeTagColor(tag.color2) || power_user.main_text_color,
             'data-default-color': power_user.main_text_color,
             'button-width': '32px',
             'button-height': '32px',

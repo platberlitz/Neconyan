@@ -6,13 +6,17 @@ import { pipeline } from 'node:stream/promises';
 import { createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, roleplayHash, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
-import { operationError } from './store.js';
+import { listOperations, operationError, readOperation } from './store.js';
 import { publishRetainedFile } from './retained-file-publication.js';
 
 const directory = base => path.join(roleplayStoreDirectory(base), 'application-inputs');
 const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) });
 const identity = value => roleplayHash([value.account.accountId, value.account.dataEpoch, value.key]);
 const copies = new Map();
+const PENDING_INPUT_LIMIT = 6;
+const STALE_INPUT_MS = 24 * 60 * 60 * 1000;
+const RECENT_INPUT_MS = 10 * 60 * 1000;
+const RETAINED_NAME = /^([a-f0-9]{64})(?:\.zip|\.json|\.[a-f0-9-]+\.pending)$/;
 
 function readAllocation(filename) {
     const file = readRoleplayFile(filename, 16384, { allowMissingParent: true });
@@ -51,11 +55,124 @@ function assertBytes(filename, value) {
     return file;
 }
 
+/** Inputs that unfinished imports still need, and inputs that only finished imports used. */
+function inputReferences(base) {
+    try {
+        const live = new Set(), finished = new Set();
+        for (const summary of listOperations(base, 'account-import')) {
+            const id = readOperation(base, summary.key)?.plan?.archive?.id;
+            if (typeof id !== 'string') continue;
+            (['preparing', 'accepted'].includes(summary.state) ? live : finished).add(id);
+        }
+        return { live, finished };
+    } catch {
+        // Without a readable operation list nothing can be proven unused, so every input stays.
+        return null;
+    }
+}
+
+const modifiedAt = filename => { try { return fs.statSync(filename).mtimeMs; } catch { return 0; } };
+
+function removeRetainedInput(root, id, temporary) {
+    fs.rmSync(path.join(root, id + '.json'), { force: true });
+    fs.rmSync(path.join(root, id + '.zip'), { force: true });
+    if (temporary) fs.rmSync(path.join(root, temporary), { force: true });
+}
+
+/**
+ * Remove retained uploads nothing can use any more: those whose import finished, those left over 24 hours,
+ * and the oldest idle ones once an account holds too many. Runs under the account lock, after every record was validated.
+ */
+function pruneRetainedInputsLocked(base, root, account, { keepId = null, adding = false, references }) {
+    if (!references) return;
+    const now = Date.now();
+    const accountHash = roleplayHash(account);
+    const kept = [];
+    let removed = false;
+    const names = fs.readdirSync(root);
+    const recorded = new Set();
+    for (const name of names) {
+        if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+        const id = name.slice(0, 64);
+        recorded.add(id);
+        if (id === keepId || copies.has(path.join(directory(base), id))) continue;
+        const saved = readAllocation(path.join(root, name));
+        if (!saved) continue;
+        const { value } = saved;
+        const current = roleplayHash(value.account) === accountHash;
+        const age = now - modifiedAt(path.join(root, name));
+        if (current && references.live.has(id)) { kept.push({ id, live: true }); continue; }
+        if ((current && references.finished.has(id)) || age > STALE_INPUT_MS) {
+            removeRetainedInput(root, id, value.temporary); removed = true; continue;
+        }
+        if (current) kept.push({ id, live: false, age, temporary: value.temporary });
+    }
+    // Leftovers of an interrupted copy or removal have no record; keep them for a day as evidence.
+    for (const name of names) {
+        const match = RETAINED_NAME.exec(name);
+        if (!match || name.endsWith('.json') || recorded.has(match[1])) continue;
+        if (now - modifiedAt(path.join(root, name)) > STALE_INPUT_MS) { fs.rmSync(path.join(root, name), { force: true }); removed = true; }
+    }
+    if (adding) {
+        const idle = kept.filter(item => !item.live && item.age > RECENT_INPUT_MS).sort((a, b) => b.age - a.age);
+        while (kept.length >= PENDING_INPUT_LIMIT && idle.length) {
+            const oldest = idle.shift();
+            removeRetainedInput(root, oldest.id, oldest.temporary); removed = true;
+            kept.splice(kept.indexOf(oldest), 1);
+        }
+        if (kept.length >= PENDING_INPUT_LIMIT) {
+            if (removed) fsyncDirectorySync(root);
+            throw Object.assign(operationError('Too many ZIP uploads are waiting to be imported. Finish or cancel an import, then try again.', 429), { code: 'IMPORT_UPLOAD_LIMIT' });
+        }
+    }
+    if (removed) fsyncDirectorySync(root);
+}
+
+/** Best-effort cleanup for read paths; a failure here never blocks the request. */
+export function pruneUploadedArchives(base, account, key = null) {
+    const references = inputReferences(base);
+    const keepId = typeof key === 'string' && key && key.length <= 200 ? identity({ account, key }) : null;
+    if (!references) return;
+    try {
+        withRoleplayAccount(base, account, () => {
+            const root = directory(base);
+            if (!fs.existsSync(root)) return;
+            const records = fs.readdirSync(root).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
+            for (const name of records) readAllocation(path.join(root, name));
+            pruneRetainedInputsLocked(base, root, account, { keepId, references });
+        });
+    } catch (error) {
+        console.warn('Retained upload cleanup skipped:', error?.message || error);
+    }
+}
+
+/** Drop an input once the import that used it has finished, unless another unfinished import still needs it. */
+export function releaseUploadedArchive(base, account, id) {
+    if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) return false;
+    const references = inputReferences(base);
+    if (!references || references.live.has(id) || !references.finished.has(id)) return false;
+    try {
+        return withRoleplayAccount(base, account, () => {
+            const root = directory(base);
+            if (copies.has(path.join(root, id))) return false;
+            const saved = readAllocation(path.join(root, id + '.json'));
+            if (!saved || roleplayHash(saved.value.account) !== roleplayHash(account)) return false;
+            removeRetainedInput(root, id, saved.value.temporary);
+            fsyncDirectorySync(root);
+            return true;
+        });
+    } catch (error) {
+        console.warn('Retained upload release skipped:', error?.message || error);
+        return false;
+    }
+}
+
 /** Keep a completed upload outside resettable user data before accepting an import. */
 async function copyUploadedArchive(base, account, key, filename) {
     if (typeof key !== 'string' || !key || key.length > 200) throw operationError('An import submission key is required.', 400);
     const source = inspectRoleplayFile(filename, BINARY_FILE_LIMIT);
     if (!source?.size) throw operationError('A non-empty backup ZIP is required.', 400);
+    const references = inputReferences(base);
     const prepared = withRoleplayAccount(base, account, () => {
         const root = directory(base);
         createRoleplayDirectory(root, roleplayStoreDirectory(base));
@@ -64,6 +181,7 @@ async function copyUploadedArchive(base, account, key, filename) {
         const records = fs.readdirSync(root).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
         if (records.length > 100000) throw operationError('Retained upload storage has reached its record capacity.', 413);
         for (const name of records) readAllocation(path.join(root, name));
+        pruneRetainedInputsLocked(base, root, account, { keepId: id, adding: !fs.existsSync(recordPath), references });
         let saved = readAllocation(recordPath);
         let value = saved?.value;
         if (value && roleplayHash(value.account) !== roleplayHash(account)) throw operationError('This upload belongs to an earlier account.');
@@ -138,6 +256,12 @@ export function retainUploadedArchive(base, account, key, filename) {
     const next = previous.catch(() => {}).then(() => copyUploadedArchive(base, account, key, filename));
     copies.set(queueKey, next);
     return next.finally(() => { if (copies.get(queueKey) === next) copies.delete(queueKey); });
+}
+
+/** Whether this upload identity already has a retained record, finished or not. */
+export function hasUploadedArchiveRecord(base, account, key) {
+    if (typeof key !== 'string' || !key || key.length > 200) return false;
+    return withRoleplayAccount(base, account, () => fs.existsSync(path.join(directory(base), identity({ account, key }) + '.json')));
 }
 
 export function readUploadedArchive(base, account, key) {

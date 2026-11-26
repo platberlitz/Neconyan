@@ -183,8 +183,10 @@ registerOperation('archive-export', { label: 'Export a saved chat', resultInReco
     capture: (base, account, input) => {
         if (typeof input.file !== 'string' || !input.file.endsWith('.jsonl') || sanitize(input.file) !== input.file || !['jsonl', 'txt'].includes(input.format || 'jsonl')) throw operationError('Choose a saved chat and export format.', 400);
         const avatar = input.avatar_url;
-        if (!input.is_group && (typeof avatar !== 'string' || sanitize(avatar) !== avatar || !avatar.endsWith('.png'))) throw operationError('Choose a saved character chat.', 400);
-        const directory = input.is_group ? base.directories.groupChats : path.join(base.directories.chats, avatar === '.png' ? '' : avatar.slice(0, -4));
+        if (!input.is_group && (typeof avatar !== 'string' || sanitize(avatar) !== avatar || !avatar.endsWith('.png') || /^\.*$/.test(avatar.slice(0, -4)))) throw operationError('Choose a saved character chat.', 400);
+        const directory = input.is_group ? base.directories.groupChats : path.join(base.directories.chats, avatar.slice(0, -4));
+        if (!input.is_group && path.dirname(path.resolve(directory)) !== path.resolve(base.directories.chats)) throw operationError('Choose a saved character chat.', 400);
+        if (path.dirname(path.resolve(directory, input.file)) !== path.resolve(directory)) throw operationError('Choose a saved chat and export format.', 400);
         return withRoleplayAccount(base, account, () => {
             const file = readRoleplayFile(path.join(directory, input.file), FILE_LIMIT);
             if (!file) throw operationError('The selected chat was not found.', 404);

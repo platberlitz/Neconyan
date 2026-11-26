@@ -1699,28 +1699,35 @@ class VoiceMapEntry {
 
     addUI(voiceIds) {
         let sanitizedName = sanitizeId(this.name);
-        let defaultOption = this.name === DEFAULT_VOICE_MARKER ?
-            `<option value="${DISABLED_VOICE_MARKER}">${DISABLED_VOICE_MARKER}</option>` :
-            `<option value="${DEFAULT_VOICE_MARKER}">${DEFAULT_VOICE_MARKER}</option><option value="${DISABLED_VOICE_MARKER}">${DISABLED_VOICE_MARKER}</option>`;
-        let template = `
-            <div class='tts_voicemap_block_char flex-container flexGap5'>
-                <span id='tts_voicemap_char_${sanitizedName}'>${this.name}</span>
-                <select id='tts_voicemap_char_${sanitizedName}_voice'>
-                    ${defaultOption}
-                </select>
-            </div>
-        `;
-        $('#tts_voicemap_block').append(template);
+        const block = document.createElement('div');
+        block.className = 'tts_voicemap_block_char flex-container flexGap5';
+
+        const label = document.createElement('span');
+        label.id = `tts_voicemap_char_${sanitizedName}`;
+        label.textContent = this.name;
+
+        const select = document.createElement('select');
+        select.id = `tts_voicemap_char_${sanitizedName}_voice`;
+
+        const markers = this.name === DEFAULT_VOICE_MARKER
+            ? [DISABLED_VOICE_MARKER]
+            : [DEFAULT_VOICE_MARKER, DISABLED_VOICE_MARKER];
+        for (const marker of markers) {
+            select.append(new Option(marker, marker));
+        }
+
+        block.append(label, select);
+        $('#tts_voicemap_block').append(block);
 
         // Populate voice ID select list
         for (const voiceId of voiceIds) {
             const option = document.createElement('option');
             option.innerText = voiceId.name;
             option.value = voiceId.name;
-            $(`#tts_voicemap_char_${sanitizedName}_voice`).append(option);
+            select.append(option);
         }
 
-        this.selectElement = $(`#tts_voicemap_char_${sanitizedName}_voice`);
+        this.selectElement = $(select);
         this.selectElement.on('change', args => this.onSelectChange(args));
         this.selectElement.val(this.voiceId);
     }

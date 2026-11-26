@@ -509,9 +509,57 @@ export const DEFAULT_ZIP_MAX_ENTRY_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_ZIP_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 
 /**
- * Extracts a file with given extension from an ArrayBuffer containing a ZIP archive.
+ * Normalizes a ZIP entry name or a requested archive path for exact matching.
+ * @param {string} value Entry name or requested path
+ * @returns {string|null} Forward-slash relative path, or null when it is unusable
+ */
+function normalizeZipLookupPath(value) {
+    if (typeof value !== 'string' || value.includes('\0')) {
+        return null;
+    }
+    const parts = [];
+    for (const part of value.replace(/\\/g, '/').split('/')) {
+        if (!part || part === '.') {
+            continue;
+        }
+        if (part === '..') {
+            return null;
+        }
+        parts.push(part);
+    }
+    return parts.length ? parts.join('/') : null;
+}
+
+/**
+ * Builds a matcher for extractFileFromZipBuffer. A bare extension such as '.png' matches any entry ending with it;
+ * anything else is treated as an archive path and matches only that exact entry, either at the archive root or
+ * inside a single top-level folder (archives zipped from their containing folder).
+ * @param {string} target Extension or archive path
+ * @returns {(entryName: string) => 0|1|2} 0 for no match, 1 for a root-folder match, 2 for an exact match
+ */
+function createZipEntryMatcher(target) {
+    const raw = String(target ?? '');
+    if (raw.startsWith('.') && !/[\\/]/.test(raw) && raw.length > 1 && raw !== '..') {
+        return entryName => (entryName.endsWith(raw) ? 2 : 0);
+    }
+    const wanted = normalizeZipLookupPath(raw);
+    return (entryName) => {
+        const normalized = normalizeZipLookupPath(entryName);
+        if (!wanted || !normalized) {
+            return 0;
+        }
+        if (normalized === wanted) {
+            return 2;
+        }
+        const slash = normalized.indexOf('/');
+        return slash > 0 && normalized.slice(slash + 1) === wanted ? 1 : 0;
+    };
+}
+
+/**
+ * Extracts a file from an ArrayBuffer containing a ZIP archive.
  * @param {ArrayBufferLike} archiveBuffer Buffer containing a ZIP archive
- * @param {string} fileExtension File extension to look for
+ * @param {string} fileExtension Extension (for example '.png') or exact archive path to look for
  * @param {object} [options]
  * @param {number} [options.maxEntryBytes] Maximum uncompressed byte size allowed for the extracted entry
  * @returns {Promise<Buffer|null>} Buffer containing the extracted file. Null if the file was not found.
@@ -519,7 +567,9 @@ export const DEFAULT_ZIP_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 export async function extractFileFromZipBuffer(archiveBuffer, fileExtension, { maxEntryBytes = DEFAULT_ZIP_MAX_ENTRY_BYTES } = {}) {
     return await new Promise((resolve) => {
         try {
-            yauzl.fromBuffer(Buffer.from(archiveBuffer), { lazyEntries: true }, (err, zipfile) => {
+            const source = Buffer.isBuffer(archiveBuffer) ? archiveBuffer : Buffer.from(archiveBuffer);
+            const matchEntry = createZipEntryMatcher(fileExtension);
+            yauzl.fromBuffer(source, { lazyEntries: true }, (err, zipfile) => {
                 if (err) {
                     console.warn(`Error opening ZIP file: ${err.message}`);
                     return resolve(null);
@@ -539,57 +589,65 @@ export async function extractFileFromZipBuffer(archiveBuffer, fileExtension, { m
                     resolve(value);
                 };
 
+                let fallbackEntry = null;
+                const readMatch = (entry) => {
+                    if (entry.uncompressedSize > maxEntryBytes) {
+                        console.warn(`ZIP entry ${entry.fileName} exceeds maxEntryBytes (${entry.uncompressedSize} > ${maxEntryBytes})`);
+                        return finish(null);
+                    }
+                    zipfile.openReadStream(entry, (err, readStream) => {
+                        if (err) {
+                            console.warn(`Error opening read stream: ${err.message}`);
+                            return finish(null);
+                        } else {
+                            const chunks = [];
+                            let entryBytes = 0;
+                            let aborted = false;
+                            readStream.on('data', (chunk) => {
+                                entryBytes += chunk.length;
+                                if (entryBytes > maxEntryBytes) {
+                                    aborted = true;
+                                    console.warn(`ZIP entry ${entry.fileName} stream exceeded maxEntryBytes (${maxEntryBytes})`);
+                                    readStream.destroy();
+                                    finish(null);
+                                    return;
+                                }
+                                chunks.push(chunk);
+                            });
+
+                            readStream.on('end', () => {
+                                if (aborted || settled) {
+                                    return;
+                                }
+                                const buffer = Buffer.concat(chunks);
+                                finish(buffer);
+                            });
+
+                            readStream.on('error', (err) => {
+                                if (aborted || settled) {
+                                    return;
+                                }
+                                console.warn(`Error reading stream: ${err.message}`);
+                                finish(null);
+                            });
+                        }
+                    });
+                };
+
                 zipfile.readEntry();
 
                 zipfile.on('entry', (entry) => {
                     if (settled) {
                         return;
                     }
-                    if (entry.fileName.endsWith(fileExtension) && !entry.fileName.startsWith('__MACOSX')) {
-                        if (entry.uncompressedSize > maxEntryBytes) {
-                            console.warn(`ZIP entry ${entry.fileName} exceeds maxEntryBytes (${entry.uncompressedSize} > ${maxEntryBytes})`);
-                            return finish(null);
-                        }
-                        zipfile.openReadStream(entry, (err, readStream) => {
-                            if (err) {
-                                console.warn(`Error opening read stream: ${err.message}`);
-                                return zipfile.readEntry();
-                            } else {
-                                const chunks = [];
-                                let entryBytes = 0;
-                                let aborted = false;
-                                readStream.on('data', (chunk) => {
-                                    entryBytes += chunk.length;
-                                    if (entryBytes > maxEntryBytes) {
-                                        aborted = true;
-                                        console.warn(`ZIP entry ${entry.fileName} stream exceeded maxEntryBytes (${maxEntryBytes})`);
-                                        readStream.destroy();
-                                        finish(null);
-                                        return;
-                                    }
-                                    chunks.push(chunk);
-                                });
-
-                                readStream.on('end', () => {
-                                    if (aborted || settled) {
-                                        return;
-                                    }
-                                    const buffer = Buffer.concat(chunks);
-                                    finish(buffer);
-                                });
-
-                                readStream.on('error', (err) => {
-                                    if (aborted || settled) {
-                                        return;
-                                    }
-                                    console.warn(`Error reading stream: ${err.message}`);
-                                    zipfile.readEntry();
-                                });
-                            }
-                        });
-                    } else {
-                        zipfile.readEntry();
+                    const match = entry.fileName.startsWith('__MACOSX') || entry.fileName.endsWith('/') ? 0 : matchEntry(entry.fileName);
+                    if (match === 2) {
+                        return readMatch(entry);
                     }
+                    if (match === 1 && !fallbackEntry) {
+                        fallbackEntry = entry;
+                    }
+                    zipfile.readEntry();
                 });
 
                 zipfile.on('error', (err) => {
@@ -597,7 +655,12 @@ export async function extractFileFromZipBuffer(archiveBuffer, fileExtension, { m
                     finish(null);
                 });
 
-                zipfile.on('end', () => finish(null));
+                zipfile.on('end', () => {
+                    if (!settled && fallbackEntry) {
+                        return readMatch(fallbackEntry);
+                    }
+                    finish(null);
+                });
             });
         } catch (error) {
             console.warn('Failed to process ZIP buffer', error);

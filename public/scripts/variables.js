@@ -436,7 +436,8 @@ async function ifCallback(args, value) {
  * @returns {boolean} True if the local variable exists, false otherwise
  */
 export function existsLocalVariable(name) {
-    return chat_metadata.variables && chat_metadata.variables[name] !== undefined;
+    const variables = chat_metadata.variables;
+    return Boolean(variables) && typeof variables === 'object' && Object.hasOwn(variables, name) && variables[name] !== undefined;
 }
 
 /**
@@ -445,7 +446,8 @@ export function existsLocalVariable(name) {
  * @returns {boolean} True if the global variable exists, false otherwise
  */
 export function existsGlobalVariable(name) {
-    return extension_settings.variables.global && extension_settings.variables.global[name] !== undefined;
+    const variables = extension_settings.variables.global;
+    return Boolean(variables) && typeof variables === 'object' && Object.hasOwn(variables, name) && variables[name] !== undefined;
 }
 
 /**

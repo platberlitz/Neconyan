@@ -13,10 +13,12 @@ import yaml from 'yaml';
 import _ from 'lodash';
 import mime from 'mime-types';
 import { Jimp, JimpMime } from '../jimp.js';
-import { safeCrop, safeCover } from '../jimp-safe.js';
+import { readBoundedJimp, safeCrop, safeCover } from '../jimp-safe.js';
 import storage from 'node-persist';
 
 import { AVATAR_WIDTH, AVATAR_HEIGHT, DEFAULT_AVATAR_PATH } from '../constants.js';
+
+const AVATAR_CROP_MAX_DIMENSION = 4096;
 import { default as validateAvatarUrlMiddleware, getFileNameValidationFunction } from '../middleware/validateFileName.js';
 import { deepMerge, humanizedDateTime, tryParse, MemoryLimitedMap, getConfigValue, mutateJsonString, clientRelativePath, getUniqueName, recoverFileWritesInDirectorySync, recoverFileWriteSync, sanitizeSafeCharacterReplacements, tryWriteFileSync } from '../util.js';
 import { TavernCardValidator } from '../validator/TavernCardValidator.js';
@@ -610,7 +612,7 @@ async function installBundledAssistant(request, assistant, preferredAvatar) {
             const temporaryCard = path.join(temporaryRoot, 'assistant.png');
             try {
                 await fsPromises.copyFile(cardPath, temporaryCard);
-                avatar = await importFromPng(temporaryCard, { request });
+                avatar = await importFromPng(temporaryCard, { request }, undefined, { preserveAssistantMetadata: true });
             } finally {
                 await fsPromises.rm(temporaryRoot, { recursive: true, force: true }).catch(() => {});
             }
@@ -674,7 +676,7 @@ async function updateBundledAssistantCopy(request, assistant, installedAvatar) {
             temporaryRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'neconyan-assistant-update-'));
             const temporaryCard = path.join(temporaryRoot, 'assistant.png');
             await fsPromises.copyFile(cardPath, temporaryCard);
-            const avatar = await importFromPng(temporaryCard, { request });
+            const avatar = await importFromPng(temporaryCard, { request }, undefined, { preserveAssistantMetadata: true });
             if (!avatar) throw new Error(`Failed to import updated assistant ${assistant.id}`);
             const normalizedAvatar = path.extname(avatar).toLowerCase() === '.png' ? avatar : `${avatar}.png`;
             if (normalizedAvatar === installedAvatar) throw new Error('The updated assistant would overwrite the installed copy.');
@@ -991,6 +993,21 @@ function publishCharacterCard(request, avatar, bytes, legacyWrite) {
 }
 
 /**
+ * Refuses a card file name that is not a plain file directly inside the characters folder.
+ * @param {string} charactersDirectory
+ * @param {string} fileName
+ * @param {string} target
+ */
+function assertCharacterCardTarget(charactersDirectory, fileName, target) {
+    const root = path.resolve(charactersDirectory);
+    const resolved = path.resolve(target);
+    const stem = fileName.replace(/\.png$/i, '');
+    if (path.basename(fileName) !== fileName || !stem || stem === '.' || stem === '..' || path.dirname(resolved) !== root) {
+        throw new Error('Invalid character card file name.');
+    }
+}
+
+/**
  * Writes the character card to the specified image file.
  * @param {string|Buffer} inputFile - Path to the image file or image buffer
  * @param {string} data - Character card data
@@ -1004,6 +1021,7 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
     try {
         const outputImageName = getPngFileName(outputFile);
         const outputImagePath = path.join(request.user.directories.characters, outputImageName);
+        assertCharacterCardTarget(request.user.directories.characters, outputImageName, outputImagePath);
         const fileExists = fs.existsSync(outputImagePath);
         let expectedFileIdentity;
         let shouldPreserveFileIdentity = preserveFileIdentity;
@@ -1222,8 +1240,11 @@ export async function applyAvatarCropResize(jimp, crop) {
             finalWidth = AVATAR_WIDTH;
             finalHeight = AVATAR_HEIGHT;
         } else {
-            finalWidth = crop.width;
-            finalHeight = crop.height;
+            // Use the clamped crop size, shrunk to fit the cap and never enlarged.
+            const croppedWidth = image.bitmap.width, croppedHeight = image.bitmap.height;
+            const scale = Math.min(1, AVATAR_CROP_MAX_DIMENSION / croppedWidth, AVATAR_CROP_MAX_DIMENSION / croppedHeight);
+            finalWidth = Math.max(1, Math.round(croppedWidth * scale));
+            finalHeight = Math.max(1, Math.round(croppedHeight * scale));
         }
     }
 
@@ -1238,7 +1259,7 @@ export async function applyAvatarCropResize(jimp, crop) {
  * @returns {Promise<Buffer>} Image buffer
  */
 async function parseImageBuffer(buffer, crop) {
-    const image = await Jimp.fromBuffer(buffer);
+    const image = await readBoundedJimp(buffer);
     return await applyAvatarCropResize(image, crop);
 }
 
@@ -1250,7 +1271,7 @@ async function parseImageBuffer(buffer, crop) {
  */
 async function tryReadImage(imgPath, crop) {
     try {
-        const rawImg = await Jimp.read(imgPath);
+        const rawImg = await readBoundedJimp(imgPath);
         return await applyAvatarCropResize(rawImg, crop);
     } catch (error) {
         // If it's an unsupported type of image (APNG) - just read the file as buffer
@@ -1474,10 +1495,14 @@ function convertToV2(char, directories) {
 /**
  * Removes fields that are not meant to be shared.
  */
-function unsetPrivateFields(char) {
+function unsetPrivateFields(char, { preserveAssistantMetadata = false } = {}) {
     _.set(char, 'fav', false);
     _.set(char, 'data.extensions.fav', false);
     _.unset(char, 'chat');
+    if (!preserveAssistantMetadata) {
+        _.unset(char, 'data.extensions.neconyan_assistant');
+        _.unset(char, 'extensions.neconyan_assistant');
+    }
 }
 
 function readFromV2(char) {
@@ -1813,7 +1838,7 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
     const fileName = preservedFileName || getPngName(processedCard.name, request.user.directories, request);
     // Use the actual character name for asset folders, not the unique filename
     // ST's sprite system looks up by character name, not PNG filename
-    const characterFolder = processedCard.name;
+    const characterFolder = processedCard.name && !/^\.+$/.test(processedCard.name) ? processedCard.name : fileName;
 
     if (auxiliaryAssets.length > 0) {
         try {
@@ -1845,6 +1870,7 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
 
     const byafData = await new ByafParser(data).parse();
     const card = readFromV2(byafData.card);
+    unsetPrivateFields(card);
     applyImportedCharacterPurrks(card, { autoExtract: shouldAutoExtractImportedPurrks(request) });
     const sanitizedNameCandidate = sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }) || 'character';
     const fileName = preservedFileName || getPngName(sanitizedNameCandidate, request.user.directories, request);
@@ -1961,7 +1987,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
         applyImportedCharacterPurrks(jsonData, { autoExtract: shouldAutoExtractImportedPurrks(request) });
-        const pngName = preservedFileName || getPngName(jsonData.data?.name || jsonData.name, request.user.directories, request);
+        const pngName = preservedFileName || getPngName(sanitize(String(jsonData.data?.name || jsonData.name || '')) || 'character', request.user.directories, request);
         const char = JSON.stringify(jsonData);
         const result = await writeCharacterData(DEFAULT_AVATAR_PATH, char, pngName, request);
         return result ? pngName : '';
@@ -2032,7 +2058,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
  * @param {string|undefined} preservedFileName Preserved file name
  * @returns {Promise<string>} Internal name of the character
  */
-async function importFromPng(uploadPath, { request }, preservedFileName) {
+async function importFromPng(uploadPath, { request }, preservedFileName, { preserveAssistantMetadata = false } = {}) {
     const imgData = await readCharacterData(uploadPath);
     if (imgData === undefined) throw new Error('Failed to read character data');
 
@@ -2044,7 +2070,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
     if (jsonData.spec !== undefined) {
         console.info(`Found a ${jsonData.spec} character file.`);
         importRisuSpritesSafely(request.user.directories, jsonData);
-        unsetPrivateFields(jsonData);
+        unsetPrivateFields(jsonData, { preserveAssistantMetadata });
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
         applyImportedCharacterPurrks(jsonData, { autoExtract: shouldAutoExtractImportedPurrks(request) });
@@ -2304,12 +2330,16 @@ function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
 }
 
 router.post('/rename', validateAvatarUrlMiddleware, async function (request, response) {
-    if (!request.body.avatar_url || !request.body.new_name) {
+    if (typeof request.body?.avatar_url !== 'string' || !request.body.avatar_url
+        || typeof request.body.new_name !== 'string' || !request.body.new_name) {
         return response.sendStatus(400);
     }
 
     const oldAvatarName = request.body.avatar_url;
     const newName = sanitize(request.body.new_name);
+    if (!newName || /^\.+$/.test(newName)) {
+        return response.status(400).send('Error: invalid name.');
+    }
     const newInternalName = getPngName(newName, request.user.directories);
     const newAvatarName = `${newInternalName}.png`;
 
@@ -2379,6 +2409,11 @@ router.post('/edit', validateAvatarUrlMiddleware, async function (request, respo
         return;
     }
 
+    if (typeof request.body.avatar_url !== 'string' || !request.body.avatar_url) {
+        response.status(400).send('Error: invalid avatar.');
+        return;
+    }
+
     const avatarPath = path.join(request.user.directories.characters, request.body.avatar_url);
 
     if (request.body[CHARACTER_EMPTY_DEFINITION_SAVE_OVERRIDE] !== 'true') {
@@ -2403,13 +2438,13 @@ router.post('/edit', validateAvatarUrlMiddleware, async function (request, respo
         }
     }
 
-    let char = charaFormatData(request.body, request.user.directories);
-    char.chat = request.body.chat;
-    char.create_date = request.body.create_date;
-    char = JSON.stringify(char);
     const targetFile = request.body.avatar_url;
 
     try {
+        let char = charaFormatData(request.body, request.user.directories);
+        char.chat = request.body.chat;
+        char.create_date = request.body.create_date;
+        char = JSON.stringify(char);
         let writeSucceeded;
         if (!request.file) {
             writeSucceeded = await writeCharacterData(avatarPath, char, targetFile, request, undefined, { preserveFileIdentity: true });
@@ -2620,7 +2655,8 @@ router.post('/merge-attributes', getFileNameValidationFunction('avatar'), async 
         }
     } catch (exception) {
         if (exception?.roleplayWritePending || String(exception?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, exception);
-        response.status(500).send({ message: 'Unexpected error while saving character.', error: exception.toString() });
+        console.error('Unexpected error while saving character.', exception);
+        response.status(500).send({ message: 'Unexpected error while saving character.' });
     }
 });
 
@@ -3011,6 +3047,10 @@ const importCreatesCard = Symbol('importCreatesCard');
 function getPngName(file, directories, request) {
     // Neconyan: Windows forbids <>:"/\|?* in file names, so sanitise imports there. POSIX keeps pipes.
     file = sanitiseFilenameForWindows(file);
+    // A name such as '..' or 'a/b' must never leave the characters folder.
+    if (typeof file !== 'string' || path.basename(file) !== file || /^\.*$/.test(file) || file.includes('\0')) {
+        file = sanitize(String(file ?? ''), { replacement: sanitizeSafeCharacterReplacements }) || 'character';
+    }
     let i = 1;
     const baseName = file;
     const filename = () => path.join(directories.characters, `${file}.png`);

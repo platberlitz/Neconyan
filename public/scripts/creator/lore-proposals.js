@@ -1,5 +1,6 @@
 import { creatorAssistantContext, editCreatorDraft } from './model.js';
 import { creatorGuidance } from './guidance.js';
+import { hasCreatorLoreBrackets, stripCreatorCodeFence } from './code-fence.js';
 
 export function buildCreatorLoreRequest(draft, bookId, instruction, sourceMode = 'keep', source = 'card') {
     const book = draft.books.find(item => item.id === bookId && !item.detached);
@@ -17,7 +18,7 @@ export function buildCreatorLoreRequest(draft, bookId, instruction, sourceMode =
 export function parseCreatorLoreProposal(draft, bookId, output, sourceMode = 'keep', source = 'card') {
     buildCreatorLoreRequest(draft, bookId, 'Validate proposal', sourceMode, source);
     const book = draft.books.find(item => item.id === bookId && !item.detached);
-    const parsed = JSON.parse(String(output).trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1'));
+    const parsed = JSON.parse(stripCreatorCodeFence(output));
     if (!Array.isArray(parsed.entries) || !parsed.entries.length || parsed.entries.length > 40) throw new Error('Request between one and forty entry changes.');
     if (!Array.isArray(parsed.coverage) || parsed.coverage.length > 100 || parsed.coverage.some(text => typeof text !== 'string' || text.length > 10000)) throw new Error('The proposal needs a readable change summary.');
     if (sourceMode === 'keep' ? parsed.description !== null : typeof parsed.description !== 'string' || parsed.description.length > 100000) throw new Error('The proposal did not respect your source-background choice.');
@@ -49,7 +50,7 @@ export function parseCreatorLoreProposal(draft, bookId, output, sourceMode = 'ke
 
 export function bracketCreatorLore(content) {
     const text = String(content).trim();
-    if (/^\[\s*\n[\s\S]*\n\s*\]$/.test(text)) return text;
+    if (hasCreatorLoreBrackets(text)) return text;
     return `[\n${text}\n]`;
 }
 

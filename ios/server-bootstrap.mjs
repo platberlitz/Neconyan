@@ -54,6 +54,7 @@ Object.assign(config, {
     perUserBasicAuth: false, enableUserAccounts: false,
     enableServerPlugins: false, enableServerPluginsAutoUpdate: false,
 });
+config.ssl = { ...(config.ssl ?? {}), enabled: false };
 config.browserLaunch.enabled = false;
 config.extensions.autoUpdate = false;
 config.git.backend = 'builtin';

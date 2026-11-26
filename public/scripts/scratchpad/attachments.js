@@ -31,7 +31,7 @@ async function imageData(file) {
 async function pdfText(buffer) {
     const pdfjs = await import('../../lib/pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc = '/lib/pdf.worker.min.mjs';
-    const task = pdfjs.getDocument({ data: buffer });
+    const task = pdfjs.getDocument({ data: buffer, isEvalSupported: false });
     try {
         const pdf = await task.promise;
         if (pdf.numPages > 300) throw new Error(t`This PDF has more than 300 pages. Attach a shorter document.`);

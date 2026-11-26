@@ -33,6 +33,7 @@ import { imageInputIssueDetail, isImageInputIssue, markImageRefusalShown, rolepl
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { roleplayKeptReplyNotice, roleplayReplyNotice } from '../roleplay-reply-notice.js';
 import { waitForSettingsSetup } from '../settings-setup.js';
+import { escapeToastText } from './toast-options.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const IMAGE_REFUSED_EVENT = 'neconyan:image-input-refused';
@@ -547,10 +548,10 @@ async function showStoppedReplyNotice(failure, { kept = false, messageIndex = nu
     const notice = roleplayReplyNotice(failure.error, failure.state, { kept });
     const target = kept ? await keptReplyRerunTarget(messageIndex, { account, locator }) : null;
     if (!target) {
-        globalThis.toastr?.error?.(notice.message, notice.title);
+        globalThis.toastr?.error?.(escapeToastText(notice.message), escapeToastText(notice.title));
         return;
     }
-    showRerunAgentsToast(options => globalThis.toastr?.error?.(notice.message, notice.title, options), target);
+    showRerunAgentsToast(options => globalThis.toastr?.error?.(escapeToastText(notice.message), escapeToastText(notice.title), options), target);
 }
 
 /**
@@ -794,7 +795,7 @@ async function flushPendingKeptReply() {
             const kept = entry.receipt?.keptReply ?? null;
             if (kept?.state === 'failed') {
                 const notice = roleplayKeptReplyNotice({ state: entry.failure?.state ?? 'failed', error: kept.error });
-                globalThis.toastr?.error?.(notice.message, notice.title);
+                globalThis.toastr?.error?.(escapeToastText(notice.message), escapeToastText(notice.title));
             } else if (entry.failure && entry.failure.state !== 'cancelled') {
                 await showStoppedReplyNotice(entry.failure, { kept: kept?.state === 'done', messageIndex: kept?.messageIndex,
                     account: entry.account, locator: entry.locator });
@@ -1150,7 +1151,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                     const showNow = visible && !waitingForKeeper && (nothingToShow || reloaded);
                     if (showNow && kept?.state === 'failed') {
                         const notice = roleplayKeptReplyNotice({ state: terminalFailure?.state ?? reason, error: kept.error });
-                        globalThis.toastr?.error?.(notice.message, notice.title);
+                        globalThis.toastr?.error?.(escapeToastText(notice.message), escapeToastText(notice.title));
                     } else if (showNow && kept?.state === 'done') {
                         // A real interruption reason still matters; never let a
                         // truncated kept reply look like a clean success.
@@ -1626,7 +1627,7 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
         // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
         if (!isImageInputIssue(error)) {
             const notice = roleplayReplyNotice(error?.message ? error : 'The reply could not be started.', 'refused');
-            globalThis.toastr?.error?.(notice.message, notice.title);
+            globalThis.toastr?.error?.(escapeToastText(notice.message), escapeToastText(notice.title));
         }
         return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
     } finally {

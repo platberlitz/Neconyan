@@ -8,6 +8,16 @@
  */
 
 const DEFAULT_DEBOUNCE_MS = 650;
+const UNSAFE_SETTINGS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Keys that would write through to Object.prototype instead of the settings object. */
+export function isUnsafeSettingsKey(key) {
+    return UNSAFE_SETTINGS_KEYS.has(String(key));
+}
+
+function ownValue(object, key) {
+    return isObject(object) && Object.hasOwn(object, key) ? object[key] : undefined;
+}
 
 export function cloneSettings(value) {
     return value === undefined ? undefined : structuredClone(value);
@@ -45,9 +55,11 @@ export function applySettingsChanges(target, base, source) {
     if (isObject(base) && isObject(source)) {
         const result = isObject(target) ? target : {};
         for (const key of Object.keys(source)) {
-            result[key] = applySettingsChanges(result[key], base[key], source[key]);
+            if (isUnsafeSettingsKey(key)) continue;
+            result[key] = applySettingsChanges(ownValue(result, key), ownValue(base, key), source[key]);
         }
         for (const key of Object.keys(base)) {
+            if (isUnsafeSettingsKey(key)) continue;
             if (!Object.hasOwn(source, key)) delete result[key];
         }
         return result;

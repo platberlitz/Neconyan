@@ -446,7 +446,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
         }
         observeNativeConversationJob(accepted.job.id, account);
     } catch (error) {
-        if (!raiseImageRefusalNotice(error, origin)) toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
+        if (!raiseImageRefusalNotice(error, origin)) toastr.error(escapeHtmlText(error.message || 'The saved connection could not be used.'), 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -505,7 +505,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
             observeNativeConversationJob(accepted.job.id, account);
         }
     } catch (error) {
-        if (!raiseImageRefusalNotice(error, origin)) toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
+        if (!raiseImageRefusalNotice(error, origin)) toastr.error(escapeHtmlText(error.message || 'The saved connection could not be used.'), 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -569,7 +569,7 @@ async function acceptConversationSubmission(payload, meta = {}) {
             : { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
         if (raiseImageRefusalNotice(error, meta.origin)) return null;
         const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
-        toastr.error(detail, 'Reply not sent');
+        toastr.error(escapeHtmlText(detail), 'Reply not sent');
         return null;
     }
 }

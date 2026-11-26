@@ -15,7 +15,8 @@ let fetches;
 jest.unstable_mockModule('simple-git', () => ({
     CheckRepoActions,
     simpleGit: options => {
-        const git = realGit(options);
+        // The fixture remote is a local folder, which the hardened Git options refuse.
+        const git = realGit({ ...options, config: options?.config?.filter(entry => !entry.startsWith('protocol.')) });
         const raw = git.raw.bind(git);
         const check = git.checkIsRepo.bind(git);
         const addRemote = git.addRemote.bind(git);
@@ -31,6 +32,9 @@ jest.unstable_mockModule('simple-git', () => ({
         };
         return git;
     },
+}));
+jest.unstable_mockModule('../src/safe-http.js', () => ({
+    validateOutboundTarget: async url => ({ url: new URL(url), hostname: new URL(url).hostname, addresses: [] }),
 }));
 jest.unstable_mockModule('../src/util.js', () => ({
     getConfigValue: (_, fallback) => fallback,

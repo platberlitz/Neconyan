@@ -1,4 +1,4 @@
-import { debounce } from '../../utils.js';
+import { debounce, escapeHtml } from '../../utils.js';
 import { saveTtsProviderSettings } from './index.js';
 
 export { AllTalkTtsProvider };
@@ -104,7 +104,7 @@ class AllTalkTtsProvider {
             <select id='narrator_voice'>`;
         if (this.voices) {
             for (let voice of this.voices) {
-                html += `<option value='${voice.voice_id}'>${voice.name}</option>`;
+                html += `<option value='${escapeHtml(voice.voice_id)}'>${escapeHtml(voice.name)}</option>`;
             }
         }
         html += `</select>
@@ -125,7 +125,7 @@ class AllTalkTtsProvider {
         <select id='rvc_character_voice'>`;
         if (this.rvcVoices) {
             for (let rvccharvoice of this.rvcVoices) {
-                html += `<option value='${rvccharvoice.voice_id}'>${rvccharvoice.name}</option>`;
+                html += `<option value='${escapeHtml(rvccharvoice.voice_id)}'>${escapeHtml(rvccharvoice.name)}</option>`;
             }
         }
         html += `</select>
@@ -135,7 +135,7 @@ class AllTalkTtsProvider {
         <select id='rvc_narrator_voice'>`;
         if (this.rvcVoices) {
             for (let rvcnarrvoice of this.rvcVoices) {
-                html += `<option value='${rvcnarrvoice.voice_id}'>${rvcnarrvoice.name}</option>`;
+                html += `<option value='${escapeHtml(rvcnarrvoice.voice_id)}'>${escapeHtml(rvcnarrvoice.name)}</option>`;
             }
         }
         html += `</select>

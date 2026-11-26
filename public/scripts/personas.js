@@ -1582,7 +1582,7 @@ async function deletePersonaAppendix(appendixId) {
         return;
     }
 
-    const confirmed = await Popup.show.confirm(t`Delete Scenario Note`, t`Delete Scenario Note "${appendix.name}" from this persona?`);
+    const confirmed = await Popup.show.confirm(t`Delete Scenario Note`, t`Delete Scenario Note "${escapeHtml(appendix.name)}" from this persona?`);
     if (!confirmed) {
         return;
     }
@@ -2146,7 +2146,7 @@ async function deletePersona(avatarId, { silent = false } = {}) {
 
     if (!silent) {
         const confirm = await Popup.show.confirm(
-            t`Delete Persona` + `: ${name}`,
+            t`Delete Persona` + `: ${escapeHtml(name)}`,
             t`Are you sure you want to delete this avatar?` + '<br />' + t`All information associated with its linked persona will be lost.`);
 
         if (!confirm) {
@@ -2412,7 +2412,7 @@ async function toggleDefaultPersona(avatarId, { quiet = false } = {}) {
 
     if (avatarId === currentDefault) {
         if (!quiet) {
-            const confirm = await Popup.show.confirm(t`Are you sure you want to remove the default persona?`, power_user.personas[avatarId]);
+            const confirm = await Popup.show.confirm(t`Are you sure you want to remove the default persona?`, escapeHtml(power_user.personas[avatarId]));
             if (!confirm) {
                 console.debug('User cancelled removing default persona');
                 return;
@@ -2427,7 +2427,7 @@ async function toggleDefaultPersona(avatarId, { quiet = false } = {}) {
     } else {
         if (!quiet) {
             const confirm = await Popup.show.confirm(t`Set Default Persona`,
-                t`Are you sure you want to set \"${power_user.personas[avatarId]}\" as the default persona?`
+                t`Are you sure you want to set \"${escapeHtml(power_user.personas[avatarId])}\" as the default persona?`
                 + '<br /><br />'
                 + t`This name and avatar will be used for all new chats, as well as existing chats where the user persona is not locked.`);
             if (!confirm) {
@@ -2702,7 +2702,7 @@ async function loadPersonaForCurrentChat({ doRender = false } = {}) {
         await setUserAvatar(chatPersona, { toastPersonaNameChange: false, navigateToCurrent: true, automatic: true });
 
         if (power_user.persona_show_notifications) {
-            let message = t`Auto-selected persona based on ${connectType} connection.<br />Your messages will now be sent as ${power_user.personas[chatPersona]}.`;
+            let message = t`Auto-selected persona based on ${escapeHtml(connectType)} connection.<br />Your messages will now be sent as ${escapeHtml(power_user.personas[chatPersona])}.`;
             if (willAutoLock) {
                 message += '<br /><br />' + t`Auto-locked this persona to current chat.`;
             }
@@ -2912,13 +2912,15 @@ function onBackupPersonas() {
 async function syncUserNameToPersona({ start = 0, end = chat.length - 1, quiet = false, nameFilter = '' } = {}) {
     const isRangeAll = start === 0 && end === chat.length - 1;
     const hasNameFilter = nameFilter?.trim();
+    const safeName = escapeHtml(name1);
+    const safeFilter = escapeHtml(nameFilter);
     const confirmMessage = isRangeAll && !hasNameFilter
-        ? t`All user-sent messages in this chat will be attributed to ${name1}.`
+        ? t`All user-sent messages in this chat will be attributed to ${safeName}.`
         : isRangeAll && hasNameFilter
-            ? t`User-sent messages with name "${nameFilter}" will be attributed to ${name1}.`
+            ? t`User-sent messages with name "${safeFilter}" will be attributed to ${safeName}.`
             : !isRangeAll && !hasNameFilter
-                ? t`User-sent messages in the specified range will be attributed to ${name1}.`
-                : t`User-sent messages with name "${nameFilter}" in the specified range will be attributed to ${name1}.`;
+                ? t`User-sent messages in the specified range will be attributed to ${safeName}.`
+                : t`User-sent messages with name "${safeFilter}" in the specified range will be attributed to ${safeName}.`;
 
     if (!quiet) {
         const confirmation = await Popup.show.confirm(t`Are you sure?`, confirmMessage);
@@ -2971,7 +2973,7 @@ async function duplicatePersona(avatarId, { silent = false, select = false } = {
     }
 
     if (!silent) {
-        const confirm = await Popup.show.confirm(t`Are you sure you want to duplicate this persona?`, personaName);
+        const confirm = await Popup.show.confirm(t`Are you sure you want to duplicate this persona?`, escapeHtml(personaName));
 
         if (!confirm) {
             console.debug('User cancelled duplicating persona');

@@ -1,6 +1,7 @@
 import { creatorProposal, PROPOSAL_FIELDS, creatorTextValue, validCreatorProposalValue } from './model.js';
 import { creatorGuidance } from './guidance.js';
 import { creatorTargetsSignature, creatorFormatFields, creatorTargetValue } from './formats.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 export const DOSSIER_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example']);
 
@@ -23,7 +24,7 @@ ${creatorGuidance(draft)}` },
 }
 
 export function dossierProposal(draft, output, requested = DOSSIER_FIELDS) {
-    const text = String(output).trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1');
+    const text = stripCreatorCodeFence(output);
     let result;
     try { result = JSON.parse(text); } catch { throw new Error('The model did not return complete card fields. Your dossier is unchanged; try converting again.'); }
     if (!result?.fields || typeof result.fields !== 'object' || Array.isArray(result.fields)) throw new Error('The model returned no card fields to review.');

@@ -3,6 +3,14 @@ import { getStringHash } from '../macro-primitives.js';
 import { inject_ids } from '../constants.js';
 import { escapeRegex, uuidv4 } from '../slash-commands/SlashCommandRuntimeUtils.js';
 
+// Same limits as {{roll}} in definitions/core-macros.js: at most 1000 dice of at most 1000000 sides.
+function isLegacyRollFormulaWithinLimits(formula) {
+    const match = String(formula ?? '').trim().match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+    if (!match) return true;
+    const dice = match[1] ? Number(match[1]) : 1;
+    return dice <= 1000 && Number(match[2]) <= 1000000;
+}
+
 // The historical regex evaluator. A host belongs to one evaluation, never to
 // the process-wide modern registry. Keep table order and replacement semantics.
 export function evaluateLegacyMacros(content, env, host, postProcessFn) {
@@ -55,7 +63,7 @@ export function evaluateLegacyMacros(content, env, host, postProcessFn) {
         const rollReplace = (match, matchValue) => {
             let formula = matchValue.trim();
             if (/^\d+$/.test(formula)) formula = `1d${formula}`;
-            if (!droll.validate(formula)) { console.debug(`Invalid roll formula: ${formula}`); return ''; }
+            if (!isLegacyRollFormulaWithinLimits(formula) || !droll.validate(formula)) { console.debug(`Invalid roll formula: ${formula}`); return ''; }
             const result = droll.roll(formula);
             if (result === false) return '';
             return String(result.total);

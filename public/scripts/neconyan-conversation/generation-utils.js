@@ -8,7 +8,7 @@ import { parseDurationToMs } from './schedule-utils.js';
 
 export function parseCommandArgs(rawArgs) {
     const args = {};
-    const re = /(\w+)\s*=\s*"([^"]*)"/g;
+    const re = /\b(\w+)\s*=\s*"([^"]*)"/g;
     let match;
     while ((match = re.exec(rawArgs)) !== null) {
         args[match[1].toLowerCase()] = match[2];
@@ -33,12 +33,12 @@ export function normalizeConversationOutputText(rawText) {
             .replace(/[“”]"([^"\n]{1,240})"[“”]/g, '"$1"')
             .replace(/"[“”]([^“”\n]{1,240})[“”]"/g, '"$1"')
             .replace(/^[“”]+/, '"')
-            .replace(/[“”]+$/, '"')
+            .replace(/(?<![“”])[“”]+$/, '"')
             .replace(/^['"]{2,}\s*/, '"')
-            .replace(/\s*['"]{2,}$/, '"')
+            .replace(/(?<!\s)\s*(?<!['"])['"]{2,}$/, '"')
             .replace(/^"([\s\S]*)"$/, '$1')
             .replace(/[“”"]/g, '')
-            .replace(/\s+([?!.,:;])/g, '$1')
+            .replace(/(?<!\s)\s+([?!.,:;])/g, '$1')
             .trim();
         if (normalized !== text) {
             text = normalized;
@@ -57,7 +57,7 @@ export function extractCharacterReplyCommandParts(rawText, settings = {}, { pres
 
     if (settings.schedule_command_enabled) {
         text = text.replace(SCHEDULE_UPDATE_RE, (full, rawArgs) => {
-            scheduleUpdates.push(rawArgs);
+            scheduleUpdates.push(String(rawArgs).trimStart());
             return '';
         });
     }

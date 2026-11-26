@@ -65,7 +65,7 @@ import { resetTokenCache, tokenizers } from './tokenizers.js';
 import { BIAS_CACHE } from './logit-bias.js';
 import { renderTemplateAsync } from './templates.js';
 
-import { countOccurrences, debounce, delay, download, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment, uuidv4 } from './utils.js';
+import { countOccurrences, debounce, delay, download, escapeHtml, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment, uuidv4 } from './utils.js';
 import { FILTER_TYPES } from './filters.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
@@ -2272,7 +2272,7 @@ async function saveAccentProfile() {
     const existingIndex = power_user.sb_accent_profiles.findIndex(profile => profile.name.toLowerCase() === newProfile.name.toLowerCase());
 
     if (existingIndex !== -1) {
-        const confirm = await callGenericPopup(`Replace the "${newProfile.name}" accent profile?`, POPUP_TYPE.CONFIRM, '', {
+        const confirm = await callGenericPopup(`Replace the "${escapeHtml(newProfile.name)}" accent profile?`, POPUP_TYPE.CONFIRM, '', {
             okButton: 'Replace',
             cancelButton: 'Cancel',
         });
@@ -2298,7 +2298,7 @@ async function deleteAccentProfile(index) {
         return;
     }
 
-    const confirm = await callGenericPopup(`Delete the "${profile.name}" accent profile?`, POPUP_TYPE.CONFIRM, '', {
+    const confirm = await callGenericPopup(`Delete the "${escapeHtml(profile.name)}" accent profile?`, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Delete',
         cancelButton: 'Cancel',
     });
@@ -4259,6 +4259,56 @@ async function exportTheme() {
 }
 
 /**
+ * Decodes CSS escapes (such as `\69` for `i`) so hidden keywords can be matched.
+ * @param {string} css CSS text.
+ * @returns {string} CSS text with escapes decoded.
+ */
+function decodeCssEscapesForScan(css) {
+    return String(css ?? '').replace(/\\(?:([0-9a-fA-F]{1,6})(?:\r\n|[ \t\n\r\f])?|(\r\n|[\n\r\f])|([\s\S]))/g, (_, hex, newline, char) => {
+        if (newline) {
+            return '';
+        }
+        if (!hex) {
+            return char;
+        }
+        const codePoint = parseInt(hex, 16);
+        const valid = codePoint > 0 && codePoint <= 0x10FFFF && !(codePoint >= 0xD800 && codePoint <= 0xDFFF);
+        return valid ? String.fromCodePoint(codePoint) : '\uFFFD';
+    });
+}
+
+/**
+ * Whether CSS text pulls in an @import rule or loads something from another site.
+ * Comments are removed first, then escapes decoded; the text is also checked with
+ * comments kept, so a comment marker hidden inside a string cannot mask a rule.
+ * @param {string} css CSS text.
+ * @returns {boolean} True when the CSS has an @import or an external url().
+ */
+function cssLoadsRemoteResources(css) {
+    const raw = String(css ?? '');
+    const withoutComments = raw.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, '');
+    const external = /(?:url|src)\(\s*(?:["']\s*)?(?:https?:)?\/\/|(?:-webkit-)?image-set\([^;{}]*?["']\s*(?:https?:)?\/\//i;
+    return [withoutComments, raw]
+        .map(decodeCssEscapesForScan)
+        .some(text => /@import\b/i.test(text) || external.test(text));
+}
+
+/**
+ * Whether an imported theme's custom CSS or style entries (CTSI) load remote CSS.
+ * @param {object} parsed Parsed theme file.
+ * @returns {boolean} True when the user should be warned before importing.
+ */
+function themeImportLoadsRemoteCss(parsed) {
+    const sources = [parsed?.custom_css];
+    for (const entries of [parsed?.CTSI?.entries, parsed?.extension_settings?.CTSI?.entries]) {
+        if (entries && typeof entries === 'object') {
+            sources.push(...Object.values(entries));
+        }
+    }
+    return sources.some(value => typeof value === 'string' && cssLoadsRemoteResources(value));
+}
+
+/**
  * Imports a theme from a file.
  * @param {File} file File to import.
  * @returns {Promise<void>} A promise that resolves when the theme is imported.
@@ -4279,7 +4329,7 @@ async function importTheme(file) {
         throw new Error('Theme with that name already exists');
     }
 
-    if (typeof parsed.custom_css === 'string' && parsed.custom_css.includes('@import')) {
+    if (themeImportLoadsRemoteCss(parsed)) {
         const template = $(await renderTemplateAsync('themeImportWarning'));
         const confirm = await callGenericPopup(template, POPUP_TYPE.CONFIRM);
         if (!confirm) {

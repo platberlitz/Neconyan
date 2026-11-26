@@ -139,9 +139,11 @@ export const MEMORY_SUMMARY_MIN_MESSAGES = 24;
 export const MEMORY_SUMMARY_INTERVAL_MESSAGES = 12;
 export const MEMORY_SUMMARY_RECENT_MESSAGES = 36;
 export const MEMORY_SUMMARY_RESPONSE_TOKENS = 32000;
-export const SELFIE_COMMAND_RE = /\[selfie(?::\s*(?:context=)?"?([^"\]]*)"?)?\]/gi;
-export const SCHEDULE_UPDATE_RE = /\[schedule_update:\s*([^\]]+)\]/gi;
-export const REMINDER_COMMAND_RE = /\[reminder:\s*([^|\]]+)\s*\|\s*([^\]]+)\]/gi;
+// Captures may carry surrounding whitespace; callers trim them. Whitespace quantifiers never
+// sit next to a capture that also accepts whitespace, so long space runs cannot backtrack.
+export const SELFIE_COMMAND_RE = /\[selfie(?::(?:\s*context=)?\s*(?:"\s*)?([^"\]\s][^"\]]*)?"?)?\]/gi;
+export const SCHEDULE_UPDATE_RE = /\[schedule_update:([^\]]+)\]/gi;
+export const REMINDER_COMMAND_RE = /\[reminder:([^|\]]+)\|([^\]]+)\]/gi;
 export const CHROME_IDS = Object.freeze({
     header: 'sb_conversation_header',
     palsToggle: 'sb_conversation_pals_toggle',

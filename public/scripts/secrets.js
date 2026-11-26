@@ -13,7 +13,7 @@ import { SlashCommandScope } from './slash-commands/SlashCommandScope.js';
 import { renderTemplateAsync } from './templates.js';
 import { textgen_types } from './textgen-settings.js';
 import { getCurrentUserHandle } from './user.js';
-import { copyText, isTrueBoolean, uuidv4 } from './utils.js';
+import { copyText, escapeHtml, isTrueBoolean, uuidv4 } from './utils.js';
 import { accountStorage } from './util/AccountStorage.js';
 
 export const SECRET_KEYS = {
@@ -746,7 +746,7 @@ async function openKeyManagerDialog(key) {
                 await renderSecretsList();
             });
             itemTemplate.find('button[data-action="delete-secret"]').on('click', async function () {
-                const confirm = await Popup.show.confirm(t`Delete Secret: ${secret?.label}`, t`Are you sure you want to delete this secret? This action cannot be undone.`);
+                const confirm = await Popup.show.confirm(t`Delete Secret: ${escapeHtml(secret?.label)}`, t`Are you sure you want to delete this secret? This action cannot be undone.`);
                 if (!confirm) {
                     return;
                 }

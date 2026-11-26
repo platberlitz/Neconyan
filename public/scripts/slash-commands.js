@@ -4084,6 +4084,44 @@ async function trimTokensCallback(arg, value) {
     }
 }
 
+const CARD_SCRIPT_SANDBOX_SOURCE_PREFIX = 'card-script-sandbox:';
+/** @type {WeakSet<SlashCommandScope>} Scopes of commands sent by sandboxed card scripts. */
+const cardScriptSandboxScopes = new WeakSet();
+
+/**
+ * Reports whether a command runs inside a card script sandbox request.
+ * @param {SlashCommandScope|null|undefined} scope Command scope
+ * @returns {boolean}
+ */
+function isCardScriptSandboxScope(scope) {
+    for (let current = scope, depth = 0; current && depth < 1000; current = current.parent, depth++) {
+        if (cardScriptSandboxScopes.has(current)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * DOMPurify options for HTML shown by /buttons, /popup and /input.
+ * Card scripts get a strict profile: no styles, forms, SVG or links to other sites.
+ * @param {object} [args] Named command arguments
+ * @returns {object}
+ */
+function getPopupSanitizeConfig(args) {
+    if (isCardScriptSandboxScope(args?._scope)) {
+        return {
+            MESSAGE_SANITIZE: true,
+            MESSAGE_BLOCK_EXTERNAL_URLS: true,
+            // Only scheme-less, non protocol-relative URLs survive (data:image stays allowed on media tags).
+            ALLOWED_URI_REGEXP: /^(?![a-z][a-z0-9+.-]*:|[\\/]{2})/i,
+            FORBID_TAGS: ['style', 'link', 'meta', 'base', 'form', 'input', 'textarea', 'select', 'option', 'button', 'svg', 'math', 'iframe', 'frame', 'object', 'embed', 'video', 'audio', 'source', 'track', 'picture', 'template'],
+            FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'ping', 'background', 'poster', 'data-i18n'],
+        };
+    }
+    return { MESSAGE_SANITIZE: true, MESSAGE_PRESERVE_CLASSES: true, FORBID_TAGS: ['style'] };
+}
+
 /**
  * @typedef {object} ButtonLabel
  * @property {string} text - The button text
@@ -4130,7 +4168,8 @@ async function buttonsCallback(args, text) {
         const resultToButtonMap = new Map(buttons.map((button, index) => [index + 2, button]));
 
         return new Promise((resolve) => {
-            const safeValue = DOMPurify.sanitize(text || '');
+            const sandboxed = isCardScriptSandboxScope(args?._scope);
+            const safeValue = DOMPurify.sanitize(text || '', getPopupSanitizeConfig(args));
 
             /** @type {Popup} */
             let popup;
@@ -4162,9 +4201,12 @@ async function buttonsCallback(args, text) {
                 }
 
                 // Add icon if provided
-                if (button.icon) {
+                const iconClasses = typeof button.icon === 'string'
+                    ? button.icon.split(/\s+/).filter(token => /^[a-z0-9-]+$/i.test(token))
+                    : [];
+                if (iconClasses.length) {
                     const icon = document.createElement('i');
-                    icon.className = `fa-solid ${button.icon}`;
+                    icon.classList.add('fa-solid', ...iconClasses);
                     icon.style.marginRight = '0.5em';
                     buttonElement.appendChild(icon);
                     const textSpan = document.createElement('span');
@@ -4176,8 +4218,10 @@ async function buttonsCallback(args, text) {
 
                 // Add tooltip if provided
                 if (button.tooltip) {
-                    buttonElement.title = button.tooltip;
-                    buttonElement.dataset.i18n = '[title]' + button.tooltip;
+                    buttonElement.title = String(button.tooltip);
+                    if (!sandboxed) {
+                        buttonElement.dataset.i18n = '[title]' + button.tooltip;
+                    }
                 }
 
                 buttonContainer.appendChild(buttonElement);
@@ -4214,8 +4258,8 @@ async function buttonsCallback(args, text) {
 }
 
 async function popupCallback(args, value) {
-    const safeBody = DOMPurify.sanitize(value || '');
-    const safeHeader = args?.header && typeof args?.header === 'string' ? DOMPurify.sanitize(args.header) : null;
+    const safeBody = DOMPurify.sanitize(value || '', getPopupSanitizeConfig(args));
+    const safeHeader = args?.header && typeof args?.header === 'string' ? DOMPurify.sanitize(args.header, getPopupSanitizeConfig(args)) : null;
     const requestedResult = isTrueBoolean(args?.result);
 
     /** @type {import('./popup.js').PopupOptions} */
@@ -4376,7 +4420,7 @@ async function delayCallback({ _abortController }, amount) {
 
 
 async function inputCallback(args, prompt) {
-    const safeValue = DOMPurify.sanitize(prompt || '');
+    const safeValue = DOMPurify.sanitize(prompt || '', getPopupSanitizeConfig(args));
     const defaultInput = args?.default !== undefined && typeof args?.default === 'string' ? args.default : '';
     const popupOptions = {
         large: isTrueBoolean(args?.large),
@@ -7115,6 +7159,11 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
     try {
         closure = parser.parse(text, true, options.parserFlags, options.abortController ?? new SlashCommandAbortController());
         closure.scope.parent = options.scope;
+        if (typeof options.source === 'string' && options.source.startsWith(CARD_SCRIPT_SANDBOX_SOURCE_PREFIX)) {
+            const sandboxScope = new SlashCommandScope(options.scope ?? undefined);
+            cardScriptSandboxScopes.add(sandboxScope);
+            closure.scope.parent = sandboxScope;
+        }
         closure.onProgress = options.onProgress;
         closure.debugController = options.debugController;
         closure.source = options.source;

@@ -412,7 +412,7 @@ function parseMoveReply(state, text) {
     }
     const value = /flag|mark|mine\b/.test(source) ? 'flag' : 'reveal';
     const patterns = [
-        /r(?:ow)?\s*(\d+)\s*[,;\s]*c(?:ol(?:umn)?)?\s*(\d+)/,
+        /r(?:ow)?\s*(\d+)[,;\s]*c(?:ol(?:umn)?)?\s*(\d+)/,
         /\b(\d+)\s*,\s*(\d+)\b/,
         /\b(\d+)\s+(?:and\s+)?(\d+)\b/,
     ];
