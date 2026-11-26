@@ -45,6 +45,7 @@
 - The closed **Roll options** box in the **Dice Roller** no longer has a big empty gap under its title on phones.
 - **Notes** opens again in the Docker image, whichever user the container runs as.
 - When a chat cannot be named automatically, an error toast now says why instead of the chat silently keeping its dated name.
+- The **Companion Panel** now reopens where you left it after new notes arrive while it was closed, instead of dropping you further down the list.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -255,6 +256,7 @@
 - PR #985 (2026-11-25) `fix(dice): drop the empty gap under Roll options on phones`
 - PR #986 (2026-11-25) `fix(docker): build the Notes editor when the image is built`
 - PR #987 (2026-11-25) `feat(chats): show a toast when automatic chat naming fails`
+- PR #988 (2026-11-26) `fix(companions): keep the Companion Panel in place when it reopens`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
