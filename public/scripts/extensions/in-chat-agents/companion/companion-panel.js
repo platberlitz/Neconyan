@@ -121,6 +121,7 @@ const PANEL_HYDRATION_MAX_CARDS_PER_FRAME = 2;
 const PANEL_HYDRATION_BELOW_CARDS_PER_FRAME = 1;
 const PANEL_HYDRATION_OPEN_DELAY_MS = 450;
 const PANEL_HYDRATION_SCROLL_IDLE_MS = 160;
+const PANEL_REOPEN_SETTLE_PASSES = 4;
 
 let panelInitialized = false;
 let livePreview = null;
@@ -1693,6 +1694,34 @@ function restorePanelAnchor(panel, anchor) {
     return restored;
 }
 
+/**
+ * Notes can be rewritten while the panel is closed, so an offset inside the
+ * card above the viewport stops meaning anything on reopen. Anchor to the first
+ * card heading on screen instead, keeping the containing card as the fallback.
+ */
+function capturePanelReopenAnchor(panel) {
+    const containing = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
+    if (!containing || containing.offsetTop >= 0 || typeof panel?.querySelectorAll !== 'function') {
+        return containing;
+    }
+    const panelRect = panel.getBoundingClientRect();
+    for (const section of panel.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector)) {
+        const rect = section.getBoundingClientRect?.();
+        if (!rect || rect.height <= 0) {
+            continue;
+        }
+        const offsetTop = rect.top - panelRect.top;
+        if (offsetTop >= panelRect.height) {
+            break;
+        }
+        const agentId = section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute);
+        if (offsetTop >= 0 && agentId) {
+            return { messageId: agentId, offsetTop, fallback: containing };
+        }
+    }
+    return containing;
+}
+
 function cancelPanelAnchorSettle() {
     if (panelAnchorSettleFrame) {
         globalThis.cancelAnimationFrame?.(panelAnchorSettleFrame);
@@ -1922,6 +1951,38 @@ function runPanelHydrationSlice(generation) {
 
     if (below.length > 0 || above.length > 0 || panelPendingMeasuredCards.size > 0) {
         schedulePanelHydration();
+    }
+}
+
+// Notes that changed while the panel was closed only reach their new height when the browser
+// paints them, a frame or two after opening. Paint the cards on and near the screen now and
+// put the reading anchor back after each pass, so the reopened panel lands where it was left.
+function hydratePanelCardsNearAnchor(panel, anchor) {
+    panelHydrationMutating = true;
+    try {
+        for (let pass = 0; pass < PANEL_REOPEN_SETTLE_PASSES; pass++) {
+            restorePanelAnchor(panel, anchor);
+            const panelRect = panel.getBoundingClientRect();
+            const margin = panelRect.height;
+            let promoted = 0;
+            for (const section of getPanelAgentSections(panel)) {
+                if (isPanelSectionFiltered(section) || section.classList?.contains?.(HYDRATED_CARD_CLASS)) {
+                    continue;
+                }
+                const rect = section.getBoundingClientRect();
+                if (rect.bottom > panelRect.top - margin && rect.top < panelRect.bottom + margin) {
+                    section.classList?.add?.(HYDRATED_CARD_CLASS);
+                    cachePanelSectionHeight(section, { applyIntrinsic: true });
+                    promoted += 1;
+                }
+            }
+            if (promoted === 0) {
+                break;
+            }
+        }
+        restorePanelAnchor(panel, anchor);
+    } finally {
+        panelHydrationMutating = false;
     }
 }
 
@@ -2408,7 +2469,7 @@ export function openCompanionPanel() {
             }
             if (restoreAnchor) {
                 if (restorePanelAnchor(panelNode, restoreAnchor)) {
-                    restorePanelAnchor(panelNode, restoreAnchor);
+                    hydratePanelCardsNearAnchor(panelNode, restoreAnchor);
                 }
                 schedulePanelAnchorSettle(panelNode, restoreAnchor);
             }
@@ -2443,7 +2504,7 @@ export function closeCompanionPanel() {
     if (panelOpen) {
         panelSavedScrollTop = panelNode?.scrollTop || 0;
         panelSavedAnchor = panelSavedScrollTop > 0
-            ? captureVisibleMessageAnchor(panelNode, PANEL_ANCHOR_OPTIONS)
+            ? capturePanelReopenAnchor(panelNode)
             : null;
         syncPanelHeightCacheWidth(panelNode);
         snapshotRenderedPanelCardHeights(panelNode, { applyIntrinsic: true, unhydrate: true });
