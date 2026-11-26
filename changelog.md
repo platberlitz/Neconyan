@@ -49,6 +49,7 @@
 - Opening a new prompt in **Prompt Manager** straight after saving another one no longer closes or clears the editor while the list finishes redrawing.
 - Tightened security across local connections, imports, chat and card rendering, extensions, Docker and the mobile apps, blocking untrusted websites from reaching a local server, isolating custom styles and cards more strictly, capping oversized archives and images, and keeping `.secret_key` out of keyless Android rescue backups.
 - **Automatic chat naming** now works with thinking models such as Gemini 4 Neon, which used to spend the whole title allowance thinking and come back empty.
+- Non-English languages now translate the bundled **Agents** starter kits, template names and descriptions in the **Agent library** and **Agents** list.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -264,6 +265,7 @@
 - PR #990 (2026-11-26) `fix(security): close audit findings across server, frontend and mobile`
 - PR #991 (2026-11-26) `fix(notebooks): wrap long notebook and folder names inside their pills`
 - PR #992 (2026-11-26) `fix(ui): keep the left cat ear solid on cards with a backdrop`
+- PR #993 (2026-11-26) `fix(i18n): translate bundled agent templates and starter kits`
 - PR #994 (2026-11-26) `fix(chat-naming): give thinking models room to write the title`
 
 ### Local Commits
