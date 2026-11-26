@@ -38,7 +38,23 @@ const NON_PUBLIC_IP_RANGES = new Set([
     'droneRemoteIdProtocolEntityTags',
     'ietfProtocolAssignments',
     'discard',
+    // NAT64 well-known prefix (64:ff9b::/96, RFC 6052) and IPv4-translated
+    // addresses (RFC 6145): a NAT64 gateway can turn these into any IPv4
+    // address, including loopback and private networks.
+    'rfc6052',
+    'rfc6145',
 ]);
+
+/**
+ * IPv6 translation prefixes blocked by explicit CIDR as well, so the check does
+ * not depend on how a given ipaddr.js version names the range. 64:ff9b:1::/48 is
+ * the local-use NAT64 prefix (RFC 8215), which ipaddr.js reports as 'unicast'.
+ * @type {[import('ipaddr.js').IPv6, number][]}
+ */
+const NAT64_IPV6_PREFIXES = [
+    /** @type {[import('ipaddr.js').IPv6, number]} */ (ipaddr.parseCIDR('64:ff9b::/96')),
+    /** @type {[import('ipaddr.js').IPv6, number]} */ (ipaddr.parseCIDR('64:ff9b:1::/48')),
+];
 
 /** @type {import('ip-matching').IPMatch[]} */
 const privateIpRanges = [
@@ -98,6 +114,9 @@ export function isNonPublicIpAddress(address) {
     if (!parsed) return false;
     const canonical = parsed.toString();
     if (NON_PUBLIC_IP_RANGES.has(parsed.range())) {
+        return true;
+    }
+    if (parsed instanceof ipaddr.IPv6 && NAT64_IPV6_PREFIXES.some(prefix => parsed.match(prefix))) {
         return true;
     }
     try {

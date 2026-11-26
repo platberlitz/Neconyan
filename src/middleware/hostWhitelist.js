@@ -5,9 +5,24 @@ import { isHostAllowed } from 'host-validation-middleware';
 const knownHosts = new Set();
 const maxKnownHosts = 1000;
 
-const hostWhitelistEnabled = !!getConfigValue('hostWhitelist.enabled', false);
-const hostWhitelist = Object.freeze(getConfigValue('hostWhitelist.hosts', []));
+const hostWhitelistEnabled = !!getConfigValue('hostWhitelist.enabled', true, 'boolean');
+const configuredHosts = getConfigValue('hostWhitelist.hosts', []);
+const hostWhitelist = Object.freeze((Array.isArray(configuredHosts) ? configuredHosts : [])
+    .filter(host => typeof host === 'string' && host.trim())
+    .map(host => host.trim().toLowerCase()));
 const hostWhitelistScan = !!getConfigValue('hostWhitelist.scan', false, 'boolean');
+
+/**
+ * Lower-cases a Host header so matching is case-insensitive, as DNS names are.
+ * @param {unknown} hostValue Raw Host header
+ * @returns {string|undefined} Normalized host, or undefined when missing or empty
+ */
+function normalizeHostHeader(hostValue) {
+    if (typeof hostValue !== 'string' || !hostValue.trim()) {
+        return undefined;
+    }
+    return hostValue.trim().toLowerCase();
+}
 
 /**
  * Middleware to validate remote hosts.
@@ -17,8 +32,8 @@ const hostWhitelistScan = !!getConfigValue('hostWhitelist.scan', false, 'boolean
  * @param {import('express').NextFunction} next Next middleware
  */
 export default function hostWhitelistMiddleware(req, res, next) {
-    const hostValue = req.headers.host;
-    if (hostWhitelistScan && !isHostAllowed(hostValue, hostWhitelist) && !knownHosts.has(hostValue) && knownHosts.size < maxKnownHosts) {
+    const hostValue = normalizeHostHeader(req.headers.host);
+    if (hostWhitelistScan && hostValue && !isHostAllowed(hostValue, hostWhitelist) && !knownHosts.has(hostValue) && knownHosts.size < maxKnownHosts) {
         const isFirstWarning = knownHosts.size === 0;
         console.warn(color.red('Request from untrusted host:'), hostValue);
         console.warn(`If you trust this host, you can add it to ${color.yellow('hostWhitelist.hosts')} in config.yaml`);
@@ -33,6 +48,10 @@ export default function hostWhitelistMiddleware(req, res, next) {
 
     if (!hostWhitelistEnabled) {
         return next();
+    }
+
+    if (!hostValue) {
+        return sendBlockedPage(req, res, 'host-not-allowed.html', {});
     }
 
     if (isHostAllowed(hostValue, hostWhitelist)) {

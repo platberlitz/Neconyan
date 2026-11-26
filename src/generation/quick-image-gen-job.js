@@ -7,7 +7,7 @@ import { roleplayAccountBase, roleplayHash, withRoleplayAccount } from '../rolep
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { assertQuickImageGenRequestConfigured, downloadQuickImageGenImage, generateQuickImageGenImage, materializeQueuedImage,
-    readQuickImageGenSettings, resolveQuickImageGenSeed } from './quick-image-gen.js';
+    readQuickImageGenSettings, resolveQuickImageGenFetch, resolveQuickImageGenSeed } from './quick-image-gen.js';
 import { prepareNanoGptPayload } from './quick-image-gen-nanogpt.js';
 import { prepareNanobananaPayload } from './quick-image-gen-nanobanana.js';
 import { generateQueuedImageJob, QUEUED_IMAGE_PROVIDERS } from './quick-image-gen-queued.js';
@@ -36,6 +36,7 @@ export function quickImageGenSettingsFingerprint(settings) {
 /** Save an image request before dispatch; a restarted job may only use its recorded result. */
 export async function generateQuickImageGenJobImage(context, { effectId, prompt, negative = '', settingsFingerprint,
     expectedAccount, assertSourceLocked, seedOverride, batch, characterScope, referenceSources, editReference, proxyContext, proxyReferences, fetch, wait } = {}) {
+    const providerFetch = resolveQuickImageGenFetch(fetch);
     if (typeof effectId !== 'string' || !effectId || effectId.length > 128) throw recovery('The image request has no stable effect identity.');
     if (seedOverride !== undefined && (!Number.isSafeInteger(seedOverride) || seedOverride < 0 || seedOverride > 0xffffffff)) {
         throw recovery('The saved image seed override is invalid.');
@@ -129,31 +130,31 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
                 __qigProxyReferences: editReference === undefined ? proxyReferences : [] } : {}) }, input.prompt, input.negative);
         if (input.provider === 'gptimage' && editReference !== undefined) {
             const reference = await prepareQuickImageReference(referenceContext, { name: `${inputName}:edit`, source: editReference,
-                fingerprint: input.settingsFingerprint, withAccount, readSettingsLocked, fetchImpl: fetch || globalThis.fetch });
+                fingerprint: input.settingsFingerprint, withAccount, readSettingsLocked, fetchImpl: providerFetch });
             providerInput = `data:${reference.format.mime};base64,${reference.bytes.toString('base64')}`;
         } else if (input.provider === 'nanogpt') {
             providerInput = await prepareNanoGptPayload(referenceContext, {
                 effectId, settings: { ...settings, seed: input.seed }, fingerprint: input.settingsFingerprint,
-                prompt: input.prompt, negative: input.negative, fetchImpl: fetch || globalThis.fetch,
+                prompt: input.prompt, negative: input.negative, fetchImpl: providerFetch,
                 readSettings, readSettingsLocked, withAccount,
             });
         } else if (input.provider === 'nanobanana') {
             providerInput = await prepareNanobananaPayload(referenceContext, {
                 effectId, settings: { ...settings, seed: input.seed }, fingerprint: input.settingsFingerprint,
-                prompt: input.prompt, negative: input.negative, fetchImpl: fetch || globalThis.fetch,
+                prompt: input.prompt, negative: input.negative, fetchImpl: providerFetch,
                 readSettings, readSettingsLocked, withAccount,
             });
         } else if (input.provider === 'proxy') {
             providerInput = await prepareProxyImageRequest(referenceContext, { effectId,
                 settings: { ...settings, __qigProxyContext: proxyContext, __qigProxyReferences: editReference === undefined ? proxyReferences : [] }, fingerprint: input.settingsFingerprint,
-                input, fetchImpl: fetch || globalThis.fetch, withAccount,
+                input, fetchImpl: providerFetch, withAccount,
                 readSettingsLocked });
         } else if (input.provider === 'local' && settings.localType !== 'comfyui') {
             providerInput = await prepareA1111ImageRequest(referenceContext, { effectId, input, settings, fingerprint: input.settingsFingerprint,
-                withAccount, readSettingsLocked, fetchImpl: fetch || globalThis.fetch });
+                withAccount, readSettingsLocked, fetchImpl: providerFetch });
         } else if (input.provider === 'custom') {
             providerInput = await prepareCustomImageReferences(referenceContext, { effectId, input, settings, fingerprint: input.settingsFingerprint,
-                withAccount, readSettingsLocked, fetchImpl: fetch || globalThis.fetch });
+                withAccount, readSettingsLocked, fetchImpl: providerFetch });
             assertQuickImageGenRequestConfigured({ ...settings, seed: input.seed, __qigCustomReferences: providerInput }, input.prompt, input.negative);
         }
     }
@@ -161,16 +162,16 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
     if (image === undefined) {
         if (input.provider === 'custom' && settings.customApiMode === 'async') {
             image = await generateCustomImageJob(context, { effectId, input, settings, references: providerInput,
-                fingerprint: input.settingsFingerprint, fetchImpl: fetch || globalThis.fetch, readSettings, withAccount, wait });
+                fingerprint: input.settingsFingerprint, fetchImpl: providerFetch, readSettings, withAccount, wait });
             withAccount(() => writeImageArtifact(context.directories, context.job.id, step, image));
         } else if (QUEUED_IMAGE_PROVIDERS.includes(input.provider) || input.provider === 'local' && settings.localType === 'comfyui') {
             image = input.provider === 'local'
                 ? await generateComfyImageJob(referenceContext, { effectId, input, settings,
-                    fingerprint: input.settingsFingerprint, fetchImpl: fetch || globalThis.fetch,
+                    fingerprint: input.settingsFingerprint, fetchImpl: providerFetch,
                     readSettings, readSettingsLocked,
                     withAccount, ...(wait ? { wait } : {}) })
                 : await generateQueuedImageJob(context, { effectId, input, settings,
-                    fingerprint: input.settingsFingerprint, fetchImpl: fetch || globalThis.fetch,
+                    fingerprint: input.settingsFingerprint, fetchImpl: providerFetch,
                     readSettings, materializeSource: materializeQueuedImage, ...(wait ? { wait } : {}) });
             withAccount(() => writeImageArtifact(context.directories, context.job.id, step, image));
         } else {
@@ -188,7 +189,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
                         ...(input.provider === 'custom' ? { __qigCustomReferences: providerInput } : {}),
                         ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyRequest: providerInput,
                             __qigProxyContext: proxyContext, __qigProxyReferences: editReference === undefined ? proxyReferences : [] } : {}) },
-                    signal: context.signal, fetch, deferDownload: true });
+                    signal: context.signal, fetch: providerFetch, deferDownload: true });
             }, {
                 readResult: readSaved,
                 writeResult: (_directories, _id, _name, result) => withAccount(() => isImageAddressArtifact(result)
@@ -204,7 +205,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
         image = await downloadQuickImageGenImage({ url: image.url, prompt: input.prompt, negative: input.negative,
             settings: { ...current, seed: input.seed,
                 ...(input.provider === 'proxy' ? { proxySeed: input.proxySeed, __qigProxyContext: proxyContext } : {}) },
-            signal: context.signal, fetch });
+            signal: context.signal, fetch: providerFetch });
         withAccount(() => writeImageArtifact(context.directories, context.job.id, step, image));
     }
     const bytes = typeof image?.base64 === 'string' ? Buffer.from(image.base64, 'base64') : null;

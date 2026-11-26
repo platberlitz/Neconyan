@@ -733,4 +733,183 @@ test('HIGH-4, MEDIUM-3 & BLOCKER-2: admission/auth ordering before large body pa
         fs.rmSync(root, { recursive: true, force: true });
     }
 });
+
+const HOST_WHITELIST_PROBE = `
+    import assert from 'node:assert/strict';
+    import net from 'node:net';
+    import express from 'express';
+    import { setConfigFilePath } from './src/util.js';
+    globalThis.DATA_ROOT = process.env.TEST_ROOT;
+    setConfigFilePath(process.env.TEST_CONFIG);
+    const { default: hostWhitelistMiddleware } = await import('./src/middleware/hostWhitelist.js');
+    const app = express();
+    app.use(hostWhitelistMiddleware);
+    app.use((_req, res) => res.send('passed'));
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    const { port } = server.address();
+    // Raw requests, so the Host header can be missing, empty or oddly cased.
+    const rawStatus = request => new Promise((resolve, reject) => {
+        const socket = net.connect(port, '127.0.0.1', () => socket.end(request));
+        let text = '';
+        socket.setEncoding('utf8');
+        socket.on('data', chunk => { text += chunk; });
+        socket.on('end', () => resolve(Number(text.split(' ')[1])));
+        socket.on('error', reject);
+    });
+    const statusFor = host => rawStatus('GET / HTTP/1.1\\r\\nHost: ' + host + '\\r\\nConnection: close\\r\\n\\r\\n');
+    const expected = JSON.parse(process.env.TEST_EXPECTED);
+    try {
+        for (const [host, status] of Object.entries(expected.hosts)) {
+            assert.equal(await statusFor(host), status, host);
+        }
+        assert.equal(await rawStatus('GET / HTTP/1.0\\r\\n\\r\\n'), expected.missing, 'missing Host');
+        assert.equal(await rawStatus('GET / HTTP/1.1\\r\\nHost:   \\r\\nConnection: close\\r\\n\\r\\n'), expected.empty, 'empty Host');
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+`;
+
+test('Track A: the host whitelist is on by default, matches hosts case-insensitively and rejects requests without a Host header', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-sec-host-'));
+    try {
+        let probeCount = 0;
+        const runProbe = (lines, expected) => {
+            const config = path.join(root, `config-${++probeCount}.yaml`);
+            fs.writeFileSync(config, [...lines, ''].join('\n'));
+            runIsolatedScript(HOST_WHITELIST_PROBE, { TEST_ROOT: root, TEST_CONFIG: config, TEST_EXPECTED: JSON.stringify(expected) });
+        };
+
+        // No hostWhitelist section at all: the code default must protect against DNS rebinding.
+        runProbe(['whitelistMode: false'], {
+            hosts: {
+                'attacker.example': 403,
+                'attacker.example:8000': 403,
+                'localhost:8000': 200,
+                'LOCALHOST:8000': 200,
+                'App.Localhost': 200,
+                '127.0.0.1:8000': 200,
+                '[::1]:8000': 200,
+            },
+            missing: 403,
+            empty: 403,
+        });
+
+        // Listed hosts match whatever case either side uses.
+        runProbe(['hostWhitelist:', '  enabled: true', '  hosts:', '    - Neconyan.Example.TEST', '    - .Tunnel.Test'], {
+            hosts: {
+                'neconyan.example.test': 200,
+                'NECONYAN.EXAMPLE.TEST:443': 200,
+                'my.TUNNEL.test': 200,
+                'other.example.test': 403,
+            },
+            missing: 403,
+            empty: 403,
+        });
+
+        // Explicitly turning the whitelist off still lets every request through.
+        runProbe(['hostWhitelist:', '  enabled: false'], {
+            hosts: { 'attacker.example': 200, 'localhost': 200 },
+            missing: 200,
+            empty: 200,
+        });
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('Track A: the shipped config and server defaults keep CORS off and the host whitelist on', async () => {
+    const { default: yaml } = await import('yaml');
+    const shipped = yaml.parse(fs.readFileSync(new URL('../default/config.yaml', import.meta.url), 'utf8'));
+    assert.equal(shipped.cors.enabled, false);
+    assert.deepEqual(shipped.cors.origin, []);
+    assert.equal(shipped.hostWhitelist.enabled, true);
+
+    const serverSource = fs.readFileSync(new URL('../src/server-main.js', import.meta.url), 'utf8');
+    assert.match(serverSource, /getConfigValue\('cors\.enabled', false, 'boolean'\)/);
+    assert.match(serverSource, /getConfigValue\('cors\.origin', \[\]\)/);
+    assert.doesNotMatch(serverSource, /getConfigValue\('cors\.origin', 'null'\)/);
+    assert.match(serverSource, /req\.method === 'POST' && req\.path === '\/api\/operations\/import-input'/);
+
+    const hostSource = fs.readFileSync(new URL('../src/middleware/hostWhitelist.js', import.meta.url), 'utf8');
+    assert.match(hostSource, /getConfigValue\('hostWhitelist\.enabled', true, 'boolean'\)/);
+});
+
+test('Track A: the session cookie is Secure only on real or trusted-proxy HTTPS, and plain HTTP never fails to save it', async () => {
+    // Run the exact middleware from src/server-main.js, placed after cookie-session as it is there.
+    const serverSource = fs.readFileSync(new URL('../src/server-main.js', import.meta.url), 'utf8');
+    const match = serverSource.match(/app\.use\(cookieSession\([\s\S]*?\n\}\)\);[\s\S]*?\napp\.use\((\(req, _res, next\) => \{\n {4}if \(req\.secure && req\.sessionOptions\) \{[\s\S]*?\n\})\);/);
+    assert.ok(match, 'the Secure cookie middleware follows cookieSession() in src/server-main.js');
+    const secureCookieMiddleware = new Function(`return (${match[1]});`)();
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-sec-cookie-'));
+    const keyPath = path.join(root, 'key.pem');
+    const certPath = path.join(root, 'cert.pem');
+    const openssl = spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath, '-days', '1', '-subj', '/CN=localhost'], { encoding: 'utf8' });
+    assert.equal(openssl.status, 0, openssl.stderr);
+
+    const app = express();
+    app.set('trust proxy', 'loopback');
+    app.use(cookieSession({ name: 'session-test', sameSite: 'lax', httpOnly: true, secret: 'test-secret' }));
+    app.use(secureCookieMiddleware);
+    app.get('/login', (req, res) => {
+        req.session.user = 'tester';
+        res.send({ secure: req.secure });
+    });
+
+    const { default: http } = await import('node:http');
+    const { default: https } = await import('node:https');
+    const servers = [];
+    const listen = (server, host) => new Promise(resolve => {
+        servers.push(server);
+        server.listen(0, host, () => resolve(server.address().port));
+    });
+    const get = (client, options) => new Promise((resolve, reject) => {
+        const request = client.request({ path: '/login', rejectUnauthorized: false, ...options }, response => {
+            let body = '';
+            response.setEncoding('utf8');
+            response.on('data', chunk => { body += chunk; });
+            response.on('end', () => resolve({ status: response.statusCode, cookies: response.headers['set-cookie'] ?? [], body }));
+        });
+        request.on('error', reject);
+        request.end();
+    });
+    const sessionCookie = response => response.cookies.find(cookie => cookie.startsWith('session-test='));
+
+    try {
+        const httpPort = await listen(http.createServer(app), '0.0.0.0');
+        const httpsPort = await listen(https.createServer({ key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }, app), '127.0.0.1');
+
+        // Plain HTTP: the cookie is still sent, without Secure.
+        const plain = await get(http, { host: '127.0.0.1', port: httpPort });
+        assert.equal(plain.status, 200);
+        assert.ok(sessionCookie(plain), 'plain HTTP still gets a session cookie');
+        assert.doesNotMatch(sessionCookie(plain), /;\s*secure/i);
+
+        // Direct HTTPS: Secure.
+        const direct = await get(https, { host: '127.0.0.1', port: httpsPort });
+        assert.equal(direct.status, 200);
+        assert.match(sessionCookie(direct), /;\s*secure/i);
+
+        // A loopback reverse proxy terminating HTTPS: trusted, so Secure.
+        const proxied = await get(http, { host: '127.0.0.1', port: httpPort, headers: { 'X-Forwarded-Proto': 'https' } });
+        assert.equal(proxied.status, 200);
+        assert.equal(JSON.parse(proxied.body).secure, true);
+        assert.match(sessionCookie(proxied), /;\s*secure/i);
+
+        // The same header from a non-loopback client is not trusted: no crash, no Secure, cookie still saved.
+        const externalAddress = Object.values(os.networkInterfaces()).flat()
+            .find(entry => entry && entry.family === 'IPv4' && !entry.internal)?.address;
+        if (externalAddress) {
+            const spoofed = await get(http, { host: externalAddress, port: httpPort, headers: { 'X-Forwarded-Proto': 'https' } });
+            assert.equal(spoofed.status, 200);
+            assert.equal(JSON.parse(spoofed.body).secure, false);
+            assert.ok(sessionCookie(spoofed), 'an untrusted proxy header does not stop the session cookie');
+            assert.doesNotMatch(sessionCookie(spoofed), /;\s*secure/i);
+        }
+    } finally {
+        await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
 /* global globalThis */

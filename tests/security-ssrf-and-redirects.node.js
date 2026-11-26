@@ -178,6 +178,7 @@ test('FN-HIGH-2 & BLOCKER-1: PrivateRequestAgent blocks non-public ranges and Pi
             const fakeHttpReq = {
                 getHeader: (name) => String(name).toLowerCase() === 'host' ? `pinned-test.invalid:${port}` : undefined,
                 setHeader: () => {},
+                emit: () => true,
                 path: '/test-path?q=1',
                 outputData: [],
                 _implicitHeader: () => {},
@@ -682,5 +683,96 @@ test('FN-LOW-2 & BLOCKER-5: corsProxyMiddleware blocks alternative loopback repr
         await new Promise(resolve => appServer.close(resolve));
         await new Promise(resolve => remoteServer.close(resolve));
     }
+});
+
+test('Track A: NAT64 addresses that translate to private IPv4 are classified as non-public', async () => {
+    const { isNonPublicIpAddress } = await import('../src/private-request-filter.js');
+    for (const address of [
+        '64:ff9b::7f00:1',
+        '64:ff9b::127.0.0.1',
+        '64:ff9b::a9fe:a9fe',
+        '[64:ff9b::a00:1]',
+        '64:ff9b::8.8.8.8',
+        '64:ff9b:1::a00:1',
+        '64:ff9b:1:ffff::1',
+    ]) {
+        assert.equal(isNonPublicIpAddress(address), true, `Expected ${address} to be classified as non-public`);
+    }
+    // Neighbouring public ranges stay public.
+    assert.equal(isNonPublicIpAddress('64:ff9a::1'), false);
+    assert.equal(isNonPublicIpAddress('2606:4700:4700::1111'), false);
+});
+
+test('Track A: Quick Image Gen server requests go through node-fetch and the private request filter', () => {
+    runIsolatedScript(`
+        import assert from 'node:assert/strict';
+        import http from 'node:http';
+        import { setConfigFilePath } from './src/util.js';
+        setConfigFilePath('./default/config.yaml');
+        const { quickImageGenFetch, resolveQuickImageGenFetch } = await import('./src/generation/quick-image-gen.js');
+        const { default: initPrivateRequestFilter } = await import('./src/private-request-filter.js');
+
+        // Callers that inject their own fetch keep it; the built-in fetch is never used as a default.
+        const injected = async () => new Response('injected');
+        assert.equal(resolveQuickImageGenFetch(injected), injected);
+        assert.equal(resolveQuickImageGenFetch(undefined), quickImageGenFetch);
+        assert.equal(resolveQuickImageGenFetch(globalThis.fetch), quickImageGenFetch);
+
+        const server = http.createServer((request, response) => {
+            const chunks = [];
+            request.on('data', chunk => chunks.push(chunk));
+            request.on('end', () => {
+                if (request.url === '/empty') {
+                    response.writeHead(204).end();
+                    return;
+                }
+                response.writeHead(200, { 'content-type': 'application/json', 'x-provider': 'test' });
+                response.end(JSON.stringify({
+                    method: request.method,
+                    contentType: request.headers['content-type'] ?? '',
+                    authorization: request.headers.authorization ?? '',
+                    body: Buffer.concat(chunks).toString('utf8'),
+                }));
+            });
+        });
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        const base = 'http://127.0.0.1:' + server.address().port;
+        try {
+            // Native FormData is encoded as multipart, and the answer has a web stream body.
+            const form = new FormData();
+            form.append('prompt', 'a cat in a teacup');
+            form.append('image', new Blob([Uint8Array.from([1, 2, 3])], { type: 'image/png' }), 'ref.png');
+            const formResponse = await quickImageGenFetch(new URL(base + '/form'), {
+                method: 'POST',
+                headers: new Headers({ Authorization: 'Bearer test-key' }),
+                body: form,
+            });
+            assert.ok(formResponse instanceof Response);
+            assert.equal(typeof formResponse.body.getReader, 'function');
+            assert.equal(formResponse.headers.get('x-provider'), 'test');
+            assert.equal(formResponse.url, base + '/form');
+            const echoed = await formResponse.json();
+            assert.equal(echoed.method, 'POST');
+            assert.match(echoed.contentType, /^multipart\\/form-data; boundary=/);
+            assert.equal(echoed.authorization, 'Bearer test-key');
+            assert.match(echoed.body, /name="prompt"\\r\\n\\r\\na cat in a teacup/);
+            assert.match(echoed.body, /filename="ref.png"/);
+
+            // JSON and web stream bodies still work, and null-body statuses do not throw.
+            const jsonResponse = await quickImageGenFetch(base + '/json', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ok: true }) });
+            assert.equal((await jsonResponse.json()).body, '{"ok":true}');
+            const streamResponse = await quickImageGenFetch(base + '/stream', { method: 'POST', body: new Response('streamed').body, duplex: 'half' });
+            assert.equal((await streamResponse.json()).body, 'streamed');
+            const empty = await quickImageGenFetch(base + '/empty');
+            assert.equal(empty.status, 204);
+            assert.equal(empty.body, null);
+
+            // With the private request filter on, the same local request is refused.
+            initPrivateRequestFilter({ listen: true, enabled: true, privateAddressWhitelist: [], logBlocked: false, logAllowed: false, allowUnresolvedHosts: false, enableKeepAlive: false });
+            await assert.rejects(quickImageGenFetch(base + '/json'));
+        } finally {
+            await new Promise(resolve => server.close(resolve));
+        }
+    `);
 });
 /* global globalThis */

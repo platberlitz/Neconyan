@@ -92,12 +92,14 @@ basicAuthUser:
 enableCorsProxy: false
 # CORS settings (applied to all routes)
 cors:
-  # Enable or disable CORS middleware
-  enabled: true
-  # Allowed origins. Use "null" to match the default browser file origin.
-  # You can set "*" to allow any origin, or a list of allowed origins.
-  origin:
-    - "null"
+  # Enable or disable CORS middleware. Off by default: the web app is served
+  # from the same origin and does not need it.
+  enabled: false
+  # Allowed origins, as a list such as ["https://example.com"].
+  # Avoid "null": sandboxed iframes, data: URLs and local files all send
+  # Origin: null, so allowing it lets any of those pages read responses.
+  # Avoid "*" unless every route is meant to be public.
+  origin: []
   # Allowed methods
   methods:
     - "OPTIONS"
@@ -154,13 +156,19 @@ sso:
     - ::1
     - 127.0.0.1
 
-# Host whitelist configuration. Recommended if you're using a listen mode
+# Host whitelist configuration. Protects against DNS rebinding, where a
+# malicious website points its own domain at this server so the browser
+# treats it as same-origin.
 hostWhitelist:
-  # Enable or disable host whitelisting
-  enabled: false
+  # Enable or disable host whitelisting. When enabled, requests are only
+  # accepted if the Host header is localhost, a *.localhost name, an IPv4 or
+  # IPv6 address, or one of the hosts listed below. Requests without a Host
+  # header are rejected. Add your domain names here before serving the app
+  # behind one (for example a reverse proxy or tunnel).
+  enabled: true
   # Scan incoming requests for potential host header spoofing
   scan: true
-  # List of allowed hosts. Do not include localhost or IPs, these are safe.
+  # List of allowed hosts. Do not include localhost or IPs, these are always allowed.
   # Use a dot to create subdomain patterns.
   # Examples:
   # - example.com
