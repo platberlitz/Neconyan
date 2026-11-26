@@ -1,1 +1,0 @@
-Tightened security across local connections, imports, chat and card rendering, extensions, Docker and the mobile apps, blocking untrusted websites from reaching a local server, isolating custom styles and cards more strictly, capping oversized archives and images, and keeping `.secret_key` out of keyless Android rescue backups.
