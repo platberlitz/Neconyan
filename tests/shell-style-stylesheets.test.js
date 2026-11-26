@@ -449,7 +449,8 @@ describe('Hide cats works with every shell style', () => {
         expect(tabsSource).toContain('kittyless: \'sb-kittyless\',');
         expect(tabsSource).toContain('const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;');
         expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncStarlightConservatoryStage\(nextTheme\);\s*syncSunkenReefStage\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
-        expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
+        expect(tabsSource).toMatch(/function isKittylessChosen\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
+        expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return typeof nnState\.kittylessOverride === 'boolean' \? nnState\.kittylessOverride : isKittylessChosen\(\);/);
         expect(tabsSource).toMatch(/function setKittylessEnabled\([\s\S]*?safeSetItem\(NN_STORAGE_KEYS\.kittyless/);
     });
 
@@ -457,6 +458,8 @@ describe('Hide cats works with every shell style', () => {
         expect(tabsSource).toContain('id: \'sb-kittyless-enabled-input\'');
         expect(tabsSource).toContain('label: \'Hide cats (Kittyless)\'');
         expect(tabsSource).toContain('The Kittyless style always hides the cats.');
+        expect(tabsSource).toContain('kittylessInput.checked = isKittylessChosen();');
+        expect(tabsSource).toContain('Termeownal UI is using its own Hide cats choice. This switch applies when Termeownal UI is off.');
         expect(stripped).toContain('.sb-kittyless-setting.is-disabled #sb-kittyless-enabled-input:checked');
     });
 });

@@ -2567,9 +2567,27 @@ html body.neconyan.sbterm #neconyan-home-host {
     color: var(--sbterm-fg);
 }
 
-html body.neconyan.sbterm :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
-html body.neconyan.sbterm :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
 html body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {
+    display: none;
+}
+
+/* Termeownal UI keeps its own layout. Calico's cat ears appear on every host where they fit; these hosts have no room for them here (or would show them cut off), so they stay earless on purpose. Hosts the ears do fit are left to Calico. */
+html body.neconyan.sbterm #right-nav-panel .sb-character-shell-header.neconyan-cat-panel::before,
+html body.neconyan.sbterm #right-nav-panel .sb-character-shell-header.neconyan-cat-panel::after,
+html body.neconyan.sbterm #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::before,
+html body.neconyan.sbterm #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::after,
+html body.neconyan.sbterm #right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel::before,
+html body.neconyan.sbterm #right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel::after,
+html body.neconyan.sbterm #form_sheld.neconyan-cat-panel::before,
+html body.neconyan.sbterm #form_sheld.neconyan-cat-panel::after,
+html body.neconyan.sbterm #send_form.neconyan-cat-panel::before,
+html body.neconyan.sbterm #send_form.neconyan-cat-panel::after,
+html body.neconyan.sbterm #sb_conversation_form.sb-conversation-composer.neconyan-cat-panel::before,
+html body.neconyan.sbterm #sb_conversation_form.sb-conversation-composer.neconyan-cat-panel::after,
+html body.neconyan.sbterm #neconyan-home-host .welcomeRecentShell.neconyan-cat-panel::before,
+html body.neconyan.sbterm #neconyan-home-host .welcomeRecentShell.neconyan-cat-panel::after,
+html body.neconyan.sbterm #ica--settings .ica--workspace-main.neconyan-cat-panel::before,
+html body.neconyan.sbterm #ica--settings .ica--workspace-main.neconyan-cat-panel::after {
     display: none;
 }
 
@@ -2589,6 +2607,18 @@ body.sbterm .sbterm-kitty {
 body.sbterm .sbterm-kitty-outline { fill: var(--sbterm-fg); }
 body.sbterm .sbterm-kitty-face { fill: var(--sbterm-bg); }
 body.sbterm .sbterm-kitty-marking { fill: var(--sbterm-accent); }
+
+body.sbterm .sbterm-person {
+    display: none;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+body.sbterm .sbterm-person path { fill: var(--sbterm-fg); }
+
+/* The Agents button swaps its kitty for a person while cats are hidden, like Catline's cat-plain. */
+:root[data-sb-kittyless='true'] body.sbterm .sbterm-mascot-button .sbterm-kitty { display: none; }
+:root[data-sb-kittyless='true'] body.sbterm .sbterm-mascot-button .sbterm-person { display: block; }
 
 html body.neconyan.sbterm #top-bar #sb-topbar-inner #sb-topbar-title { display: none !important; }
 
