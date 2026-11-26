@@ -8,6 +8,6 @@ test.each([...EMPTY_OUTPUT_SENTINELS])('strips the supported %s sentinel from li
 test('strips every sentinel in one update and leaves ordinary prose untouched', () => {
     const raw = [...EMPTY_OUTPUT_SENTINELS].join('\n');
     expect(stripEmptyOutputSentinelLines(raw)).toBe('');
-    const prose = 'The words tracker-none and PHONE_NONE remain in ordinary prose.\ntracker-none-ish';
+    const prose = 'The words tracker-none, PHONE_NONE, levelup-none and stats-none remain in ordinary prose.\ntracker-none-ish\nstats-none-ish';
     expect(stripEmptyOutputSentinelLines(prose)).toBe(prose);
 });

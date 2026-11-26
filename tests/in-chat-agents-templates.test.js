@@ -16,6 +16,10 @@ const {
     AGENT_REGEX_PLACEMENT,
     applyRegexScriptList,
 } = await import('../public/scripts/extensions/in-chat-agents/regex-scripts.js');
+const {
+    isEmptyOutputSentinel,
+    stripEmptyOutputSentinelLines,
+} = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
 
 const templateDir = new URL('../public/scripts/extensions/in-chat-agents/templates/', import.meta.url);
 const indexSourceUrl = new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url);
@@ -223,6 +227,18 @@ function expectExistingStatsSectionOnStatsTemplate(levelUp, stats) {
     expect(stats.prompt.endsWith(updatingExistingStatsSection)).toBe(true);
 }
 
+function expectUnchangedTurnSentinels(levelUp, stats) {
+    expect(levelUp.prompt).toContain('When the latest reply earns no level-up, reply with exactly the single line levelup-none and nothing else.');
+    expect(levelUp.prompt).toContain('Any [LEVEL_UP] in your previous notes is already applied');
+    expect(levelUp.prompt.indexOf('levelup-none')).toBeLessThan(levelUp.prompt.indexOf('## Level-Up Output Format'));
+    expect(stats.prompt).toContain('reply with exactly the single line stats-none and nothing else.');
+    expect(stats.prompt).toContain('A [LEVEL_UP] is new only when its Level is higher than the Level on the existing [USER_STATS] block');
+    expect(stats.prompt.indexOf('stats-none')).toBeGreaterThan(stats.prompt.indexOf('## Stat Sheet Output Format'));
+    expect(stats.prompt.indexOf('stats-none')).toBeLessThan(stats.prompt.indexOf('## Updating Existing Stats'));
+    expect(levelUp.prompt).not.toContain('stats-none');
+    expect(stats.prompt).not.toContain('levelup-none');
+}
+
 describe('in-chat agent bundled templates', () => {
     test('closed tracker blocks include every body line while legacy blocks leave following prose alone', () => {
         const bundles = readTemplate('regex-bundles.json');
@@ -426,6 +442,25 @@ describe('in-chat agent bundled templates', () => {
             readTemplate('level-up-companion.json'),
             readTemplate('user-based-stats-generator.json'),
         );
+    });
+
+    test('lets Level Up and User-based Stats answer a none line on unchanged turns', () => {
+        const catalog = readTemplate('index.json');
+
+        expectUnchangedTurnSentinels(
+            findCatalogTemplate(catalog, 'tpl-level-up-companion'),
+            findCatalogTemplate(catalog, 'tpl-user-based-stats-generator'),
+        );
+        expectUnchangedTurnSentinels(
+            readTemplate('level-up-companion.json'),
+            readTemplate('user-based-stats-generator.json'),
+        );
+        for (const sentinel of ['levelup-none', 'stats-none']) {
+            expect(isEmptyOutputSentinel(sentinel)).toBe(true);
+            expect(isEmptyOutputSentinel(`  ${sentinel}\n`)).toBe(true);
+            expect(stripEmptyOutputSentinelLines(`Scene text\n${sentinel}`)).toBe('Scene text');
+        }
+        expect(isEmptyOutputSentinel('[LEVEL_UP]\nLevel: 2\n[/LEVEL_UP]')).toBe(false);
     });
 
     test('keeps bundled companion prompts free of negative wrappers and uppercase protocols', () => {

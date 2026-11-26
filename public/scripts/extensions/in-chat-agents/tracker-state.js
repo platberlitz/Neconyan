@@ -355,7 +355,7 @@ function rejectUnlabelledTrackerBullets(agent, inspection) {
     return { ...inspection, status: 'unlabelled', payload: '' };
 }
 
-const TRACKER_EMPTY_SENTINEL_LINE = /^[^\S\n]*(?:tracker-none|TRACKER_NONE|phone-none|PHONE_NONE)[^\S\n]*$/gm;
+const TRACKER_EMPTY_SENTINEL_LINE = /^[^\S\n]*(?:tracker-none|TRACKER_NONE|phone-none|PHONE_NONE|levelup-none|LEVELUP_NONE|stats-none|STATS_NONE)[^\S\n]*$/gm;
 const TRACKER_FENCE_LINE = /^[^\S\n]*(?:```|~~~)[^\n]*$/gm;
 const STRAY_SPEECH = /["“”«»][^"“”«»\n]{3,}["“”«»]/u;
 const STRAY_ACTION = /(?:^|\s)\*[^*\n]{3,}\*/u;

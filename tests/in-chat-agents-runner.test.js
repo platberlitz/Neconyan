@@ -5861,6 +5861,95 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[3].extra.inChatAgentCompanionResults['saved-user-stats-generator'].content).toBe('[USER_STATS]\nLevel: 2\n[/USER_STATS]');
     });
 
+    test('keeps the last stat sheet and level-up in play after levelup-none and stats-none turns', async () => {
+        globalSettings.companionExecutionMode = 'sequential';
+        generateQuietPrompt
+            .mockResolvedValueOnce('levelup-none')
+            .mockResolvedValueOnce('stats-none');
+
+        const levelUpCompanion = createCompanionAgent({
+            id: 'saved-level-up-companion',
+            name: 'Level Up Companion',
+            sourceTemplateId: 'tpl-level-up-companion',
+            prompt: 'Check whether a level-up is earned.',
+            companion: {
+                trigger: 'auto',
+                feedback: { enabled: true, depth: 1 },
+                includeHistory: true,
+                historyDepth: 3,
+                batch: true,
+                batchAgentIds: ['tpl-user-based-stats-generator'],
+                sendContextToCompanions: true,
+                contextRecipientAgentIds: ['tpl-user-based-stats-generator'],
+            },
+        });
+        const statsCompanion = createCompanionAgent({
+            id: 'saved-user-stats-generator',
+            name: 'User-based Stats Generator',
+            sourceTemplateId: 'tpl-user-based-stats-generator',
+            prompt: 'Update the user stats.',
+            companion: {
+                trigger: 'auto',
+                feedback: { enabled: true, depth: 1 },
+                includeHistory: true,
+                historyDepth: 3,
+                batch: true,
+                batchAgentIds: ['tpl-level-up-companion'],
+                sendContextToCompanions: true,
+                contextRecipientAgentIds: ['tpl-level-up-companion'],
+                dependencies: ['tpl-level-up-companion'],
+                waitForDependencies: true,
+            },
+        });
+        enabledAgents = [levelUpCompanion, statsCompanion];
+
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+
+        chat.push(
+            { mes: 'I defeat the warden.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'The warden falls.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+            { mes: 'I walk to the inn.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'The inn is quiet.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+            { mes: 'I order a drink.', name: 'User', is_user: true, is_system: false, extra: {} },
+            { mes: 'The barkeep pours one.', name: 'Assistant', is_user: false, is_system: false, extra: {} },
+        );
+        companionRunner.setCompanionResult(chat[1], levelUpCompanion, {
+            status: 'done',
+            content: '[LEVEL_UP]\nLevel: 2\n[/LEVEL_UP]',
+        });
+        companionRunner.setCompanionResult(chat[1], statsCompanion, {
+            status: 'done',
+            content: '[USER_STATS]\nLevel: 2\n[/USER_STATS]',
+        });
+        companionRunner.setCompanionResult(chat[3], levelUpCompanion, { status: 'done', content: 'levelup-none' });
+        companionRunner.setCompanionResult(chat[3], statsCompanion, { status: 'done', content: 'stats-none' });
+
+        await companionRunner.runCompanionStage({
+            messageIndex: 5,
+            message: chat[5],
+            activeAgents: [levelUpCompanion, statsCompanion],
+        });
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        const levelUpPrompt = generateQuietPrompt.mock.calls[0][0].quietPrompt;
+        const statsPrompt = generateQuietPrompt.mock.calls[1][0].quietPrompt;
+        expect(levelUpPrompt).toContain('Check whether a level-up is earned.');
+        expect(levelUpPrompt).toContain('[Companion context: User-based Stats Generator]');
+        expect(levelUpPrompt).toContain('[USER_STATS]\nLevel: 2\n[/USER_STATS]');
+        expect(levelUpPrompt).toContain('[Your previous notes]\nMessage 1:\n[LEVEL_UP]\nLevel: 2\n[/LEVEL_UP]');
+        expect(statsPrompt).toContain('Update the user stats.');
+        expect(statsPrompt).toContain('[Your previous notes]\nMessage 1:\n[USER_STATS]\nLevel: 2\n[/USER_STATS]');
+        expect(statsPrompt).toContain('[LEVEL_UP]\nLevel: 2\n[/LEVEL_UP]');
+        expect(statsPrompt).toContain('[Companion context: Level Up Companion]');
+        expect(statsPrompt).not.toContain('[Completed companion: Level Up Companion]');
+        for (const prompt of [levelUpPrompt, statsPrompt]) {
+            expect(prompt).not.toContain('levelup-none');
+            expect(prompt).not.toContain('stats-none');
+        }
+        expect(chat[5].extra.inChatAgentCompanionResults['saved-level-up-companion'].content).toBe('levelup-none');
+        expect(chat[5].extra.inChatAgentCompanionResults['saved-user-stats-generator'].content).toBe('stats-none');
+    });
+
     test.each(['sequential', 'parallel'])('uses a new quick dependency on the next reply in the same chat (%s)', async executionMode => {
         globalSettings.companionExecutionMode = executionMode;
         const source = createCompanionAgent({ id: 'live-source', name: 'Live Source', prompt: 'Write the source note.' });

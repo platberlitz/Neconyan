@@ -41,8 +41,9 @@ export const CHATROOM_REPLY_MAX_CHARS = 2000;
 
 // Neconyan: an agent with nothing to report returns one of these instead of prose or an empty
 // string, so "nothing happened" is a deliberate answer rather than a failed run. Tracker companions
-// are taught their sentinel automatically; other custom companions can opt in through their prompt.
-export const EMPTY_OUTPUT_SENTINELS = new Set(['phone-none', 'PHONE_NONE', 'tracker-none', 'TRACKER_NONE']);
+// are taught their sentinel automatically; other custom companions can opt in through their prompt
+// (Level Up answers levelup-none and User-based Stats answers stats-none on turns with no change).
+export const EMPTY_OUTPUT_SENTINELS = new Set(['phone-none', 'PHONE_NONE', 'tracker-none', 'TRACKER_NONE', 'levelup-none', 'LEVELUP_NONE', 'stats-none', 'STATS_NONE']);
 export const TRACKER_EMPTY_OUTPUT_INSTRUCTION = 'Empty-turn rule: when your own instructions above produce no block for this turn, reply with exactly the single line tracker-none and nothing else. Apply this only when your instructions genuinely yield no content; when they call for output every turn, always produce that output in full.';
 
 export function isEmptyOutputSentinel(content = '') {
@@ -52,7 +53,7 @@ export function isEmptyOutputSentinel(content = '') {
 // Neconyan: tracker prompts teach the empty-output sentinel, and the same prompt is injected into
 // the MAIN generation when the tracker runs inline. Only a line that is nothing but the sentinel is
 // removed; prose that merely contains the word is left alone.
-export const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone[-_]none|tracker[-_]none)[^\S\n]*$`;
+export const EMPTY_OUTPUT_SENTINEL_LINE_SOURCE = String.raw`^[^\S\n]*(?:phone[-_]none|tracker[-_]none|levelup[-_]none|stats[-_]none)[^\S\n]*$`;
 export const EMPTY_OUTPUT_SENTINEL_LINE_PROBE = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'im');
 export const EMPTY_OUTPUT_SENTINEL_LINE_PATTERN = new RegExp(EMPTY_OUTPUT_SENTINEL_LINE_SOURCE, 'gim');
 
