@@ -125,6 +125,7 @@ const PANEL_REOPEN_SETTLE_PASSES = 4;
 const PANEL_REOPEN_SETTLE_MIN_FRAMES = 3;
 const PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES = 2;
 const PANEL_REOPEN_SETTLE_MAX_MS = 900;
+const PANEL_LIVE_RENDER_HYDRATE_MAX_CARDS = 4;
 const PANEL_REOPEN_SETTLE_MAX_FRAMES = 60;
 
 let panelInitialized = false;
@@ -2401,6 +2402,12 @@ function renderPanel({ applyOpenState } = {}) {
     const panelElement = $('#ica--tracker-panel');
     const panel = panelElement[0];
     const wasVisible = Boolean(!applyOpenState && panelOpen);
+    // A reopen that is still settling knows where the reader was; the position on screen may not be there yet.
+    const settlingAnchor = wasVisible && panelAnchorSettleState?.panel === panel
+        && panelAnchorSettleState.generation === panelHydrationGeneration
+        && resolvePanelAnchorCandidate(panel, panelAnchorSettleState.anchor)
+        ? panelAnchorSettleState.anchor
+        : null;
     if (wasVisible) {
         cancelPanelAnchorSettle();
         syncPanelHeightCacheWidth(panel);
@@ -2409,13 +2416,15 @@ function renderPanel({ applyOpenState } = {}) {
         ? panel.getBoundingClientRect()
         : null;
     const anchor = wasVisible
-        ? capturePanelReopenAnchor(panel)
+        ? (settlingAnchor ?? capturePanelReopenAnchor(panel))
         : captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
     const previousHeights = new Map();
+    const previousSections = new Map();
     for (const section of getPanelAgentSections(panel)) {
         const agentId = getPanelSectionAgentId(section);
         const rect = section.getBoundingClientRect();
         previousHeights.set(agentId, rect.height);
+        previousSections.set(agentId, section);
         if (wasVisible && isPanelSectionCacheable(section) && isPanelSectionRendered(section, panelRect)) {
             cachePanelSectionHeight(section, { applyIntrinsic: false });
         }
@@ -2434,6 +2443,7 @@ function renderPanel({ applyOpenState } = {}) {
     });
     if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
     applyPanelSearch({ rendering: true });
+    const liveSections = wasVisible ? hydrateLiveRenderedPanelCards(panel, previousSections) : [];
     applyCachedCardIntrinsicHeights(panel);
 
     for (const section of getPanelAgentSections(panel)) {
@@ -2444,8 +2454,14 @@ function renderPanel({ applyOpenState } = {}) {
     }
 
     restorePanelAnchor(panel, anchor);
+    for (const section of liveSections) {
+        cachePanelSectionHeight(section, { applyIntrinsic: true });
+    }
     if (wasVisible) {
         capturePanelScrollTrackAnchor(panel);
+        if (!panelPointerActive && !stopPanelBottomFollow && Date.now() >= panelUserScrollUntil) {
+            schedulePanelAnchorSettle(panel, anchor);
+        }
     }
     armPanelSortable(panel);
     observePanelJumpSize(panel);
@@ -2453,6 +2469,39 @@ function renderPanel({ applyOpenState } = {}) {
     if (wasVisible) {
         schedulePanelHydration();
     }
+}
+
+/**
+ * A note that changes while the panel is open arrives as a new card. Its saved height belongs to
+ * the old note, and an unrendered card would take that height first and its real one a frame or two
+ * later, moving everything below it after the position was already restored. Rendering the changed
+ * cards at once gives the restore their real heights.
+ * @param {HTMLElement} panel
+ * @param {Map<string, Element>} previousSections Cards by agent id before the render.
+ * @returns {Element[]} The finished cards rendered here, to be measured after the restore.
+ */
+function hydrateLiveRenderedPanelCards(panel, previousSections) {
+    const rendered = [];
+    for (const section of getPanelAgentSections(panel)) {
+        const agentId = getPanelSectionAgentId(section);
+        if (!agentId || previousSections.get(agentId) === section) {
+            continue;
+        }
+        if (isPanelSectionFiltered(section) || isPanelSectionHidden(section)) {
+            continue;
+        }
+        const pending = Boolean(section.querySelector?.('.ica--companion-pending'));
+        if (!pending && rendered.length >= PANEL_LIVE_RENDER_HYDRATE_MAX_CARDS) {
+            continue;
+        }
+        panelCardHeightCache.delete(agentId);
+        clearCardIntrinsicBlockSize(section);
+        section.classList?.add?.(HYDRATED_CARD_CLASS);
+        if (!pending) {
+            rendered.push(section);
+        }
+    }
+    return rendered;
 }
 
 const armedSortablePanels = new WeakSet();
