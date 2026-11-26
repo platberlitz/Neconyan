@@ -293,4 +293,89 @@ for (const width of [393, 1280]) {
             await context.close();
         }
     });
+
+    test(`companion panel reopens where it was after new notes arrive while closed at ${width}px`, async ({ browser }) => {
+        const phone = width === 393;
+        const context = await browser.newContext({ viewport: { width, height: phone ? 852 : 900 }, hasTouch: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        const page = await context.newPage();
+        const prefix = `panel-reopen-new-${width}-`;
+        const cardCount = 16;
+        const targetId = `${prefix}06`;
+        const notes = (round, counts) => Object.fromEntries(Array.from({ length: cardCount }, (_, index) => {
+            const content = Array.from({ length: counts[index % counts.length] }, (_, line) => `Entry ${index + 1}.${line + 1}: ${round} note for this turn.`).join('\n\n');
+            return [`${prefix}${String(index).padStart(2, '0')}`, content];
+        }));
+        try {
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialHidden.v1': 'true' };
+            });
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
+            await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...');
+            await page.evaluate(async ({ firstNotes }) => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const results = {};
+                for (const [index, [id, content]] of Object.entries(firstNotes).entries()) {
+                    const name = `Reopen ${String(index + 1).padStart(2, '0')}`;
+                    await store.saveAgent({ id, name, enabled: true, execution: 'companion', category: 'companion', injection: { order: index * 10 }, companion: { displayMode: 'panel' } });
+                    results[id] = { status: 'done', agentName: name, content };
+                }
+                const { chat } = await import('/script.js');
+                chat.push({ is_user: false, mes: 'First reply.', extra: { inChatAgentCompanionResults: results } });
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+            }, { firstNotes: notes('first', [2, 8, 4, 10, 3, 9]) });
+
+            const panel = page.locator('#ica--tracker-panel');
+            await expect.poll(() => panel.evaluate(element => [...element.querySelectorAll('.ica--tpanel-agent:not(.displayNone)')]
+                .every(card => card.classList.contains('is-hydrated')))).toBe(true);
+            const targetTop = () => panel.evaluate((element, id) => {
+                const card = element.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                return card.getBoundingClientRect().top - element.getBoundingClientRect().top;
+            }, targetId);
+
+            await panel.evaluate((element, id) => {
+                element.scrollTop = element.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`).offsetTop - 30;
+            }, targetId);
+            await page.waitForTimeout(400);
+            const before = await targetTop();
+
+            // Notes above the reading position get rewritten to new lengths while the panel is closed.
+            await page.evaluate(async ({ secondNotes }) => {
+                const panelModule = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                const { chat, eventSource } = await import('/script.js');
+                const { COMPANION_RESULTS_UPDATED_EVENT } = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+                panelModule.closeCompanionPanel();
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const pending = Object.fromEntries(Object.keys(secondNotes).map((id, index) => [id, { status: 'pending', agentName: `Reopen ${String(index + 1).padStart(2, '0')}`, content: '' }]));
+                chat.push({ is_user: true, mes: 'Next turn.' });
+                chat.push({ is_user: false, mes: 'Second reply.', extra: { inChatAgentCompanionResults: pending } });
+                await eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT);
+                for (const [id, content] of Object.entries(secondNotes)) {
+                    pending[id] = { ...pending[id], status: 'done', content, timestamp: Date.now() };
+                }
+                await eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT);
+            }, { secondNotes: notes('second', [9, 3, 10, 2, 8, 4]) });
+
+            await page.evaluate(async () => {
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+            });
+            const reopened = await targetTop();
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const painted = await targetTop();
+            await page.waitForTimeout(1500);
+            const settled = await targetTop();
+
+            expect(before).toBeGreaterThanOrEqual(28);
+            expect(before).toBeLessThanOrEqual(32);
+            expect(Math.abs(reopened - before)).toBeLessThanOrEqual(2);
+            expect(Math.abs(painted - before)).toBeLessThanOrEqual(2);
+            expect(Math.abs(settled - before)).toBeLessThanOrEqual(2);
+        } finally {
+            await page.evaluate(async prefix => {
+                const { getAgents, deleteAgent } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                for (const agent of getAgents().filter(agent => agent.id.startsWith(prefix))) await deleteAgent(agent.id);
+            }, prefix).catch(() => {});
+            await context.close();
+        }
+    });
 }
