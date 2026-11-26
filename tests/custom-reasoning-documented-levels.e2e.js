@@ -17,7 +17,12 @@ const test = disposableTest.extend({
         } });
         const page = await account.context.newPage();
         if (viewport) await page.setViewportSize(viewport);
-        await use(page);
+        try {
+            await use(page);
+        } finally {
+            await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+            await account.context.unrouteAll({ behavior: 'ignoreErrors' }).catch(() => {});
+        }
     },
 });
 test.setTimeout(150000);

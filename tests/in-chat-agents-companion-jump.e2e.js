@@ -20,7 +20,7 @@ for (const width of [393, 1280]) {
             await page.goto('/');
             await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
             await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...');
-            await page.evaluate(async ({ prefix, note }) => {
+            const openSkipped = await page.evaluate(async ({ prefix, note }) => {
                 const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const results = {};
                 for (const [index, name] of ['Harbour', 'Lantern', 'Orchard', 'Belfry', 'Compass', 'Quarry', 'Meadow', 'Signal'].entries()) {
@@ -31,6 +31,19 @@ for (const width of [393, 1280]) {
                 const { chat } = await import('/script.js');
                 chat.push({ is_user: false, mes: 'A saved reply.', extra: { inChatAgentCompanionResults: results } });
                 (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+
+                // Wait frame-by-frame on open (well before the 450ms background hydration delay)
+                // so Chromium's content-visibility: auto pass settles on both 393px and 1280px.
+                const panel = document.getElementById('ica--tracker-panel');
+                const painted = card => card.firstElementChild.checkVisibility({ contentVisibilityAuto: true });
+                const cards = [...panel.querySelectorAll('.ica--tpanel-agent:not(.displayNone)')];
+                let state = { first: false, last: true };
+                for (let frame = 0; frame < 15; frame += 1) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    state = { first: painted(cards[0]), last: painted(cards.at(-1)) };
+                    if (state.first && !state.last) break;
+                }
+                return state;
             }, { prefix, note: LONG_NOTE });
 
             const panel = page.locator('#ica--tracker-panel');
@@ -60,14 +73,14 @@ for (const width of [393, 1280]) {
                 };
             });
 
-            // Cards far below the fold are left unpainted until they scroll near, so a busy panel opens without freezing.
+            // Cards far below the fold are left unpainted on opening paint until background hydration or scroll brings them in.
             const skipped = () => panel.evaluate(element => {
                 // A skipped card still reports itself visible; its contents are what go unpainted.
                 const painted = card => card.firstElementChild.checkVisibility({ contentVisibilityAuto: true });
                 const cards = [...element.querySelectorAll('.ica--tpanel-agent:not(.displayNone)')];
                 return { first: painted(cards[0]), last: painted(cards.at(-1)) };
             });
-            await expect.poll(skipped).toEqual({ first: true, last: false });
+            expect(openSkipped).toEqual({ first: true, last: false });
 
             const start = await measure();
             expect(start.maxScroll).toBeGreaterThan(200);
@@ -82,15 +95,16 @@ for (const width of [393, 1280]) {
             }
 
             await down.click();
-            // Unpainted cards only estimate their height, so the panel grows as they appear; it must still end at the real bottom.
+            // Unpainted cards only estimate their height, so the panel grows as they appear; wait until it lands at the real bottom with the last card painted.
             await expect.poll(async () => {
-                const { scrollTop, maxScroll } = await measure();
-                return maxScroll - scrollTop;
-            }).toBeLessThanOrEqual(1);
-            expect((await skipped()).last).toBe(true);
+                const [{ scrollTop, maxScroll }, { last }] = await Promise.all([measure(), skipped()]);
+                return maxScroll - scrollTop <= 1 && last;
+            }).toBe(true);
             await expect(down).toHaveAttribute('aria-disabled', 'true');
             await expect(up).not.toHaveAttribute('aria-disabled', 'true');
             const end = await measure();
+            expect(end.maxScroll - end.scrollTop).toBeLessThanOrEqual(1);
+            expect((await skipped()).last).toBe(true);
             expect(end.lastCardBottom).toBeLessThanOrEqual(end.up.top);
             expect(Math.abs(end.down.bottom - start.down.bottom)).toBeLessThanOrEqual(1);
 
