@@ -1,0 +1,1 @@
+Hiding the **Dice Roller** with the eye button in the **Companion panel** now folds it down to its title like the other hidden Companions, and it no longer rolls when the panel opens or by itself with **Auto roll** until you show it again.

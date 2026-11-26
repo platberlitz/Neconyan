@@ -1128,14 +1128,19 @@ function buildPanelAgentSection(state) {
         : '';
 
     if (state.agent && isDiceRollerAgent(state.agent)) {
+        // Hidden, it keeps only its header like the other hidden companions, and
+        // leaves no host for the roller to move into.
+        const diceBody = isHidden
+            ? ''
+            : `
+                <p class="ica--tpanel-dice-hint">Roll here. Add to message puts the result in the box; Send puts it in the story for the next reply to treat as settled.</p>
+                ${buildDiceCompanionHostHtml({ agentId, surface: 'panel' })}`;
         return `
             <section class="ica--tpanel-agent ica--tpanel-agent--dice" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}" data-search-text="${searchText}">
                 <div class="ica--tpanel-agent-head">
                     <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                     <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${windowButton}${settingsButton}</span>
-                </div>
-                <p class="ica--tpanel-dice-hint">Roll here. Add to message puts the result in the box; Send puts it in the story for the next reply to treat as settled.</p>
-                ${buildDiceCompanionHostHtml({ agentId, surface: 'panel' })}
+                </div>${diceBody}
             </section>
         `;
     }

@@ -271,6 +271,21 @@ describe('companion tracker panel', () => {
         expect(html).not.toContain('data-action="panel-fix"');
     });
 
+    test('folds a hidden Dice Roller to its header and leaves no host for the widget', async () => {
+        agents = [{
+            id: 'dice-1', name: 'Dice Roller', icon: 'fa-dice-d20', execution: 'companion', category: 'companion',
+            sourceTemplateId: 'tpl-dice-roller-companion', enabled: true, companion: { displayMode: 'panel', trigger: 'manual' },
+        }];
+        hiddenAgentIds = new Set(['dice-1']);
+        const panel = await importPanel();
+        const html = panel.buildPanelHtml();
+        expect(html).toContain('data-hidden="true"');
+        expect(html).toContain('data-action="panel-hide"');
+        expect(html).toContain('fa-eye-slash');
+        expect(html).not.toContain('data-neco-dice-host');
+        expect(html).not.toContain('ica--tpanel-dice-hint');
+    });
+
     test('shows live notes ahead of saved history without exposing saved-message actions', async () => {
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
         const saved = { is_user: false, mes: 'Saved reply' };
