@@ -127,6 +127,7 @@ const PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES = 2;
 const PANEL_REOPEN_SETTLE_MAX_MS = 900;
 const PANEL_LIVE_RENDER_HYDRATE_MAX_CARDS = 4;
 const PANEL_REOPEN_SETTLE_MAX_FRAMES = 60;
+const PANEL_REOPEN_HYDRATION_SETTLE_MAX_MS = 5000;
 
 let panelInitialized = false;
 let livePreview = null;
@@ -1396,22 +1397,27 @@ function measureCardContentBlockSize(section) {
     if (!(borderBoxHeight > 0)) {
         return 0;
     }
-    let chromeBlock = 0;
-    if (typeof globalThis.getComputedStyle === 'function') {
-        try {
-            const style = globalThis.getComputedStyle(section);
-            if (style) {
-                chromeBlock = (Number.parseFloat(style.paddingTop) || 0)
-                    + (Number.parseFloat(style.paddingBottom) || 0)
-                    + (Number.parseFloat(style.borderTopWidth) || 0)
-                    + (Number.parseFloat(style.borderBottomWidth) || 0);
-            }
-        } catch {
-            // Ignore stubbed nodes that are not real DOM elements.
-        }
-    }
-    const contentHeight = borderBoxHeight - chromeBlock;
+    const contentHeight = borderBoxHeight - measureCardChromeBlockSize(section);
     return contentHeight > 0 ? Math.round(contentHeight * 100) / 100 : 0;
+}
+
+function measureCardChromeBlockSize(section) {
+    if (!section || typeof globalThis.getComputedStyle !== 'function') {
+        return 0;
+    }
+    try {
+        const style = globalThis.getComputedStyle(section);
+        if (!style) {
+            return 0;
+        }
+        return (Number.parseFloat(style.paddingTop) || 0)
+            + (Number.parseFloat(style.paddingBottom) || 0)
+            + (Number.parseFloat(style.borderTopWidth) || 0)
+            + (Number.parseFloat(style.borderBottomWidth) || 0);
+    } catch {
+        // Ignore stubbed nodes that are not real DOM elements.
+        return 0;
+    }
 }
 
 function setCardIntrinsicBlockSize(section, contentHeight) {
@@ -1903,6 +1909,7 @@ function schedulePanelAnchorSettle(panel, anchor) {
         generation: panelHydrationGeneration,
         expectedScrollTop: Number(panel.scrollTop) || 0,
         deadline: Date.now() + PANEL_REOPEN_SETTLE_MAX_MS,
+        hydrationDeadline: Date.now() + PANEL_REOPEN_HYDRATION_SETTLE_MAX_MS,
         remainingQuietFrames: PANEL_REOPEN_SETTLE_MIN_FRAMES,
         framesRun: 0,
     };
@@ -1918,12 +1925,17 @@ function schedulePanelAnchorSettle(panel, anchor) {
         if (panelAnchorSettleState !== state) {
             return;
         }
-        const withinLimits = state.framesRun < PANEL_REOPEN_SETTLE_MAX_FRAMES && Date.now() < state.deadline;
+        // Cards above the reader take their real height one by one after the slide, and the browser
+        // can paint one of them early. Hold the reading position until they are all in.
+        const hydrating = hasUnhydratedPanelCards(panel);
+        const withinLimits = hydrating
+            ? Date.now() < state.hydrationDeadline
+            : state.framesRun < PANEL_REOPEN_SETTLE_MAX_FRAMES && Date.now() < state.deadline;
         if (!withinLimits) {
             cancelPanelAnchorSettle();
             return;
         }
-        if (hasRunningPanelAnimation(panel)) {
+        if (hydrating || hasRunningPanelAnimation(panel)) {
             state.remainingQuietFrames = PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES;
         } else if (corrected) {
             state.remainingQuietFrames = PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES;
@@ -2443,13 +2455,24 @@ function renderPanel({ applyOpenState } = {}) {
     });
     if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
     applyPanelSearch({ rendering: true });
+    // Read before the live cards drop their saved heights: a note that turned pending while the panel
+    // was closed has no height on screen to hold, only the one saved when the panel closed.
+    const savedHeights = new Map(panelCardHeightCache);
     const liveSections = wasVisible ? hydrateLiveRenderedPanelCards(panel, previousSections) : [];
     applyCachedCardIntrinsicHeights(panel);
 
     for (const section of getPanelAgentSections(panel)) {
-        const previousHeight = previousHeights.get(getPanelSectionAgentId(section));
-        if (previousHeight && section.querySelector?.('.ica--companion-pending')) {
-            section.style.minHeight = `${previousHeight}px`;
+        if (!section.querySelector?.('.ica--companion-pending')) {
+            continue;
+        }
+        const agentId = getPanelSectionAgentId(section);
+        const savedHeight = savedHeights.get(agentId);
+        const heldHeight = Math.max(
+            previousHeights.get(agentId) || 0,
+            savedHeight > 0 ? savedHeight + measureCardChromeBlockSize(section) : 0,
+        );
+        if (heldHeight > 0) {
+            section.style.minHeight = `${heldHeight}px`;
         }
     }
 

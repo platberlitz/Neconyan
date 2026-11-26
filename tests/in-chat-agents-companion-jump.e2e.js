@@ -429,7 +429,8 @@ for (const width of [393, 1280]) {
                         enabled: true,
                         execution: 'companion',
                         category: 'companion',
-                        injection: { order: i * 10 },
+                        // Past every bundled card, so the card right above Chatroom is one whose note changes.
+                        injection: { order: 1000 + i * 10 },
                         companion: { displayMode: 'panel', format: 'html' },
                     });
                     const lines = i < targetIndex ? 22 : (i === targetIndex ? 14 : 6);
@@ -610,8 +611,13 @@ for (const width of [393, 1280]) {
     });
 }
 
-for (const width of [393, 1280]) {
-    test(`companion panel keeps a middle card in place while a new turn's notes finish after reopen at ${width}px`, async ({ browser }) => {
+// The second case reads deep inside a long note, where the card's top is far above the panel.
+const liveReopenCases = [
+    { label: 'a middle card', targetLines: 0, offset: 30 },
+    { label: 'the place inside a long middle card', targetLines: 80, offset: -1500 },
+];
+for (const { label, targetLines, offset } of liveReopenCases) for (const width of [393, 1280]) {
+    test(`companion panel keeps ${label} in place while a new turn's notes finish after reopen at ${width}px`, async ({ browser }) => {
         const phone = width === 393;
         const context = await browser.newContext({
             viewport: { width, height: phone ? 852 : 900 },
@@ -620,7 +626,7 @@ for (const width of [393, 1280]) {
             serviceWorkers: 'block',
         });
         const page = await context.newPage();
-        const prefix = `e2e-live-reopen-${width}-${Date.now()}-`;
+        const prefix = `e2e-live-reopen-${width}-${targetLines}-${Date.now()}-`;
         const total = 24;
         const targetIndex = 12;
         const targetId = `${prefix}${String(targetIndex).padStart(2, '0')}`;
@@ -641,11 +647,11 @@ for (const width of [393, 1280]) {
             }, { timeout: 30_000 });
 
             // Every note changes height from one turn to the next, so a height saved from the last turn is wrong for this one.
-            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+            await page.evaluate(async ({ prefix, total, targetIndex, targetLines }) => {
                 const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
                 const ctx = window.SillyTavern.getContext();
                 window.__liveReopenNote = (turn, index) => Array.from(
-                    { length: 4 + ((index * 7 + turn * 5) % 19) },
+                    { length: index === targetIndex && targetLines ? targetLines : 4 + ((index * 7 + turn * 5) % 19) },
                     (_, line) => `<p>Turn ${turn} note ${index} line ${line + 1}: steady layout check.</p>`,
                 ).join('');
                 const results = {};
@@ -666,7 +672,7 @@ for (const width of [393, 1280]) {
                 ctx.chat.push({ name: 'Assistant', is_user: false, is_system: false, mes: 'Turn 1 reply.', extra: { inChatAgentCompanionResults: results } });
                 const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
                 panel.openCompanionPanel();
-            }, { prefix, total, targetIndex });
+            }, { prefix, total, targetIndex, targetLines });
 
             const panel = page.locator('#ica--tracker-panel');
             await expect(panel).toHaveClass(/is-open/);
@@ -684,14 +690,14 @@ for (const width of [393, 1280]) {
                 await ctx.eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT, { messageIndex: ctx.chat.length - 1 });
             });
 
-            await page.evaluate(id => {
+            await page.evaluate(({ id, offset }) => {
                 const scroller = document.querySelector('#ica--tracker-panel');
                 const card = scroller.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
-                scroller.scrollTop = Math.max(0, card.offsetTop - 30);
-            }, targetId);
+                scroller.scrollTop = Math.max(0, card.offsetTop - offset);
+            }, { id: targetId, offset });
             await page.waitForTimeout(300);
             const before = await targetTop();
-            expect(before).toBe(30);
+            expect(before).toBe(offset);
 
             await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
             await expect(panel).not.toHaveClass(/is-open/, { timeout: 5_000 });

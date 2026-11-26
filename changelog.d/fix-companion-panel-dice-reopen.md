@@ -1,0 +1,1 @@
+The **Companion Panel** now reopens where you left it when the note right above yours changed size, and at the same place inside a long note while a new reply's notes are still being written, instead of dropping you further down.
