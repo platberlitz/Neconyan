@@ -4,6 +4,7 @@
  * server read, and decide how to reconcile them without executing anything.
  */
 import { MAX_THREAD_MESSAGES } from './constants.js';
+import { isUnsafeObjectKey } from './object-keys.js';
 
 export function isPlainConversationObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -159,21 +160,21 @@ function mergePlainFields(serverObject, localObject, savedObject, skip = new Set
     const saved = isPlainConversationObject(savedObject) ? savedObject : {};
     const result = {};
     for (const key of new Set([...Object.keys(server), ...Object.keys(local)])) {
-        if (skip.has(key)) {
+        if (skip.has(key) || isUnsafeObjectKey(key)) {
             continue;
         }
-        const serverValue = server[key];
-        const localValue = local[key];
-        const savedValue = saved[key];
+        const serverValue = Object.hasOwn(server, key) ? server[key] : undefined;
+        const localValue = Object.hasOwn(local, key) ? local[key] : undefined;
+        const savedValue = Object.hasOwn(saved, key) ? saved[key] : undefined;
         if (conversationValuesEqual(localValue, savedValue)) {
-            if (key in server) {
+            if (Object.hasOwn(server, key)) {
                 result[key] = cloneConversationValue(serverValue);
             }
         } else if (conversationValuesEqual(serverValue, savedValue)) {
-            if (key in local) {
+            if (Object.hasOwn(local, key)) {
                 result[key] = cloneConversationValue(localValue);
             }
-        } else if (key in server) {
+        } else if (Object.hasOwn(server, key)) {
             // Both sides changed differently: the server wins shared metadata.
             result[key] = cloneConversationValue(serverValue);
         }
@@ -211,6 +212,9 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
     const localMap = isPlainConversationObject(localBranches) ? localBranches : {};
     const savedMap = isPlainConversationObject(savedBranches) ? savedBranches : {};
     for (const id of Object.keys(serverMap)) {
+        if (isUnsafeObjectKey(id)) {
+            continue;
+        }
         // A branch present on the server but not locally was removed in the
         // browser: honor the deletion only when the server copy is unchanged,
         // otherwise the server changed it too and the conflict is reported.
@@ -254,7 +258,7 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
         if (!merged[id]) return { conflict: true };
     }
     for (const id of Object.keys(localMap)) {
-        if (Object.hasOwn(serverMap, id)) {
+        if (isUnsafeObjectKey(id) || Object.hasOwn(serverMap, id)) {
             continue;
         }
         // A branch absent from the server was deleted there, or is a new local draft.
@@ -287,14 +291,19 @@ function mergeCharacterMap(serverCharacters, localCharacters, savedCharacters) {
     const merged = isPlainConversationObject(serverCharacters) ? cloneConversationValue(serverCharacters) : {};
     const localMap = isPlainConversationObject(localCharacters) ? localCharacters : {};
     const savedMap = isPlainConversationObject(savedCharacters) ? savedCharacters : {};
+    for (const key of Object.keys(merged)) {
+        if (isUnsafeObjectKey(key)) delete merged[key];
+    }
     for (const key of Object.keys(savedMap)) {
-        if (!Object.hasOwn(localMap, key) && conversationValuesEqual(merged[key], savedMap[key])) delete merged[key];
+        if (isUnsafeObjectKey(key)) continue;
+        if (!Object.hasOwn(localMap, key) && conversationValuesEqual(Object.hasOwn(merged, key) ? merged[key] : undefined, savedMap[key])) delete merged[key];
     }
     for (const key of Object.keys(localMap)) {
-        const serverThread = merged[key];
+        if (isUnsafeObjectKey(key)) continue;
+        const serverThread = Object.hasOwn(merged, key) ? merged[key] : undefined;
         const localThread = localMap[key];
         if (isPlainConversationObject(serverThread)) {
-            const result = mergeThread(serverThread, localThread, savedMap[key]);
+            const result = mergeThread(serverThread, localThread, Object.hasOwn(savedMap, key) ? savedMap[key] : undefined);
             if (result.conflict) {
                 return { conflict: true };
             }

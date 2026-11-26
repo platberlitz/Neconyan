@@ -1,7 +1,8 @@
 import { isLikelyPromptTransformRefusal } from '../extensions/in-chat-agents/prompt-transform-refusal.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 function parseReply(text) {
-    try { return JSON.parse(String(text).trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1')); } catch { return text; }
+    try { return JSON.parse(stripCreatorCodeFence(text)); } catch { return text; }
 }
 
 function strings(value) {

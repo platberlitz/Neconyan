@@ -1808,8 +1808,8 @@ function onReaderClick(event) {
     }
     const link = event.target.closest?.('.notes-wikilink');
     if (link) {
-        if (!link.hasAttribute('data-wiki-target') && !link.hasAttribute('data-note-path')) return;
         event.preventDefault();
+        if (!link.hasAttribute('data-wiki-target') && !link.hasAttribute('data-note-path')) return;
         if (link.dataset.notePath) void followLink({ target: link.dataset.notePath, kind: 'markdown', fragment: link.dataset.wikiFragment });
         else void followLink({ target: [link.dataset.wikiTarget, link.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki', fromNoteId: link.dataset.noteFromId });
         return;

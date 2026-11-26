@@ -1,7 +1,9 @@
 import { getPresetManager } from '../preset-manager.js';
 import { currentPresetTargets, currentPromptOrderId } from './preset.js';
 import { normaliseChange, fail } from './proposals.js';
+import { PRESET_FIELDS } from './preset-fields.js';
 import { refuseUndo, UndoConflictError } from './undo-errors.js';
+import { isAllowedUndoField } from './undo-fields.js';
 
 const conflict = 'This preset changed while the review was open. Review the suggestion again before saving.';
 const undoConflict = 'This preset was edited after Scratchpad saved it, so automatic undo was stopped to avoid overwriting your later changes. Open Change history to see the previous text.';
@@ -67,6 +69,9 @@ export async function undoPresetChange(undo) {
         refuseUndo(`Select the preset ${undo.preset} first, then undo again.`);
     }
     if (undo.api === 'openai' && String(currentPromptOrderId({ globalOnly: undo.globalOnly === true })) !== String(undo.orderId)) refuseUndo(`Select the preset ${undo.preset} first, then undo again.`);
+    if (typeof undo.api !== 'string' || !Object.hasOwn(PRESET_FIELDS, undo.api) || !isAllowedUndoField(PRESET_FIELDS[undo.api], undo.field)) {
+        throw new UndoConflictError(undoConflict);
+    }
     const manager = getPresetManager(undo.api);
     const saved = manager.getCompletionPresetByName(undo.preset);
     if (!saved) throw new UndoConflictError(undoConflict);

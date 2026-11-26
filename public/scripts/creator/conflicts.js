@@ -1,5 +1,6 @@
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const own = (value, key) => (object(value) && Object.hasOwn(value, key) ? value[key] : undefined);
 
 /** Arrays are indivisible: merging their indexes could silently reorder greetings or entries. */
 export function compareCreatorChanges(base, local, remote, choices = {}) {
@@ -10,7 +11,7 @@ export function compareCreatorChanges(base, local, remote, choices = {}) {
         if (object(before) && object(ours) && object(theirs)) {
             const result = {};
             for (const key of new Set([...Object.keys(before), ...Object.keys(ours), ...Object.keys(theirs)])) {
-                const value = merge(before[key], ours[key], theirs[key], [...path, key]);
+                const value = merge(own(before, key), own(ours, key), own(theirs, key), [...path, key]);
                 if (value !== undefined) Object.defineProperty(result, key, { value, enumerable: true, writable: true, configurable: true });
             }
             return result;

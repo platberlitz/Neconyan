@@ -194,7 +194,7 @@ function getActiveAssistantContext() {
     const chatId = getCurrentChatId?.();
     const metadata = character?.data?.extensions?.neconyan_assistant;
     if (selected_group || !character || chatId === undefined || chatId === null || chatId === ''
-        || !isNeconyanAssistant(character)) {
+        || typeof metadata?.id !== 'string' || !metadata.id || !isNeconyanAssistant(character)) {
         return null;
     }
 

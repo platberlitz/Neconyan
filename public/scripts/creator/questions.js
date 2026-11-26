@@ -1,4 +1,5 @@
 import { element } from './fields.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 export function renderCreatorQuestionsOption(workspace, main) {
     const label = element('label', 'creator-choice-pill');
@@ -21,7 +22,7 @@ export function creatorQuestionMessages(proposal) {
 export function mergeCreatorQuestions(proposal, output) {
     if (proposal.plan.phase !== 'questions') throw new Error('This proposal is no longer waiting for questions.');
     let result;
-    try { result = JSON.parse(String(output).trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1')); } catch { throw new Error('The questions reply was incomplete.'); }
+    try { result = JSON.parse(stripCreatorCodeFence(output)); } catch { throw new Error('The questions reply was incomplete.'); }
     const questions = result?.questions;
     if (!Array.isArray(questions) || questions.length > 100 || questions.some(item => typeof item !== 'string' || item.length > 10000)) throw new Error('The model returned invalid questions.');
     const next = structuredClone(proposal);

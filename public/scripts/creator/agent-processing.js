@@ -1,5 +1,5 @@
 import { creatorProposal, creatorTextValue, PROPOSAL_FIELDS } from './model.js';
-import { applyRegexScript, normalizeRegexScript } from '../extensions/in-chat-agents/regex-scripts.js';
+import { applyCreatorAgentRegexScripts, applyCreatorAgentRegexScriptsInWorker, creatorAgentRegexScripts } from './agent-regex.js';
 
 export function creatorAgentTargets(draft) {
     return PROPOSAL_FIELDS.flatMap(field => field === 'alternate_greetings'
@@ -36,14 +36,14 @@ export function creatorAgentMessages(proposal) {
     ];
 }
 
+function creatorAgentStepResult(proposal, text) {
+    const step = proposal.plan.steps[proposal.plan.next];
+    return JSON.stringify({ fields: { [step.fields[0]]: step.count ? [text] : text }, coverage: [`${step.label}: reviewed by the selected agent.`] });
+}
+
 export function finishCreatorAgentStep(proposal, output) {
     const step = proposal.plan.steps[proposal.plan.next];
-    let text = String(output);
-    for (const raw of step.agent.regexScripts ?? []) {
-        const script = normalizeRegexScript(raw);
-        if (!script.disabled) text = applyRegexScript(script, text);
-    }
-    return JSON.stringify({ fields: { [step.fields[0]]: step.count ? [text] : text }, coverage: [`${step.label}: reviewed by the selected agent.`] });
+    return creatorAgentStepResult(proposal, applyCreatorAgentRegexScripts(creatorAgentRegexScripts(step.agent), output));
 }
 
 export async function requestCreatorAgentStep(workspace, draft, proposal, options) {
@@ -63,5 +63,8 @@ export async function requestCreatorAgentStep(workspace, draft, proposal, option
     }
     workspace.session.assertOwner();
     if (options.signal?.aborted || !options.isCurrent()) throw new Error('The source changed or the request was cancelled. Nothing was applied.');
-    return finishCreatorAgentStep(proposal, text);
+    const processed = await applyCreatorAgentRegexScriptsInWorker(creatorAgentRegexScripts(step.agent), text);
+    workspace.session.assertOwner();
+    if (options.signal?.aborted || !options.isCurrent()) throw new Error('The source changed or the request was cancelled. Nothing was applied.');
+    return creatorAgentStepResult(proposal, processed);
 }

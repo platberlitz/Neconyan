@@ -8,6 +8,7 @@ import { CHARACTER_FIELDS, characterField, characterFieldName } from './characte
 import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
 import { validPresetValue } from './preset-fields.js';
 import { scenarioNoteSelector } from './scenario-note-references.js';
+import { AGENT_FIELDS, CSS_SNIPPET_FIELDS, REGEX_FIELDS } from './undo-fields.js';
 import {
     assertAllowedLorebookKeys,
     EXTRA_ACTIVATION_FIELDS,
@@ -47,9 +48,7 @@ function messageNumber(value) {
     return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
-export const AGENT_FIELDS = Object.freeze(['name', 'description', 'prompt']);
-export const REGEX_FIELDS = Object.freeze(['scriptName', 'findRegex', 'replaceString']);
-export const CSS_SNIPPET_FIELDS = Object.freeze(['name', 'content']);
+export { AGENT_FIELDS, REGEX_FIELDS, CSS_SNIPPET_FIELDS };
 export const DIALOGUE_COLOR = /^#[0-9a-f]{6}$/i;
 const MEWMORY_STATUSES = ['active', 'background', 'resolved', 'uncertain', 'invalidated'];
 

@@ -20,6 +20,7 @@ import { currentSource, wireSource } from './context.js';
 import { snapshotLorebookEntry } from './lorebook-fields.js';
 import { characterFieldPatch, readCharacterField } from './character-fields.js';
 import { refuseUndo, UndoConflictError, UndoUnavailableError } from './undo-errors.js';
+import { AGENT_FIELDS, CSS_SNIPPET_FIELDS, isAllowedUndoField, isUnsafeUndoKey, REGEX_FIELDS } from './undo-fields.js';
 
 export { UndoConflictError, UndoUnavailableError };
 
@@ -62,8 +63,9 @@ async function saveBook(book, data) {
 }
 
 async function undoLorebook(undo) {
+    if (undo.uid === undefined || undo.uid === null || isUnsafeUndoKey(undo.uid)) conflict('lorebook');
     const data = await readBook(undo.book);
-    const live = data.entries[undo.uid];
+    const live = Object.hasOwn(data.entries, undo.uid) ? data.entries[undo.uid] : undefined;
     if (undo.kind === 'lorebook-delete') {
         if (live) conflict('lorebook');
         data.entries[undo.uid] = structuredClone(undo.beforeEntry);
@@ -132,6 +134,7 @@ async function undoAuthorsNote(undo, source) {
 
 async function undoStoredText(undo) {
     if (undo.kind === 'agent') {
+        if (!isAllowedUndoField(AGENT_FIELDS, undo.field)) conflict('agent');
         const store = await import('../extensions/in-chat-agents/agent-store.js');
         if (!store.getAgentById(undo.agent)) throw new UndoConflictError(t`That Agent no longer exists, so there is nothing to undo.`);
         let stale = false;
@@ -153,6 +156,7 @@ async function undoStoredText(undo) {
         return;
     }
     if (undo.kind === 'regex') {
+        if (!isAllowedUndoField(REGEX_FIELDS, undo.field)) conflict('regex');
         const engine = await import('../extensions/regex/engine.js');
         const script = engine.getScriptsByType(engine.SCRIPT_TYPES.GLOBAL).find(item => item?.id === undo.script);
         if (!script) throw new UndoConflictError(t`That regex script no longer exists, so there is nothing to undo.`);
@@ -167,6 +171,7 @@ async function undoStoredText(undo) {
         }
         return;
     }
+    if (!isAllowedUndoField(CSS_SNIPPET_FIELDS, undo.field)) conflict('css-snippet');
     const runtime = await import('../extensions/css-snippets/src/runtime.js');
     const snippet = (runtime.getSettings().snippetList ?? []).find(item => item?.id === undo.snippet && !item.isDeleted);
     if (!snippet) throw new UndoConflictError(t`That CSS snippet no longer exists, so there is nothing to undo.`);
@@ -186,7 +191,7 @@ async function undoDialogueColor(undo) {
         import('../extensions/third-party/sillytavern-character-colors/src/palettes.js'),
         import('../extensions/third-party/sillytavern-character-colors/src/ui.js'),
     ]);
-    const entry = state.characterColors?.[undo.key];
+    const entry = isUnsafeUndoKey(undo.key) || !Object.hasOwn(state.characterColors ?? {}, undo.key) ? null : state.characterColors[undo.key];
     if (!entry) throw new UndoConflictError(t`That character is no longer in the colour table, so there is nothing to undo.`);
     if (palettes.getBaseColor(entry) !== undo.after) conflict('dialogue-color');
     if (!ui.applyCharacterBaseColor(undo.key, undo.before, { saveImmediately: true })) throw new Error(t`The dialogue colour was not restored. Try again in a moment.`);
@@ -253,6 +258,7 @@ async function undoMessage(undo, source) {
 
 async function undoMewmory(undo, source) {
     requireChat(undo, source);
+    if (typeof undo.field !== 'string' || isUnsafeUndoKey(undo.field)) conflict('mewmory');
     const api = await import('./api.js');
     const wire = wireSource(source ?? currentSource());
     let current;

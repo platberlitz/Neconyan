@@ -9,6 +9,7 @@ import { sourcePersona, isCurrentSource } from './context.js';
 import { PERSONA_FIELDS, personaFieldValue } from './persona-fields.js';
 import { resolveScenarioNoteId } from './scenario-note-references.js';
 import { UndoConflictError } from './undo-errors.js';
+import { isAllowedUndoField, isUnsafeUndoKey, PERSONA_NOTE_UNDO_FIELDS, PERSONA_UNDO_FIELDS } from './undo-fields.js';
 
 export function requireSharedPersona(source, shared, name) {
     const current = sourcePersona(source);
@@ -99,6 +100,8 @@ export async function preparePersonaChange(change, source, shared, guard) {
 const undoConflict = 'This persona was edited after Scratchpad saved it, so automatic undo was stopped to avoid overwriting your later changes. Open Change history to see the previous text.';
 
 export async function undoPersonaChange(undo) {
+    if (!isAllowedUndoField(undo.note ? PERSONA_NOTE_UNDO_FIELDS : PERSONA_UNDO_FIELDS, undo.field)
+        || typeof undo.avatar !== 'string' || isUnsafeUndoKey(undo.avatar)) throw new UndoConflictError(undoConflict);
     const findNote = () => {
         const matches = (power_user.persona_descriptions?.[undo.avatar]?.appendices || []).filter(item => item.id === undo.noteId);
         if (matches.length !== 1) throw new UndoConflictError(undoConflict);

@@ -4,6 +4,7 @@ import { creatorTargetsSignature } from './formats.js';
 import { acceptCreatorField } from './field-generation.js';
 import { editCreatorDraft } from './model.js';
 import { parseCreatorLoreProposal, acceptCreatorLoreProposal } from './lore-proposals.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 const finished = job => ['completed', 'failed', 'interrupted', 'cancelled', 'conflict'].includes(job.state);
 
@@ -11,7 +12,7 @@ export function recoverCreatorServerReply(draft, result) {
     const { source, recovery, text } = result;
     if (draft.id !== source?.id) throw new Error('Open the original draft before recovering this reply.');
     if (recovery.kind === 'field') {
-        const parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1'));
+        const parsed = JSON.parse(stripCreatorCodeFence(text));
         return acceptCreatorField(draft, source, recovery.target, parsed.value);
     }
     return editCreatorDraft(draft, next => {

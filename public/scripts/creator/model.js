@@ -1,6 +1,7 @@
 /** Creator documents retain the complete imported card, including unknown extensions. */
 export const CREATOR_SCHEMA = 1;
 import { creatorTargetsSignature } from './formats.js';
+import { isAcceptableCreatorMediaValue } from './media-url.js';
 export const TEXT_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version']);
 export const PROPOSAL_FIELDS = Object.freeze([...TEXT_FIELDS, 'depth_prompt', 'alternate_greetings']);
 export const validCreatorProposalValue = (field, value) => field === 'alternate_greetings'
@@ -75,6 +76,7 @@ export function validateCreatorDraft(draft) {
     if (typeof draft.privateNotes !== 'string' || !draft.locks.every(field => PROPOSAL_FIELDS.includes(field))) throw new Error('The draft notes or field locks are invalid.');
     if (!draft.facts.every(fact => fact && typeof fact.id === 'string' && FACT_SECTIONS.includes(fact.section) && typeof fact.text === 'string' && ['decided', 'tentative', 'open'].includes(fact.status))) throw new Error('The guided facts are invalid.');
     if (!draft.books.every(book => book && typeof book.id === 'string' && typeof book.name === 'string' && ['linked', 'copy', 'embedded'].includes(book.mode) && book.data?.entries && typeof book.data.entries === 'object' && !Array.isArray(book.data.entries))) throw new Error('The draft lorebooks are invalid.');
+    if (!draft.media.every(item => item && typeof item === 'object' && !Array.isArray(item) && isAcceptableCreatorMediaValue(item.dataUrl))) throw new Error('The draft portraits are invalid.');
     if (draft.additionalBooks !== undefined && (!Array.isArray(draft.additionalBooks) || !draft.additionalBooks.every(name => typeof name === 'string'))) throw new Error('The additional lorebook names are invalid.');
     return draft;
 }

@@ -12,6 +12,8 @@ const CAPTION_ATTRIBUTES = ['title', 'aria-label', 'placeholder'];
 // rendered note is the note's own. The note's HTML keeps its classes, so a class name cannot tell the two apart.
 const readerControls = new WeakSet();
 const readerAttributes = new WeakMap();
+// Links the reader parsed from wiki syntax or relative Markdown paths. Note HTML can carry the same class, so only these are trusted.
+const genuineWikiLinks = new WeakSet();
 
 function readerControl(element) {
     readerControls.add(element);
@@ -96,6 +98,7 @@ function wikiNodes(text, documentRef, { embedLoading = false, noteId } = {}) {
         } else {
             element.className = 'notes-wikilink';
             element.href = '#';
+            genuineWikiLinks.add(element);
             element.textContent = link.label || (link.fragment ? `${link.target} › ${link.fragment}` : link.target);
         }
         if (!match[1]) {
@@ -139,9 +142,9 @@ function decodedFragment(fragment) {
 }
 
 function fixLinksAndImages(root, { notebookId, noteId, notePath, attachmentUrl }) {
-    for (const anchor of root.querySelectorAll('a[href]')) {
+    for (const anchor of root.querySelectorAll('a[href], area[href]')) {
         if (noteId) anchor.dataset.noteFromId = noteId;
-        if (anchor.classList.contains('notes-wikilink')) continue;
+        if (genuineWikiLinks.has(anchor)) continue;
         const href = anchor.getAttribute('href') ?? '';
         if (SAFE_SCHEMES.test(href)) {
             anchor.target = '_blank';
@@ -169,6 +172,7 @@ function fixLinksAndImages(root, { notebookId, noteId, notePath, attachmentUrl }
             anchor.dataset.wikiFragment = href.includes('#') ? decodedFragment(href.slice(href.indexOf('#') + 1)) : '';
             anchor.classList.add('notes-wikilink');
             anchor.href = '#';
+            genuineWikiLinks.add(anchor);
         } else {
             anchor.href = attachmentUrl(notebookId, relative);
             anchor.target = '_blank';
@@ -388,8 +392,8 @@ export function renderNoteInto(container, text, options) {
     const html = markdownConverter().makeHtml(protectEscapes(body));
     const clean = DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true },
-        FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'svg', 'math', 'video', 'audio', 'source', 'link', 'meta', 'base'],
-        FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'id', 'name', 'background', 'ping'],
+        FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'svg', 'math', 'video', 'audio', 'source', 'link', 'meta', 'base', 'area'],
+        FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'id', 'name', 'background', 'ping', 'download'],
         ALLOW_DATA_ATTR: false,
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
         ADD_TAGS: [],
@@ -403,6 +407,11 @@ export function renderNoteInto(container, text, options) {
                 if (attribute.value.includes('\uE100NNembed')) element.setAttribute(attribute.name, restoreEmbedTokens(attribute.value, tokens, String(text)));
             }
         }
+    }
+    // The reader's own link class must not be spoofed by note HTML, which would skip link checks.
+    for (const spoofed of clean.querySelectorAll('.notes-wikilink')) {
+        spoofed.classList.remove('notes-wikilink');
+        if (!spoofed.classList.length) spoofed.removeAttribute('class');
     }
     restoreTaskBoxes(clean, body);
     decorateWikiLinks(clean, options);

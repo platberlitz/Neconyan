@@ -2,11 +2,12 @@ import { sanitizeMessageHtml } from '../../script.js';
 import { element, button, textField } from './fields.js';
 import { creatorGuidance } from './guidance.js';
 import { requestCreatorReply } from './assistant.js';
+import { stripCreatorCodeFence } from './code-fence.js';
 
 export function previewCreatorRegex(pattern, replacement, sample) {
     if ([pattern, replacement, sample].some(value => typeof value !== 'string' || value.length > 100000)) throw new Error('Keep each preview field within 100,000 characters.');
     return new Promise((resolve, reject) => {
-        const worker = new Worker(new URL('./regex-worker.js', import.meta.url));
+        const worker = new Worker(new URL('./regex-worker.js', import.meta.url), { type: 'module' });
         const finish = (error, result) => { clearTimeout(timer); worker.terminate(); error ? reject(new Error(error)) : resolve(result); };
         const timer = setTimeout(() => finish('The pattern took too long. Simplify it before using it.'), 1000);
         worker.onmessage = ({ data }) => finish(data.error, data);
@@ -32,7 +33,7 @@ export function renderPrettyHtml(workspace, main) {
                 { role: 'system', content: `Design one character-scoped regex display. Return only JSON {"name":"...","pattern":"/.../g","replacement":"HTML with $1 captures","sample":"example raw output","instructions":"exact output format to add to the character prompt"}. Keep the format and regex consistent. Use inline HTML/CSS, no scripts, frames, event handlers or external assets. Use var(--neco-*) theme colours with readable fallbacks, flexible widths, wrapping text and phone-safe layouts. Preserve captured text as text; avoid broad catch-all matching. Use plain class names in HTML, custom-prefixed names in any CSS selectors because chat sanitisation prefixes classes. Avoid macro evaluation in the pattern or replacement. ${creatorGuidance(source)}` },
                 { role: 'user', content: instruction },
             ], { signal: controller.signal });
-            const kit = JSON.parse(output.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1'));
+            const kit = JSON.parse(stripCreatorCodeFence(output));
             if (['name', 'pattern', 'replacement', 'sample', 'instructions'].some(key => typeof kit[key] !== 'string' || kit[key].length > 100000)) throw new Error('The model returned an incomplete display. Nothing was applied.');
             workspace.edit(next => { next.displayKit = kit; }, true);
         } finally { cancel.hidden = true; }

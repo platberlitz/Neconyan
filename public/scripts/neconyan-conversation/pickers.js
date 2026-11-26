@@ -37,6 +37,7 @@ import { schedulePalsRailRender } from './render-scheduler.js';
 import { escapeHtmlAttribute, escapeHtmlText, setUserTextSlot } from './render-utils.js';
 import { closePalsRail, setPalsRailOpen } from './settings-panel.js';
 import { conversationState } from './state.js';
+import { CONVERSATION_SAFE_TOAST_OPTIONS } from './toast-options.js';
 
 export function renderWeeklyScheduleEditor(container, scheduleJson) {
     const entries = safeParseWeeklySchedule(scheduleJson);
@@ -516,7 +517,7 @@ export async function createAndOpenConversationGroup(memberAvatars, { sourceAvat
                 }
             }, 100);
         }
-        toastr.success(`Opened group Conversation for ${group.name || 'this group'}.`);
+        toastr.success(`Opened group Conversation for ${group.name || 'this group'}.`, '', CONVERSATION_SAFE_TOAST_OPTIONS);
     }
 
     return opened;

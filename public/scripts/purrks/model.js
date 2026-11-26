@@ -586,7 +586,8 @@ function parseStructuredSections(text) {
     const sections = [];
 
     // XML tags like <speech_style>...</speech_style> or <combat>...</combat>
-    const xmlRegex = /<([a-zA-Z][a-zA-Z0-9_-]{2,40})>\s*([\s\S]{20,1600}?)\s*<\/\1>/g;
+    // The body is trimmed below rather than in the pattern, so space runs cannot backtrack.
+    const xmlRegex = /<([a-zA-Z][a-zA-Z0-9_-]{2,40})>([\s\S]{20,1600}?)<\/\1>/g;
     let xmlMatch;
     while ((xmlMatch = xmlRegex.exec(text)) !== null) {
         const rawTag = xmlMatch[1].replace(/[_-]+/g, ' ').trim();
@@ -765,6 +766,22 @@ export function applyImportedCharacterPurrks(char, options = {}) {
  *   cooldowns: Record<string, number>
  * }}
  */
+const UNSAFE_PURRK_STATE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isUnsafePurrkStateKey(key) {
+    return UNSAFE_PURRK_STATE_KEYS.has(String(key));
+}
+
+/**
+ * Reads a chat-state map entry the chat itself stored, never an inherited Object property.
+ * @param {Record<string, any>} map
+ * @param {string} key
+ * @returns {any}
+ */
+export function ownPurrkStateValue(map, key) {
+    return map && typeof map === 'object' && !isUnsafePurrkStateKey(key) && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 export function normalizeChatPurrksState(rawChatState) {
     if (!rawChatState || typeof rawChatState !== 'object') {
         return {
@@ -778,7 +795,7 @@ export function normalizeChatPurrksState(rawChatState) {
     const overrides = {};
     if (state.overrides && typeof state.overrides === 'object') {
         for (const [k, v] of Object.entries(state.overrides)) {
-            if (typeof v === 'boolean') {
+            if (typeof v === 'boolean' && !isUnsafePurrkStateKey(k)) {
                 overrides[k] = v;
             }
         }
@@ -793,7 +810,7 @@ export function normalizeChatPurrksState(rawChatState) {
     if (state.cooldowns && typeof state.cooldowns === 'object') {
         for (const [k, v] of Object.entries(state.cooldowns)) {
             const num = Number(v);
-            if (Number.isFinite(num) && num > 0) {
+            if (Number.isFinite(num) && num > 0 && !isUnsafePurrkStateKey(k)) {
                 cooldowns[k] = Math.min(MAX_PURRK_COOLDOWN, Math.round(num));
             }
         }
@@ -922,7 +939,7 @@ export function evaluateCharacterPurrks(characterOrCard, context = {}) {
             : Object.prototype.hasOwnProperty.call(chatState.overrides, item.id)
                 ? chatState.overrides[item.id]
                 : null;
-        const cooldownRemaining = chatState.cooldowns[scopedId] ?? chatState.cooldowns[item.id] ?? 0;
+        const cooldownRemaining = ownPurrkStateValue(chatState.cooldowns, scopedId) ?? ownPurrkStateValue(chatState.cooldowns, item.id) ?? 0;
 
         let active = false;
         /** @type {'disabled'|'override_on'|'override_off'|'cooldown'|'always'|'manual_on'|'keyword_match'|'scene_selected'|'inactive'} */

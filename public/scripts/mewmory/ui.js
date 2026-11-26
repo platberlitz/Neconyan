@@ -9,7 +9,7 @@ import { currentUser } from '../user.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
 import { dismissJob, retryJob } from '../jobs.js';
-import { mewmoryConfigAutosave } from './config-autosave.js';
+import { isUnsafeSettingsKey, mewmoryConfigAutosave } from './config-autosave.js';
 import { defaultLorebookName, sendToLorebook } from './lorebook.js';
 import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
 import {
@@ -180,9 +180,14 @@ function empty(root, title, description, action, handler) {
     root.append(block);
 }
 
+function ownSubjectName(record, id) {
+    const names = record?.subjectNames;
+    return names && typeof names === 'object' && !isUnsafeSettingsKey(id) && Object.hasOwn(names, id) ? names[id] : '';
+}
+
 function nameOf(id) {
     return mewmory.view?.entities.find(entity => entity.entityId === id)?.name
-        || [...(mewmory.view?.records || []), ...(mewmory.view?.overviews || [])].find(record => record.subjectNames?.[id])?.subjectNames[id]
+        || [...(mewmory.view?.records || []), ...(mewmory.view?.overviews || [])].find(record => ownSubjectName(record, id))?.subjectNames[id]
         || String(id).replace(/^subject:/, '').replaceAll('-', ' ');
 }
 
@@ -1660,10 +1665,11 @@ function incompleteConfigDraft(draft) {
 }
 
 function replaceDraftContents(target, source) {
-    for (const key of Object.keys(target)) if (!Object.hasOwn(source, key)) delete target[key];
+    for (const key of Object.keys(target)) if (!Object.hasOwn(source, key) || isUnsafeSettingsKey(key)) delete target[key];
     for (const [key, value] of Object.entries(source)) {
+        if (isUnsafeSettingsKey(key)) continue;
         if (value && typeof value === 'object' && !Array.isArray(value)
-            && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+            && Object.hasOwn(target, key) && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
             replaceDraftContents(target[key], value);
         } else {
             target[key] = value;

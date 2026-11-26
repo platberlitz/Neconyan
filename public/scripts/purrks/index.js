@@ -18,6 +18,7 @@ import {
     parseAiGeneratedPurrksResponse,
     buildSceneDirectorMessages,
     parseSceneDirectorResponse,
+    ownPurrkStateValue,
 } from './model.js';
 import {
     characters,
@@ -38,6 +39,7 @@ import { extractProfileResponseText } from '../extensions/in-chat-agents/llm-uti
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from '../popup.js';
 import { localizeMessage, t } from '../i18n.js';
 import { uiText } from '../ui-text.js';
+import { escapeHtml } from '../utils.js';
 
 const SCENE_DIRECTOR_TIMEOUT_MS = 20000;
 const NORMAL_TURN_TYPES = new Set([undefined, null, '', 'normal']);
@@ -685,7 +687,7 @@ function renderEditorPurrkCard(item) {
     const deleteBtn = el('button', 'menu_button', t`Delete Purrk`);
     deleteBtn.type = 'button';
     deleteBtn.addEventListener('click', async () => {
-        const confirmed = await callGenericPopup(t`Delete the Purrk '${item.label || itemId}'?`, POPUP_TYPE.CONFIRM);
+        const confirmed = await callGenericPopup(t`Delete the Purrk '${escapeHtml(item.label || itemId)}'?`, POPUP_TYPE.CONFIRM);
         if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
         const current = readEditorPurrks();
         const index = current.items.findIndex(entry => entry.id === itemId);
@@ -832,7 +834,7 @@ export async function runSceneDirectorForActiveChat({ notify = false, signal = u
             if (item.mode !== 'scene' || !item.enabled || !item.prompt) return false;
             const scopedId = `${prefix}${item.id}`;
             if (Object.hasOwn(startState.overrides, scopedId)) return false;
-            if ((startState.cooldowns[scopedId] ?? 0) > 0) return false;
+            if ((ownPurrkStateValue(startState.cooldowns, scopedId) ?? 0) > 0) return false;
             return true;
         });
         if (!candidateItems.length) continue;

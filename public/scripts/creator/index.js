@@ -17,6 +17,7 @@ import { creatorProposalDiff } from './proposal-diff.js';
 import { renderCreatorPurrks } from './purrks.js';
 import { creatorUsesServer, continueCreatorServerWriting, renderCreatorServerRequests } from './server-generation.js';
 import { foldSearchText } from '../util/fuzzy-search.js';
+import { isSafeCreatorImageDataUrl } from './media-url.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -681,7 +682,7 @@ class CreatorWorkspace {
         if (proposal.questions?.length) {
             review.append(element('h4', '', 'Questions to resolve'));
             for (const question of proposal.questions) {
-                review.append(textField(question, proposal.answers?.[question] ?? '', value => persist(current => { current.answers ??= {}; current.answers[question] = value; }), { rows: 2, placeholder: 'Your answer' }));
+                review.append(textField(question, (proposal.answers && Object.hasOwn(proposal.answers, question) ? proposal.answers[question] : ''), value => persist(current => { current.answers ??= {}; Object.defineProperty(current.answers, question, { value, enumerable: true, writable: true, configurable: true }); }), { rows: 2, placeholder: 'Your answer' }));
             }
         }
         if (proposal.resolved?.length) {
@@ -794,7 +795,7 @@ class CreatorWorkspace {
         }
         if (draft.selectedMedia) {
             const portrait = draft.media.find(item => item.id === draft.selectedMedia);
-            if (portrait) { const image = element('img', 'creator-portrait creator-review-portrait'); image.src = portrait.dataUrl; image.alt = 'Portrait selected for this save'; content.append(image); }
+            if (portrait && isSafeCreatorImageDataUrl(portrait.dataUrl)) { const image = element('img', 'creator-portrait creator-review-portrait'); image.src = portrait.dataUrl; image.alt = 'Portrait selected for this save'; content.append(image); }
         }
         if (JSON.stringify(draft.additionalBooks) !== JSON.stringify(draft.source.extraBooks)) content.append(element('pre', '', `Additional lorebook links\nBefore: ${JSON.stringify(draft.source.extraBooks ?? [])}\nAfter: ${JSON.stringify(draft.additionalBooks ?? [])}`));
         const publish = copy => this.run(async () => {

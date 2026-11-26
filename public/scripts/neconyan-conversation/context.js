@@ -31,6 +31,7 @@ import { getConversationReplyMaxTokens, getScheduleStorageKey } from './schedule
 import { conversationState } from './state.js';
 import { safeParseThread } from './thread-store.js';
 import { stripPreviewText } from './typing.js';
+import { getOwnValue, isSafeObjectKey, isUnsafeObjectKey, safeObjectEntries } from './object-keys.js';
 
 export const PERSONA_CONVERSATION_STORE_PREFIX = 'persona:';
 
@@ -202,8 +203,8 @@ function mergeConversationThreadAliasStore(target, source) {
 
     mergeLegacyConversationThreadStore(target, source);
     target.branches = target.branches && typeof target.branches === 'object' ? target.branches : {};
-    for (const [branchId, sourceBranch] of Object.entries(sourceBranches)) {
-        const targetBranch = target.branches[branchId];
+    for (const [branchId, sourceBranch] of safeObjectEntries(sourceBranches)) {
+        const targetBranch = getOwnValue(target.branches, branchId);
         if (!targetBranch) {
             continue;
         }
@@ -668,7 +669,7 @@ function mergeLegacyConversationThreadStore(destination, source) {
 
     let changed = false;
     let complete = true;
-    for (const [key, value] of Object.entries(source)) {
+    for (const [key, value] of safeObjectEntries(source)) {
         if (key === 'branches' || key === 'settings') {
             continue;
         }
@@ -682,8 +683,8 @@ function mergeLegacyConversationThreadStore(destination, source) {
 
     const sourceSettings = source.settings && typeof source.settings === 'object' ? source.settings : {};
     const destinationSettings = destination.settings && typeof destination.settings === 'object' ? destination.settings : {};
-    const mergedSettings = { ...sourceSettings, ...destinationSettings };
-    for (const [key, value] of Object.entries(sourceSettings)) {
+    const mergedSettings = Object.fromEntries([...safeObjectEntries(sourceSettings), ...safeObjectEntries(destinationSettings)]);
+    for (const [key, value] of safeObjectEntries(sourceSettings)) {
         if (Object.prototype.hasOwnProperty.call(destinationSettings, key) && JSON.stringify(destinationSettings[key]) !== JSON.stringify(value)) {
             complete = false;
         }
@@ -695,15 +696,15 @@ function mergeLegacyConversationThreadStore(destination, source) {
 
     const sourceBranches = source.branches && typeof source.branches === 'object' ? source.branches : {};
     destination.branches = destination.branches && typeof destination.branches === 'object' ? destination.branches : {};
-    for (const [branchId, sourceBranch] of Object.entries(sourceBranches)) {
-        const destinationBranch = destination.branches[branchId];
+    for (const [branchId, sourceBranch] of safeObjectEntries(sourceBranches)) {
+        const destinationBranch = getOwnValue(destination.branches, branchId);
         if (!destinationBranch) {
             destination.branches[branchId] = sourceBranch;
             changed = true;
             continue;
         }
 
-        for (const [key, value] of Object.entries(sourceBranch || {})) {
+        for (const [key, value] of safeObjectEntries(sourceBranch)) {
             if (key !== 'messages' && (typeof destinationBranch[key] === 'undefined' || destinationBranch[key] === null || destinationBranch[key] === '')) {
                 destinationBranch[key] = value;
                 changed = true;
@@ -928,15 +929,16 @@ function migrateGlobalIdleActionSettings(store, settings) {
 
 export function getCharacterConversationStore(avatar, { create = true, personaId = getConversationPersonaId() } = {}) {
     const storeKey = scopeConversationStorageKey(avatar, personaId);
-    if (!storeKey) {
+    if (!storeKey || !isSafeObjectKey(storeKey)) {
         return null;
     }
 
     const store = getConversationStore();
-    if (!store.characters[storeKey] && !create) {
+    const existingStore = getOwnValue(store.characters, storeKey);
+    if (!existingStore && !create) {
         return null;
     }
-    if (!store.characters[storeKey]) {
+    if (!existingStore) {
         store.characters[storeKey] = {
             settings: {},
             schedule: null,
@@ -955,8 +957,8 @@ export function getCharacterConversationStore(avatar, { create = true, personaId
         parseConversationThreadKey(storeKey).groupId ? CHARACTER_CONVERSATION_SETTINGS_KEYS : THREAD_CONVERSATION_SETTINGS_KEYS,
     );
     characterStore.branches = characterStore.branches && typeof characterStore.branches === 'object' ? characterStore.branches : {};
-    characterStore.activeBranchId = characterStore.activeBranchId || DEFAULT_BRANCH_ID;
-    if (!characterStore.branches[characterStore.activeBranchId]) {
+    characterStore.activeBranchId = isSafeObjectKey(characterStore.activeBranchId) ? characterStore.activeBranchId : DEFAULT_BRANCH_ID;
+    if (!getOwnValue(characterStore.branches, characterStore.activeBranchId)) {
         if (!create) {
             return null;
         }
@@ -1002,10 +1004,10 @@ export function getActiveConversationBranch(avatar, { branchId = '', create = tr
     }
 
     const id = branchId || characterStore.activeBranchId || DEFAULT_BRANCH_ID;
-    if (!characterStore.branches[id] && !create) {
+    if (isUnsafeObjectKey(id) || (!getOwnValue(characterStore.branches, id) && !create)) {
         return null;
     }
-    characterStore.branches[id] = normalizeConversationBranch(characterStore.branches[id], id);
+    characterStore.branches[id] = normalizeConversationBranch(getOwnValue(characterStore.branches, id), id);
     return characterStore.branches[id];
 }
 
@@ -1015,7 +1017,7 @@ export function getConversationBranches(avatar, { groupId = getConversationGroup
         return [];
     }
 
-    return Object.entries(characterStore.branches).map(([id, branch]) => {
+    return safeObjectEntries(characterStore.branches).map(([id, branch]) => {
         const normalized = normalizeConversationBranch(branch, branch?.id || id);
         characterStore.branches[id] = normalized;
         return normalized;
@@ -1024,7 +1026,7 @@ export function getConversationBranches(avatar, { groupId = getConversationGroup
 
 export function setActiveConversationBranch(avatar, branchId, { groupId = getConversationGroupIdForAvatar(avatar), persist = true } = {}) {
     const characterStore = getConversationThreadStore(avatar, { groupId, create: false });
-    if (!characterStore?.branches?.[branchId]) {
+    if (!getOwnValue(characterStore?.branches, branchId)) {
         return;
     }
 
@@ -1062,7 +1064,7 @@ export function createConversationBranchForAvatar(avatar, name = 'New chat', { g
 
 export function renameConversationBranch(avatar, branchId, name, { groupId = getConversationGroupIdForAvatar(avatar) } = {}) {
     const characterStore = getConversationThreadStore(avatar, { create: false, groupId });
-    const branch = characterStore?.branches?.[branchId];
+    const branch = getOwnValue(characterStore?.branches, branchId);
     if (!branch || !String(name || '').trim()) {
         return false;
     }

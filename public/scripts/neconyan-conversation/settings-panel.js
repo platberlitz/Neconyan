@@ -30,6 +30,7 @@ import {
 } from './schedule.js';
 import { clearConversationMemorySummary, getConversationMemorySummary, getSettings, saveConversationMemorySummary } from './settings-store.js';
 import { hasConversationMessageContent } from './thread-store.js';
+import { CONVERSATION_SAFE_TOAST_OPTIONS } from './toast-options.js';
 import {
     buildChimingPartnerOptions,
     buildConnectionProfileOptions,
@@ -438,7 +439,7 @@ export function openScheduleEditorModal(initialAvatar = getCurrentCharAvatar()) 
             await saveEditedCharacterSchedule(editAvatar, normalizeEditedSchedule(editedSchedule), { groupId: editGroupId, personaId });
         } catch (error) {
             console.error('Schedule save error:', error);
-            toastr.error(error?.message ? `Could not save the schedule. ${error.message}` : 'Could not save the schedule. Try again.');
+            toastr.error(error?.message ? `Could not save the schedule. ${error.message}` : 'Could not save the schedule. Try again.', '', CONVERSATION_SAFE_TOAST_OPTIONS);
             saveBtn.removeAttribute('disabled');
             return;
         }
@@ -454,7 +455,7 @@ export function openScheduleEditorModal(initialAvatar = getCurrentCharAvatar()) 
             updateConversationChrome(getSettings(currentAvatar, { groupId: currentGroupId, personaId: currentPersonaId }));
         }
         const targetName = targets.find(target => target.avatar === editAvatar)?.name || 'character';
-        toastr.success(`Schedule saved for ${targetName}.`);
+        toastr.success(`Schedule saved for ${targetName}.`, '', CONVERSATION_SAFE_TOAST_OPTIONS);
         closeModal();
     });
 }
@@ -562,7 +563,7 @@ export async function forceCreateMemoryFromPanel() {
         await saveConversationMemorySummary(avatar, trimmedMemory, { groupId });
         toastr.success('Conversation memory updated.');
     } catch (error) {
-        toastr.warning(error.message || 'Conversation memory could not be saved.');
+        toastr.warning(error.message || 'Conversation memory could not be saved.', '', CONVERSATION_SAFE_TOAST_OPTIONS);
     }
 }
 
@@ -596,7 +597,7 @@ export async function clearConversationMemoryFromPanel() {
     try {
         if (await clearConversationMemorySummary(avatar, { groupId })) toastr.success('Conversation memory cleared.');
     } catch (error) {
-        toastr.warning(error.message || 'Conversation memory could not be cleared.');
+        toastr.warning(error.message || 'Conversation memory could not be cleared.', '', CONVERSATION_SAFE_TOAST_OPTIONS);
     }
 }
 

@@ -4,6 +4,8 @@
  * Save change on a reviewed suggestion.
  */
 import { getActiveGenerationAcknowledgement, messageFormatting, saveSettings } from '../../script.js';
+import { escapeHtml } from './escape-html.js';
+import { stripForeignPortraitUrls, strictReplySanitizerOverrides } from '../neconyan-conversation/reply-sanitizer.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { event_types, eventSource } from '../events.js';
 import { extension_settings } from '../extensions.js';
@@ -2422,7 +2424,8 @@ function renderReply(session, message) {
                 }
                 if (!piece.text.trim()) continue;
                 const block = h('div', { class: 'scratchpad-text mes_text' });
-                block.innerHTML = messageFormatting(piece.text, '', false, false, -1, {}, false);
+                block.innerHTML = messageFormatting(piece.text, '', false, false, -1, strictReplySanitizerOverrides(), false);
+                stripForeignPortraitUrls(block);
                 body.append(block);
             }
         } else {
@@ -3126,7 +3129,7 @@ async function addAsReplyVersion(session, message) {
     try {
         requireScope(source, session.id);
         const target = replyVersionTarget(source);
-        const ok = await callGenericPopup(t`Add this as another version of the last story reply, from ${target.name}? The story shows it straight away. The earlier versions stay, so you can swipe back to them.`,
+        const ok = await callGenericPopup(t`Add this as another version of the last story reply, from ${escapeHtml(target.name)}? The story shows it straight away. The earlier versions stay, so you can swipe back to them.`,
             POPUP_TYPE.CONFIRM, '', { okButton: t`Add version`, cancelButton: t`Not now` });
         if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
         requireScope(source, session.id);
@@ -4385,7 +4388,7 @@ async function applyContextSetup() {
 async function deleteContextSetup() {
     const setup = findContextSetup(app.contextSetup);
     if (!setup) return;
-    const confirmed = await callGenericPopup(t`Delete the saved setup '${setup.name}'? Sessions that already use its choices keep them.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete setup`, cancelButton: t`Cancel` });
+    const confirmed = await callGenericPopup(t`Delete the saved setup '${escapeHtml(setup.name)}'? Sessions that already use its choices keep them.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete setup`, cancelButton: t`Cancel` });
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE) return;
     if (!await writeContextSetups(app.contextSetups.setups.filter(item => item !== setup), t`Scratchpad could not delete that setup.`)) return;
     app.contextSetup = app.contextSetups.setups[0]?.name ?? '';
@@ -4719,7 +4722,7 @@ async function pinSession(session, pinned) {
 
 async function clearSessionMessages(session) {
     const scope = app.source;
-    const ok = await callGenericPopup(t`Clear every message in '${session.name}'? Its context settings stay.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Clear`, cancelButton: t`Keep` });
+    const ok = await callGenericPopup(t`Clear every message in '${escapeHtml(session.name)}'? Its context settings stay.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Clear`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
     await change(source => api.clearSession(source, session.id), t`Scratchpad could not clear that session.`, scope);
     focusSessionAction(scope, session, 'clear');
@@ -4727,7 +4730,7 @@ async function clearSessionMessages(session) {
 
 async function removeSession(session) {
     const scope = app.source;
-    const ok = await callGenericPopup(t`Delete '${session.name}'? This cannot be undone. The story is not affected.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
+    const ok = await callGenericPopup(t`Delete '${escapeHtml(session.name)}'? This cannot be undone. The story is not affected.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
     await change(source => api.deleteSession(source, session.id), t`Scratchpad could not delete that session.`, scope);
 }
