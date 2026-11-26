@@ -80,3 +80,19 @@ describe('Termeownal UI round controls', () => {
         expect(hostSource).toContain('.sbdistiller-root) :is(button, input:not([type=\'checkbox\'], [type=\'radio\']), textarea, select, summary) {');
     });
 });
+
+describe('Termeownal UI hides every Calico ear', () => {
+    const calico = fs.readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-calico.css'), 'utf8');
+    const hosts = '.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity';
+
+    test('Calico draws its ears on exactly these hosts', () => {
+        expect(calico).toContain(`body.neconyan :is(${hosts})::before,\nbody.neconyan :is(${hosts})::after {\n    content: '';\n    display: block;`);
+    });
+
+    test('Terminal hides the same hosts with a more specific selector and no !important', () => {
+        const rule = `html body.neconyan.sbterm :is(${hosts})::before,\nhtml body.neconyan.sbterm :is(${hosts})::after,\nhtml body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {\n    display: none;\n}`;
+        const at = styleSource.indexOf(rule);
+        expect(at).toBeGreaterThan(-1);
+        expect(styleSource.slice(at, at + rule.length)).not.toContain('!important');
+    });
+});

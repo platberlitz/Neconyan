@@ -2567,8 +2567,8 @@ html body.neconyan.sbterm #neconyan-home-host {
     color: var(--sbterm-fg);
 }
 
-html body.neconyan.sbterm .neconyan-cat-panel::before,
-html body.neconyan.sbterm .neconyan-cat-panel::after,
+html body.neconyan.sbterm :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+html body.neconyan.sbterm :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
 html body.neconyan.sbterm #neconyan-home-host .neconyan-home-cat > :not(.sbterm-mascot-form) {
     display: none;
 }
