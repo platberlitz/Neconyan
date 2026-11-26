@@ -213,6 +213,11 @@ describe('in-chat agents workspace redesign', () => {
         expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \.ica--companion-action \{[^}]*width:\s*36px;/);
         expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \.ica--companion-action::before \{[^}]*inset:\s*-4px;/);
     });
+
+    test('marks custom starter kit names and descriptions with data-i18n-ignore while leaving built-in kits translatable', () => {
+        expect(indexSource).toContain('<strong${group.builtin ? \'\' : \' data-i18n-ignore\'}>${escapeHtml(group.name)}</strong>');
+        expect(indexSource).toContain('<div class="ica--group-card-desc"${group.builtin ? \'\' : \' data-i18n-ignore\'}>${escapeHtml(group.description)}</div>');
+    });
 });
 
 const getFunction = name => indexSource.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0];
