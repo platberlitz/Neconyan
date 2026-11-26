@@ -263,6 +263,7 @@
 - PR #989 (2026-11-26) `fix: resolve nightly staging browser failures and flakes`
 - PR #990 (2026-11-26) `fix(security): close audit findings across server, frontend and mobile`
 - PR #991 (2026-11-26) `fix(notebooks): wrap long notebook and folder names inside their pills`
+- PR #992 (2026-11-26) `fix(ui): keep the left cat ear solid on cards with a backdrop`
 - PR #994 (2026-11-26) `fix(chat-naming): give thinking models room to write the title`
 
 ### Local Commits
