@@ -6,8 +6,22 @@ import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, sta
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parse } from 'acorn';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
+import { localizeString } from '../public/scripts/ui-localization.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+const FIXED_AGENT_TEMPLATE_KEYS = [
+    'Pura\'s Trackers Only',
+    'All tracker agents including interactive menus and profile sheets',
+    'Translator',
+    'Fast three-line plan for the next reply: what {{user}} just did, what {{char}} wants, one concrete next beat. Don\'t run it with: Intent Reader, Plot Compass, Scene Driving Force, Scene Pressure Cocktail, Combined Director\'s Cut, Chaos Mode.',
+    'Track how {{user}} is perceived by groups and factions',
+    'Draws the scene as an illustrated map: the place holding {{user}} at the centre, nearby places laid out by direction, character pins, a travel trail and a compass. Built from simple lines, so fast models handle it well.',
+    'Character Authenticity Checker',
+    'Position Tracker',
+    'Track items {{user}} acquires, loses, or uses that have narrative significance',
+];
 
 test('German dictionaries have no duplicate keys that silently override reviewed translations', () => {
     for (const filename of ['de-de.json', 'neconyan/de-de.json']) {
@@ -140,6 +154,12 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     }
     // A template hole parsed as HTML becomes U+FFFD; such a key is a caption with a hole in it.
     assert.ok(![...keys].some(key => key.includes('\ufffd')), 'replacement character in the catalogue');
+    for (const caption of FIXED_AGENT_TEMPLATE_KEYS) {
+        assert.ok(keys.has(caption), `missing M108 agent template key: ${caption}`);
+        assert.equal(english[caption], caption, `missing English M108 entry: ${caption}`);
+    }
+    assert.ok(!keys.has('tpl-achievements-tracker'), 'regex-bundles.json template id leaked into --list');
+    assert.ok(!keys.has('revision'), 'revision.json key leaked into --list');
     const german = JSON.parse(readFileSync(new URL('../public/locales/neconyan/de-de.json', import.meta.url), 'utf8'));
     const slots = text => (text.match(/\$\{\d+\}/g) || []).sort();
     const entries = Object.entries(german);
@@ -236,5 +256,27 @@ test('the catalogue can be written and listed without a translator, and one lang
         }
     } finally {
         rmSync(scratch, { recursive: true, force: true });
+    }
+});
+
+test('representative bundled agent template keys are translated without copy-paste, macro drift or L10N-33 chains across all 17 supplements', () => {
+    const readLocale = relPath => JSON.parse(readFileSync(new URL(`../public/locales/${relPath}`, import.meta.url), 'utf8'));
+    const languages = readLocale('lang.json').map(locale => locale.lang).filter(lang => lang !== 'en');
+    const catalogue = readLocale('neconyan/en.json');
+    const macros = text => (text.match(/\{\{[^{}]+\}\}/g) || []).sort();
+
+    for (const lang of languages) {
+        const base = readLocale(`${lang}.json`);
+        const supplement = readLocale(`neconyan/${lang}.json`);
+        const { dictionary } = assembleLocaleData({ base, supplement, catalogue });
+
+        for (const key of FIXED_AGENT_TEMPLATE_KEYS) {
+            const value = dictionary[key];
+            assert.equal(typeof value, 'string', `${lang}: missing translation for ${key}`);
+            assert.ok(value.trim().length > 0, `${lang}: empty translation for ${key}`);
+            assert.notEqual(value, key, `${lang}: untranslated English copy-paste for ${key}`);
+            assert.deepEqual(macros(value), macros(key), `${lang}: macro mismatch for ${key}`);
+            assert.equal(localizeString(value, dictionary), value, `${lang}: L10N-33 double translation for ${key}`);
+        }
     }
 });

@@ -5483,10 +5483,10 @@ async function openTemplateBrowser() {
             const card = $(`
                 <div class="ica--group-card">
                     <div class="ica--group-card-header">
-                        <strong>${escapeHtml(group.name)}</strong>
+                        <strong${group.builtin ? '' : ' data-i18n-ignore'}>${escapeHtml(group.name)}</strong>
                         <span class="ica--card-pill">${count} agents</span>
                     </div>
-                    <div class="ica--group-card-desc">${escapeHtml(group.description)}</div>
+                    <div class="ica--group-card-desc"${group.builtin ? '' : ' data-i18n-ignore'}>${escapeHtml(group.description)}</div>
                     <div class="ica--group-card-actions">
                         <button type="button" class="ica--card-btn ica--grp-apply"><i class="fa-solid fa-download"></i> Install kit</button>
                         ${!group.builtin ? '<button type="button" class="ica--card-btn ica--grp-delete caution"><i class="fa-solid fa-trash"></i></button>' : ''}

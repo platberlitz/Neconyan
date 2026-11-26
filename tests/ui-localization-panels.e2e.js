@@ -61,6 +61,42 @@ for (const [layout, viewport, hasTouch] of [
             await expect(page.locator('#ica--editor-summary')).toContainText('Reihenfolge');
             await page.keyboard.press('Escape');
             await expect(page.locator('#ica--editor')).toHaveCount(0);
+
+            await page.locator('#ica--templates').click();
+            const library = page.locator('.ica--template-browser');
+            await expect(library).toBeVisible();
+            await library.locator('.ica--library-kits > summary').click();
+            const puraTrackersKit = library.locator('.ica--group-card').filter({ hasText: german['Pura\'s Trackers Only'] });
+            await expect(puraTrackersKit).toHaveCount(1);
+            const puraTrackersName = puraTrackersKit.locator('.ica--group-card-header strong');
+            await expect(puraTrackersName).toHaveText(german['Pura\'s Trackers Only']);
+            expect(await puraTrackersName.getAttribute('data-i18n-ignore')).toBeNull();
+            const puraTrackersDesc = puraTrackersKit.locator('.ica--group-card-desc');
+            await expect(puraTrackersDesc).toHaveText(german['All tracker agents including interactive menus and profile sheets']);
+            expect(await puraTrackersDesc.getAttribute('data-i18n-ignore')).toBeNull();
+
+            const beatPlannerDescKey = 'Fast three-line plan for the next reply: what {{user}} just did, what {{char}} wants, one concrete next beat. Don\'t run it with: Intent Reader, Plot Compass, Scene Driving Force, Scene Pressure Cocktail, Combined Director\'s Cut, Chaos Mode.';
+            const beatCard = library.locator('.ica--template-card[data-id="tpl-beat-planner"]');
+            await expect.poll(() => beatCard.locator('.ica--template-card-name').evaluate(el => el.firstChild?.textContent?.trim())).toBe(german['Beat Planner']);
+            await expect(beatCard.locator('.ica--template-card-description')).toHaveText(german[beatPlannerDescKey]);
+            expect(german[beatPlannerDescKey]).toContain('{{user}}');
+            expect(german[beatPlannerDescKey]).toContain('{{char}}');
+
+            for (const [id, nameKey] of [
+                ['tpl-translator', 'Translator'],
+                ['tpl-character-authenticity', 'Character Authenticity Checker'],
+                ['tpl-position-tracker-companion', 'Position Tracker'],
+            ]) {
+                const card = library.locator(`.ica--template-card[data-id="${id}"]`);
+                await expect.poll(() => card.locator('.ica--template-card-name').evaluate(el => el.firstChild?.textContent?.trim())).toBe(german[nameKey]);
+            }
+
+            const itemTrackerDescKey = 'Track items {{user}} acquires, loses, or uses that have narrative significance';
+            await expect(library.locator('.ica--template-card[data-id="tpl-item-tracker"] .ica--template-card-description')).toHaveText(german[itemTrackerDescKey]);
+
+            await page.locator('dialog.popup:has(.ica--template-browser)').getByRole('button', { name: german['Close library'], exact: true }).click();
+            await expect(library).toHaveCount(0);
+
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
             await expect(page.getByText(german['No Roleplay chat selected'], { exact: true })).toBeVisible();
 

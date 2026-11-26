@@ -214,6 +214,18 @@ for (const personality of assistants.personalities || []) [personality.role, per
 // The shipped 404 page sits under default/content/errors/ rather than public/, so collect it explicitly.
 const notFoundErrorPage = path.resolve('default/content/errors/url-not-found.html');
 if (fs.existsSync(notFoundErrorPage)) collectHtml(load(fs.readFileSync(notFoundErrorPage, 'utf8')));
+// Bundled In-Chat Agent template and starter kit names and descriptions are shown in the Agent library and Agents list.
+const agentTemplatesDir = path.join(root, 'scripts/extensions/in-chat-agents/templates');
+for (const filename of ['index.json', 'groups.json']) {
+    const templateFile = path.join(agentTemplatesDir, filename);
+    if (!fs.existsSync(templateFile)) continue;
+    const entries = JSON.parse(fs.readFileSync(templateFile, 'utf8'));
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+        addCaption(entry?.name);
+        addCaption(entry?.description, { allowMacros: true });
+    }
+}
 const placeholders = value => (value.match(/\$\{[^}]+\}|\{\{[^}]+\}\}|%[sd]|\{\d+\}/g) || []).sort();
 const command = process.env.NECONYAN_TRANSLATION_COMMAND;
 // --list and --write-catalogue exit here, before the translation command is ever used.
