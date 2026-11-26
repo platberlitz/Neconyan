@@ -46,6 +46,7 @@
 - **Notes** opens again in the Docker image, whichever user the container runs as.
 - When a chat cannot be named automatically, an error toast now says why instead of the chat silently keeping its dated name.
 - The **Companion Panel** now reopens where you left it after new notes arrive while it was closed, instead of dropping you further down the list.
+- Opening a new prompt in **Prompt Manager** straight after saving another one no longer closes or clears the editor while the list finishes redrawing.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -257,6 +258,7 @@
 - PR #986 (2026-11-25) `fix(docker): build the Notes editor when the image is built`
 - PR #987 (2026-11-25) `feat(chats): show a toast when automatic chat naming fails`
 - PR #988 (2026-11-26) `fix(companions): keep the Companion Panel in place when it reopens`
+- PR #989 (2026-11-26) `fix: resolve nightly staging browser failures and flakes`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
