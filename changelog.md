@@ -261,6 +261,7 @@
 - PR #988 (2026-11-26) `fix(companions): keep the Companion Panel in place when it reopens`
 - PR #989 (2026-11-26) `fix: resolve nightly staging browser failures and flakes`
 - PR #990 (2026-11-26) `fix(security): close audit findings across server, frontend and mobile`
+- PR #991 (2026-11-26) `fix(notebooks): wrap long notebook and folder names inside their pills`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
