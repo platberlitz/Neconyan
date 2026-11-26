@@ -56,6 +56,7 @@
 - **Termeownal UI** shows the cat ears where they fit its own layout and has its own **Hide cats (Kittyless)** switch in its settings.
 - **Level Up Companion** and **User-based Stats Generator** answer with a short 'nothing changed' line on quiet turns instead of rewriting the whole block, so they spend far fewer tokens, and your last stat sheet stays on screen.
 - The **Companion Panel** now reopens where you left it when the note right above yours changed size, and at the same place inside a long note while a new reply's notes are still being written, instead of dropping you further down.
+- Hiding the **Dice Roller** with the eye button in the **Companion panel** now folds it down to its title like the other hidden Companions, and it no longer rolls when the panel opens or by itself with **Auto roll** until you show it again.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -279,6 +280,7 @@
 - PR #998 (2026-11-26) `feat(terminal-ui): bring back the cat ears and add a Hide cats switch`
 - PR #999 (2026-11-26) `feat(agents): let level up and stats skip unchanged turns`
 - PR #1000 (2026-11-26) `fix(companion-panel): hold reopen position until cards settle`
+- PR #1001 (2026-11-26) `fix(dice): fold the hidden Dice Roller like other hidden companions`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
