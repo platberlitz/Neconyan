@@ -166,6 +166,35 @@ for (const phone of [false, true]) {
     });
 }
 
+test('a thinking model such as Gemini 4 Neon gets room to finish thinking and still writes the title', async ({ app }) => {
+    const THINKING_TOKENS = 500;
+    let replies = 0;
+    app.provider.mode.reply = body => {
+        if (!JSON.stringify(body.messages || '').includes(LABEL_PROMPT)) {
+            return { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: `Nova answers ${++replies}.` } }] };
+        }
+        // Like Gemini 4 Neon: the thinking comes out of the same allowance, so a small cap leaves no title.
+        const allowance = Number(body.max_tokens ?? body.max_completion_tokens ?? Infinity);
+        return allowance <= THINKING_TOKENS
+            ? { choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '' } }] }
+            : { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '{"title":"Arguing Over Blueprints"}' } }] };
+    };
+    const account = await app.account({ activeConnection: true, configureSettings(saved) {
+        saved.power_user.auto_label_chat_threshold = 3;
+        saved.oai_settings.custom_model = 'smol-google/gemini-4-neon';
+        saved.oai_settings.openai_max_tokens = 32000;
+    } });
+    const page = await openChat(account);
+
+    await exchange(page, 'Begin the story.', 1);
+    await expect.poll(() => chatId(page), { timeout: 30000 }).toBe('Durable Nova - Arguing Over Blueprints');
+    const labels = app.provider.calls.filter(isLabelCall);
+    expect(labels).toHaveLength(1);
+    expect(labels[0].body.model).toBe('smol-google/gemini-4-neon');
+    expect(labels[0].body.max_tokens).toBe(32000);
+    await expect(page.locator('#toast-container .toast-error')).toHaveCount(0);
+});
+
 test('the switch, a custom count and a manual name are respected', async ({ app }) => {
     const provider = useProvider(app);
     const account = await app.account({ activeConnection: true, configureSettings(saved) {

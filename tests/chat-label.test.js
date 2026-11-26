@@ -1,4 +1,5 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
     escapeRegex: value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
@@ -410,5 +411,19 @@ describe('automatic chat naming scheduler', () => {
         await flush();
         expect(calls).toHaveLength(1);
         expect(namer.isRunning()).toBe(true);
+    });
+});
+
+describe('automatic chat naming requests', () => {
+    const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
+    const body = name => {
+        const start = source.indexOf(`async function ${name}(`);
+        return source.slice(start, source.indexOf('\n}\n', start));
+    };
+
+    test.each(['generateChatAutoLabelResponse', 'generatePlainChatAutoLabelResponse'])('%s keeps the reasoning allowance for thinking models', name => {
+        const code = body(name);
+        expect(code).toContain('responseLength: 256');
+        expect(code).toContain('preserveReasoningBudget: true');
     });
 });
