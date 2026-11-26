@@ -3084,5 +3084,144 @@ describe('companion tracker panel', () => {
                 sim.restore();
             }
         });
+
+        test('keeps a tall dominant middle card anchored on reopen when it grows or shrinks, and falls back when a primary anchor vanishes', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 600 },
+                { id: 'c1', realHeight: 600 },
+                { id: 'chatroom', realHeight: 1600 },
+                { id: 'c3', realHeight: 500 },
+                { id: 'c4', realHeight: 500 },
+            ];
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 800, overflowAnchorSupported: true });
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+                sim.advanceTime(500);
+                sim.drainAll();
+
+                // Scroll partway into the tall Chatroom card so it occupies ~85% of the viewport
+                // while c3 peeks at the bottom edge (offsetTop = +680).
+                sim.panelNode.scrollTop = 2120;
+                expect(sim.getSection('chatroom').getBoundingClientRect().top).toBe(-920);
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBe(680);
+
+                panel.closeCompanionPanel();
+
+                // Turn 2: cards above stay the same, Chatroom grows by +700px.
+                sim.rebuildSections([
+                    { id: 'c0', realHeight: 600 },
+                    { id: 'c1', realHeight: 600 },
+                    { id: 'chatroom', realHeight: 2300 },
+                    { id: 'c3', realHeight: 500 },
+                    { id: 'c4', realHeight: 500 },
+                ]);
+                panel.openCompanionPanel();
+
+                // Chatroom must remain anchored at -920 instead of jumping -700px down to pin peeking c3.
+                expect(sim.getSection('chatroom').getBoundingClientRect().top).toBeCloseTo(-920, 1);
+
+                // Now close again while scrolled deep inside Chatroom and shrink Chatroom shorter than the saved offset.
+                panel.closeCompanionPanel();
+                sim.rebuildSections([
+                    { id: 'c0', realHeight: 600 },
+                    { id: 'c1', realHeight: 600 },
+                    { id: 'chatroom', realHeight: 450 },
+                    { id: 'c3', realHeight: 500 },
+                    { id: 'c4', realHeight: 500 },
+                ]);
+                panel.openCompanionPanel();
+
+                // Instead of putting the 450px Chatroom completely off the top of the screen (-920..-470),
+                // reopen clamps it into view.
+                const rect = sim.getSection('chatroom').getBoundingClientRect();
+                expect(rect.top).toBeLessThanOrEqual(1);
+                expect(rect.bottom).toBeGreaterThanOrEqual(400);
+
+                // Now close while scrolled so c3 is primary (chatroom barely peeking at top), then drop c3 on Turn 2.
+                sim.advanceTime(500);
+                sim.drainAll();
+                sim.panelNode.scrollTop = 1600;
+                expect(sim.getSection('chatroom').getBoundingClientRect().top).toBe(-400);
+                expect(sim.getSection('c3').getBoundingClientRect().top).toBe(50);
+                panel.closeCompanionPanel();
+
+                // Remove c3 on Turn 2 so restorePanelAnchor must resolve the fallback (chatroom).
+                sim.rebuildSections([
+                    { id: 'c0', realHeight: 250 },
+                    { id: 'c1', realHeight: 250 },
+                    { id: 'chatroom', realHeight: 450 },
+                    { id: 'c4', realHeight: 500 },
+                ]);
+                panel.openCompanionPanel();
+                expect(sim.getSection('chatroom').classList.contains('is-hydrated')).toBe(true);
+                expect(sim.getSection('chatroom').getBoundingClientRect().bottom).toBeGreaterThan(0);
+            } finally {
+                sim.restore();
+            }
+        });
+
+        test('keeps the anchored card steady through open slide-in animations on Chromium and cancels settle on user scroll', async () => {
+            const cardSpecs = Array.from({ length: 12 }, (_, i) => ({
+                id: `c${i}`,
+                realHeight: i < 7 ? 700 : 400,
+            }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 600, overflowAnchorSupported: true });
+            let animPlayState = 'finished';
+            sim.panelNode.getAnimations = () => (animPlayState === 'running' ? [{ playState: 'running' }] : []);
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                panel.openCompanionPanel();
+                sim.advanceTime(500);
+                sim.drainAll();
+
+                // Scroll to c7 (+30px from top) and close.
+                const c7TopOnTurn1 = 7 * 700;
+                sim.panelNode.scrollTop = c7TopOnTurn1 - 30;
+                expect(sim.getSection('c7').getBoundingClientRect().top).toBe(30);
+                panel.closeCompanionPanel();
+
+                // Turn 2: cards above c7 shrink dramatically (700 -> 260px), and panel opens with a running WAAPI slide-in.
+                sim.rebuildSections(Array.from({ length: 12 }, (_, i) => ({
+                    id: `c${i}`,
+                    realHeight: i < 7 ? 260 : 400,
+                })));
+                animPlayState = 'running';
+                panel.openCompanionPanel();
+                expect(sim.getSection('c7').getBoundingClientRect().top).toBeCloseTo(30, 1);
+
+                // Advance a couple frames while panel is still sliding in, then simulate Chromium unlocking
+                // an unhydrated card above the ±1 viewport hydration band (c3) without CSS overflow-anchor compensating.
+                sim.flushOneFrame();
+                sim.flushOneFrame();
+                const c3 = sim.getSection('c3');
+                expect(c3.classList.contains('is-hydrated')).toBe(false);
+                c3.spec.forceRendered = true;
+                sim.triggerResizeObserver();
+
+                // Settle must immediately restore c7 to +30px even on Chromium (overflowAnchorSupported: true).
+                expect(sim.getSection('c7').getBoundingClientRect().top).toBeCloseTo(30, 1);
+
+                // Even without ResizeObserver (balanced resize), the next animation frame settle catches drift.
+                const c2 = sim.getSection('c2');
+                c2.spec.forceRendered = true;
+                sim.flushOneFrame();
+                expect(sim.getSection('c7').getBoundingClientRect().top).toBeCloseTo(30, 1);
+
+                // User wheel input during the open animation must cancel settle and let scroll move freely.
+                const beforeWheelTop = sim.getScrollTop();
+                sim.emitPanel('wheel');
+                sim.panelNode.scrollTop = beforeWheelTop + 240;
+                sim.emitPanel('scroll');
+                animPlayState = 'finished';
+                sim.flushOneFrame();
+                sim.flushOneFrame();
+                expect(sim.getScrollTop()).toBe(beforeWheelTop + 240);
+            } finally {
+                sim.restore();
+            }
+        });
     });
 });

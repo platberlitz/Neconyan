@@ -392,4 +392,220 @@ for (const width of [393, 1280]) {
             await context.close();
         }
     });
+
+    test(`companion panel keeps a middle card steady across animated reopen and tall-card resizes at ${width}px`, async ({ browser }) => {
+        test.setTimeout(90_000);
+        const context = await browser.newContext({
+            viewport: { width, height: 852 },
+            reducedMotion: 'no-preference',
+            serviceWorkers: 'block',
+        });
+        const page = await context.newPage();
+        const prefix = `e2e-reopen-anim-${width}-${Date.now()}-`;
+        const total = 24;
+        const targetIndex = 12;
+        const targetId = `${prefix}${String(targetIndex).padStart(2, '0')}`;
+        try {
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialHidden.v1': 'true' };
+            });
+            await page.goto('/');
+            await page.waitForFunction(() => Boolean(window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready')), { timeout: 60_000 });
+            await page.waitForFunction(() => {
+                const status = document.querySelector('#ica--run-status');
+                return status && !status.textContent.includes('Loading your agents...');
+            }, { timeout: 30_000 });
+
+            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const ctx = window.SillyTavern.getContext();
+                const results = {};
+                const block = (label, lines) => Array.from({ length: lines }, (_, line) => `<p>${label} line ${line + 1}: steady layout check across animated reopen.</p>`).join('');
+                for (let i = 0; i < total; i++) {
+                    const id = `${prefix}${String(i).padStart(2, '0')}`;
+                    await store.saveAgent({
+                        id,
+                        name: i === targetIndex ? 'Chatroom' : `Companion ${String(i + 1).padStart(2, '0')}`,
+                        enabled: true,
+                        execution: 'companion',
+                        category: 'companion',
+                        injection: { order: i * 10 },
+                        companion: { displayMode: 'panel', format: 'html' },
+                    });
+                    const lines = i < targetIndex ? 22 : (i === targetIndex ? 14 : 6);
+                    results[id] = { status: 'done', content: block(`Turn 1 #${i}`, lines), timestamp: Date.now() };
+                }
+                ctx.chat.push({
+                    name: 'Assistant',
+                    is_user: false,
+                    is_system: false,
+                    mes: 'Turn 1 reply.',
+                    extra: { inChatAgentCompanionResults: results },
+                });
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.openCompanionPanel();
+            }, { prefix, total, targetIndex });
+
+            const panel = page.locator('#ica--tracker-panel');
+            await expect(panel).toHaveClass(/is-open/);
+            await expect.poll(() => page.evaluate(() => document.querySelectorAll('#ica--tracker-panel .ica--tpanel-agent.is-hydrated').length), { timeout: 15_000 })
+                .toBeGreaterThanOrEqual(total);
+
+            const measureTarget = () => page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller?.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                if (!scroller || !card) return null;
+                const p = scroller.getBoundingClientRect();
+                const c = card.getBoundingClientRect();
+                return {
+                    top: Math.round(c.top - p.top),
+                    bottom: Math.round(c.bottom - p.top),
+                    height: Math.round(c.height),
+                    panelHeight: Math.round(p.height),
+                };
+            }, targetId);
+
+            // Case 1: Cards above shrink sharply while closed, then reopen with slide-in animation.
+            await page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                scroller.scrollTop = Math.max(0, card.offsetTop - 30);
+            }, targetId);
+            await page.waitForTimeout(200);
+            const case1Before = await measureTarget();
+
+            await page.evaluate(async () => {
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.closeCompanionPanel();
+            });
+            await expect(panel).not.toHaveClass(/is-open/, { timeout: 5_000 });
+
+            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+                const ctx = window.SillyTavern.getContext();
+                const results = {};
+                const block = (label, lines) => Array.from({ length: lines }, (_, line) => `<p>${label} line ${line + 1}: updated companion note after reply.</p>`).join('');
+                for (let i = 0; i < total; i++) {
+                    const id = `${prefix}${String(i).padStart(2, '0')}`;
+                    const lines = i < targetIndex ? 2 : (i === targetIndex ? 30 : 20);
+                    results[id] = { status: 'done', content: block(`Turn 2 #${i}`, lines), timestamp: Date.now() };
+                }
+                ctx.chat.push({
+                    name: 'Assistant',
+                    is_user: false,
+                    is_system: false,
+                    mes: 'Turn 2 reply.',
+                    extra: { inChatAgentCompanionResults: results },
+                });
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.openCompanionPanel();
+            }, { prefix, total, targetIndex });
+
+            await expect(panel).toHaveClass(/is-open/);
+            await page.waitForTimeout(160);
+            const case1MidAnim = await measureTarget();
+            await page.waitForTimeout(1400);
+            const case1Settled = await measureTarget();
+
+            expect(Math.abs(case1MidAnim.top - case1Before.top)).toBeLessThanOrEqual(4);
+            expect(Math.abs(case1Settled.top - case1Before.top)).toBeLessThanOrEqual(4);
+
+            // Case 2: Scrolled partway down a tall Chatroom with the next card peeking,
+            // Chatroom grows on Turn 3 -> stays anchored to Chatroom instead of jumping down.
+            await expect.poll(() => page.evaluate(() => document.querySelectorAll('#ica--tracker-panel .ica--tpanel-agent.is-hydrated').length), { timeout: 15_000 })
+                .toBeGreaterThanOrEqual(total);
+            await page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                const p = scroller.getBoundingClientRect();
+                scroller.scrollTop = Math.max(0, card.offsetTop + card.offsetHeight - p.height + 110);
+            }, targetId);
+            await page.waitForTimeout(200);
+            const case2Before = await measureTarget();
+            expect(case2Before.top).toBeLessThan(-100);
+            expect(case2Before.bottom).toBeLessThan(case2Before.panelHeight);
+
+            await page.evaluate(async () => {
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.closeCompanionPanel();
+            });
+            await expect(panel).not.toHaveClass(/is-open/, { timeout: 5_000 });
+
+            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+                const ctx = window.SillyTavern.getContext();
+                const results = {};
+                const block = (label, lines) => Array.from({ length: lines }, (_, line) => `<p>${label} line ${line + 1}: taller chatroom turn.</p>`).join('');
+                for (let i = 0; i < total; i++) {
+                    const id = `${prefix}${String(i).padStart(2, '0')}`;
+                    const lines = i === targetIndex ? 52 : 8;
+                    results[id] = { status: 'done', content: block(`Turn 3 #${i}`, lines), timestamp: Date.now() };
+                }
+                ctx.chat.push({
+                    name: 'Assistant',
+                    is_user: false,
+                    is_system: false,
+                    mes: 'Turn 3 reply.',
+                    extra: { inChatAgentCompanionResults: results },
+                });
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.openCompanionPanel();
+            }, { prefix, total, targetIndex });
+
+            await expect(panel).toHaveClass(/is-open/);
+            await page.waitForTimeout(1400);
+            const case2Settled = await measureTarget();
+            expect(Math.abs(case2Settled.top - case2Before.top)).toBeLessThanOrEqual(4);
+
+            // Case 3: Scrolled deep inside a tall Chatroom that then shrinks sharply on Turn 4
+            // -> Chatroom stays on screen instead of disappearing above the top edge.
+            await expect.poll(() => page.evaluate(() => document.querySelectorAll('#ica--tracker-panel .ica--tpanel-agent.is-hydrated').length), { timeout: 15_000 })
+                .toBeGreaterThanOrEqual(total);
+            await page.evaluate(id => {
+                const scroller = document.querySelector('#ica--tracker-panel');
+                const card = scroller.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                scroller.scrollTop = card.offsetTop + Math.round(card.offsetHeight * 0.45);
+            }, targetId);
+            await page.waitForTimeout(200);
+            const case3Before = await measureTarget();
+            expect(case3Before.top).toBeLessThan(-400);
+
+            await page.evaluate(async () => {
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.closeCompanionPanel();
+            });
+            await expect(panel).not.toHaveClass(/is-open/, { timeout: 5_000 });
+
+            await page.evaluate(async ({ prefix, total, targetIndex }) => {
+                const ctx = window.SillyTavern.getContext();
+                const results = {};
+                const block = (label, lines) => Array.from({ length: lines }, (_, line) => `<p>${label} line ${line + 1}: short chatroom turn.</p>`).join('');
+                for (let i = 0; i < total; i++) {
+                    const id = `${prefix}${String(i).padStart(2, '0')}`;
+                    const lines = i === targetIndex ? 5 : 8;
+                    results[id] = { status: 'done', content: block(`Turn 4 #${i}`, lines), timestamp: Date.now() };
+                }
+                ctx.chat.push({
+                    name: 'Assistant',
+                    is_user: false,
+                    is_system: false,
+                    mes: 'Turn 4 reply.',
+                    extra: { inChatAgentCompanionResults: results },
+                });
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.openCompanionPanel();
+            }, { prefix, total, targetIndex });
+
+            await expect(panel).toHaveClass(/is-open/);
+            await page.waitForTimeout(1400);
+            const case3Settled = await measureTarget();
+            expect(case3Settled.bottom).toBeGreaterThan(0);
+            expect(case3Settled.top).toBeGreaterThanOrEqual(-case3Settled.height / 2);
+            expect(case3Settled.top).toBeLessThan(case3Settled.panelHeight);
+        } finally {
+            await page.evaluate(async prefix => {
+                const { getAgents, deleteAgent } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                for (const agent of getAgents().filter(agent => agent.id.startsWith(prefix))) await deleteAgent(agent.id);
+            }, prefix).catch(() => {});
+            await context.close();
+        }
+    });
 }
