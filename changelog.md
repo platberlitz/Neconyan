@@ -3,62 +3,44 @@
 ## v1.6.0
 
 ### Highlights
-- Press **What's new** on Home to see what changed in this version. On staging it shows what's landed so far, marked as a preview, and a small dot tells you when there's something you haven't read yet.
-- Group chats have scene rules now: whispers, 'Everyone hears this' lines and who heard each message. Mewmory keeps each speaker's memories to the people who were actually there, and group secrets stay out of sharing and lorebooks.
-- **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and read Neconyan's own errors when you ask it what went wrong. `/check` and `/why` take you straight there.
-- Turn on **Neconyan source code** in **Scratchpad** and it reads the actual code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads, never changes anything.
-- When **Scratchpad** can't answer without something you haven't shared, like your preset or the last prompt sent, it asks with a **Share with the assistant** card. Untick anything you'd rather keep back and press **Share & continue**; nothing turns on until you do.
-- Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists.
-- Changes you save from **Scratchpad** can be undone: press **Undo** on the card, or open **Sessions → Change history** to see what each change replaced and undo it there. If something was edited since, Undo stops rather than overwrite your later work.
-- Character folders and folder tabs, if you want them. They're off until you turn them on.
-- Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand.
-- **Author's Note** has a full screen editor, and **Plot Compass** lets you pick the next direction straight from the note.
-- The **Server** panel has a Node.js memory cap setting, for when the server keeps running out on a small box.
-- When the page reloads itself for an update, it tells you once instead of just quietly doing it.
-- The **Relationship Tracker** card reads left to right on a phone again, whichever theme you use. Its status moves to a second line instead of squashing the name into a column of single letters.
-- **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides, and switches back to the stock look without touching saved chats.
-- The **Companions** panel now docks beside the chat instead of covering it. Opening **Scratchpad** or **Notes** takes the space instead, so the chat stays readable.
-- Drag the inner edge of the docked **Companions** panel (or focus the divider and use the Left/Right arrow keys) to resize it, and your width is remembered.
-- The **Companions** panel opens without freezing the app when you run a lot of themed companions, even on iPhone and Safari or in a chat full of saved companion notes, and its buttons respond straight away.
-- Press **Try first** on a **Scratchpad** change card, or **Try before saving** in its review, to rehearse the next story reply with that change in place. Nothing is saved until you press **Save change**, and the reply is marked **Rehearsal · Unsaved change**.
-- Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**. The cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
-- Turning on **Mewmory** no longer blocks replies with a 'counted … tokens in the prepared prompt' error in chats with long hidden Gemini thinking data or inlined pictures. Mewmory used to count them as ordinary text.
-- Turkish and Vietnamese headings no longer mix thin letters into heavy words. The Turkish letters ğ, ş and İ match the rest, and Vietnamese headings are bold all the way through.
-- Turn on **Companion notes** in **Scratchpad**'s **Context** tab and it reads the finished notes your Companions wrote on the shared messages, like trackers, **Plot Compass** and **Memory Shard**. It's off by default in Roleplay, and **Scratchpad** can ask for it with a **Share with the assistant** card.
-- Fixed non-English alerts that dropped singular counts or cut off save warnings in **Dialogue Colors**.
-- Searching settings, models, tags, chats and extensions now matches Turkish dotted İ, dotless ı and English terms like API regardless of browser language, and uppercase group headings keep brand names such as Quick Image Gen and Mistral intact.
-- Non-English languages now translate multi-line input hints properly, leave **Meower** posts and **Scratchpad** messages as written, and keep **Text-to-Speech** voices disabled when you turn them off.
-- **Scratchpad** can now rewrite, add and delete messages in a **Conversation** chat, and edit your preset there too once you tick **Current preset**. Each change has **Try first** before you save and **Undo** after.
-- Non-English alerts in **Dialogue Colors** now use complete translated sentences instead of gluing English plural endings or untranslated undo prompts onto status messages.
-- You don't have to wait for a **Scratchpad** reply to finish before writing the next message. Type it and press **Queue follow-up**: it waits in **Queued next** and goes out as soon as the reply is done, and pauses instead if you stop the reply or it fails.
-- Non-English tooltips, **Pawthfinder** diagnostics, and extension status messages across **Lorebook**, **In-Chat Agents**, and core tools now use complete singular and plural translations instead of mixed English suffixes.
-- Non-English languages now keep your persona, group, connection profile and session names, **Scratchpad** web search sources, and **Meower** voter and trend tooltips as written.
-- Fixed translated button, keycap and tooltip labels across **Meower**, **Scratchpad** and the **Hotkeys** help guide where shared English words or shifted hotkey entries previously showed the wrong phrase.
-- General **Scratchpad** can share up to 8 lorebooks at once now. Pick each one from **Add a lorebook** under **Share a lorebook**, press **Remove** to drop one, and assistants can suggest edits to any of them.
-- **Scratchpad** can ask one assistant the same thing on two connections at once now. Pick a second one in **Compare with a second connection** under **Assistant connections**, read both replies side by side with their connection badges, and press **Keep only this reply** on the one you prefer.
-- **Scratchpad** can hold a spoken conversation now. Press **Talk mode** beside **Dictate**, speak, and your turn is sent when you pause; replies are read aloud and it listens again, with **Send now**, **Interrupt** and **End talk** in a bar above the message box and **Talk mode pause** under **Context → Dictation**.
-- The **Companions** panel keeps your place steady while you scroll up, reopen it or get live updates, loading off-screen cards in the background so opening stays fast.
-- **Scratchpad** quick prompts now sit in one scrolling row with arrows at each end, on desktop as well as phones, with **Edit quick prompts** pinned beside it; once a session has messages the row folds into a slim **Quick prompts** bar you can open again with one press.
-- **Dice Roller** has **Auto roll** and **Auto send** under **Roll options**, so a fresh roll waits after every reply and lands after your message when you send it, without touching the message box; tagged choices from **CYOA Choices with Skill Checks** and **Doors with Fate Checks** get a matching d100 roll that those agents use in place of their hidden one.
-- Scratchpad's **Context** tab now opens with **What Scratchpad will read**, a live summary of what's shared with **Show preview** beside it, and splits its choices into **Sharing**, **Replies** and **Setup**, with story and lore as quick switches and rarer settings folded away until they're in use.
-- **CYOA Choices with Skill Checks** and **Doors with Fate Checks** work as Companions with the **Dice Roller**'s **Auto send**: tap a choice in the **Companion panel** or just type its number, such as 1 or 1, then 2, and each choice gets its own d100 roll for the reply, while the Companion versions stop asking for a hidden roll the reply never sees.
-- The closed **Roll options** box in the **Dice Roller** no longer has a big empty gap under its title on phones.
-- **Notes** opens again in the Docker image, whichever user the container runs as.
-- When a chat cannot be named automatically, an error toast now says why instead of the chat silently keeping its dated name.
-- The **Companion Panel** now reopens where you left it after new notes arrive while it was closed, instead of dropping you further down the list.
-- Opening a new prompt in **Prompt Manager** straight after saving another one no longer closes or clears the editor while the list finishes redrawing.
-- Tightened security across local connections, imports, chat and card rendering, extensions, Docker and the mobile apps, blocking untrusted websites from reaching a local server, isolating custom styles and cards more strictly, capping oversized archives and images, and keeping `.secret_key` out of keyless Android rescue backups.
-- **Automatic chat naming** now works with thinking models such as Gemini 4 Neon, which used to spend the whole title allowance thinking and come back empty.
-- Non-English languages now translate the bundled **Agents** starter kits, template names and descriptions in the **Agent library** and **Agents** list.
-- **Termeownal UI** no longer shows the Calico cat ears above Home, cards and panels.
-- Reopening the **Companion Panel** after new replies update its cards now keeps your place on tall cards like Chatroom and stops the panel's opening slide from shifting the list further down.
-- The **Companion Panel** now stays on the card you were reading when you reopen it while a new turn's notes are still coming in, instead of dropping you far below it.
-- **Termeownal UI** shows the cat ears where they fit its own layout and has its own **Hide cats (Kittyless)** switch in its settings.
-- **Level Up Companion** and **User-based Stats Generator** answer with a short 'nothing changed' line on quiet turns instead of rewriting the whole block, so they spend far fewer tokens, and your last stat sheet stays on screen.
-- The **Companion Panel** now reopens where you left it when the note right above yours changed size, and at the same place inside a long note while a new reply's notes are still being written, instead of dropping you further down.
-- Hiding the **Dice Roller** with the eye button in the **Companion panel** now folds it down to its title like the other hidden Companions, and it no longer rolls when the panel opens or by itself with **Auto roll** until you show it again.
-- Cards and messages with their own HTML work properly again: labels tick their checkboxes, SVG gradients and clip paths show up, and image maps and screen reader labels find what they point at.
-- Non-English languages now translate **Agents** feature names, **Agent library** labels, starter-kit counts, settings captions and cat-pun feature names consistently across cards and sentences.
+- Press **What's new** on Home to see what changed in this version. A small dot tells you when there's something you haven't read yet, and on staging it shows what's landed so far, marked as a preview.
+- Group chats have scene rules now: whispers, **Everyone hears this** lines, **Who heard this** on every message and a memory starting point per chat. Each member's **Memory** can be **What they heard**, **Only with the group** or **Everything**, with scene commands and macros to match. Group chats from SillyTavern's Presence extension keep who heard what, and its slash commands still work.
+- Mewmory follows the scene: each speaker recalls and writes only what they were there for, a catch-up reopens the memories they missed, and group secrets stay out of hiding, sharing and lorebooks. Replies written on the server follow the same rules.
+- **Scene Director** waits up to 30 seconds by default, and you can set its wait per group under **Group Controls**. The group list, editor and **Scene** panel are easier to read on phones too.
+- In a **Conversation** group DM, **Edit members** adds and removes pals in the same group and keeps its history. Deleting a DM or group DM sticks now, even after a reload or in another tab.
+- **Lorebook Override** in **Conversation** loads the book you pick into replies, and **Character default** loads the card's own linked lorebooks. Before, neither put a single entry in the prompt.
+- **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and fix its activation settings, and read Neconyan's own errors through **App diagnostics** when you ask what went wrong. `/check` and `/why` take you straight there.
+- Turn on **Neconyan source code** in **Scratchpad** and it reads the code behind a bug before it answers, cites the files and lines, and can draft a bug report for you to copy. It's off by default and only ever reads.
+- When **Scratchpad** needs something you haven't shared, like your preset, the last prompt sent or your Companions' notes, it asks with a **Share with the assistant** card. Untick anything you'd rather keep back and press **Share & continue**; nothing turns on until you do.
+- **Scratchpad** changes can be tried and undone. **Try first** rehearses the next reply with the change in place, marked **Rehearsal · Unsaved change**, and **Undo** on the card or in **Sessions → Change history** puts back what it replaced. Undo stops rather than overwrite anything you've edited since.
+- **Scratchpad** can rewrite, add and delete messages in a **Conversation** chat, and edit your preset there too once you tick **Current preset**.
+- General **Scratchpad** can share up to 8 lorebooks at once. Pick each one from **Add a lorebook** under **Share a lorebook**, and the assistant can suggest edits to any of them.
+- Ask one **Scratchpad** assistant the same thing on two connections with **Compare with a second connection**, read both replies side by side, then press **Keep only this reply** on the one you prefer.
+- **Talk mode** beside **Dictate** turns **Scratchpad** into a spoken conversation: your turn goes when you pause, the reply is read aloud and it listens again. You can also type the next message while a reply is still coming and press **Queue follow-up**.
+- **Scratchpad**'s **Context** tab opens with **What Scratchpad will read** and splits its choices into **Sharing**, **Replies** and **Setup**. Quick prompts sit in one scrolling row that folds into a slim bar once the session gets going.
+- **Scratchpad** sessions survive a damaged file or a dropped connection, and a finished reply no longer sticks on 'Working'.
+- The **Companions** panel docks beside the chat instead of covering it; drag its inner edge, or use the Left and Right arrow keys on the divider, to resize it. It opens without freezing, even with lots of themed companions or on iPhone, and reopens on the card you were reading.
+- Each writing companion has its own **Stop** button, and you can edit **Memory Shard** by hand. **Memory Shard** follows your **Regex Agent Themes** now, with live preview and per-tracker overrides.
+- **Plot Compass** shows numbered directions on its newest note. Tap one and the next reply goes that way; leave them and it follows the one marked **Suggested**. Its card follows your **Regex Agent Themes** too.
+- **Level Up Companion** and **User-based Stats Generator** pick up your **Regex Agent Themes** and answer with a short 'nothing changed' line on quiet turns, so they spend far fewer tokens and your last stat sheet stays on screen.
+- **Dice Roller** has **Auto roll** and **Auto send** under **Roll options**. Pick a choice from **CYOA Choices with Skill Checks** or **Doors with Fate Checks** in the **Companion panel**, or type its number, and it gets its own d100 roll for the reply.
+- Character folders and folder tabs, if you want them, with **Sort with AI** to fill them. They're off until you turn them on.
+- **Author's Note** has a full screen editor.
+- Text fields warn you about unknown or broken macros, and lorebooks tell you when a linked book no longer exists. The lorebook editor scrolls through the whole page and **Health** lists damaged entries.
+- Slash command suggestions match your accent, and a button in the message box shows a command's details without losing what you've typed. `/help slash` is searchable by source.
+- Custom connections can **Hide unsupported reasoning levels**, so **Reasoning Effort** shows only the levels your model really has. The built-in model list has the newer OpenAI, Gemini 4, Kimi, GLM and Mistral models.
+- The **Server** panel has **Server Memory (Node.js)**, for when the server keeps running out on a small box. A server that does run out says so in its crash report and starts again.
+- Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**; the cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
+- Translations are more complete and read more naturally: whole sentences for counts, your own names and text left as written, translated **Agents** starter kits and templates, Turkish İ and ı in search, and Turkish and Vietnamese headings without thin letters mixed in.
+- **Automatic chat naming** works with thinking models such as Gemini 4 Neon, and tells you why when it can't name a chat.
+- Stop keeps the words that already arrived, and a failed **Regenerate** keeps the reply you had.
+- **Mewmory** no longer blocks replies in chats with long hidden thinking data or inlined pictures, and **Recall** searches stay separate from the memories it picks for your next reply.
+- **Quick Image Gen** fills in the selected configuration's name when you save, so saving over it takes one press.
+- Startup, streaming and saving do less work: Home opens before the rest of startup, streamed text is patched in place, and big chats save as small patches instead of the whole chat.
+- The Android and iPhone apps start, update and come back from the background more reliably, and on a short phone screen typing leaves room for the chat and Send.
+- Cards and messages with their own HTML work properly again: labels tick their checkboxes, SVG gradients show up and image maps find what they point at.
+- **Notes** opens in the Docker image, whichever user the container runs as.
+- Tightened security across local connections, imports, card rendering, extensions, Docker and the mobile apps, including blocking untrusted websites from reaching a local server and keeping `.secret_key` out of keyless Android rescue backups.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
