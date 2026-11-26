@@ -128,6 +128,25 @@ export function validateAndroidConfigEdit(config, managed) {
     }
 }
 
+/** The iPhone launcher owns only its data folder, port, plain-HTTP origin and sign-in; other fields stay editable. */
+export function validateIOSConfigEdit(config, managed) {
+    validateShape(config);
+    const expected = {
+        dataRoot: managed.dataRoot,
+        port: managed.port,
+        'ssl.enabled': false,
+        'basicAuthUser.username': managed.basicAuthUser.username,
+        'basicAuthUser.password': managed.basicAuthUser.password,
+    };
+    for (const [field, value] of Object.entries(expected)) {
+        if (get(config, field) !== undefined && get(config, field) !== value) {
+            const error = new Error(`Cannot use ${field} in the iPhone app. The launcher manages this setting.`);
+            error.status = 400;
+            throw error;
+        }
+    }
+}
+
 /** Apply Android defaults and launcher requirements to a loader-owned document. */
 export function applyAndroidConfigPolicy(config, { source, managed }) {
     validateShape(config);

@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-pushd %~dp0
+pushd "%~dp0"
 
 set "PATH=%USERPROFILE%\.bun\bin;%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%APPDATA%\npm;%LocalAppData%\Volta\bin;%USERPROFILE%\scoop\shims;%ProgramFiles%\Git\cmd;%ProgramFiles(x86)%\Git\cmd;%LocalAppData%\Programs\Git\cmd;%PATH%"
 set "_need_git=0"

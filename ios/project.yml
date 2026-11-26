@@ -56,10 +56,10 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # NSAllowsLocalNetworking would make iOS ignore NSAllowsArbitraryLoads, and plain HTTP to
-        # model servers on the home network (KoboldCpp, Ollama) needs the broader key.
+        # WebView loads keep HTTPS for internet hosts and allow plain HTTP only for loopback and
+        # local-network hosts. The Node runtime makes its own model requests outside ATS.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connect to a model server you run on your own network, such as KoboldCpp or Ollama.
         NSPhotoLibraryUsageDescription: Choose images for characters, personas and backgrounds.
         NSPhotoLibraryAddUsageDescription: Save exported character cards and generated images to your photo library.

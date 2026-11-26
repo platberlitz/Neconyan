@@ -99,8 +99,15 @@ done
 
 # Mode Selection
 if [ "$(id -u)" = "0" ]; then
-    # Check if PUID/PGID variables are provided
-    if [ -n "$PUID" ] && [ -n "$PGID" ]; then
+    # Run as the unprivileged 'bun' user (1000:1000 by default). Set PUID=0 and
+    # PGID=0 explicitly to keep the old root behaviour.
+    PUID="${PUID:-1000}"
+    PGID="${PGID:-1000}"
+
+    if [ "$PUID" = "0" ] || [ "$PGID" = "0" ]; then
+        echo "Mode: Root (PUID/PGID set to 0 explicitly)"
+        EXEC_PREFIX=""
+    else
         echo "Mode: PUID/PGID (UID:$PUID GID:$PGID)"
 
         # Update the internal 'bun' user to match requested IDs
@@ -108,27 +115,26 @@ if [ "$(id -u)" = "0" ]; then
         usermod -o -u "$PUID" -g "$PGID" bun
 
         for dir in $CHECK_DIRS; do
-            if [ -d "$dir" ]; then
+            # Never follow or re-own a symlink: a link inside a mounted volume could point at host paths.
+            if [ -d "$dir" ] && [ ! -L "$dir" ]; then
                 # Runs chown only if there is an mismatch
                 DIR_UID=$(stat -c '%u' "$dir")
                 DIR_GID=$(stat -c '%g' "$dir")
 
                 if [ "$DIR_UID" != "$PUID" ] || [ "$DIR_GID" != "$PGID" ]; then
                     echo "(Detected mismatch) Adjusting permissions for: $dir."
-                    chown -R bun:bun "$dir" || echo "Warning: Failed to update permissions for '$dir'." >&2
+                    chown -hR bun:bun "$dir" || echo "Warning: Failed to update permissions for '$dir'." >&2
                 fi
             fi
         done
 
         # Fix config file specifically
-        chown bun:bun "config/config.yaml" 2>/dev/null
+        if [ ! -L "config/config.yaml" ]; then
+            chown -h bun:bun "config/config.yaml" 2>/dev/null
+        fi
 
         # Set execution prefix to run as 'bun' user
         EXEC_PREFIX="su-exec bun:bun"
-    else
-        # Default: Run as Root (original behavior)
-        echo "Mode: Default (Root)"
-        EXEC_PREFIX=""
     fi
 
 else

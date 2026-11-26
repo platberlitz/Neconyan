@@ -44,6 +44,10 @@ jobs:
           app-id: ${{ vars.ST_BOT_APP_ID }}
           private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
 
       - name: Checkout staging
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -65,6 +69,10 @@ jobs:
           ref="${INPUT_REF:-${PAYLOAD_REF:-main}}"
           if [[ "$ref" == *$'\n'* || "$ref" == *$'\r'* ]]; then
             echo "Upstream ref must be a single line." >&2
+            exit 1
+          fi
+          if [[ "$ref" == -* ]]; then
+            echo "Upstream ref must not start with a dash." >&2
             exit 1
           fi
           printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"

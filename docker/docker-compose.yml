@@ -17,7 +17,8 @@ services:
       # Uncomment on memory-capped hosts to trade throughput for aggressive GC.
       # - NECONYAN_BUN_SMOL=1
     ports:
-      - "4433:4433"
+      # Loopback only. Widen (for example "4433:4433") only behind authentication and TLS.
+      - "127.0.0.1:4433:4433"
     volumes:
       - "./docker/config:/home/bun/app/config"
       - "./docker/data:/home/bun/app/data"

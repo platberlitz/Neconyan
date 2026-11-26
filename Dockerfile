@@ -45,11 +45,9 @@ RUN \
 # Set the entrypoint script and cleanup
 RUN \
   echo "*** Cleanup ***" && \
-  mv "./docker/docker-entrypoint.sh" "./" && \
-  echo "*** Make docker-entrypoint.sh executable ***" && \
-  chmod +x "./docker-entrypoint.sh" && \
+  install -o root -g root -m 755 "./docker/docker-entrypoint.sh" /usr/local/bin/docker-entrypoint.sh && \
   echo "*** Convert line endings to Unix format ***" && \
-  dos2unix "./docker-entrypoint.sh" && \
+  dos2unix /usr/local/bin/docker-entrypoint.sh && \
   rm -rf "./docker"
 
 # Fix extension repos permissions
@@ -58,4 +56,4 @@ RUN git config --global --add safe.directory "*"
 EXPOSE 4433
 
 # Ensure proper handling of kernel signals
-ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]
+ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]

@@ -89,6 +89,11 @@ if [[ -z "$UPSTREAM_REF" ]]; then
     exit 1
 fi
 
+if [[ "$UPSTREAM_REF" == -* || "$UPSTREAM_REPO" == -* || "$BASE_COMMIT_OVERRIDE" == -* ]]; then
+    echo "Upstream repository, ref and base commit must not start with a dash." >&2
+    exit 1
+fi
+
 if [[ -n "$LOCAL_SOURCE" && ! -d "$LOCAL_SOURCE" ]]; then
     echo "Local source does not exist: $LOCAL_SOURCE" >&2
     exit 1
@@ -341,10 +346,15 @@ checkout_commit() {
     local dest="$1"
     local commit="$2"
 
+    if [[ ! "$commit" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
+        echo "Refusing to check out a non-hexadecimal commit: $commit" >&2
+        exit 1
+    fi
+
     git init --quiet "$dest"
-    git -C "$dest" remote add origin "$UPSTREAM_REPO"
-    if ! git -C "$dest" fetch --quiet --depth=1 origin "$commit" 2>/dev/null; then
-        git -C "$dest" fetch --quiet origin
+    git -C "$dest" remote add -- origin "$UPSTREAM_REPO"
+    if ! git -C "$dest" fetch --quiet --depth=1 -- origin "$commit" 2>/dev/null; then
+        git -C "$dest" fetch --quiet -- origin
     fi
     git -C "$dest" checkout --quiet "$commit"
 }
@@ -360,8 +370,8 @@ SOURCE_DIR="$LOCAL_SOURCE"
 if [[ -z "$SOURCE_DIR" ]]; then
     SOURCE_DIR="$TMP_DIR/source"
     git init --quiet "$SOURCE_DIR"
-    git -C "$SOURCE_DIR" remote add origin "$UPSTREAM_REPO"
-    git -C "$SOURCE_DIR" fetch --quiet --depth=1 origin "$UPSTREAM_REF"
+    git -C "$SOURCE_DIR" remote add -- origin "$UPSTREAM_REPO"
+    git -C "$SOURCE_DIR" fetch --quiet --depth=1 -- origin "$UPSTREAM_REF"
     git -C "$SOURCE_DIR" checkout --quiet FETCH_HEAD
 fi
 

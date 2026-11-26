@@ -513,7 +513,8 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         let fromLocal = isLocal(sourceFrame(of: navigationAction))
         let download = navigationAction.shouldPerformDownload
         if isLocal(url) {
-            decisionHandler(download ? .download : .allow)
+            // Only the workspace itself may start a download; a cross-origin subframe must not reach the Share Sheet.
+            decisionHandler(download ? (fromLocal ? .download : .cancel) : .allow)
             return
         }
         let target = navigationAction.targetFrame
@@ -530,7 +531,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
         if isSubframe, ["https", "http"].contains(scheme) {
-            decisionHandler(.allow)
+            decisionHandler(download ? .cancel : .allow)
             return
         }
         decisionHandler(.cancel)
@@ -543,7 +544,14 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let attachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
-        decisionHandler(attachment || !navigationResponse.canShowMIMEType ? .download : .allow)
+        if attachment || !navigationResponse.canShowMIMEType {
+            let responseUrl = navigationResponse.response.url
+            let responseScheme = responseUrl?.scheme?.lowercased() ?? ""
+            let allowDownload = (responseUrl.map { isLocal($0) } ?? false) || (navigationResponse.isForMainFrame && ["blob", "data"].contains(responseScheme))
+            decisionHandler(allowDownload ? .download : .cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

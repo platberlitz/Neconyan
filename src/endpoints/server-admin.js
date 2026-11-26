@@ -42,7 +42,7 @@ import { getThumbnailDimensions, getThumbnailMobileDimensions, setThumbnailDimen
 import { getThumbnailMobileRuntimeSettings, getThumbnailRuntimeSettings, setThumbnailMobileRuntimeSettings, setThumbnailRuntimeSettings } from './thumbnails.js';
 import { requestGracefulExit } from '../shutdown.js';
 import { getServerBootId } from '../server-boot-marker.js';
-import { validateAndroidConfigEdit } from '../android-config-policy.js';
+import { validateAndroidConfigEdit, validateIOSConfigEdit } from '../android-config-policy.js';
 import { uiText } from '../../public/scripts/ui-text.js';
 import {
     EXTERNAL_HEAP_OVERRIDE_ENV,
@@ -143,6 +143,14 @@ function getAndroidManagedConfig() {
         }),
     });
     return androidManagedConfig;
+}
+
+function getIOSManagedConfig() {
+    return {
+        dataRoot: globalThis.DATA_ROOT,
+        port: globalThis.COMMAND_LINE_ARGS.port,
+        basicAuthUser: { username: getConfigValue('basicAuthUser.username'), password: getConfigValue('basicAuthUser.password') },
+    };
 }
 
 function createHttpError(status, message) {
@@ -894,7 +902,13 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
         }
 
         const managedConfig = getAndroidManagedConfig();
-        if (managedConfig) validateAndroidConfigEdit(parsed.toJS(), managedConfig);
+        if (managedConfig) {
+            validateAndroidConfigEdit(parsed.toJS(), managedConfig);
+        } else if (process.env.NECONYAN_IOS_APP === '1') {
+            // The launcher owns these fields; other settings stay editable on iPhone.
+            const edited = parsed.toJS();
+            if (['dataRoot', 'port', 'ssl', 'basicAuthUser'].some(key => edited?.[key] !== undefined)) validateIOSConfigEdit(edited, getIOSManagedConfig());
+        }
 
         const nextContent = content.endsWith('\n') ? content : `${content}\n`;
         tryWriteFileSync(configPath, nextContent);

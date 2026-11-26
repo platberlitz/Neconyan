@@ -67,7 +67,7 @@ final class DataRescue {
                 continue;
             }
             if (!Files.isRegularFile(child.toPath(), LinkOption.NOFOLLOW_LINKS) || CHAT_LOCK.matcher(child.getName()).matches()) continue;
-            if (!includeKeys && (path.equals("secrets.json") || relative.equals("backups") && KEY_MIGRATION.matcher(child.getName()).matches())) continue;
+            if (!includeKeys && (path.equals("secrets.json") || path.equals(".secret_key") || relative.equals("backups") && KEY_MIGRATION.matcher(child.getName()).matches())) continue;
             InputStream input;
             try { input = new FileInputStream(child); } catch (IOException error) { result.skipped.add(path); continue; }
             ZipEntry entry = new ZipEntry(prefix + "/" + path);

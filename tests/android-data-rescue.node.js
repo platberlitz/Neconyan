@@ -35,6 +35,7 @@ public final class Rescue {
 `);
     write(dataRoot, 'default-user/settings.json', '{"username":"Gold"}');
     write(dataRoot, 'default-user/secrets.json', '{"api_key_openai":"secret"}');
+    write(dataRoot, 'default-user/.secret_key', 'private-key-material');
     write(dataRoot, 'default-user/backups/secrets_migration_1.json', '{}');
     write(dataRoot, 'default-user/backups/chat_Gold.jsonl', '{}');
     write(dataRoot, 'default-user/chats/Gold/GOLD.jsonl', '{"user_name":"You"}\n{"mes":"Kept"}\n');
@@ -52,6 +53,7 @@ public final class Rescue {
 test('Android rescue backup imports as the default account without locks or job records', { skip: !hasJava && 'javac is not installed' }, async t => {
     const { f, zip, output } = rescue(t, false);
     assert.match(output, /^4 \[\]/);
+    assert.ok(!execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n').some(name => name.endsWith('.secret_key') || name.endsWith('secrets.json')));
     const retained = await retainUploadedArchive({ owner: 'rescue', directories: f.scope.directories }, f.scope, 'android-rescue', zip);
     const captured = await captureZipImport(retained);
     assert.equal(captured.sourceRoot, 'data/default-user');
@@ -65,6 +67,8 @@ test('Android rescue backup imports as the default account without locks or job 
 
 test('Android rescue backup includes saved keys only when asked', { skip: !hasJava && 'javac is not installed' }, async t => {
     const { f, zip } = rescue(t, true);
+    const names = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n');
+    assert.ok(names.includes('data/default-user/.secret_key'));
     const retained = await retainUploadedArchive({ owner: 'rescue', directories: f.scope.directories }, f.scope, 'android-rescue-keys', zip);
     const captured = await captureZipImport(retained);
     const files = captured.files.map(file => file.relative);
