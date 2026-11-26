@@ -17273,6 +17273,7 @@ async function generateChatAutoLabelResponse(prompt, displayName, signal) {
     const generated = await generateRaw({
         prompt,
         responseLength: 256,
+        preserveReasoningBudget: true,
         trimNames: false,
         jsonSchema: CHAT_LABEL_JSON_SCHEMA,
         signal,
@@ -17287,6 +17288,8 @@ async function generatePlainChatAutoLabelResponse(prompt, displayName, signal) {
         prompt,
         api,
         responseLength: 256,
+        // Thinking models spend the allowance on reasoning before the title, so 256 would leave nothing.
+        preserveReasoningBudget: true,
         signal,
     });
     const generated = typeof data === 'string' ? data : extractMessageFromData(data, api);
