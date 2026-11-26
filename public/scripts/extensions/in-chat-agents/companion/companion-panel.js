@@ -1,7 +1,7 @@
 import { chat, chat_metadata } from '../../../../script.js';
 import { hideChatMessageRange } from '../../../chats.js';
 import { t } from '../../../i18n.js';
-import { captureVisibleMessageAnchor, restoreVisibleMessageAnchor } from '../../../chat-render-lifecycle/anchor.js';
+import { captureVisibleMessageAnchor, measureVisibleMessageAnchorShift, restoreVisibleMessageAnchor } from '../../../chat-render-lifecycle/anchor.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { setUiVisibility } from '../../../ui-motion.js';
@@ -122,6 +122,10 @@ const PANEL_HYDRATION_BELOW_CARDS_PER_FRAME = 1;
 const PANEL_HYDRATION_OPEN_DELAY_MS = 450;
 const PANEL_HYDRATION_SCROLL_IDLE_MS = 160;
 const PANEL_REOPEN_SETTLE_PASSES = 4;
+const PANEL_REOPEN_SETTLE_MIN_FRAMES = 3;
+const PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES = 2;
+const PANEL_REOPEN_SETTLE_MAX_MS = 900;
+const PANEL_REOPEN_SETTLE_MAX_FRAMES = 60;
 
 let panelInitialized = false;
 let livePreview = null;
@@ -136,6 +140,7 @@ let panelHydrationGeneration = 0;
 let panelHydrationTimer = 0;
 let panelHydrationFrame = 0;
 let panelAnchorSettleFrame = 0;
+let panelAnchorSettleState = null;
 let panelHydrationScheduledAt = 0;
 let panelOpenHydrationEarliestAt = 0;
 let panelUserScrollUntil = 0;
@@ -1676,17 +1681,56 @@ function applyCachedCardIntrinsicHeights(panel) {
     }
 }
 
-function restorePanelAnchor(panel, anchor) {
+function resolvePanelAnchorCandidate(panel, anchor) {
     if (!panel || !anchor?.messageId) {
-        return false;
+        return null;
     }
-    const target = getPanelAgentSections(panel)
-        .find(section => getPanelSectionAgentId(section) === anchor.messageId);
-    if (!target || isPanelSectionFiltered(target)) {
+    const sections = getPanelAgentSections(panel);
+    let candidate = anchor;
+    while (candidate?.messageId) {
+        const target = sections.find(section => getPanelSectionAgentId(section) === candidate.messageId);
+        if (target && !isPanelSectionFiltered(target)) {
+            return { anchor: candidate, element: target };
+        }
+        candidate = candidate.fallback || null;
+    }
+    return null;
+}
+
+function getEffectivePanelAnchor(panel, anchor) {
+    const resolved = resolvePanelAnchorCandidate(panel, anchor);
+    if (!resolved) {
+        return null;
+    }
+    const { anchor: matched, element } = resolved;
+    let offsetTop = matched.offsetTop;
+    // When the reader was scrolled inside a tall card that later became much shorter,
+    // restoring the old deep negative offset pushes the card mostly or wholly above
+    // the viewport. Keep the card in view only when the old offset would leave less
+    // than half of the card (and less than half of what was visible before) on screen.
+    if (offsetTop < 0 && Number.isFinite(matched.visibleBottom) && matched.visibleBottom > 0) {
+        const cardHeight = element.getBoundingClientRect?.().height || 0;
+        if (cardHeight > 0) {
+            const visibleAfterRestore = offsetTop + cardHeight;
+            const minHealthyVisible = Math.min(cardHeight * 0.5, matched.visibleBottom * 0.5);
+            if (visibleAfterRestore < minHealthyVisible) {
+                offsetTop = Math.min(0, matched.visibleBottom - cardHeight);
+            }
+        }
+    }
+    return {
+        messageId: matched.messageId,
+        offsetTop,
+    };
+}
+
+function restorePanelAnchor(panel, anchor) {
+    const effective = getEffectivePanelAnchor(panel, anchor);
+    if (!effective) {
         return false;
     }
     const before = Number(panel.scrollTop) || 0;
-    const restored = restoreVisibleMessageAnchor(panel, anchor, PANEL_ANCHOR_OPTIONS);
+    const restored = restoreVisibleMessageAnchor(panel, effective, PANEL_ANCHOR_OPTIONS);
     const after = Number(panel.scrollTop) || 0;
     if (Math.abs(after - before) >= 0.5) {
         panelProgrammaticScrollTop = after;
@@ -1695,31 +1739,95 @@ function restorePanelAnchor(panel, anchor) {
 }
 
 /**
- * Notes can be rewritten while the panel is closed, so an offset inside the
- * card above the viewport stops meaning anything on reopen. Anchor to the first
- * card heading on screen instead, keeping the containing card as the fallback.
+ * Picks the card the reader is actually viewing so a peeking card above or below
+ * does not hijack the reopen position when notes change height while closed.
+ * Keeps a neighbouring visible card as a fallback if the primary card disappears.
  */
 function capturePanelReopenAnchor(panel) {
-    const containing = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
-    if (!containing || containing.offsetTop >= 0 || typeof panel?.querySelectorAll !== 'function') {
-        return containing;
+    if (!panel || typeof panel.getBoundingClientRect !== 'function' || typeof panel.querySelectorAll !== 'function') {
+        return captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
     }
     const panelRect = panel.getBoundingClientRect();
+    if (!(panelRect?.height > 0)) {
+        return captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
+    }
+
+    const visible = [];
     for (const section of panel.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector)) {
+        if (isPanelSectionFiltered(section)) {
+            continue;
+        }
         const rect = section.getBoundingClientRect?.();
         if (!rect || rect.height <= 0) {
             continue;
         }
-        const offsetTop = rect.top - panelRect.top;
-        if (offsetTop >= panelRect.height) {
+        if (rect.bottom <= panelRect.top) {
+            continue;
+        }
+        if (rect.top >= panelRect.bottom) {
             break;
         }
         const agentId = section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute);
-        if (offsetTop >= 0 && agentId) {
-            return { messageId: agentId, offsetTop, fallback: containing };
+        if (!agentId) {
+            continue;
+        }
+        const offsetTop = rect.top - panelRect.top;
+        const visibleTop = Math.max(rect.top, panelRect.top);
+        const visibleBottom = Math.min(rect.bottom, panelRect.bottom);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        if (visibleHeight <= 0) {
+            continue;
+        }
+        visible.push({
+            messageId: agentId,
+            offsetTop,
+            visibleBottom: visibleBottom - panelRect.top,
+            visibleHeight,
+        });
+    }
+
+    if (visible.length === 0) {
+        return captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
+    }
+
+    const containing = visible[0];
+    const firstStartingInView = visible.find(candidate => candidate.offsetTop >= 0) ?? null;
+    let primary = containing;
+    if (containing.offsetTop < 0 && firstStartingInView) {
+        const keepContaining = containing.visibleHeight >= panelRect.height * 0.35
+            && containing.visibleHeight > firstStartingInView.visibleHeight;
+        if (!keepContaining) {
+            primary = firstStartingInView;
         }
     }
-    return containing;
+
+    const fallback = primary === containing
+        ? (firstStartingInView ?? visible.find(candidate => candidate !== primary) ?? null)
+        : containing;
+
+    return {
+        messageId: primary.messageId,
+        offsetTop: primary.offsetTop,
+        visibleBottom: primary.visibleBottom,
+        fallback: fallback
+            ? {
+                messageId: fallback.messageId,
+                offsetTop: fallback.offsetTop,
+                visibleBottom: fallback.visibleBottom,
+            }
+            : null,
+    };
+}
+
+function hasRunningPanelAnimation(panel) {
+    if (typeof panel?.getAnimations !== 'function') {
+        return false;
+    }
+    try {
+        return panel.getAnimations().some(anim => anim?.playState === 'running');
+    } catch {
+        return false;
+    }
 }
 
 function cancelPanelAnchorSettle() {
@@ -1727,6 +1835,60 @@ function cancelPanelAnchorSettle() {
         globalThis.cancelAnimationFrame?.(panelAnchorSettleFrame);
         panelAnchorSettleFrame = 0;
     }
+    panelAnchorSettleState = null;
+}
+
+function settleActivePanelAnchor(panel) {
+    const state = panelAnchorSettleState;
+    if (!state || state.panel !== panel) {
+        return false;
+    }
+    if (!panelOpen || state.generation !== panelHydrationGeneration || !panel.isConnected) {
+        cancelPanelAnchorSettle();
+        return false;
+    }
+    if (panelPointerActive || panelDragActive || panelResizeActive || stopPanelBottomFollow || Date.now() < panelUserScrollUntil) {
+        cancelPanelAnchorSettle();
+        return false;
+    }
+    const effective = getEffectivePanelAnchor(panel, state.anchor);
+    if (!effective) {
+        cancelPanelAnchorSettle();
+        return false;
+    }
+    const shift = measureVisibleMessageAnchorShift(panel, effective, PANEL_ANCHOR_OPTIONS);
+    if (shift === null) {
+        cancelPanelAnchorSettle();
+        return false;
+    }
+    const currentScrollTop = Number(panel.scrollTop) || 0;
+    const scrollDelta = currentScrollTop - state.expectedScrollTop;
+    let handledLayoutScroll = false;
+    if (Math.abs(scrollDelta) > 1) {
+        // On a user scroll (scrollbar drag, keyboard scroll), the anchored card
+        // shifts by -scrollDelta (so shift + scrollDelta is ~0). On browser
+        // scroll-anchoring or maxScroll clamping after layout changes above,
+        // shift + scrollDelta reflects the layout change instead.
+        if (Math.abs(shift + scrollDelta) <= 2) {
+            cancelPanelAnchorSettle();
+            return false;
+        }
+        state.expectedScrollTop = currentScrollTop;
+        handledLayoutScroll = true;
+    }
+    if (Math.abs(shift) >= 0.5) {
+        panelHydrationMutating = true;
+        try {
+            restorePanelAnchor(panel, state.anchor);
+        } finally {
+            panelHydrationMutating = false;
+        }
+        state.expectedScrollTop = Number(panel.scrollTop) || 0;
+        capturePanelScrollTrackAnchor(panel);
+        syncPanelJumpButtons();
+        return true;
+    }
+    return handledLayoutScroll;
 }
 
 function schedulePanelAnchorSettle(panel, anchor) {
@@ -1734,23 +1896,47 @@ function schedulePanelAnchorSettle(panel, anchor) {
     if (!panel || !anchor?.messageId || typeof globalThis.requestAnimationFrame !== 'function') {
         return;
     }
-    const generation = panelHydrationGeneration;
-    const expectedScrollTop = Number(panel.scrollTop) || 0;
-    panelAnchorSettleFrame = globalThis.requestAnimationFrame(() => {
+    const state = {
+        panel,
+        anchor,
+        generation: panelHydrationGeneration,
+        expectedScrollTop: Number(panel.scrollTop) || 0,
+        deadline: Date.now() + PANEL_REOPEN_SETTLE_MAX_MS,
+        remainingQuietFrames: PANEL_REOPEN_SETTLE_MIN_FRAMES,
+        framesRun: 0,
+    };
+    panelAnchorSettleState = state;
+
+    const tick = () => {
         panelAnchorSettleFrame = 0;
-        if (!panelOpen || generation !== panelHydrationGeneration || !panel.isConnected) {
+        if (panelAnchorSettleState !== state) {
             return;
         }
-        if (panelPointerActive || panelDragActive || panelResizeActive || stopPanelBottomFollow) {
+        state.framesRun += 1;
+        const corrected = settleActivePanelAnchor(panel);
+        if (panelAnchorSettleState !== state) {
             return;
         }
-        if (Math.abs((Number(panel.scrollTop) || 0) - expectedScrollTop) > 1) {
+        const withinLimits = state.framesRun < PANEL_REOPEN_SETTLE_MAX_FRAMES && Date.now() < state.deadline;
+        if (!withinLimits) {
+            cancelPanelAnchorSettle();
             return;
         }
-        restorePanelAnchor(panel, anchor);
-        capturePanelScrollTrackAnchor(panel);
-        syncPanelJumpButtons();
-    });
+        if (hasRunningPanelAnimation(panel)) {
+            state.remainingQuietFrames = PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES;
+        } else if (corrected) {
+            state.remainingQuietFrames = PANEL_REOPEN_SETTLE_POST_ANIM_FRAMES;
+        } else {
+            state.remainingQuietFrames -= 1;
+        }
+        if (state.remainingQuietFrames > 0) {
+            panelAnchorSettleFrame = globalThis.requestAnimationFrame(tick);
+        } else {
+            cancelPanelAnchorSettle();
+        }
+    };
+
+    panelAnchorSettleFrame = globalThis.requestAnimationFrame(tick);
 }
 
 function pausePanelHydrationFrame() {
@@ -1960,6 +2146,11 @@ function runPanelHydrationSlice(generation) {
 function hydratePanelCardsNearAnchor(panel, anchor) {
     panelHydrationMutating = true;
     try {
+        const resolved = resolvePanelAnchorCandidate(panel, anchor);
+        if (resolved?.element && !resolved.element.classList?.contains?.(HYDRATED_CARD_CLASS)) {
+            resolved.element.classList?.add?.(HYDRATED_CARD_CLASS);
+            cachePanelSectionHeight(resolved.element, { applyIntrinsic: true });
+        }
         for (let pass = 0; pass < PANEL_REOPEN_SETTLE_PASSES; pass++) {
             restorePanelAnchor(panel, anchor);
             const panelRect = panel.getBoundingClientRect();
@@ -1999,6 +2190,12 @@ function handlePanelScroll() {
     if (stopPanelBottomFollow) {
         return;
     }
+    if (panelAnchorSettleState?.panel === panel) {
+        if (settleActivePanelAnchor(panel)) {
+            return;
+        }
+        cancelPanelAnchorSettle();
+    }
     compensateManualScrollAnchor(panel);
     panelUserScrollUntil = Date.now() + PANEL_HYDRATION_SCROLL_IDLE_MS;
     if (panelOpen && (hasUnhydratedPanelCards(panel) || panelPendingMeasuredCards.size > 0)) {
@@ -2008,6 +2205,7 @@ function handlePanelScroll() {
 
 function handlePanelPointerStart() {
     panelPointerActive = true;
+    cancelPanelAnchorSettle();
     pausePanelHydrationFrame();
 }
 
@@ -2063,7 +2261,7 @@ function observePanelJumpSize(panel) {
         const currentPanel = getCompanionPanelNode();
         if (panelOpen && !panelResizeActive && syncPanelHeightCacheWidth(currentPanel)) {
             schedulePanelHydration();
-        } else if (panelOpen) {
+        } else if (panelOpen && !settleActivePanelAnchor(currentPanel)) {
             compensateManualScrollAnchor(currentPanel);
         }
         schedulePanelJumpSync();
@@ -2077,6 +2275,7 @@ function observePanelJumpSize(panel) {
 function jumpPanel(direction) {
     const panel = document.getElementById?.('ica--tracker-panel');
     if (!panel) return;
+    cancelPanelAnchorSettle();
     panelScrollTrackAnchor = null;
     stopPanelBottomFollow?.({ resumeHydration: false });
     const behavior = shouldReducePanelMotion() ? 'auto' : 'smooth';
@@ -2203,12 +2402,15 @@ function renderPanel({ applyOpenState } = {}) {
     const panel = panelElement[0];
     const wasVisible = Boolean(!applyOpenState && panelOpen);
     if (wasVisible) {
+        cancelPanelAnchorSettle();
         syncPanelHeightCacheWidth(panel);
     }
     const panelRect = wasVisible && typeof panel?.getBoundingClientRect === 'function'
         ? panel.getBoundingClientRect()
         : null;
-    const anchor = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
+    const anchor = wasVisible
+        ? capturePanelReopenAnchor(panel)
+        : captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
     const previousHeights = new Map();
     for (const section of getPanelAgentSections(panel)) {
         const agentId = getPanelSectionAgentId(section);
@@ -3007,6 +3209,7 @@ export function initCompanionPanel() {
     const panelNode = $('#ica--tracker-panel')[0];
     panelNode?.addEventListener('toggle', handlePanelHistoryToggle, true);
     panelNode?.addEventListener('scroll', handlePanelScroll, { passive: true });
+    panelNode?.addEventListener('wheel', cancelPanelAnchorSettle, { passive: true });
     panelNode?.addEventListener('pointerdown', handlePanelPointerStart, { passive: true });
     panelNode?.addEventListener('touchstart', handlePanelPointerStart, { passive: true });
     globalThis.addEventListener?.('pointerup', handlePanelPointerEnd, { passive: true });
