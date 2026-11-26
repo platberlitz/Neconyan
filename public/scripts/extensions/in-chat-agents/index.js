@@ -15,7 +15,7 @@ import { composeCatalogueRevision, markAgentLibraryStartupSettled } from './libr
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
-import { t } from '../../i18n.js';
+import { t, translate } from '../../i18n.js';
 import { is_group_generating } from '../../group-chats.js';
 import {
     areAgentsGloballyEnabled,
@@ -5480,11 +5480,15 @@ async function openTemplateBrowser() {
         const groupGrid = $('<div class="ica--group-grid"></div>');
         for (const group of allGroups) {
             const count = group.agentTemplateIds.length + (group.customAgents?.length ?? 0);
+            const countLabel = (count === 1
+                ? translate('${0} agent', 'scoped.ica.kit_agent_one')
+                : translate('${0} agents', 'scoped.ica.kit_agent_many')
+            ).replace('${0}', String(count));
             const card = $(`
                 <div class="ica--group-card">
                     <div class="ica--group-card-header">
                         <strong${group.builtin ? '' : ' data-i18n-ignore'}>${escapeHtml(group.name)}</strong>
-                        <span class="ica--card-pill">${count} agents</span>
+                        <span class="ica--card-pill" data-i18n-ignore>${escapeHtml(countLabel)}</span>
                     </div>
                     <div class="ica--group-card-desc"${group.builtin ? '' : ' data-i18n-ignore'}>${escapeHtml(group.description)}</div>
                     <div class="ica--group-card-actions">

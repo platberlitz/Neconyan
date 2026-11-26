@@ -25577,5 +25577,7 @@
   "All tracker agents including interactive menus and profile sheets": "All tracker agents including interactive menus and profile sheets",
   "Just the randomiser agents from Director Preset v12": "Just the randomiser agents from Director Preset v12",
   "All bundled companion agents: auxiliary notes, reaction feeds, trackers fed back into context, and the rolling memory shard": "All bundled companion agents: auxiliary notes, reaction feeds, trackers fed back into context, and the rolling memory shard",
-  "All trackers from The Ethereality Express, plus the Doors and Dice menus": "All trackers from The Ethereality Express, plus the Doors and Dice menus"
+  "All trackers from The Ethereality Express, plus the Doors and Dice menus": "All trackers from The Ethereality Express, plus the Doors and Dice menus",
+  "scoped.ica.kit_agent_one": "${0} agent",
+  "scoped.ica.kit_agent_many": "${0} agents"
 }
