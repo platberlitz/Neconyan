@@ -1268,6 +1268,9 @@ export function decodeStyleTags(text, { prefix, idPrefix } = { prefix: '.mes_tex
                     if (!mediaAllowed && checkExternalCssUrl(entry.value)) {
                         break;
                     }
+                    if (idPrefixValue && typeof entry.value === 'string') {
+                        entry.value = prefixLocalCssUrlReferences(entry.value, idPrefixValue);
+                    }
                     kept.push(entry);
                     break;
                 case 'rule':
@@ -2661,6 +2664,80 @@ export function registerFileConverter(mimeType, converter) {
     converters[mimeType] = converter;
 }
 
+const NAMED_PROP_ID_REFERENCE_ATTRIBUTES = ['list', 'form', 'popovertarget', 'commandfor'];
+const NAMED_PROP_ID_LIST_ATTRIBUTES = [
+    'for',
+    'aria-activedescendant',
+    'aria-controls',
+    'aria-describedby',
+    'aria-details',
+    'aria-errormessage',
+    'aria-flowto',
+    'aria-labelledby',
+    'aria-owns',
+    'headers',
+];
+const NAMED_PROP_FRAGMENT_ATTRIBUTES = ['href', 'xlink:href', 'usemap'];
+const NAMED_PROP_CSS_URL_ATTRIBUTES = ['style', 'fill', 'stroke', 'clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end'];
+const LOCAL_CSS_URL_REFERENCE_REGEX = /url\(\s*(['"]?)#([^'"()\s]+)\1\s*\)/gi;
+
+/**
+ * Points local url(#id) references in CSS text at ids carrying the given prefix.
+ * @param {string} value CSS text or presentation attribute value
+ * @param {string} prefix Prefix DOMPurify gives ids and names
+ * @returns {string} Updated value
+ */
+export function prefixLocalCssUrlReferences(value, prefix) {
+    if (!value || !prefix || !value.includes('#')) {
+        return value;
+    }
+    return value.replace(LOCAL_CSS_URL_REFERENCE_REGEX, (match, quote, id) => {
+        return id.startsWith(prefix) ? match : `url(${quote}#${prefix}${id}${quote})`;
+    });
+}
+
+/**
+ * Rewrites attributes that refer to ids or names so they still match after DOMPurify prefixes them.
+ * @param {Element} node Sanitised element
+ * @param {string} prefix Prefix DOMPurify gives ids and names
+ */
+function prefixNamedPropReferences(node, prefix) {
+    const prefixId = (id) => (id.startsWith(prefix) ? id : `${prefix}${id}`);
+    const update = (attributeName, value, next) => {
+        if (next !== value) {
+            node.setAttribute(attributeName, next);
+        }
+    };
+
+    for (const attributeName of NAMED_PROP_ID_REFERENCE_ATTRIBUTES) {
+        const value = node.getAttribute(attributeName);
+        if (value?.trim()) {
+            update(attributeName, value, prefixId(value.trim()));
+        }
+    }
+
+    for (const attributeName of NAMED_PROP_ID_LIST_ATTRIBUTES) {
+        const value = node.getAttribute(attributeName);
+        if (value?.trim()) {
+            update(attributeName, value, value.trim().split(/\s+/).map(prefixId).join(' '));
+        }
+    }
+
+    for (const attributeName of NAMED_PROP_FRAGMENT_ATTRIBUTES) {
+        const value = node.getAttribute(attributeName);
+        if (value && value.length > 1 && value.startsWith('#')) {
+            update(attributeName, value, `#${prefixId(value.slice(1))}`);
+        }
+    }
+
+    for (const attributeName of NAMED_PROP_CSS_URL_ATTRIBUTES) {
+        const value = node.getAttribute(attributeName);
+        if (value) {
+            update(attributeName, value, prefixLocalCssUrlReferences(value, prefix));
+        }
+    }
+}
+
 export function addDOMPurifyHooks() {
     const NAMED_PROPS_PREFIX = 'user-content-';
     const EXTERNAL_URL_ATTRIBUTES = ['href', 'xlink:href', 'src', 'poster', 'data', 'action', 'formaction', 'ping', 'background', 'cite', 'longdesc'];
@@ -2677,12 +2754,9 @@ export function addDOMPurifyHooks() {
             return;
         }
 
-        // Keep in-message anchors working once DOMPurify prefixes ids (SANITIZE_NAMED_PROPS).
-        if (config?.SANITIZE_NAMED_PROPS && (node.nodeName === 'A' || node.nodeName === 'AREA')) {
-            const href = node.getAttribute('href');
-            if (href && href.length > 1 && href.startsWith('#') && !href.startsWith(`#${NAMED_PROPS_PREFIX}`)) {
-                node.setAttribute('href', `#${NAMED_PROPS_PREFIX}${href.slice(1)}`);
-            }
+        // DOMPurify prefixes ids and names (SANITIZE_NAMED_PROPS), so point in-message references at the prefixed values.
+        if (config?.SANITIZE_NAMED_PROPS) {
+            prefixNamedPropReferences(node, NAMED_PROPS_PREFIX);
         }
 
         // Strict mode (sandboxed card scripts): never keep a URL that points at another origin.

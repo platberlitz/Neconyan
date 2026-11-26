@@ -221,6 +221,19 @@ describe('chat style scoping and DOMPurify hooks', () => {
             expect(prefixed).not.toContain('user-content-user-content-');
         });
 
+        test('points local url(#id) references in declarations at prefixed ids only when an idPrefix is requested', () => {
+            const source = '#shape { stroke: url(#grad); fill: url("#user-content-done"); mask: url( \'#fade\' ); }';
+            const plain = decodeStyleTags(encodeCss(source));
+            expect(plain).toContain('url(#grad)');
+
+            const prefixed = decodeStyleTags(encodeCss(source), { prefix: '.mes_text ', idPrefix: 'user-content-' });
+            expect(prefixed).toContain('.mes_text #user-content-shape');
+            expect(prefixed).toContain('stroke: url(#user-content-grad)');
+            expect(prefixed).toContain('url("#user-content-done")');
+            expect(prefixed).toContain('url(\'#user-content-fade\')');
+            expect(prefixed).not.toContain('user-content-user-content-');
+        });
+
         test('drops leading sibling combinators that would escape the prefix', () => {
             const decoded = decodeStyleTags(encodeCss('+ div { color: red; } ~ p { color: blue; } .ok { color: green; }'));
             expect(decoded).not.toContain('color: red');
@@ -272,6 +285,52 @@ describe('chat style scoping and DOMPurify hooks', () => {
             const untouched = makeAnchor({ href: '#chapter-2' });
             hooks.afterSanitizeAttributes(untouched, {}, {});
             expect(untouched.getAttribute('href')).toBe('#chapter-2');
+        });
+
+        test('keeps label, form, ARIA, image map and SVG references pointing at prefixed ids', () => {
+            const named = { SANITIZE_NAMED_PROPS: true };
+
+            const label = makeElement('LABEL', { for: 'tab-a' });
+            hooks.afterSanitizeAttributes(label, {}, named);
+            expect(label.getAttribute('for')).toBe('user-content-tab-a');
+
+            const output = makeElement('OUTPUT', { for: 'a user-content-b' });
+            hooks.afterSanitizeAttributes(output, {}, named);
+            expect(output.getAttribute('for')).toBe('user-content-a user-content-b');
+
+            const input = makeElement('INPUT', { list: 'choices', form: 'user-content-f', 'aria-labelledby': ' title  hint ', 'aria-describedby': 'user-content-note' });
+            hooks.afterSanitizeAttributes(input, {}, named);
+            expect(input.getAttribute('list')).toBe('user-content-choices');
+            expect(input.getAttribute('form')).toBe('user-content-f');
+            expect(input.getAttribute('aria-labelledby')).toBe('user-content-title user-content-hint');
+            expect(input.getAttribute('aria-describedby')).toBe('user-content-note');
+            expect(input.setAttribute).not.toHaveBeenCalledWith('form', expect.anything());
+            expect(input.setAttribute).not.toHaveBeenCalledWith('aria-describedby', expect.anything());
+
+            const cell = makeElement('TD', { headers: 'row col' });
+            hooks.afterSanitizeAttributes(cell, {}, named);
+            expect(cell.getAttribute('headers')).toBe('user-content-row user-content-col');
+
+            const image = makeElement('IMG', { usemap: '#map' });
+            hooks.afterSanitizeAttributes(image, {}, named);
+            expect(image.getAttribute('usemap')).toBe('#user-content-map');
+
+            const rect = makeElement('rect', { fill: 'url(#grad)', stroke: 'red', style: 'clip-path: url(\'#clip\'); mask: url(#user-content-m)' });
+            hooks.afterSanitizeAttributes(rect, {}, named);
+            expect(rect.getAttribute('fill')).toBe('url(#user-content-grad)');
+            expect(rect.getAttribute('stroke')).toBe('red');
+            expect(rect.getAttribute('style')).toBe('clip-path: url(\'#user-content-clip\'); mask: url(#user-content-m)');
+
+            const gradient = makeElement('linearGradient', { 'xlink:href': '#base' });
+            hooks.afterSanitizeAttributes(gradient, {}, named);
+            expect(gradient.getAttribute('xlink:href')).toBe('#user-content-base');
+
+            const plain = makeElement('LABEL', { for: 'tab-a' });
+            const plainRect = makeElement('rect', { fill: 'url(#grad)' });
+            hooks.afterSanitizeAttributes(plain, {}, {});
+            hooks.afterSanitizeAttributes(plainRect, {}, {});
+            expect(plain.getAttribute('for')).toBe('tab-a');
+            expect(plainRect.getAttribute('fill')).toBe('url(#grad)');
         });
 
         test('strict mode removes every cross-origin URL attribute even when external media is allowed', () => {
