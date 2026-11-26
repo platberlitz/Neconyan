@@ -55,6 +55,7 @@
 - The **Companion Panel** now stays on the card you were reading when you reopen it while a new turn's notes are still coming in, instead of dropping you far below it.
 - **Termeownal UI** shows the cat ears where they fit its own layout and has its own **Hide cats (Kittyless)** switch in its settings.
 - **Level Up Companion** and **User-based Stats Generator** answer with a short 'nothing changed' line on quiet turns instead of rewriting the whole block, so they spend far fewer tokens, and your last stat sheet stays on screen.
+- The **Companion Panel** now reopens where you left it when the note right above yours changed size, and at the same place inside a long note while a new reply's notes are still being written, instead of dropping you further down.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
@@ -277,6 +278,7 @@
 - PR #997 (2026-11-26) `fix(companion-panel): hold reopen position while notes finish`
 - PR #998 (2026-11-26) `feat(terminal-ui): bring back the cat ears and add a Hide cats switch`
 - PR #999 (2026-11-26) `feat(agents): let level up and stats skip unchanged turns`
+- PR #1000 (2026-11-26) `fix(companion-panel): hold reopen position until cards settle`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
