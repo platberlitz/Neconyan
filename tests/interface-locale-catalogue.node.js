@@ -158,6 +158,15 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
         assert.ok(keys.has(caption), `missing M108 agent template key: ${caption}`);
         assert.equal(english[caption], caption, `missing English M108 entry: ${caption}`);
     }
+    const icaKitScoped = {
+        'scoped.ica.kit_agent_one': '${0} agent',
+        'scoped.ica.kit_agent_many': '${0} agents',
+    };
+    for (const [scopedKey, englishText] of Object.entries(icaKitScoped)) {
+        assert.ok(keys.has(scopedKey), `missing ${scopedKey}`);
+        assert.equal(english[scopedKey], englishText, `missing English scoped value: ${scopedKey}`);
+        assert.ok(!keys.has(englishText), `bare starter-kit count leaked into --list: ${englishText}`);
+    }
     assert.ok(!keys.has('tpl-achievements-tracker'), 'regex-bundles.json template id leaked into --list');
     assert.ok(!keys.has('revision'), 'revision.json key leaked into --list');
     const german = JSON.parse(readFileSync(new URL('../public/locales/neconyan/de-de.json', import.meta.url), 'utf8'));
@@ -277,6 +286,62 @@ test('representative bundled agent template keys are translated without copy-pas
             assert.notEqual(value, key, `${lang}: untranslated English copy-paste for ${key}`);
             assert.deepEqual(macros(value), macros(key), `${lang}: macro mismatch for ${key}`);
             assert.equal(localizeString(value, dictionary), value, `${lang}: L10N-33 double translation for ${key}`);
+        }
+    }
+});
+
+test('representative M112 agent feature names, library captions and cat-pun features are translated cleanly across all 17 supplements', () => {
+    const readLocale = relPath => JSON.parse(readFileSync(new URL(`../public/locales/${relPath}`, import.meta.url), 'utf8'));
+    const languages = readLocale('lang.json').map(locale => locale.lang).filter(lang => lang !== 'en');
+    const catalogue = readLocale('neconyan/en.json');
+    assert.equal(languages.length, 17);
+
+    const partAKeys = [
+        'Plot Compass',
+        'Memory Shard',
+        'Director\'s Commentary',
+        'Plot Compass is not available.',
+        'All bundled companion agents: auxiliary notes, reaction feeds, trackers fed back into context, and the rolling memory shard',
+        'Replace Scene Tracker',
+        'The Expressions Agent',
+        'Expressions Agent',
+        'Chat Only',
+        'Send this aside to Chat Only',
+    ];
+    const partBKeys = [
+        'Add a single agent, or choose a starter kit.',
+        'Install a complete set of agents at once. Existing agents are kept.',
+        'All types',
+        'Save your current agents as a reusable kit.',
+    ];
+    const partCKeys = [
+        'Pawthfinder',
+        'Mewmory',
+        'Meower',
+        'Pawspective',
+        'Termeownal UI',
+        'Purrks',
+    ];
+
+    for (const lang of languages) {
+        const base = readLocale(`${lang}.json`);
+        const supplement = readLocale(`neconyan/${lang}.json`);
+        const { dictionary } = assembleLocaleData({ base, supplement, catalogue });
+
+        for (const key of [...partAKeys, ...partCKeys]) {
+            const value = dictionary[key];
+            assert.equal(typeof value, 'string', `${lang}: missing translation for ${key}`);
+            assert.ok(value.trim().length > 0, `${lang}: empty translation for ${key}`);
+            assert.notEqual(value, key, `${lang}: untranslated English copy-paste for ${key}`);
+            assert.equal(localizeString(value, dictionary), value, `${lang}: L10N-33 double translation for ${key}`);
+        }
+
+        for (const key of partBKeys) {
+            const value = dictionary[key];
+            assert.equal(typeof value, 'string', `${lang}: missing translation for ${key}`);
+            assert.ok(value.trim().length > 0, `${lang}: empty translation for ${key}`);
+            assert.notEqual(value, key, `${lang}: untranslated English copy-paste for ${key}`);
+            assert.equal(localizeString(key, dictionary), value, `${lang}: wildcard or lookup drift for ${key}`);
         }
     }
 });

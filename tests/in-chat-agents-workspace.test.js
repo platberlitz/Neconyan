@@ -218,6 +218,16 @@ describe('in-chat agents workspace redesign', () => {
         expect(indexSource).toContain('<strong${group.builtin ? \'\' : \' data-i18n-ignore\'}>${escapeHtml(group.name)}</strong>');
         expect(indexSource).toContain('<div class="ica--group-card-desc"${group.builtin ? \'\' : \' data-i18n-ignore\'}>${escapeHtml(group.description)}</div>');
     });
+
+    test('renders starter-kit agent counts through scoped keys with data-i18n-ignore', () => {
+        const start = indexSource.indexOf('async function openTemplateBrowser()');
+        const end = indexSource.indexOf('function buildTemplateCard(', start);
+        const browserSource = indexSource.slice(start, end);
+        expect(browserSource).toContain('translate(\'${0} agent\', \'scoped.ica.kit_agent_one\')');
+        expect(browserSource).toContain('translate(\'${0} agents\', \'scoped.ica.kit_agent_many\')');
+        expect(browserSource).toContain('<span class="ica--card-pill" data-i18n-ignore>${escapeHtml(countLabel)}</span>');
+        expect(browserSource).not.toContain('<span class="ica--card-pill">${count} agents</span>');
+    });
 });
 
 const getFunction = name => indexSource.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0];

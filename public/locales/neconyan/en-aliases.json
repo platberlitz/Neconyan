@@ -586,5 +586,7 @@
   "scoped.hopper.timeline_numbered": "Timeline ${0}",
   "scoped.pathfinder.stage_entry_one": "${0} entry",
   "scoped.pathfinder.stage_entry_many": "${0} entries",
-  "scoped.pathfinder.stage_label": "stage ${0}"
+  "scoped.pathfinder.stage_label": "stage ${0}",
+  "scoped.ica.kit_agent_one": "${0} agent",
+  "scoped.ica.kit_agent_many": "${0} agents"
 }

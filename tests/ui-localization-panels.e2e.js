@@ -65,20 +65,57 @@ for (const [layout, viewport, hasTouch] of [
             await page.locator('#ica--templates').click();
             const library = page.locator('.ica--template-browser');
             await expect(library).toBeVisible();
-            await library.locator('.ica--library-kits > summary').click();
+
+            const libraryHeaderSubtitleKey = 'Add a single agent, or choose a starter kit.';
+            const starterKitSubtitleKey = 'Install a complete set of agents at once. Existing agents are kept.';
+            const createCustomKitDescKey = 'Save your current agents as a reusable kit.';
+            const allTypesKey = 'All types';
+            const kitManyKey = 'scoped.ica.kit_agent_many';
+            const partCKeys = ['Pawthfinder', 'Mewmory', 'Meower', 'Pawspective', 'Termeownal UI', 'Purrks', 'Character Purrks'];
+            for (const key of [
+                libraryHeaderSubtitleKey,
+                starterKitSubtitleKey,
+                createCustomKitDescKey,
+                allTypesKey,
+                'Plot Compass',
+                'Memory Shard',
+                'Director\'s Commentary',
+                ...partCKeys,
+            ]) {
+                expect(german[key], `missing German translation for ${key}`).toBeTruthy();
+                expect(german[key], `untranslated English hold for ${key}`).not.toBe(key);
+            }
+            expect(german[kitManyKey]).toBeTruthy();
+            expect(german[kitManyKey]).not.toBe('${0} agents');
+
+            await expect(library.locator('.ica--library-header p')).toHaveText(german[libraryHeaderSubtitleKey]);
+            const kitsDetails = library.locator('.ica--library-kits');
+            if (!await kitsDetails.evaluate(el => el.hasAttribute('open'))) {
+                await library.locator('.ica--library-kits > summary').click();
+            }
+            const starterKitSubtitle = library.locator('.ica--library-kits .ica--template-section-desc');
+            await expect(starterKitSubtitle).toHaveText(german[starterKitSubtitleKey]);
+            await expect(starterKitSubtitle).not.toContainText('installieren');
             const puraTrackersKit = library.locator('.ica--group-card').filter({ hasText: german['Pura\'s Trackers Only'] });
             await expect(puraTrackersKit).toHaveCount(1);
             const puraTrackersName = puraTrackersKit.locator('.ica--group-card-header strong');
             await expect(puraTrackersName).toHaveText(german['Pura\'s Trackers Only']);
             expect(await puraTrackersName.getAttribute('data-i18n-ignore')).toBeNull();
+            const puraTrackersPill = puraTrackersKit.locator('.ica--group-card-header .ica--card-pill');
+            await expect(puraTrackersPill).toHaveText(german[kitManyKey].replace('${0}', '16'));
+            await expect(puraTrackersPill).toHaveAttribute('data-i18n-ignore', '');
             const puraTrackersDesc = puraTrackersKit.locator('.ica--group-card-desc');
             await expect(puraTrackersDesc).toHaveText(german['All tracker agents including interactive menus and profile sheets']);
             expect(await puraTrackersDesc.getAttribute('data-i18n-ignore')).toBeNull();
+            await expect(library.locator('.ica--group-card-create .ica--group-card-desc')).toHaveText(german[createCustomKitDescKey]);
+            await expect(library.locator('.ica--template-category-select option[value=""]')).toHaveText(german[allTypesKey]);
 
             const beatPlannerDescKey = 'Fast three-line plan for the next reply: what {{user}} just did, what {{char}} wants, one concrete next beat. Don\'t run it with: Intent Reader, Plot Compass, Scene Driving Force, Scene Pressure Cocktail, Combined Director\'s Cut, Chaos Mode.';
             const beatCard = library.locator('.ica--template-card[data-id="tpl-beat-planner"]');
             await expect.poll(() => beatCard.locator('.ica--template-card-name').evaluate(el => el.firstChild?.textContent?.trim())).toBe(german['Beat Planner']);
             await expect(beatCard.locator('.ica--template-card-description')).toHaveText(german[beatPlannerDescKey]);
+            expect(german[beatPlannerDescKey]).not.toContain('Plot Compass');
+            await expect(beatCard.locator('.ica--template-card-description')).not.toContainText('Plot Compass');
             expect(german[beatPlannerDescKey]).toContain('{{user}}');
             expect(german[beatPlannerDescKey]).toContain('{{char}}');
 
@@ -86,6 +123,9 @@ for (const [layout, viewport, hasTouch] of [
                 ['tpl-translator', 'Translator'],
                 ['tpl-character-authenticity', 'Character Authenticity Checker'],
                 ['tpl-position-tracker-companion', 'Position Tracker'],
+                ['tpl-plot-compass-companion', 'Plot Compass'],
+                ['tpl-memory-shard-companion', 'Memory Shard'],
+                ['tpl-directors-commentary-companion', 'Director\'s Commentary'],
             ]) {
                 const card = library.locator(`.ica--template-card[data-id="${id}"]`);
                 await expect.poll(() => card.locator('.ica--template-card-name').evaluate(el => el.firstChild?.textContent?.trim())).toBe(german[nameKey]);
@@ -98,6 +138,8 @@ for (const [layout, viewport, hasTouch] of [
             await expect(library).toHaveCount(0);
 
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+            await expect(page.locator('#left-nav-panel .sb-shell-title')).toHaveText(german.Mewmory);
+            await expect(page.locator('#mewmory-tab-pawspective')).toHaveText(german.Pawspective);
             await expect(page.getByText(german['No Roleplay chat selected'], { exact: true })).toBeVisible();
 
             await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
@@ -133,9 +175,31 @@ for (const [layout, viewport, hasTouch] of [
             await expect(settingsShell.locator('.sb-shell-nav-scroll-right')).toHaveAttribute('aria-label', phrase('Scroll ${0} sections right', 'Settings'));
             const modeButton = mode => page.locator(`#neconyan-workspace-rail [data-neconyan-chat-mode="${mode}"]`);
             await expect(modeButton('roleplay')).toHaveAttribute('title', phrase('${0} is active', 'Roleplay'));
+            await expect(modeButton('meower')).toHaveAttribute('title', phrase('Use ${0}', 'Meower'));
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-chat-mode="meower"] > span:not([aria-hidden="true"])')).toHaveText(german.Meower);
             await expect(modeButton('story')).toHaveAttribute('title', phrase('Use ${0}', 'Story Mode'));
+            await page.evaluate(() => {
+                const tool = window.NeconyanNativeTools?.getTools?.()?.find(item => item.id === 'third-party/Neconyan-Terminal-UI');
+                if (tool) window.NeconyanNativeTools.openSettings(tool);
+            });
+            await expect(settingsShell.locator('.sb-shell-title')).toHaveText(german['Termeownal UI']);
+            await expect(page.locator('#option_toggle_purrks > span')).toHaveText(german['Character Purrks']);
+            expect(german['Character Purrks']).toContain(german.Purrks);
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
             await expect(page.locator('#left-nav-panel .sb-shell-close')).toHaveAttribute('aria-label', phrase('Close ${0}', 'Agents'));
+            const workspaceSelect = page.locator('#ica--workspaceSelect');
+            if (await workspaceSelect.isVisible()) {
+                await workspaceSelect.selectOption('connections');
+            } else {
+                await page.locator('#ica--workspaceNav .ica--workspace-tab[data-workspace-view="connections"]').click();
+            }
+            await expect(page.locator('#ica--pathfinder-group-title')).toBeVisible();
+            await expect(page.locator('#ica--pathfinder-group-title')).toHaveText(german.Pawthfinder);
+            if (await workspaceSelect.isVisible()) {
+                await workspaceSelect.selectOption('manage');
+            } else {
+                await page.locator('#ica--workspaceNav .ica--workspace-tab[data-workspace-view="manage"]').click();
+            }
 
             await page.evaluate(async () => {
                 const { openTimeMachine } = await import('/scripts/extensions/third-party/Neconyan-Time-Machine/src/ui.js');

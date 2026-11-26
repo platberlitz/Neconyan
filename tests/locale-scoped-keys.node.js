@@ -19,6 +19,7 @@ const PATHFINDER_SCOPED_KEYS = [
 ];
 const STORY_MODE_WORD_COUNT_KEYS = ['scoped.story_mode.word_count_one', 'scoped.story_mode.word_count_many'];
 const HOPPER_TIMELINE_KEYS = ['scoped.hopper.timeline_default', 'scoped.hopper.timeline_numbered'];
+const ICA_KIT_COUNT_KEYS = ['scoped.ica.kit_agent_one', 'scoped.ica.kit_agent_many'];
 const EXTRA_SCOPED_KEYS = [
     NANO_REASONING_SCOPED_KEY,
     SCRATCHPAD_HISTORY_SCOPED_KEY,
@@ -30,6 +31,7 @@ const EXTRA_SCOPED_KEYS = [
     ...STORY_MODE_WORD_COUNT_KEYS,
     ...HOPPER_TIMELINE_KEYS,
     ...PATHFINDER_SCOPED_KEYS,
+    ...ICA_KIT_COUNT_KEYS,
 ];
 const ALL_LOCALES = readJson('lang.json').filter(entry => entry.lang !== 'en').map(entry => entry.lang);
 const catalogue = readJson('neconyan/en.json');
@@ -96,6 +98,8 @@ test('every real scoped key is a catalogued image choice or an explicit collisio
     assert.equal(catalogue['scoped.pathfinder.stage_entry_one'], '${0} entry');
     assert.equal(catalogue['scoped.pathfinder.stage_entry_many'], '${0} entries');
     assert.equal(catalogue['scoped.pathfinder.stage_label'], 'stage ${0}');
+    assert.equal(catalogue['scoped.ica.kit_agent_one'], '${0} agent');
+    assert.equal(catalogue['scoped.ica.kit_agent_many'], '${0} agents');
 });
 
 test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
@@ -342,4 +346,47 @@ test('all 17 non-English locales isolate Follow, Enter, Change, Contrastive_sear
     assert.equal(assembled['uk-ua'].help_hotkeys_19_1, 'Прокрутити чат донизу');
     assert.equal(assembled['uk-ua'].help_hotkeys_20, 'Гарячі клавіші Markdown');
     assert.notEqual(assembled['uk-ua']['Prompt Itemization'], assembled['uk-ua']['Show Raw Prompt']);
+});
+
+test('In-Chat Agents starter-kit count scoped keys stay isolated and preserve noun-first plural labels across all 17 supplements', () => {
+    const supplementFiles = readdirSync(new URL('../public/locales/neconyan/', import.meta.url))
+        .filter(name => name.endsWith('.json') && !['en.json', 'en-aliases.json'].includes(name))
+        .sort();
+    assert.equal(supplementFiles.length, 17);
+    const aliases = readJson('neconyan/en-aliases.json');
+    for (const key of ICA_KIT_COUNT_KEYS) {
+        assert.equal(aliases[key], catalogue[key], `missing alias for ${key}`);
+    }
+    const cognateLocales = new Set(['fr-fr', 'nl-nl']);
+    const expectedManyLabels = {
+        'ru-ru': 'Агентов: ${0}',
+        'uk-ua': 'Агентів: ${0}',
+        'is-is': 'Erindrekar: ${0}',
+        'ar-sa': 'عدد الوكلاء: ${0}',
+    };
+    for (const file of supplementFiles) {
+        const lang = file.replace(/\.json$/, '');
+        const { dictionary, scoped } = assembleLocaleData({
+            base: readJson(file),
+            supplement: readJson(`neconyan/${file}`),
+            catalogue,
+        });
+        for (const key of ICA_KIT_COUNT_KEYS) {
+            assert.equal(typeof scoped[key], 'string', `${lang}: missing ${key} in scoped`);
+            assert.ok(scoped[key].trim().length > 0, `${lang}: empty ${key}`);
+            assert.ok(scoped[key].includes('${0}'), `${lang}: ${key} missing \${0} placeholder`);
+            assert.ok(!Object.hasOwn(dictionary, key), `${lang}: ${key} leaked into dictionary`);
+            if (!cognateLocales.has(lang)) {
+                assert.notEqual(scoped[key], catalogue[key], `${lang}: untranslated ${key}`);
+            }
+        }
+        for (const rawTemplate of ['${0} agent', '${0} agents']) {
+            assert.ok(!Object.hasOwn(dictionary, rawTemplate), `${lang}: ${rawTemplate} leaked into dictionary`);
+        }
+        if (expectedManyLabels[lang]) {
+            assert.equal(scoped['scoped.ica.kit_agent_many'], expectedManyLabels[lang], `${lang}: scoped.ica.kit_agent_many label form`);
+        }
+        assert.equal(localizeString('All agents', dictionary), dictionary['All agents'], `${lang}: All agents corrupted`);
+        assert.equal(localizeString('16 agents', dictionary), '16 agents', `${lang}: 16 agents leaked through wildcard`);
+    }
 });
