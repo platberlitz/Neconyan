@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { Jimp, JimpMime } from '../jimp.js';
+import { JimpMime } from '../jimp.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { imageSize as sizeOf } from 'image-size';
 
@@ -17,7 +17,7 @@ import {
     thumbnailMobileDimensions as mobileDimensions,
 } from './image-metadata.js';
 import { ResizeStrategy } from '@jimp/plugin-resize';
-import { safeCover } from '../jimp-safe.js';
+import { readBoundedJimp, safeCover } from '../jimp-safe.js';
 
 export const publicRouter = express.Router();
 export const apiRouter = express.Router();
@@ -312,7 +312,7 @@ async function processSingleImage(file, originalFolder, thumbnailFolder, type, p
     try {
         const isMobile = preset === 'mobile';
         const fileBuffer = fs.readFileSync(pathToOriginalFile);
-        const image = await Jimp.read(fileBuffer);
+        const image = await readBoundedJimp(fileBuffer);
 
         // Calculate aspect ratio from original image dimensions
         const originalWidth = image.bitmap.width;
@@ -383,6 +383,8 @@ publicRouter.get('/', async function (request, response) {
         const serveOriginal = () => {
             if (!fs.existsSync(pathToOriginalFile)) return response.sendStatus(404);
             invalidateFirefoxCache(pathToOriginalFile, request, response);
+            response.set('X-Content-Type-Options', 'nosniff');
+            response.set('Content-Security-Policy', 'default-src \'none\'; media-src \'self\'; img-src \'self\'; style-src \'unsafe-inline\'; sandbox');
             return response.sendFile(pathToOriginalFile);
         };
 

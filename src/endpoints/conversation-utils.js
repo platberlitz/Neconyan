@@ -406,12 +406,50 @@ export function validateCharacterOverride(character) {
     return { valid: true };
 }
 
+const SAFE_CONVERSATION_DATA_IMAGE_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp)(?:;[a-z0-9.+-]+=[a-z0-9.+-]+)*(?:;base64)?,/i;
+const SAFE_CONVERSATION_DATA_ATTACHMENT_RE = /^data:(?:image\/(?:png|jpe?g|gif|webp|avif|bmp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|text\/plain|application\/pdf)(?:;[a-z0-9.+-]+=[a-z0-9.+-]+)*(?:;base64)?,/i;
+
+export function isSafeConversationAttachmentUrl(url, { imageOnly = false } = {}) {
+    if (typeof url !== 'string') {
+        return false;
+    }
+    const trimmed = url.trim();
+    if (!trimmed || url.length > MAX_CONVERSATION_STRING_LENGTH) {
+        return false;
+    }
+    // Reject ASCII control characters (including CR/LF/TAB) that can disguise schemes or break headers.
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+        return false;
+    }
+    // Reject protocol-relative URLs and backslash-prefixed variants.
+    if (/^(?:\/\/|\\|\/\\)/.test(trimmed)) {
+        return false;
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+        const lower = trimmed.toLowerCase();
+        if (lower.startsWith('http://') || lower.startsWith('https://')) {
+            try {
+                const parsed = new URL(trimmed);
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch {
+                return false;
+            }
+        }
+        if (lower.startsWith('data:')) {
+            return imageOnly
+                ? SAFE_CONVERSATION_DATA_IMAGE_RE.test(trimmed)
+                : SAFE_CONVERSATION_DATA_ATTACHMENT_RE.test(trimmed);
+        }
+        return false;
+    }
+    return true;
+}
+
 function isValidStoredAttachment(attachment) {
     return Boolean(
         isObject(attachment)
-        && typeof attachment.url === 'string'
-        && attachment.url.trim()
-        && attachment.url.length <= MAX_CONVERSATION_STRING_LENGTH,
+        && isSafeConversationAttachmentUrl(attachment.url),
     );
 }
 
@@ -429,7 +467,7 @@ export function validateConversationAttachments(extra) {
         }
     }
     if (extra.image_url !== undefined
-        && (typeof extra.image_url !== 'string' || !extra.image_url.trim() || extra.image_url.length > MAX_CONVERSATION_STRING_LENGTH)) {
+        && !isSafeConversationAttachmentUrl(extra.image_url, { imageOnly: true })) {
         return { valid: false, error: 'invalid_stored_attachment' };
     }
     return { valid: true };

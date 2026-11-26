@@ -36,6 +36,22 @@ function safeRelativePath(value) {
     return parts.join('/');
 }
 
+const GIT_EXTENSION_ROOT_FILES = new Set(['head', 'config', 'packed-refs', 'fetch_head', 'orig_head']);
+const GIT_EXTENSION_ROOT_DIRECTORIES = new Set(['objects', 'refs', 'hooks', 'info']);
+
+// Windows ignores trailing dots and spaces and matches names case-insensitively, so '.GIT.' and 'git~1' can name '.git'.
+function isGitMetadataSegment(part) {
+    const folded = part.replace(/[. ]+$/, '').toLowerCase();
+    return folded === '.git' || /^\.git/i.test(part) || /^git~\d+$/i.test(folded);
+}
+
+function isGitMetadataPath(parts) {
+    if (parts.some(isGitMetadataSegment)) return true;
+    if (parts[0] !== USER_DIRECTORY_TEMPLATE.extensions || parts.length < 3) return false;
+    const top = parts[2].replace(/[. ]+$/, '').toLowerCase();
+    return parts.length === 3 ? GIT_EXTENSION_ROOT_FILES.has(top) || GIT_EXTENSION_ROOT_DIRECTORIES.has(top) : GIT_EXTENSION_ROOT_DIRECTORIES.has(top);
+}
+
 export function importRelativePath(value, { managedMetadata = false } = {}) {
     const safe = safeRelativePath(value);
     if (!safe) return null;
@@ -44,7 +60,7 @@ export function importRelativePath(value, { managedMetadata = false } = {}) {
     const parts = safe.split('/');
     if (parts.some(part => /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(part))) return null;
     if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
-    if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || (parts[0] === USER_DIRECTORY_TEMPLATE.extensions && parts.includes('.git'))) return null;
+    if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || isGitMetadataPath(parts)) return null;
     return parts.join('/');
 }
 

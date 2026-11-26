@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import { Jimp } from '../jimp.js';
+import { isImageBoundsError, readBoundedJimp } from '../jimp-safe.js';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
 import { getImages, tryParse } from '../util.js';
@@ -32,14 +32,14 @@ router.post('/export-persona', async (request, response) => {
         const avatarPath = path.join(request.user.directories.avatars, avatar);
         if (!fs.existsSync(avatarPath)) return response.sendStatus(404);
         // Re-encode to PNG so JPEG/WebP avatars and old image metadata are handled consistently.
-        const image = await (await Jimp.read(avatarPath)).getBuffer('image/png');
+        const image = await (await readBoundedJimp(avatarPath)).getBuffer('image/png');
         const output = encodePersonaCard(card, image, format);
         if (output.length > MAX_PERSONA_CARD_BYTES) return response.sendStatus(413);
         response.attachment(`${sanitize(card.data.name) || 'persona'}.persona.${format}`);
         return response.type(format === 'png' ? 'image/png' : 'application/json').send(output);
     } catch (error) {
         console.warn('Could not export persona card:', error.message);
-        return response.sendStatus(400);
+        return response.sendStatus(isImageBoundsError(error) ? error.status : 400);
     }
 });
 
@@ -57,7 +57,7 @@ router.post('/import-persona', async (request, response) => {
             // Imported Scenario Note portraits become ordinary user image files.
             const importedCard = storeScenarioAvatarFiles(card, request.user.directories, created);
             // Validate and strip card metadata, preserving the full image without another crop.
-            const avatarImage = image ? await (await Jimp.read(image)).getBuffer('image/png') : fallback;
+            const avatarImage = image ? await (await readBoundedJimp(image)).getBuffer('image/png') : fallback;
             const avatar = `persona-${randomUUID()}.png`;
             const filename = path.join(request.user.directories.avatars, avatar);
             writeFileAtomicSync(filename, avatarImage);
@@ -68,7 +68,7 @@ router.post('/import-persona', async (request, response) => {
     } catch (error) {
         for (const filename of created) fs.rmSync(filename, { force: true });
         console.warn('Could not import persona card:', error.message);
-        return response.sendStatus(400);
+        return response.sendStatus(isImageBoundsError(error) ? error.status : 400);
     } finally {
         fs.rmSync(uploadPath, { force: true });
     }
@@ -105,7 +105,7 @@ router.post('/upload', async (request, response) => {
         const overwrite = request.body.overwrite_name;
         if (overwrite && (typeof overwrite !== 'string' || overwrite !== sanitize(overwrite))) return response.sendStatus(400);
         const crop = tryParse(request.query.crop);
-        const rawImg = await Jimp.read(pathToUpload);
+        const rawImg = await readBoundedJimp(pathToUpload);
         const image = await applyAvatarCropResize(rawImg, crop);
 
         // Remove previous thumbnail if overwriting
@@ -119,6 +119,7 @@ router.post('/upload', async (request, response) => {
         return response.send({ path: filename });
     } catch (err) {
         console.error('Error uploading user avatar:', err);
+        if (isImageBoundsError(err) && err.status === 413) return response.status(413).send('That image is too large.');
         return response.status(400).send('That file is not a valid image.');
     } finally {
         fs.rmSync(pathToUpload, { force: true });

@@ -2696,22 +2696,26 @@ router.post('/delete', validateAvatarUrlMiddleware, function (request, response)
 });
 
 router.post('/export', validateAvatarUrlMiddleware, async function (request, response) {
-    if (!request.body.file || (!request.body.avatar_url && request.body.is_group === false)) {
+    if (typeof request.body?.file !== 'string' || !request.body.file || (!request.body.avatar_url && request.body.is_group === false)) {
         return response.sendStatus(400);
     }
     const pathToFolder = request.body.is_group
         ? request.user.directories.groupChats
         : path.join(request.user.directories.chats, String(request.body.avatar_url).replace('.png', ''));
-    const filename = path.join(pathToFolder, sanitize(request.body.file));
-    if (!request.body.is_group && !isPathUnderParent(request.user.directories.chats, filename)) {
+    const chatFileName = sanitize(request.body.file);
+    if (!chatFileName) {
+        return response.sendStatus(400);
+    }
+    const filename = path.join(pathToFolder, chatFileName);
+    if (!isPathUnderParent(request.body.is_group ? request.user.directories.groupChats : request.user.directories.chats, filename)) {
         return response.sendStatus(400);
     }
     let exportfilename = request.body.exportfilename;
     if (!fs.existsSync(filename)) {
         const errorMessage = {
-            message: `Could not find JSONL file to export. Source chat file: ${filename}.`,
+            message: `Could not find JSONL file to export. Source chat file: ${chatFileName}.`,
         };
-        console.error(errorMessage.message);
+        console.error(errorMessage.message, filename);
         return response.status(404).json(errorMessage);
     }
     try {
@@ -2729,7 +2733,7 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
             } catch (err) {
                 console.error(err);
                 const errorMessage = {
-                    message: `Could not read JSONL file to export. Source chat file: ${filename}.`,
+                    message: `Could not read JSONL file to export. Source chat file: ${chatFileName}.`,
                 };
                 console.error(errorMessage.message);
                 return response.status(500).json(errorMessage);
@@ -2936,12 +2940,20 @@ router.post('/search', validateAvatarUrlMiddleware, async function (request, res
             // Find group chat files for given group ID
             const groupChatsDir = path.join(request.user.directories.groupChats);
             chatFiles = targetGroup.chats
-                .map(chatId => path.join(groupChatsDir, `${chatId}.jsonl`))
-                .filter(fileName => fs.existsSync(fileName));
+                .filter(chatId => typeof chatId === 'string' && chatId)
+                .map(chatId => path.join(groupChatsDir, `${sanitize(chatId)}.jsonl`))
+                .filter(fileName => isPathUnderParent(groupChatsDir, fileName) && fs.existsSync(fileName));
         } else {
             // Regular character chat directory
+            if (typeof avatar_url !== 'string' || !avatar_url) {
+                return response.status(400).send({ error: 'A character or group is required.' });
+            }
             const character_name = avatar_url.replace('.png', '');
             const directoryPath = path.join(request.user.directories.chats, character_name);
+
+            if (/^\.*$/.test(character_name) || path.dirname(path.resolve(directoryPath)) !== path.resolve(request.user.directories.chats)) {
+                return response.status(400).send({ error: 'Invalid character.' });
+            }
 
             if (!fs.existsSync(directoryPath)) {
                 return response.send([]);

@@ -21,7 +21,7 @@ const VALID_CATEGORIES = ['bgm', 'ambient', 'blip', 'live2d', 'vrm', 'character'
  * @returns {{error: boolean, message?: string}} Whether validation failed, and why if so
  */
 export function validateAssetFileName(inputFilename) {
-    if (!/^[a-zA-Z0-9_\-.]+$/.test(inputFilename)) {
+    if (typeof inputFilename !== 'string' || !/^[a-zA-Z0-9_\-.]+$/.test(inputFilename)) {
         return {
             error: true,
             message: 'Illegal character in filename; only alphanumeric, \'_\', \'-\' are accepted.',

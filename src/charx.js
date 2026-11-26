@@ -313,11 +313,22 @@ function deleteExistingByBaseName(dirPath, baseName) {
  * @param {string} characterFolder - Character folder name (sanitized)
  * @returns {{sprites: number, backgrounds: number, misc: number}}
  */
+function isStrictChildFolder(root, folder) {
+    if (typeof root !== 'string' || typeof folder !== 'string' || !folder || /^\.*$/.test(folder) || path.basename(folder) !== folder || folder.includes('\0')) {
+        return false;
+    }
+    const parent = path.resolve(root);
+    return path.dirname(path.resolve(parent, folder)) === parent;
+}
+
 export function persistCharXAssets(assets, bufferMap, directories, characterFolder) {
     /** @type {{sprites: number, backgrounds: number, misc: number}} */
     const summary = { sprites: 0, backgrounds: 0, misc: 0 };
     if (!Array.isArray(assets) || assets.length === 0) {
         return summary;
+    }
+    if (!isStrictChildFolder(directories.characters, characterFolder) || !isStrictChildFolder(directories.userImages, characterFolder)) {
+        throw new Error('CharX: Refusing to store assets outside a character folder.');
     }
 
     let spritesPath = null;

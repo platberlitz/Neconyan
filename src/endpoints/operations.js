@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import mime from 'mime-types';
 import { acceptApplicationOperation, operationAccount, listApplicationRecovery, recoverApplicationPublication } from '../operations/jobs.js';
-import { listOperations, readOperation, refuseOperation } from '../operations/store.js';
+import { listOperations, operationError, readOperation, refuseOperation } from '../operations/store.js';
 import { completeBrowserWork } from '../operations/browser-work.js';
 import '../operations/translation.js';
 import '../operations/vectors.js';
@@ -18,7 +18,8 @@ import '../operations/custom-css.js';
 import '../operations/quiet-generation.js';
 import '../operations/raw-generation.js';
 import '../operations/time-machine.js';
-import { readUploadedArchive, retainUploadedArchive } from '../operations/input-files.js';
+import { hasUploadedArchiveRecord, pruneUploadedArchives, readUploadedArchive, releaseUploadedArchive, retainUploadedArchive } from '../operations/input-files.js';
+import { roleplayStoreDirectory } from '../roleplay-store.js';
 import { beginServerWork } from '../android-wake.js';
 
 export const router = express.Router();
@@ -45,6 +46,48 @@ router.post('/submit', route(async (request, response) => {
         response.status(error.status ?? 500).json({ error: error.message, code: error.code ?? null, notAccepted });
     }
 }));
+const ZIP_LOCAL_HEADER = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+const ZIP_END_RECORD = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+const ZIP64_END_RECORD = Buffer.from([0x50, 0x4b, 0x06, 0x06]);
+// End of central directory (22 bytes) plus the longest comment, and room for the ZIP64 locator and record.
+const ZIP_TAIL_BYTES = 22 + 65535 + 20 + 56;
+const IMPORT_FREE_SPACE_HEADROOM = 256 * 1024 ** 2;
+
+async function looksLikeZip(filename) {
+    const handle = await fs.promises.open(filename, 'r');
+    try {
+        const { size } = await handle.stat();
+        if (size < 22) return false;
+        const head = Buffer.alloc(4);
+        await handle.read(head, 0, 4, 0);
+        if (head.equals(ZIP_LOCAL_HEADER)) return true;
+        const length = Math.min(size, ZIP_TAIL_BYTES);
+        const tail = Buffer.alloc(length);
+        await handle.read(tail, 0, length, size - length);
+        return tail.includes(ZIP_END_RECORD) || tail.includes(ZIP64_END_RECORD);
+    } finally { await handle.close(); }
+}
+
+/** Refuse files that are not ZIPs, or that would leave the disk nearly full, before keeping a copy. */
+async function assertRetainableUpload(base, filename) {
+    if (!await looksLikeZip(filename)) {
+        await fs.promises.rm(filename, { force: true });
+        throw Object.assign(operationError('The selected file is not a ZIP archive.', 400), { code: 'IMPORT_NOT_ZIP' });
+    }
+    const { size } = await fs.promises.stat(filename);
+    let free;
+    try {
+        const stats = fs.statfsSync(roleplayStoreDirectory(base));
+        free = Number(stats.bavail) * Number(stats.bsize);
+    } catch {
+        // Some filesystems cannot report free space; the copy itself still fails cleanly when the disk fills.
+        return;
+    }
+    if (Number.isFinite(free) && free < size + IMPORT_FREE_SPACE_HEADROOM) {
+        throw Object.assign(operationError('There is not enough free storage space to keep this ZIP for import.', 507), { code: 'IMPORT_STORAGE_FULL' });
+    }
+}
+
 router.post('/import-input', route(async (request, response) => {
     const filename = request.file?.path;
     try {
@@ -52,6 +95,7 @@ router.post('/import-input', route(async (request, response) => {
         if (!filename || typeof request.body?.key !== 'string' || !request.body.key || request.body.key.length > 200) {
             return response.status(400).json({ error: 'A ZIP file and upload identity are required.' });
         }
+        if (!hasUploadedArchiveRecord(base, account, request.body.key)) await assertRetainableUpload(base, filename);
         const input = await retainUploadedArchive(base, account, request.body.key, filename);
         response.json({ inputId: input.id, size: input.size });
     } finally {
@@ -78,6 +122,7 @@ router.post('/import-input-local', route(async (request, response) => {
         const filename = path.join(inbox, `${token}.zip`);
         let input;
         try {
+            if (fs.existsSync(filename) && !hasUploadedArchiveRecord(base, account, key)) await assertRetainableUpload(base, filename);
             input = await retainUploadedArchive(base, account, key, filename);
         } catch (error) {
             // A repeated request after the page was paused finds its ZIP already retained and removed.
@@ -102,6 +147,7 @@ router.post('/import-input-local', route(async (request, response) => {
 }));
 router.get('/import-input/:key', route((request, response) => {
     const { base, account } = operationAccount(request);
+    pruneUploadedArchives(base, account, request.params.key);
     const saved = readUploadedArchive(base, account, request.params.key);
     if (!saved) return response.status(404).json({ error: 'The ZIP upload has not finished.' });
     return response.json({ inputId: saved.id, size: saved.size });
@@ -128,9 +174,11 @@ router.post('/records/:key/browser-result', route((request, response) => {
     response.json(publicRecord(completeBrowserWork(operationAccount(request).base, request.params.key, request.body)));
 }));
 router.get('/records/:key', route((request, response) => {
-    const { base } = operationAccount(request);
+    const { base, account } = operationAccount(request);
     const value = readOperation(base, request.params.key);
     if (!value) return response.status(404).json({ error: 'The saved application result was not found.' });
+    // A finished import no longer needs its retained ZIP; unfinished ones keep it for retries.
+    if (value.kind === 'account-import' && ['completed', 'refused'].includes(value.state)) releaseUploadedArchive(base, account, value.plan?.archive?.id);
     response.json(publicRecord(value));
 }));
 router.get('/records/:key/download', route((request, response) => {

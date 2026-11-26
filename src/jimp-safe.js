@@ -1,4 +1,74 @@
+import fs from 'node:fs';
 import { ResizeStrategy } from '@jimp/plugin-resize';
+import { imageSize } from 'image-size';
+import { Jimp } from './jimp.js';
+
+export const IMAGE_MAX_PIXELS = 64 * 1024 * 1024;
+export const IMAGE_MAX_DIMENSION = 16384;
+const IMAGE_MAX_FRAMES = 256;
+
+function imageBoundsError(message, status) {
+    const error = new Error(message);
+    error.status = status;
+    error.code = status === 413 ? 'IMAGE_TOO_LARGE' : 'IMAGE_UNREADABLE';
+    return error;
+}
+
+/**
+ * True for errors thrown by readBoundedJimp/assertBoundedImage.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isImageBoundsError(error) {
+    return error instanceof Error && (error.code === 'IMAGE_TOO_LARGE' || error.code === 'IMAGE_UNREADABLE');
+}
+
+/**
+ * Reads image dimensions from the header and rejects pictures that would decode into a huge bitmap.
+ * @param {Uint8Array} bytes
+ * @param {{maxPixels?: number, maxDimension?: number}} [limits]
+ * @returns {{width: number, height: number}}
+ */
+export function assertBoundedImage(bytes, { maxPixels = IMAGE_MAX_PIXELS, maxDimension = IMAGE_MAX_DIMENSION } = {}) {
+    let dimensions;
+    try {
+        dimensions = imageSize(bytes);
+    } catch {
+        throw imageBoundsError('The image could not be read.', 400);
+    }
+    const frames = Array.isArray(dimensions.images) && dimensions.images.length ? dimensions.images : [dimensions];
+    if (frames.length > IMAGE_MAX_FRAMES) throw imageBoundsError('The image has too many frames.', 413);
+    for (const frame of [dimensions, ...frames]) {
+        const width = Number(frame?.width);
+        const height = Number(frame?.height);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) throw imageBoundsError('The image could not be read.', 400);
+        if (width > maxDimension || height > maxDimension || width * height > maxPixels) throw imageBoundsError('The image is too large.', 413);
+    }
+    return { width: Number(dimensions.width), height: Number(dimensions.height) };
+}
+
+/**
+ * Jimp.read with a header-based size check before any pixels are decoded.
+ * @param {string|Buffer|ArrayBuffer|Uint8Array} input File path or image bytes.
+ * @param {{maxPixels?: number, maxDimension?: number}} [limits]
+ * @returns {Promise<import('./jimp.js').Jimp>}
+ */
+export async function readBoundedJimp(input, { maxPixels = IMAGE_MAX_PIXELS, maxDimension = IMAGE_MAX_DIMENSION } = {}) {
+    let bytes;
+    if (typeof input === 'string') bytes = await fs.promises.readFile(input);
+    else if (Buffer.isBuffer(input)) bytes = input;
+    else if (input instanceof ArrayBuffer) bytes = Buffer.from(input);
+    else if (ArrayBuffer.isView(input)) bytes = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+    else throw imageBoundsError('The image could not be read.', 400);
+    assertBoundedImage(bytes, { maxPixels, maxDimension });
+    try {
+        return await Jimp.read(bytes);
+    } catch (cause) {
+        const error = imageBoundsError('The image could not be read.', 400);
+        error.cause = cause;
+        throw error;
+    }
+}
 
 function assertJimpLikeImage(image) {
     if (!image?.bitmap || typeof image.bitmap.width !== 'number' || typeof image.bitmap.height !== 'number') {
