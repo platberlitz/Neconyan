@@ -4,11 +4,11 @@
 
 ### Highlights
 - Press **What's new** on Home to see what changed in this version. A small dot tells you when there's something you haven't read yet, and on staging it shows what's landed so far, marked as a preview.
-- Group chats keep track of who heard what. **Who heard this** on a message shows and changes who heard it, **Everyone hears this** reaches members who are away or join later, and **Remember from message** in the **Scene** panel sets where the group's memory starts.
+- You can now see and change who heard each message in a group chat. **Who heard this** on a message shows who heard it and lets you change that, **Everyone hears this** reaches members who are away or join later, and **Remember from message** in the **Scene** panel sets where the group's memory starts.
 - Each group member's **Memory** can be **What they heard**, **Only with the group** or **Everything**, and **Catch up on what was said** fills a member in on the lines they missed.
 - New scene commands and macros run the scene from the message box, such as `/heard-forget`, `/away`, `/scene-location` and `{{groupPresent}}`.
 - Group chats from SillyTavern's Presence extension keep who heard what, and its slash commands still work.
-- **Mewmory** follows the scene in group chats: each speaker recalls and writes only what they heard, a member who catches up gets back the memories they missed, and memories some members didn't hear stay out of hiding, sharing and lorebooks. Server replies follow the same rules.
+- **Mewmory** follows the scene in group chats: each speaker recalls and writes only what they heard, and a member who catches up gets back the memories they missed. Lorebook entries made from a group chat, and memories you share to another chat, only include what every member heard. The same rules apply when the server writes a group reply instead of your browser.
 - In a **Conversation** group DM, **Edit members** adds and removes pals in the same group and keeps its history.
 - **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and fix its activation settings. `/check` and `/why` take you straight there.
 - Turn on **App diagnostics** in **Scratchpad** and it reads Neconyan's own recent errors and crash reports when you ask what went wrong, with keys and chat text left out.
@@ -33,26 +33,31 @@
 - Custom connections can **Hide unsupported reasoning levels**, so **Reasoning Effort** shows only the levels your model really has.
 - The **Server** panel has **Server Memory (Node.js)**, where you can set how much memory the server may use if it keeps running out on a small box.
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**; the cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
-- A new **Reload Neconyan** button in the sidebar reloads the app safely: it saves first, waits for a running reply and asks before anything unsaved would be lost.
+- A new **Reload Neconyan** button in the sidebar saves your chat and settings, then reloads the app. While a reply is still arriving or a message edit is open, it shows a notice instead, and it asks first if something would be lost.
 - The **Companion panel** docks beside the chat on a computer instead of covering it. Drag its inner edge, or use the Left and Right arrow keys on the divider, to resize it.
-- **Scene Director** waits up to 30 seconds by default, and you can change that per group with **Director timeout** under **Group Controls**.
+- **Scene Director** waits up to 30 seconds by default, and you can change that per group with **Director timeout (seconds)** under **Group Controls**.
 - **Scratchpad**'s **Context** tab opens with **What Scratchpad will read** and splits its choices into **Sharing**, **Replies** and **Setup**.
 - **Scratchpad**'s quick prompts sit in one scrolling row that folds into a slim bar once the session gets going.
-- **Level Up Companion** and **User-based Stats Generator** pick up your **Regex Agent Themes** and answer with a short 'nothing changed' line on quiet turns, so they spend far fewer tokens and your last stat sheet stays on screen.
+- **Level Up Companion** and **User-based Stats Generator** pick up your **Regex Agent Themes**.
 - Slash command suggestions match your accent, and a button in the message box shows a command's details without losing what you've typed.
 - `/help slash` has a search box and splits commands into core and extension ones.
 - The built-in model list has the newer OpenAI, Gemini 4, Kimi, GLM and Mistral models.
 - With **Send with Enter** on **Automatic (PC)**, Enter adds a new line on iPads, in the iPhone app and on other touch screens, as it already did on phones.
+- On a turn where nothing changed, **Level Up Companion** and **User-based Stats Generator** answer with one short line instead of a whole new sheet, so quiet turns cost much less and your last stat sheet stays on screen.
 - Termeownal UI has its own **Hide cats (Kittyless)** switch, and it keeps the cat ears where they fit its layout instead of putting them everywhere.
 - The lorebook editor scrolls with the whole page instead of inside its own box.
 - The sleeping cat picker has moved to **Settings → Appearance → Interface**.
 - When Neconyan reloads itself for an update, a **Neconyan updated** notice tells you so, once.
 - **Quick Image Gen** fills in the selected configuration's name when you save, so saving over it takes one press.
 - BotSearcher shows a **JanitorAI needs a security check first** notice with a login window, as it already did for JannyAI.
-- Translations are more complete and read more naturally: whole sentences for counts, your own names and text left as written, translated **Agents** starter kits and templates, Turkish İ and ı in search, and Turkish and Vietnamese headings without thin letters mixed in.
-- Startup, streaming and saving do less work: Home opens before the rest of startup has finished, a streaming reply updates its message instead of redrawing it, and a big chat saves only the messages that changed.
+- Translations are more complete and read more naturally: whole sentences for counts, your own names and text left as written, and translated **Agents** starter kits and templates.
+- Search boxes find Turkish words with İ and ı, and so does the search in **Manage Chat Files**.
+- Turkish and Vietnamese headings no longer mix thin letters into bold words.
+- Home opens before the rest of startup has finished.
+- A streaming reply adds its new words to the message on screen instead of building the whole message again each time.
+- A big chat saves only the messages that changed, instead of sending the whole chat each time.
 - The Android and iPhone apps start, update and come back from the background more reliably.
-- **Lorebook Override** in **Conversation** loads the book you pick into replies, and **Character default** loads the card's own linked lorebooks. Before, neither put a single entry in the prompt.
+- **Lorebook Override** in **Conversation** loads the book you pick into replies, and **Character default (no override)** loads the card's own linked lorebooks. Before, neither put a single entry in the prompt.
 - Deleting a DM or group DM sticks now, even after a reload or in another tab.
 - A **Conversation** change that couldn't be saved because your settings were saved at the same moment is no longer lost quietly. Neconyan saves it again by itself and tells you if it still can't.
 - Renaming a character keeps their memory, mute, **Use as Narrator / GM** role and per-member model in every group they're in.
@@ -65,7 +70,8 @@
 - A server that runs out of memory says so in its crash report and starts again.
 - The **Companion panel** opens without freezing, even with lots of themed companions or on iPhone.
 - The **Companion panel** reopens on the card you were reading.
-- **Scratchpad** sessions survive a damaged file or a dropped connection, and a finished reply no longer sticks on 'Working'.
+- When a **Scratchpad** session file is damaged, Scratchpad says it couldn't be read and leaves the file alone, instead of looking empty.
+- A **Scratchpad** reply finishes after a dropped connection instead of sticking on 'Working'.
 - **Mewmory** no longer refuses replies in chats with long hidden thinking data or inlined pictures.
 - **Recall** searches stay separate from the memories **Mewmory** picks for your next reply.
 - **Name chats automatically** works with thinking models such as Gemini 4 Neon, and tells you when it couldn't name a chat.
@@ -78,17 +84,20 @@
 - The **Relationship Tracker** card header no longer squashes names into a narrow column on phones.
 - Long **Memory Shard** records wrap instead of pushing the **Companion panel** sideways on phones.
 - **Deep Swipe** arrows no longer vanish when you swipe right after opening a chat.
-- Long group names wrap in the group editor, and its **Chat Lore**, **Ext. Media** and **Delete** buttons have labels.
+- Long group names wrap in the group editor.
+- The group editor's **Chat Lore**, **Ext. Media** and **Delete** buttons have labels.
 - **Scratchpad** edits to a Scenario Note no longer fail when the model gets the note's ID slightly wrong.
 - The persona picker stays open, where you left it, while you tick Scenario Notes.
 - The **UI Theme** gallery's **All**, **Dark** and **Light** buttons stay put, and each list starts at its first card.
 - **Catelier**'s macro preview no longer fails on a slow machine before it has even started.
-- The Android app keeps a listen address of 0.0.0.0 across restarts when you set it on purpose.
+- The Android app keeps the setting that lets other devices on your network reach it across restarts, instead of switching back to this device only.
 - On phones, Cozy Warm's message box is as wide as the other styles', so its placeholder isn't cut off.
 - Long notebook and folder names wrap inside their pills on a computer.
 - The left cat ear on cards matches the right one on Home, the Server cards and the Characters header.
 - **Notes** opens in the Docker image, whichever user the container runs as.
-- Tightened security across local connections, imports, card rendering, extensions, Docker and the mobile apps. Untrusted websites can't reach a local server, and Android rescue backups made without your API keys really leave them out.
+- Tightened security across local connections, imports, card rendering, extensions, Docker and the mobile apps.
+- Websites you didn't trust can't reach a Neconyan server running on your own device.
+- Android rescue backups made without your API keys really leave them out.
 
 ### Merged Staging PRs
 - PR #776 (2026-11-20) `fix(settings): keep theme filters in view when pressed`
