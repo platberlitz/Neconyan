@@ -11,6 +11,8 @@
 - A long line without a line break can no longer keep growing in the server log buffer.
 - **Mewmory**’s **Embeddings** settings now show the matched tokenizer as soon as the automatic choice saves.
 - **Chat Completion** and helper requests use their own **Word Bias** preset, even if you change it while another request is starting.
+- Opening **Games** no longer brings back an empty **Conversation** DM after you delete it.
+- In **Conversation**, **Remember group DMs in this solo DM** now includes group memories for every active member who enables it.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -21,6 +23,8 @@
 - PR #1014 (2026-11-27) `fix(server): bound unfinished lines in the log buffer`
 - PR #1015 (2026-11-27) `fix(mewmory): refresh the tokenizer hint after saving`
 - PR #1016 (2026-11-27) `fix(generation): use the word bias selected for each request`
+- PR #1018 (2026-11-27) `fix(games): keep deleted solo DMs closed`
+- PR #1019 (2026-11-27) `fix(conversation): remember group DMs for their active members`
 
 ## v1.6.0
 
