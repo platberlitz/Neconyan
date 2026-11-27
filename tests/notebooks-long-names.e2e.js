@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { notesApi, openNotes, revealNotebookOptions } from './notebooks-browser-fixture.js';
 
-test.use({ serviceWorkers: 'block', launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
+test.use({ serviceWorkers: 'block' });
 test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'wait' }));
 
 /** Where each label line sits against its pill, read from the page (the label is one span, its lines come from a Range). */
@@ -79,33 +79,31 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             const root = page.locator('#neconyan-notes');
             const heading = root.locator('.notes-pane-nav [data-section="list"] > .notes-nav-heading');
             const measure = async (folder, title) => {
-                if (viewport.width <= 768) await revealNotebookOptions(page);
+                await revealNotebookOptions(page);
                 await root.locator('.notes-folder-row .notes-choice', { hasText: `${folder} (1)` }).click();
                 await expect(heading).toHaveText(folder);
-                await heading.evaluate(element => { element.scrollIntoView({ block: 'center', inline: 'nearest' }); element.closest('.notes-pane-nav').scrollLeft = 0; });
                 const row = root.locator('.notes-pane-nav [data-section="list"] .notes-list').getByText(title, { exact: true });
                 await expect(row).toBeVisible();
-                return heading.evaluate((element, title) => {
+                return heading.evaluate(element => {
                     const pane = element.closest('.notes-pane-nav');
-                    const note = [...pane.querySelectorAll('[data-section="list"] .notes-list *')].find(node => node.textContent === title);
                     const range = document.createRange();
                     range.selectNodeContents(element);
                     const lines = [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }));
-                    const box = rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, height: rect.height });
-                    const style = getComputedStyle(element);
-                    const rule = getComputedStyle(element, '::after');
-                    return { text: element.textContent, lines, heading: box(element.getBoundingClientRect()), pane: box(pane.getBoundingClientRect()),
-                        row: box(note.getBoundingClientRect()), scroll: pane.scrollWidth, client: pane.clientWidth,
-                        marginBottom: style.marginBottom, overflowWrap: style.overflowWrap, textOverflow: style.textOverflow,
-                        rule: { content: rule.content, height: rule.height, flex: rule.flex, background: rule.backgroundColor } };
-                }, title);
+                    const box = rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+                    const paneRect = pane.getBoundingClientRect();
+                    return {
+                        lines,
+                        heading: box(element.getBoundingClientRect()),
+                        pane: { left: paneRect.left, right: paneRect.right },
+                        scroll: pane.scrollWidth,
+                        client: pane.clientWidth,
+                        textOverflow: getComputedStyle(element).textOverflow,
+                    };
+                });
             };
             const shortGeometry = await measure(short, 'Short note');
             const longGeometry = await measure(long, 'Long note');
-            console.log('HEADING_GEOMETRY', JSON.stringify({ viewport, short: shortGeometry, long: longGeometry }));
-            if (process.env.NOTE_HEADING_PICTURES) await page.screenshot({ path: `${process.env.NOTE_HEADING_PICTURES}/${viewport.width === 393 ? 'phone' : 'desktop'}-${process.env.NOTE_HEADING_PHASE}.png` });
             expect(shortGeometry.lines).toHaveLength(1);
-            expect(longGeometry.text).toBe(long);
             expect(longGeometry.lines.length).toBeGreaterThan(1);
             expect(longGeometry.scroll).toBeLessThanOrEqual(longGeometry.client);
             expect(longGeometry.textOverflow).not.toBe('ellipsis');
@@ -114,6 +112,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 expect(line.right).toBeLessThanOrEqual(longGeometry.pane.right + 0.5);
                 expect(line.left).toBeGreaterThanOrEqual(longGeometry.heading.left - 0.5);
                 expect(line.right).toBeLessThanOrEqual(longGeometry.heading.right + 0.5);
+                expect(line.top).toBeGreaterThanOrEqual(longGeometry.heading.top - 0.5);
+                expect(line.bottom).toBeLessThanOrEqual(longGeometry.heading.bottom + 0.5);
             }
         });
     });
