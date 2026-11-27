@@ -18,6 +18,7 @@ import { coreImportPath, importExclusionReason } from './import-content-policy.j
 
 const ROOT_FILES = [SETTINGS_FILE, SECRETS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
 const ROOT_DIRECTORIES = [...new Set(Object.values(USER_DIRECTORY_TEMPLATE).filter(Boolean).map(value => value.split('/')[0]))];
+const COMPLETE_ACCOUNT_DIRECTORIES = [...new Set([...ROOT_DIRECTORIES, 'mewmory'])];
 const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'User Avatars', 'worlds', 'OpenAI Settings', 'themes', 'extensions'];
 const within = (candidate, parent) => candidate === parent || candidate.startsWith(parent + path.sep);
 const overlaps = (left, right) => within(left, right) || within(right, left);
@@ -52,14 +53,14 @@ function isGitMetadataPath(parts) {
     return parts.length === 3 ? GIT_EXTENSION_ROOT_FILES.has(top) || GIT_EXTENSION_ROOT_DIRECTORIES.has(top) : GIT_EXTENSION_ROOT_DIRECTORIES.has(top);
 }
 
-export function importRelativePath(value, { managedMetadata = false } = {}) {
+export function importRelativePath(value, { managedMetadata = false, completeAccount = false } = {}) {
     const safe = safeRelativePath(value);
     if (!safe) return null;
     if (managedMetadata) assertManagedImportSpelling(safe);
     if (managedMetadata && safe === MANAGED_IMAGE_MARKER) return safe;
     const parts = safe.split('/');
     if (parts.some(part => /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(part))) return null;
-    if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
+    if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !(completeAccount ? COMPLETE_ACCOUNT_DIRECTORIES : ROOT_DIRECTORIES).includes(parts[0])) return null;
     if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || isGitMetadataPath(parts)) return null;
     return parts.join('/');
 }
@@ -110,10 +111,11 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false, 
     const visit = (filename, relative, depth = 0) => {
         if (depth > 32 || visited++ >= 100000) throw operationError('The import exceeds its file or folder capacity.', 413);
         if (within(filename, targetRoot) || within(filename, roleplayStoreDirectory(base))) throw operationError('The import source contains this account or its protected records.', 400);
-        const normalized = importRelativePath(relative, { managedMetadata: true });
+        const normalized = importRelativePath(relative, { managedMetadata: true, completeAccount: !extensionsOnly && !coreOnly });
         const safe = safeRelativePath(relative);
         if (!safe || !normalized && !coreOnly) return;
         const stat = fs.lstatSync(filename);
+        if (normalized === 'mewmory' && stat.isFile()) return;
         if (coreOnly && (!normalized || !coreImportPath(normalized, stat.isDirectory(), parts))) {
             // Inventory excluded files without reading their contents or following links.
             if (stat.isDirectory() && !stat.isSymbolicLink()) {
@@ -132,7 +134,7 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false, 
             files.push({ relative: normalized, filename, size: file.size, evidence: evidence(file) });
         }
     };
-    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : coreOnly ? fs.readdirSync(sourceRoot).sort() : [MANAGED_IMAGE_MARKER, ...ROOT_FILES, ...ROOT_DIRECTORIES];
+    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : coreOnly ? fs.readdirSync(sourceRoot).sort() : [MANAGED_IMAGE_MARKER, ...ROOT_FILES, ...COMPLETE_ACCOUNT_DIRECTORIES];
     for (const relative of selected) if (coreOnly || fs.existsSync(path.join(sourceRoot, relative))) visit(path.join(sourceRoot, relative), relative);
     if (!files.length && (!coreOnly || !excluded.length)) throw operationError('No importable files were found in that folder.', 400);
     return { sourceRoot, files, directories, total, ...(coreOnly ? { excluded } : {}) };
@@ -210,13 +212,14 @@ export async function captureZipImport(source, { coreOnly = false, parts } = {})
     for (const entry of entries) {
         if (selected && !entry.name.startsWith(selected + '/')) continue;
         const value = selected ? entry.name.slice(selected.length + 1) : entry.name;
-        const relative = importRelativePath(value, { managedMetadata: true });
+        const relative = importRelativePath(value, { managedMetadata: true, completeAccount: !coreOnly });
         if (coreOnly && (!relative || !coreImportPath(relative, entry.name.endsWith('/'), parts))) {
             const safe = safeRelativePath(value);
             if (safe && !entry.name.endsWith('/')) excluded.push({ file: safe, reason: importExclusionReason(safe, parts) });
             continue;
         }
         if (!relative) continue;
+        if (relative === 'mewmory' && !entry.name.endsWith('/')) continue;
         if (entry.size > BINARY_FILE_LIMIT) throw operationError('A ZIP entry exceeds its file capacity.', 413);
         const type = (entry.attributes >>> 16) & 0xf000;
         if (type && type !== 0x8000 && type !== 0x4000) throw operationError('Linked or special ZIP entries cannot be imported.', 400);
