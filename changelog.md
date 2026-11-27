@@ -3,12 +3,12 @@
 ## v1.6.0
 
 ### Highlights
-- Press **What's new** on Home to see what changed in this version. A small dot tells you when there's something you haven't read yet, and on staging it shows what's landed so far, marked as a preview.
+- Press **What's new** on Home to see what changed in this version. A small dot tells you when there's something you haven't read yet.
 - You can now see and change who heard each message in a group chat. **Who heard this** on a message shows who heard it and lets you change that, **Everyone hears this** reaches members who are away or join later, and **Remember from message** in the **Scene** panel sets where the group's memory starts.
 - Each group member's **Memory** can be **What they heard**, **Only with the group** or **Everything**, and **Catch up on what was said** fills a member in on the lines they missed.
 - New scene commands and macros run the scene from the message box, such as `/heard-forget`, `/away`, `/scene-location` and `{{groupPresent}}`.
 - Group chats from SillyTavern's Presence extension keep who heard what, and its slash commands still work.
-- **Mewmory** follows the scene in group chats: each speaker recalls and writes only what they heard, and a member who catches up gets back the memories they missed. Lorebook entries made from a group chat, and memories you share to another chat, only include what every member heard. The same rules apply when the server writes a group reply instead of your browser.
+- **Mewmory** follows the scene in group chats: each speaker recalls and writes only what they heard, and a member who catches up gets back the memories they missed. Lorebook entries made from a group chat, and memories you share to another chat, only include what every member heard. When the server writes a group reply instead of your browser, each speaker still recalls only what they heard.
 - In a **Conversation** group DM, **Edit members** adds and removes pals in the same group and keeps its history.
 - **Scratchpad** can check cards, presets and lorebooks for problems, explain why a lorebook entry didn't fire and fix its activation settings. `/check` and `/why` take you straight there.
 - Turn on **App diagnostics** in **Scratchpad** and it reads Neconyan's own recent errors and crash reports when you ask what went wrong, with keys and chat text left out.
@@ -31,7 +31,7 @@
 - When a chat's linked lorebook no longer exists, Neconyan tells you when you open the chat and offers **Review links** or **Remove links**.
 - Lorebook **Health** lists damaged entries that the editor can't open.
 - Custom connections can **Hide unsupported reasoning levels**, so **Reasoning Effort** shows only the levels your model really has.
-- The **Server** panel has **Server Memory (Node.js)**, where you can set how much memory the server may use if it keeps running out on a small box.
+- The **Server** panel has **Server Memory (Node.js)**, where you can set how much memory the server may use if it keeps running out of memory, for example on a small computer or in Termux on a phone.
 - Neconyan speaks Turkish. Choose **Türkçe (Turkish)** under **Language** in **User Settings**; the cats make their puns in Turkish too. Thanks to YusufErenGoc for the translation.
 - A new **Reload Neconyan** button in the sidebar saves your chat and settings, then reloads the app. While a reply is still arriving or a message edit is open, it shows a notice instead, and it asks first if something would be lost.
 - The **Companion panel** docks beside the chat on a computer instead of covering it. Drag its inner edge, or use the Left and Right arrow keys on the divider, to resize it.
@@ -96,7 +96,8 @@
 - The left cat ear on cards matches the right one on Home, the Server cards and the Characters header.
 - **Notes** opens in the Docker image, whichever user the container runs as.
 - Tightened security across local connections, imports, card rendering, extensions, Docker and the mobile apps.
-- A new install only answers requests addressed to localhost, an IP address or a host listed under `hostWhitelist` in config.yaml, so a website can't reach your own server by pointing its domain at it. An existing config.yaml keeps the setting it already has; set `hostWhitelist.enabled` to `true` there for the same protection.
+- A new install refuses requests sent to an address it doesn't recognise, so a web page can't use a made-up address to reach a Neconyan server on your own device. localhost and IP addresses still work, and so does any domain name you list under `hostWhitelist.hosts` in config.yaml.
+- An install upgraded from 1.5.7 or earlier, including Docker, Android and iPhone installs, keeps this check switched off, because its saved config already has `hostWhitelist.enabled: false`. To switch it on, list any domain name you open Neconyan through under `hostWhitelist.hosts`, then set `hostWhitelist.enabled` to `true` and restart.
 - Android rescue backups made without your API keys really leave them out.
 
 ### Merged Staging PRs
