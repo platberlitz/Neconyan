@@ -1453,7 +1453,7 @@ test('saved chat profiles bind preset controls without storing credentials or fo
     };
     const save = () => fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings));
     save();
-    fs.writeFileSync(path.join(directories.openAI_Settings, 'chosen.json'), JSON.stringify({ temperature: 0.25, openai_max_tokens: 999, reasoning_effort: 'high' }));
+    fs.writeFileSync(path.join(directories.openAI_Settings, 'chosen.json'), JSON.stringify({ temperature: 0.25, openai_max_tokens: 999, reasoning_effort: 'high', reverse_proxy: 'https://preset.invalid', proxy_password: 'preset-secret' }));
     const binding = captureChatProfile(directories, 'saved');
     assert.deepEqual(Object.keys(binding).sort(), ['fingerprint', 'profileId']);
     assert.ok(!JSON.stringify(binding).includes('private-credential'));
@@ -1472,6 +1472,21 @@ test('saved chat profiles bind preset controls without storing credentials or fo
     assert.equal(request.include_reasoning, false);
     assert.equal(request.reasoning_effort, 'high');
     assert.equal(request.proxy_password, 'private-credential');
+    settings.extension_settings.connectionManager.profiles.push({ id: 'direct', api: 'custom', model: 'bound-model', preset: 'chosen', proxy: '', 'secret-id': 'fixture-key' });
+    settings.proxies.push({ name: 'source', source: 'custom', url: 'https://source.invalid', password: 'source-secret' });
+    settings.oai_settings.reverse_proxy = 'https://active.invalid';
+    settings.oai_settings.proxy_password = 'active-secret';
+    fs.writeFileSync(path.join(root, 'secrets.json'), JSON.stringify({ api_key_custom: [{ id: 'fixture-key', value: 'fixture-credential', active: true }] }));
+    save();
+    const direct = await buildChatProfileRequest(directories, captureChatProfile(directories, 'direct'),
+        [{ role: 'user', content: 'Direct' }], 120, generate);
+    assert.equal(direct.reverse_proxy, '');
+    assert.equal(direct.proxy_password, '');
+    settings.extension_settings.connectionManager.profiles.pop();
+    settings.proxies.pop();
+    delete settings.oai_settings.reverse_proxy;
+    delete settings.oai_settings.proxy_password;
+    save();
     const meower = await buildChatProfileRequest(directories, binding, [{ role: 'user', content: 'Meower' }], 120,
         () => assert.fail('Meower must omit the sampler preset'), { rawOptions: { includePreset: false } });
     assert.equal(meower.temperature, undefined);

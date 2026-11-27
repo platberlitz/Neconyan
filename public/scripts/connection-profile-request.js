@@ -39,6 +39,7 @@ export function resolveProfileRequestOverrides(profile, overridePayload, preset)
 }
 
 export function resolveProfileProxy(profile, source, proxies, activeSettings) {
+    if (profile?.proxy === '' && !profile.exclude?.includes('proxy')) return { reverse_proxy: '', proxy_password: '' };
     const selected = proxies.find(proxy => proxy.name === profile?.proxy);
     if (selected?.url) return { reverse_proxy: selected.url, proxy_password: selected.password };
     if (profile?.proxy) return { reverse_proxy: '', proxy_password: '' };

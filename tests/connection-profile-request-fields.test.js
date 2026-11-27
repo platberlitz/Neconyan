@@ -258,6 +258,18 @@ describe('Connection Profile reverse proxy request mapping', () => {
         expect(getChatCompletionProfileReverseProxy({ proxy: 'Deleted proxy' }, 'makersuite')).toEqual(explicitlyNone);
     });
 
+    test('an empty proxy selection overrides source-bound and active fallbacks', () => {
+        mockOpenAiSettings.reverse_proxy = 'https://active.example/v1';
+        mockOpenAiSettings.proxy_password = 'active-secret';
+        mockProxies.push({ name: 'Source proxy', url: 'https://source.example/v1', password: 'source-secret', source: 'openai' });
+
+        const expected = { reverse_proxy: '', proxy_password: '' };
+        expect(getChatCompletionProfileReverseProxy({ proxy: '' }, 'openai')).toEqual(expected);
+        expect(getChatCompletionProfileReverseProxy({ proxy: '', exclude: ['proxy'] }, 'openai')).toEqual({ reverse_proxy: 'https://source.example/v1', proxy_password: 'source-secret' });
+        mockProxies.splice(0, mockProxies.length);
+        expect(getChatCompletionProfileReverseProxy({ proxy: '' }, 'openai')).toEqual(expected);
+    });
+
     test('falls back to a backend-bound proxy preset when the profile has no proxy key', () => {
         mockProxies.push(
             { name: 'None', url: '', password: '', source: '' },
@@ -385,6 +397,19 @@ describe('ConnectionManagerRequestService profile handling', () => {
         ]);
 
         expect(ConnectionManagerRequestService.getSupportedProfiles().map(profile => profile.id)).toEqual(['valid']);
+    });
+
+    test('a blank profile proxy sends blank fields despite configured fallbacks', async () => {
+        mockOpenAiSettings.reverse_proxy = 'https://active.example/v1';
+        mockOpenAiSettings.proxy_password = 'active-secret';
+        mockProxies.push({ name: 'Source proxy', url: 'https://source.example/v1', password: 'source-secret', source: 'openai' });
+        const processRequest = jest.fn(async () => ({}));
+        useContext([{ id: 'cc', name: 'Chat', api: 'openai', model: 'gpt-4o', proxy: '' }],
+            { ChatCompletionService: { processRequest } });
+
+        await ConnectionManagerRequestService.sendRequest('cc', 'hello', 64);
+        expect(processRequest).toHaveBeenCalledTimes(1);
+        expect(processRequest.mock.calls[0][0]).toEqual(expect.objectContaining({ reverse_proxy: '', proxy_password: '' }));
     });
 
     test('a text-completion profile sends the model override, not the saved model', async () => {

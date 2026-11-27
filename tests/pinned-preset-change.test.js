@@ -14,7 +14,7 @@ async function fixture() {
     const dependencies = Object.fromEntries(functions.map(name => [name, jest.fn()]));
     const selection = { val: () => selection, prop: () => selection, trigger: () => selection, find: () => ({ text: () => 'B' }), empty() {} };
     const events = [];
-    Object.assign(dependencies, { $: () => selection, structuredClone,
+    Object.assign(dependencies, { $: () => selection, structuredClone, isBlankProfileProxyActive: jest.fn(() => false),
         oai_settings: { preset_settings_openai: 'A', bind_preset_to_connection: false }, openai_settings: [{ temperature: 0.7 }], openai_setting_names: { B: 0 },
         settingsToUpdate: { temperature: ['#temperature', 'temperature', false, false, false] }, shouldIncludeSamplingFieldsInPreset: () => true,
         coerceNumericPresetSetting: (_, value) => value, saveSettings: jest.fn(async () => true), saveOpenAIPreset: jest.fn(),
@@ -37,6 +37,18 @@ describe('preset application always releases prompt controls', () => {
         expect(events).toEqual(['before', 'after', 'changed']);
         expect(manager.isPresetChanging).toBe(false);
         expect(manager.setPromptEnabled('a', false)).toBe(true);
+    });
+    test.each([false, true])('bound preset respects blank proxy scope %s while applying samplers', async active => {
+        const { change, dependencies } = await fixture();
+        dependencies.isBlankProfileProxyActive.mockReturnValue(active);
+        dependencies.oai_settings.bind_preset_to_connection = true;
+        Object.assign(dependencies.oai_settings, { reverse_proxy: '', proxy_password: '' });
+        Object.assign(dependencies.openai_settings[0], { reverse_proxy: 'https://preset.invalid', proxy_password: 'fixture-secret' });
+        Object.assign(dependencies.settingsToUpdate, { reverse_proxy: ['#proxy', 'reverse_proxy', false, true, false], proxy_password: ['#password', 'proxy_password', false, true, false] });
+        await change();
+        expect(dependencies.oai_settings.reverse_proxy).toBe(active ? '' : 'https://preset.invalid');
+        expect(dependencies.oai_settings.proxy_password).toBe(active ? '' : 'fixture-secret');
+        expect(dependencies.oai_settings.temperature).toBe(0.7);
     });
     test('an older overlapping change does not release a newer pending change', async () => {
         const { change, dependencies, manager, events } = await fixture();
