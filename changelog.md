@@ -15,6 +15,7 @@
 - In **Conversation**, **Remember group DMs in this solo DM** now includes group memories for every active member who enables it.
 - Long folder names wrap above the note list in **Notebooks**.
 - Pasting a full address such as `https://neconyan.example.com/` into `hostWhitelist.hosts` in `config.yaml` now works: Neconyan reads it as the host name and says so at startup, and entries it can't use now get a startup warning instead of failing silently.
+- The **Connection not secure** and **Not found** pages now wear the same dark card and backflipping cat as **Session expired**, and **Not found** has a link back to Neconyan.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -25,6 +26,7 @@
 - PR #1014 (2026-11-27) `fix(server): bound unfinished lines in the log buffer`
 - PR #1015 (2026-11-27) `fix(mewmory): refresh the tokenizer hint after saving`
 - PR #1016 (2026-11-27) `fix(generation): use the word bias selected for each request`
+- PR #1017 (2026-11-27) `feat(pages): give the HTTPS and 404 pages the dark card`
 - PR #1018 (2026-11-27) `fix(games): keep deleted solo DMs closed`
 - PR #1019 (2026-11-27) `fix(conversation): remember group DMs for their active members`
 - PR #1020 (2026-11-27) `fix(notebooks): wrap long folder headings`
