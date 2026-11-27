@@ -13,6 +13,7 @@
 - **Chat Completion** and helper requests use their own **Word Bias** preset, even if you change it while another request is starting.
 - Opening **Games** no longer brings back an empty **Conversation** DM after you delete it.
 - In **Conversation**, **Remember group DMs in this solo DM** now includes group memories for every active member who enables it.
+- Long folder names wrap above the note list in **Notebooks**.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -25,6 +26,7 @@
 - PR #1016 (2026-11-27) `fix(generation): use the word bias selected for each request`
 - PR #1018 (2026-11-27) `fix(games): keep deleted solo DMs closed`
 - PR #1019 (2026-11-27) `fix(conversation): remember group DMs for their active members`
+- PR #1020 (2026-11-27) `fix(notebooks): wrap long folder headings`
 
 ## v1.6.0
 
