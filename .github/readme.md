@@ -2,7 +2,7 @@
 
 # Neconyan~
 
-The latest version is [1.5.7](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.7).
+The latest published version is [1.5.7](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.7). The **1.6.0 staging candidate** isn't published yet; I checked it against commit [73555b9c](https://github.com/platberlitz/Neconyan/commit/73555b9c888a11d32519b179e56c860b89ec6cff) on 27 November 2026, and its release page will be [1.6.0](https://github.com/platberlitz/Neconyan/releases/tag/v1.6.0).
 
 **Read in your language:** [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Türkçe](readme-tr_tr.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
@@ -27,8 +27,8 @@ Hi, welcome in! Neconyan is my cat-themed fork of [SillyTavern](https://github.c
 - **Four ways to chat:** classic Roleplay, messenger-style Conversation, a social feed called Meower, and Story Mode for continuous prose. Pick whichever suits the mood.
 - **A layout made for phones**, with labelled controls, a bottom chat bar and a sliding menu. No squinting at tiny desktop buttons on a small screen.
 - **[Simple Mode](#simple-mode)**, for when you just want to roleplay without a cockpit's worth of buttons. More on that one below, because I'm very proud of it.
-- **Mewmory** remembers story events and characters, so your partner doesn't forget the important bits. **Agents** can keep trackers, check a reply or write a separate Companion note.
-- **Catelier** helps you write character cards and lorebooks. **Notebooks** keeps your notes nearby, and **Scratchpad** gives you a separate chat to talk through ideas.
+- **Mewmory** remembers story events and characters, so your partner doesn't forget the important bits. In group chats it follows the scene, so each character only remembers what they were there to hear. **Agents** can keep trackers, check a reply or write a separate Companion note.
+- **Catelier** helps you write character cards and lorebooks. **Notebooks** keeps your notes nearby, and **Scratchpad** gives you a separate chat to talk through ideas or ask why a lorebook entry didn't fire.
 - **Miso, Taro and Nori** are the resident assistants. They help you find things and can make supported edits with your permission.
 - **Device sync** moves selected data between separate installations with encrypted files, WebDAV, secret GitHub Gists or direct pairing. Transfers run when you ask for them.
 - **Themes, accents and cats.** Quite a lot of cats. You can hide them, though I can't imagine why you'd want to.
@@ -272,7 +272,7 @@ A free Apple account needs to re-sign the app every seven days and permits three
 
 ## Updates, backups and moving your chats
 
-Open **Server → Updates & Restart → Check for updates**. Git and supported source ZIP installs offer **Update & Restart**. Android offers **Update APK** and asks you to approve installation. In Simple Mode, the **Updates** button in the sidebar takes you to the same place. Older ZIP copies without an updater need a [manual move to the newer folder](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation).
+Open **Server → Updates & Restart → Check for updates**. Git and supported source ZIP installs offer **Update & Restart**. Android offers **Update APK** and asks you to approve installation. In Simple Mode, the **Updates** button in the sidebar takes you to the same place. After an update, press **What's new** on Home to see what changed. Older ZIP copies without an updater need a [manual move to the newer folder](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation).
 
 Git installs also check for updates when launched. Changes you've made to the app's own files can stop an automatic update; your chats and settings don't count.
 
