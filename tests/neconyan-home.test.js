@@ -176,6 +176,8 @@ describe('Neconyan Home', () => {
 
     test('OS reduced motion is effective without changing the saved app preference', () => {
         const image = {};
+        const kitty = {};
+        const imagesBySelector = { 'img.neconyan-startup-cat': [image], '.neconyan-workspace-kitty img': [kitty] };
         let osReduced = false;
         let duration;
         const state = {};
@@ -190,7 +192,7 @@ describe('Neconyan Home', () => {
             power_user: { reduced_motion: false }, window: { matchMedia: () => mediaQuery },
             jQuery: { fx: {} }, $: () => control, ANIMATION_DURATION_DEFAULT: 125,
             setAnimationDuration: value => { duration = value; },
-            document: { querySelectorAll: () => [image] }, t: parts => parts.join(''),
+            document: { querySelectorAll: selector => imagesBySelector[selector] ?? [] }, t: parts => parts.join(''),
         });
         vm.runInContext(read('scripts/power-user.js').match(/^function switchReducedMotion\(\) {[\s\S]*?^}/m)[0], context);
         context.switchReducedMotion();
@@ -201,6 +203,7 @@ describe('Neconyan Home', () => {
         expect(state.disabled).toBe(false);
         expect(state['reduced-motion']).toBe(false);
         expect(image.src).toContain('neconyan-pixel-cat-running.webp');
+        expect(kitty.src).toContain('workspace-kitty-wave.webp');
 
         osReduced = true;
         context.switchReducedMotion();
@@ -211,6 +214,7 @@ describe('Neconyan Home', () => {
         expect(state.disabled).toBe(true);
         expect(state['reduced-motion']).toBe(true);
         expect(image.src).toContain('neconyan-pixel-cat-rest.webp');
+        expect(kitty.src).toContain('workspace-kitty-still.webp');
 
         osReduced = false;
         context.switchReducedMotion();
@@ -221,12 +225,14 @@ describe('Neconyan Home', () => {
         expect(state.disabled).toBe(false);
         expect(state['reduced-motion']).toBe(false);
         expect(image.src).toContain('neconyan-pixel-cat-running.webp');
+        expect(kitty.src).toContain('workspace-kitty-wave.webp');
 
         context.power_user.reduced_motion = true;
         context.switchReducedMotion();
         expect(context.power_user.reduced_motion).toBe(true);
         expect(context.jQuery.fx.off).toBe(true);
         expect(image.src).toContain('neconyan-pixel-cat-rest.webp');
+        expect(kitty.src).toContain('workspace-kitty-still.webp');
     });
 
     test('startup overlay setup failure reaches the fatal boot guard without a toast', async () => {

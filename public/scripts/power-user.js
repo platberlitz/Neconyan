@@ -982,6 +982,12 @@ function switchReducedMotion() {
     for (const image of document.querySelectorAll('img.neconyan-startup-cat')) {
         image.src = startupCatSource;
     }
+    const workspaceKittySource = effectiveReducedMotion
+        ? 'img/neconyan/workspace-kitty-still.webp'
+        : 'img/neconyan/workspace-kitty-wave.webp';
+    for (const image of document.querySelectorAll('.neconyan-workspace-kitty img')) {
+        image.src = workspaceKittySource;
+    }
 }
 
 const reducedMotionMediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
