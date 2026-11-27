@@ -367,6 +367,7 @@ function settleDebouncedSave(save, resolve, account) {
             retryUnsavedEdit(account);
         }
     }, error => {
+        unsavedEditRetries = 0;
         if (error?.message !== 'account_changed') noticeConversationSave('failed');
         resolve(false);
     });
