@@ -44,6 +44,9 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // d858ef2eef: translated page, this change (the pages in default/content/errors when C5 was built)
         'fab2e63f76d9e75aa313b3fc4190bd3a2e7edee410d06580c80c7f0069f8f3ff',
         'a1655309b6899da81b720b64250f1ce16697efdbde6827edbb74c6855fa6b3d0',
+        // da18ee99b3: the Neconyan look with the stop-sign cat
+        'bcf4736d67a6cbc340bdfa253581c9709b935cd859b9ef0e2888e04f108cc8b5',
+        'eafd12a8b9736056a078c085170b64edcc669182035f56fbce936701c863ed1b',
     ]),
     'host-not-allowed.html': Object.freeze([
         // 19ec5e990b: SillyTavern, SillyBunny, Neconyan, Necodev (both folders), 2025-09-04 to 2026-10-11
@@ -58,6 +61,9 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // 7c1de68d4c: names the refused host and shows what to add, this change
         '46aa5f44608df0c90073b3c71d6b81d108a6d31ed3500a91b4317816a9471db1',
         'c827f67801f5db3d18c25c5cf06f446f69b44f094b0e89d67bf0908ad81c702f',
+        // db3d732498: the Neconyan look with the stop-sign cat
+        'bd954c95c8a5475ff51f89b4bcd6b729b9bebb97ad17bab43a472e37e35a166c',
+        'c91adf66e57cdeb7ffb3765886b76a9d333877985c2a1c02f0790de1526386b8',
     ]),
     'https-required.html': Object.freeze([
         // af9b01869e: new in this change (there is no earlier version)

@@ -6,17 +6,109 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:,">
     <title>{{t "Forbidden"}}</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: radial-gradient(circle at 50% 0%, #1e201d, #161716 72%);
+            color: #f6edda;
+            font-family: 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            text-align: center;
+        }
+
+        main {
+            width: min(560px, 100%);
+            padding: 26px 24px 22px;
+            border: 1px solid #61534d;
+            border-radius: 20px;
+            background: #242420;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
+        }
+
+        .stage {
+            display: grid;
+            place-items: center;
+            padding: 4px 0 6px;
+        }
+
+        .cat {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .45));
+        }
+
+        h1 {
+            margin: 8px 0 12px;
+            font-size: 24px;
+            letter-spacing: .01em;
+        }
+
+        p {
+            margin: 0 0 12px;
+            color: #ddd0bf;
+            font-size: 14px;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
+        code {
+            padding: 1px 5px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, .35);
+            color: #f6edda;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+        }
+
+        hr {
+            margin: 16px 0 12px;
+            border: 0;
+            border-top: 1px solid rgba(97, 83, 77, .8);
+        }
+
+        em {
+            color: #a89b8c;
+            font-size: 13px;
+        }
+
+        footer {
+            margin-top: 16px;
+            color: #a89b8c;
+            font-size: 12px;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+    </style>
 </head>
 
 <body>
-    <h1>{{t "Forbidden"}}</h1>
-    <p>
-        {{t "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file." (code "config.yaml")}}
-    </p>
-    <hr />
-    <p>
-        <em>{{#if forwardedIp}}{{t "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged." clientIp forwardedIp}}{{else}}{{t "This connection from ${0} was blocked. The attempt was logged." clientIp}}{{/if}}</em>
-    </p>
+    <main>
+        <div class="stage">
+            <img class="cat" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADcAAAAyCAMAAADPyLPHAAAAflBMVEXtoJUsFxFjJSnxyKeYZWXreF/ndziPOyj5o3iQRymphH2viYVyOUFdQ0HbzMgAAAD98d388+Twi0c2BgxEJShGBxH669f8tK4zFxD6qqXyk09MExbu18r47uLwgzr2x7gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADRuZPfAAAAIHRSTlP//v////////////////8A//7//////////////////9748RcAAAORSURBVHjahZaJdqMwDEUNSbrMFgshAzEk//+X8yTZQBo6w2kJYF8/WRuEqx6NCOPvenhg5HUo2Fl6O0Z+GQdy73DkfMBx4xwWrgpuxjhKFsVu5ckzJ49LKJI8AjudpYi9d+XgY26aQi4gDiKcYKEj0k4hNEccP4Zh4LZwzUKU7rdO3gy7SDtME3/HYU03dUwUY+xu3b1YOE0YPbZzsBF2S3tw9FH3xaDUmm/1pHim71Mkuq3+CP/iYEtV6xtwsXLdezOoovr5IO7YeN/v9XSDVVI38U2+yIaNKWF/tHHdP7hNrB9J/Rlp47owyX+5donObRicMx5yu731waknTl7kXjij1C8wdLX09h+umcve9Exp1btxU6uqloxyzONoHhmT7Y3K6b5yl+JPTXpfw7mULG6GFYpwVyy936nUJSWixYo76B2m+gNyO5XLzD8B2xIxsVXznGxMc870RGXOoHBhajHyTCJlETxokGfM5S45J2zjyuGKTDMZl1YuQQPLF7f14Bo0o1bt+aEVXoKntqDiU50ICeXqHjAa2DqgcjoTM0JIxuG5JjjpOM7KpRIkqAd3pzomWGehj8tF98BF3Irj7HEY8eQDPibJyonOR43B9XA+9HBWE/EIXNKQOAdz3kriBY3ln5mGMA0mQxMvbVZzUMthiLATUSt9kbYuoP3yTDRPurj6mGHiopfaHtTKxKGmS7smuucnlow15KmGsKRONKcUMK96zj1mWoO1JpvnCnF7rt1FxDOPW8sX7xRpI7clsPs2JM6NZTNaOPJ4tdO5kEqp1yNFNGvJ6THDoeyGabU1O87SNJ/2WPh46y4P+EWLbBbXszq98bjjRtk25np2k/pGNRbZ6ltqX3Ib8rNDKl3fqRvHz1xyV1aflqtUJyNRyxLXZ27H0BaSygG8rXJfuNICV8762s+6K+m8w37hZJ281bk5+HQyJ4rc7/jNfP2iR6teyQDKrf/+1miLfiH0rffulUOKctUIoXK/SoaePz+dG3n/flAOgTZF4tMqLaqXUHPaSvVLpuXrFw7N4+QcWnL2UueL7nV99XKX5frCUZy98cw8z6b27g1m43afU09xP9krc6mV0VriVexd8sv7z+NwCuwdTPuU9lozt2BvrTTfcPBoQi9RPRXU/rlxn3zwvi3kWRvlsog27hS9P6foDeXoO2T31Sj2ZWY/zTXbhf4fvzc3jv2DTnyuXx19tl7/As7AuO5ylZTBAAAAAElFTkSuQmCC" width="165" height="150" alt="{{t "A pixel cat holding up a stop sign"}}">
+        </div>
+        <h1>{{t "Forbidden"}}</h1>
+        <p>
+            {{t "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file." (code "config.yaml")}}
+        </p>
+        <hr />
+        <p>
+            <em>{{#if forwardedIp}}{{t "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged." clientIp forwardedIp}}{{else}}{{t "This connection from ${0} was blocked. The attempt was logged." clientIp}}{{/if}}</em>
+        </p>
+        <footer>Neconyan</footer>
+    </main>
 </body>
 
 </html>

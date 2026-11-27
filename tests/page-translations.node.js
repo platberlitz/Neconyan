@@ -166,7 +166,9 @@ test('T3 an address from a header is only ever escaped', async () => {
     const hostile = '<img src=x onerror=1>';
     const html = await renderGerman('forbidden-by-whitelist.html', { clientIp: '203.0.113.5', forwardedIp: hostile });
     assert.equal(html.includes(hostile), false);
-    assert.equal(load(html)('img').length, 0);
+    const $ = load(html);
+    assert.deepEqual($('img').toArray().map(image => $(image).attr('class')), ['cat'], 'the only picture is the cat');
+    assert.equal($('[onerror]').length, 0);
     assert.match(html, /&lt;img src&#x3D;x onerror&#x3D;1&gt;/);
     const english = renderPageTemplate(readPage('forbidden-by-whitelist.html'), { locale: 'en', translations: new Map(), context: { clientIp: hostile, forwardedIp: '' } });
     assert.equal(english.includes(hostile), false);
@@ -180,9 +182,9 @@ test('T3 the t helper fills holes with escaped text or a code element, and leave
 
 test('T3 in English the pages read as the pages of the previous release did', () => {
     const cases = [
-        ['forbidden-by-whitelist.html', 'forbidden-by-whitelist.8a0722beee.html', { ipDetails: '203.0.113.5' }, { clientIp: '203.0.113.5', forwardedIp: '' }],
-        ['forbidden-by-whitelist.html', 'forbidden-by-whitelist.8a0722beee.html', { ipDetails: '203.0.113.5 (forwarded from 198.51.100.7)' }, { clientIp: '203.0.113.5', forwardedIp: '198.51.100.7' }],
-        // The host page has been reworded since, so its translated version is checked from the shipped copy.
+        // Both Forbidden pages have changed since, so their translated versions are checked from the shipped copies.
+        ['forbidden-by-whitelist.d858ef2eef.html', 'forbidden-by-whitelist.8a0722beee.html', { ipDetails: '203.0.113.5' }, { clientIp: '203.0.113.5', forwardedIp: '' }],
+        ['forbidden-by-whitelist.d858ef2eef.html', 'forbidden-by-whitelist.8a0722beee.html', { ipDetails: '203.0.113.5 (forwarded from 198.51.100.7)' }, { clientIp: '203.0.113.5', forwardedIp: '198.51.100.7' }],
         ['host-not-allowed.2d021e9a90.html', 'host-not-allowed.06a5cedc65.html', {}, {}],
     ];
     const readShipped = name => fs.readFileSync(path.join(root, 'tests', 'fixtures', 'shipped-error-pages', name), 'utf8');
@@ -193,6 +195,53 @@ test('T3 in English the pages read as the pages of the previous release did', ()
         assert.equal(visibleText(after), visibleText(before), current);
         assert.equal(load(after)('html').attr('lang'), 'en');
     }
+});
+
+test('T3 the Forbidden pages in the Neconyan look keep every word of the plain pages, in English and German, and add only the footer', async () => {
+    const readShipped = name => fs.readFileSync(path.join(root, 'tests', 'fixtures', 'shipped-error-pages', name), 'utf8');
+    const localesRoot = path.join(root, 'public', 'locales');
+    const words = html => {
+        const $ = load(html);
+        $('style').remove();
+        return $.root().text().replace(/\s+/g, ' ').trim();
+    };
+    const cases = [
+        ['forbidden-by-whitelist.html', 'forbidden-by-whitelist.d858ef2eef.html', { clientIp: '203.0.113.5', forwardedIp: '' }],
+        ['forbidden-by-whitelist.html', 'forbidden-by-whitelist.d858ef2eef.html', { clientIp: '203.0.113.5', forwardedIp: '2001:db8::7' }],
+        ['host-not-allowed.html', 'host-not-allowed.7c1de68d4c.html', { host: 'blocked.test' }],
+        ['host-not-allowed.html', 'host-not-allowed.7c1de68d4c.html', {}],
+    ];
+    const alt = { 'en': 'A pixel cat holding up a stop sign', 'de-de': 'Eine Pixelkatze, die ein Stoppschild hochhält' };
+    for (const locale of ['en', 'de-de']) {
+        for (const [name, previous, context] of cases) {
+            const label = `${name} ${locale} ${JSON.stringify(context)}`;
+            const source = readPage(name);
+            const plain = readShipped(previous);
+            const translations = await getPageTranslations(locale, [...new Set([...templateKeys(source), ...templateKeys(plain)])], { localesRoot });
+            const after = renderPageTemplate(source, { locale, translations, context });
+            const before = renderPageTemplate(plain, { locale, translations, context });
+            assert.equal(words(after), `${words(before)} Neconyan`, label);
+            const $ = load(after);
+            assert.equal($('html').attr('lang'), locale, label);
+            assert.equal($('main').length, 1, label);
+            assert.equal($('main > footer').text(), 'Neconyan', label);
+            assert.equal($('img').length, 1, label);
+            assert.match($('img').attr('src'), /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/, label);
+            assert.equal($('img').attr('alt'), alt[locale], label);
+            assert.equal($('script').length, 0, label);
+            if (locale === 'de-de') assert.equal($('h1').text(), 'Verboten', label);
+        }
+    }
+});
+
+test('T3 a page with a large embedded picture renders it unchanged and still finds and fills its keys', () => {
+    const picture = `data:image/png;base64,${Buffer.alloc(300_000, 7).toString('base64')}`;
+    const source = readPage('host-not-allowed.html').replace(/data:image\/png;base64,[A-Za-z0-9+/=]+/, picture);
+    assert.ok(source.length > 400_000);
+    assert.deepEqual(templateKeys(source), templateKeys(readPage('host-not-allowed.html')));
+    const html = renderPageTemplate(source, { locale: 'de-de', translations: new Map([['Forbidden', '«de» Verboten']]), context: { host: 'blocked.test' } });
+    assert.equal(load(html)('img').attr('src'), picture);
+    assert.equal(load(html)('h1').text(), '«de» Verboten');
 });
 
 test('T4 the HTTPS page renders in German and in English', async () => {
