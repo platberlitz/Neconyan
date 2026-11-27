@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
     test.describe(`glossary at ${viewport.width}px`, () => {
-        test.use({ viewport, hasTouch: viewport.width < 768, isMobile: viewport.width < 768, reducedMotion: 'reduce', colorScheme: 'dark' });
+        test.use({ viewport, hasTouch: viewport.width < 768, isMobile: viewport.width < 768, contextOptions: { reducedMotion: 'reduce' }, colorScheme: 'dark' });
 
         test('read, search, navigate and remember the reading theme', async ({ page }) => {
             const errors = [];
@@ -87,6 +87,61 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             expect(raw.headers()['content-type']).toContain('text/plain');
             expect(await raw.text()).toContain('# In-Chat Agents Glossary');
             expect(errors).toEqual([]);
+        });
+
+        // The phone header hides the wordmark, so the cat sits centred in the 44 px brand link.
+        const brandPlace = viewport.width < 768
+            ? { imgOffsetX: 9, imgOffsetY: 10, spanBoxes: 0, spanGap: 0 }
+            : { imgOffsetX: 0, imgOffsetY: 10, spanBoxes: 1, spanGap: 10 };
+
+        test('the header cat rests under reduced motion and keeps its place', async ({ page }) => {
+            const cat = page.locator('.topbar .brand img');
+            const frame = async () => (await cat.screenshot({ animations: 'allow' })).toString('base64');
+            const catFrames = async (count) => {
+                const frames = [await frame()];
+                for (let index = 1; index < count; index++) {
+                    await page.evaluate(delay => new Promise(resolve => window.setTimeout(resolve, delay)), 4800 / (count - 1));
+                    frames.push(await frame());
+                }
+                return new Set(frames).size;
+            };
+            const layout = () => page.locator('.topbar .brand').evaluate(brand => {
+                const box = element => element.getBoundingClientRect().toJSON();
+                const img = box(brand.querySelector('img'));
+                const span = brand.querySelector('span');
+                return {
+                    brand: box(brand),
+                    img,
+                    span: box(span),
+                    imgOffsetX: img.x - box(brand).x,
+                    imgOffsetY: img.y - box(brand).y,
+                    spanBoxes: span.getClientRects().length,
+                    spanGap: Math.max(0, box(span).x - img.right),
+                    picture: getComputedStyle(brand.querySelector('picture')).display,
+                    sourceBoxes: brand.querySelector('source').getClientRects().length,
+                };
+            });
+
+            await page.goto('/docs/in-chat-agents-glossary');
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            expect(new URL(await cat.evaluate(image => image.currentSrc)).pathname).toBe('/img/neconyan-pixel-cat-rest.webp');
+            expect((await page.request.get('/img/neconyan-pixel-cat-rest.webp')).status()).toBe(200);
+            expect(await catFrames(7)).toBe(1);
+
+            const still = await layout();
+            expect(still.picture).toBe('contents');
+            expect(still.sourceBoxes).toBe(0);
+            expect(still.img.width).toBe(26);
+            expect(still.img.height).toBe(24);
+            expect(still.brand.height).toBe(44);
+            expect(still).toMatchObject(brandPlace);
+
+            await page.emulateMedia({ reducedMotion: 'no-preference' });
+            await page.reload();
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            expect(new URL(await cat.evaluate(image => image.currentSrc)).pathname).toBe('/img/neconyan-pixel-cat.webp');
+            expect(await catFrames(7)).toBeGreaterThan(1);
+            expect(await layout()).toEqual(still);
         });
     });
 }

@@ -1,0 +1,1 @@
+With reduced motion turned on, the cat at the top of the **In-Chat Agents Glossary** now rests instead of backflipping, and the waving kitty on the loading screen stops as soon as your **Reduced Motion** setting loads.

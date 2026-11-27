@@ -246,7 +246,10 @@ ${DOCS_READER_CSS}
 <header class="topbar">
     <div class="topbar-inner">
         <a class="brand" href="/" aria-label="Open Neconyan">
-            <img src="/img/neconyan-pixel-cat.webp" alt="" width="26" height="24">
+            <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/img/neconyan-pixel-cat-rest.webp">
+                <img src="/img/neconyan-pixel-cat.webp" alt="" width="26" height="24">
+            </picture>
             <span>Neconyan</span>
         </a>
         <label class="search">
@@ -450,6 +453,8 @@ a { color: var(--accent); text-underline-offset: 3px; }
 }
 .topbar-inner { display: flex; align-items: center; gap: 14px; height: 100%; max-width: 1240px; margin: 0 auto; padding: 0 20px; }
 .brand { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; gap: 10px; color: var(--rail-ink); text-decoration: none; font-family: 'Fredoka One', 'Nunito', sans-serif; font-size: 20px; flex: none; }
+.brand picture { display: contents; }
+.brand source { display: none; }
 .brand img { image-rendering: pixelated; }
 .search { position: relative; display: flex; align-items: center; flex: 1; max-width: 480px; margin-left: auto; color: var(--rail-soft); }
 .search svg { position: absolute; left: 14px; pointer-events: none; }
