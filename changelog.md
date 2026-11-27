@@ -4,9 +4,12 @@
 
 ### Highlights
 - Host checking now switches on once for setups carried over from older versions, where it was off by default; if you switch it off again afterwards, it stays off. The **Forbidden** page now names the address it turned away and shows the exact lines to add to `config.yaml`.
+- Character names keep symbols like & and < exactly as you typed them, even after you edit the card or start a chat from **Pals**.
+- Restoring a complete account from a ZIP or folder now brings back your **Mewmory** stories and their recovery records.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
+- PR #1011 (2026-11-27) `fix(import): restore mewmory with complete account backups`
 
 ## v1.6.0
 
