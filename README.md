@@ -63,7 +63,7 @@ The chat and the composer get the room, and the sidebar keeps a short list of pa
 - **Find characters** searches for new cards. Pick one and its chat opens straight away, ready to go.
 - **Memory** opens **Story so far**, with one switch, a **Summarise now** button and the latest summary of your chat.
 - **Updates** checks for a new version and installs it without leaving Simple Mode.
-- **Reload Neconyan** saves your chat and settings, then reloads the page. It waits for a reply that's still arriving and asks first if something would be lost.
+- **Reload Neconyan** saves your chat and settings, then reloads the page. It won't reload while a reply is still arriving or a message edit is open, and it asks first if something would be lost.
 
 When enabled in Guided Generations, **Guided Swipe** and **Guided Impersonate** sit next to **Switch chat**, even when you collapse the chat bar. The first keeps your original reply and makes an alternative. The second drafts your next message without sending it.
 
