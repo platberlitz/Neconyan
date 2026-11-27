@@ -5688,9 +5688,10 @@ async function deleteCharacterCallback(args) {
 
     // Show confirmation popup unless silent mode
     if (!silent) {
+        const name = escapeHtml(character.name);
         const confirmMessage = deleteChats
-            ? t`Are you sure you want to delete "${character.name}" and all associated chats? This action cannot be undone.`
-            : t`Are you sure you want to delete "${character.name}"? This action cannot be undone.`;
+            ? t`Are you sure you want to delete "${name}" and all associated chats? This action cannot be undone.`
+            : t`Are you sure you want to delete "${name}"? This action cannot be undone.`;
 
         const result = await callGenericPopup(confirmMessage, POPUP_TYPE.CONFIRM);
         if (result !== POPUP_RESULT.AFFIRMATIVE) {
