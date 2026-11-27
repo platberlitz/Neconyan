@@ -5,14 +5,81 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title data-i18n="Not found">Not found</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: radial-gradient(circle at 50% 0%, #1e201d, #161716 72%);
+            color: #f6edda;
+            font-family: 'Nunito', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            text-align: center;
+        }
+        main {
+            width: min(560px, 100%);
+            padding: 26px 24px 22px;
+            border: 1px solid #61534d;
+            border-radius: 20px;
+            background: #242420;
+            box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
+        }
+        .stage { height: 178px; display: grid; place-items: center; }
+        .stage picture { display: contents; }
+        .flip {
+            width: 132px;
+            height: auto;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .45));
+            animation: neconyan-backflip 1.5s cubic-bezier(.45, 0, .55, 1) infinite;
+        }
+        @keyframes neconyan-backflip {
+            0% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-34px) rotate(180deg); }
+            100% { transform: translateY(0) rotate(360deg); }
+        }
+        h1 { margin: 8px 0 6px; font-size: 24px; letter-spacing: .01em; overflow-wrap: anywhere; }
+        .lead { margin: 0; color: #ddd0bf; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+        footer { display: flex; justify-content: center; margin: 2px 0 -14px; color: #a89b8c; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 44px;
+            min-height: 44px;
+            padding: 0 12px;
+            border-radius: 10px;
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-color: #61534d;
+            text-underline-offset: 3px;
+        }
+        .brand:hover { color: #f6edda; text-decoration-color: #d69270; }
+        .brand:focus-visible { outline: 2px solid #d69270; outline-offset: 0; }
+        @media (prefers-reduced-motion: reduce) {
+            .flip { animation: none; }
+        }
+    </style>
     <script type="module">import { startPageLocale } from '/scripts/page-locale.js'; startPageLocale();</script>
 </head>
 
 <body>
-    <h1 data-i18n="Not found">Not found</h1>
-    <p data-i18n="This page does not exist. Check the address for typos, or go back to the main Neconyan page.">
-        This page does not exist. Check the address for typos, or go back to the main Neconyan page.
-    </p>
+    <main>
+        <div class="stage">
+            <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/img/neconyan-pixel-cat-rest.webp">
+                <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
+            </picture>
+        </div>
+        <h1 data-i18n="Not found">Not found</h1>
+        <p class="lead" data-i18n="This page does not exist. Check the address for typos, or go back to the main Neconyan page.">
+            This page does not exist. Check the address for typos, or go back to the main Neconyan page.
+        </p>
+        <footer><a class="brand" href="/">Neconyan</a></footer>
+    </main>
 </body>
 
 </html>

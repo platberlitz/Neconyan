@@ -255,6 +255,13 @@ test('T4 the HTTPS page renders in German and in English', async () => {
     assert.equal(english('html').attr('lang'), 'en');
     assert.equal(english('title').text(), 'Connection not secure');
     assert.equal(visibleText(english('p').html()), HTTPS_REQUIRED_MESSAGE);
+    assert.equal(english('img.flip').attr('alt'), 'A pixel cat doing a backflip');
+    assert.match(english('img.flip').attr('src'), /^data:image\/webp;base64,/);
+    // The shipped German dictionary already has the cat's alt text from the session-expired page.
+    const source = readPage('https-required.html');
+    const shippedGerman = load(renderPageTemplate(source, { ...GERMAN, translations: await getPageTranslations('de-de', templateKeys(source)), context: {} }));
+    assert.equal(shippedGerman('h1').text(), 'Verbindung nicht sicher');
+    assert.equal(shippedGerman('img.flip').attr('alt'), 'Eine Pixelkatze, die einen Rückwärtssalto macht');
 });
 
 test('T4 more than eight different templates all render correctly (the compiled-template cache evicts the oldest)', () => {

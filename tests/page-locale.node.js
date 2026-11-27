@@ -202,7 +202,8 @@ test('P5 the marked texts of the client pages are the keys of the fixture, and t
         'default/content/errors/host-not-allowed.html',
         'default/content/errors/https-required.html',
     ]);
-    assert.equal(Object.values(pageKeys).flat().length, 47);
+    // The backflipping cat's alt text is shared by invalid-csrf, url-not-found and https-required.
+    assert.equal(Object.values(pageKeys).flat().length, 49);
     assert.equal(new Set(Object.values(pageKeys).flat()).size, 45);
     for (const keys of Object.values(pageKeys)) assert.equal(new Set(keys).size, keys.length);
 });

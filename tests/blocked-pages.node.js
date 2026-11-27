@@ -415,6 +415,7 @@ test('B7 a blocked page is one self-contained response', async t => {
         pages.push(await send(https, { headers: { ...accept, host: 'neconyan.test' } }));
     }
     assert.equal(pages.length, 8);
+    const restingCat = fs.readFileSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat-rest.webp'));
     for (const [index, response] of pages.entries()) {
         assert.equal(response.status, 403);
         const body = response.body.toString('utf8');
@@ -424,14 +425,34 @@ test('B7 a blocked page is one self-contained response', async t => {
         const $ = load(body);
         const addresses = $('[src], [href], [srcset]').toArray().flatMap(element => ['src', 'href', 'srcset'].map(name => $(element).attr(name)).filter(Boolean));
         for (const address of addresses) assert.match(address, /^data:/, 'every picture and link is part of the page');
-        if (index % 4 === 3) continue;
-        // The Forbidden pages carry their own style and picture.
+        // Every blocked page carries its own style and picture, because nothing else loads for a refused visitor.
         assert.equal($('style').length, 1);
         assert.equal($('main').length, 1);
         assert.equal(collapse($('main > footer').text()), 'Neconyan');
-        assert.equal($('img.cat').length, 1);
-        assert.match($('img.cat').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+        if (index % 4 === 3) {
+            // The HTTPS page flips the still cat with CSS alone, so reduced motion stops it completely.
+            assert.equal($('img.flip').length, 1);
+            const match = /^data:image\/webp;base64,([A-Za-z0-9+/]+=*)$/.exec($('img.flip').attr('src'));
+            assert.ok(match);
+            assert.ok(Buffer.from(match[1], 'base64').equals(restingCat), 'the embedded cat is the still one, byte for byte');
+            assert.ok(response.body.length < 30 * 1024, `the HTTPS page stays small (${response.body.length} bytes)`);
+            assert.match($('style').text(), /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}/);
+        } else {
+            assert.equal($('img.cat').length, 1);
+            assert.match($('img.cat').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+        }
     }
+});
+
+test('B7(b) the 404 page shows the still cat under reduced motion and the backflipping one otherwise', () => {
+    const $ = load(fs.readFileSync(path.join(shippedFolder, 'url-not-found.html'), 'utf8'));
+    const picture = $('main > .stage > picture');
+    assert.equal(picture.length, 1);
+    assert.deepEqual(picture.children().toArray().map(element => element.tagName), ['source', 'img']);
+    assert.equal(picture.children('source').attr('media'), '(prefers-reduced-motion: reduce)');
+    assert.equal(picture.children('source').attr('srcset'), '/img/neconyan-pixel-cat-rest.webp');
+    assert.equal(picture.children('img.flip').attr('src'), '/img/neconyan-pixel-cat.webp');
+    assert.ok(fs.existsSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat-rest.webp')));
 });
 
 test('B8 when no copy of a page can be read the answer is a plain 403', async t => {

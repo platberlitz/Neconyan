@@ -315,6 +315,72 @@ async function visit(browser, url, { locale = 'en-US', javaScriptEnabled = true,
     return { context, page, response, requests };
 }
 
+// ---- the dark card of the HTTPS and 404 pages ------------------------------------------------------------------------
+
+const BACKFLIP_CAT = 'A pixel cat doing a backflip';
+const BACKFLIP_CARD = {
+    scheme: 'dark',
+    card: { background: 'rgb(36, 36, 32)', border: 'rgb(97, 83, 77)', radius: '20px' },
+    ink: 'rgb(246, 237, 218)',
+    lead: 'rgb(221, 208, 191)',
+    footer: 'NECONYAN',
+    drawn: true,
+    overflow: 0,
+    past: [],
+    clipped: [],
+};
+
+/** What the card shows: its colours, the cat (drawn at 208x192 and moving or not), and anything that reaches past the screen. */
+function backflipCard(page) {
+    return page.evaluate(() => {
+        const style = element => element && window.getComputedStyle(element);
+        const main = document.querySelector('main');
+        const cat = document.querySelector('main > .stage img.flip');
+        const width = document.documentElement.clientWidth;
+        return {
+            scheme: style(document.documentElement).colorScheme,
+            card: main && { background: style(main).backgroundColor, border: style(main).borderTopColor, radius: style(main).borderTopLeftRadius },
+            ink: style(document.querySelector('main > h1'))?.color,
+            lead: style(document.querySelector('main > p.lead'))?.color,
+            footer: document.querySelector('main > footer')?.innerText.trim(),
+            drawn: Boolean(cat?.complete && cat.naturalWidth === 208 && cat.naturalHeight === 192),
+            alt: cat?.alt,
+            motion: style(cat)?.animationName,
+            source: cat?.currentSrc.startsWith('data:image/webp;base64,') ? 'embedded' : cat && new URL(cat.currentSrc).pathname,
+            overflow: document.documentElement.scrollWidth - width,
+            past: [...document.querySelectorAll('body *')].filter(element => {
+                const box = element.getBoundingClientRect();
+                return box.left < -0.5 || box.right > width + 0.5;
+            }).map(element => element.tagName),
+            clipped: [...document.querySelectorAll('main > h1, main > p, main > footer')].filter(element => element.scrollWidth > element.clientWidth + 0.5).map(element => element.tagName),
+        };
+    });
+}
+
+/**
+ * The card in a language: the colours, the cat with its translated alt text, the motion, and nothing past the screen.
+ * The 404 page swaps the moving picture for the still one under reduced motion; the HTTPS page embeds the still one.
+ */
+async function expectBackflipCard(page, code, { motion = 'none', source = motion === 'none' ? '/img/neconyan-pixel-cat-rest.webp' : '/img/neconyan-pixel-cat.webp', label } = {}) {
+    await expect.poll(() => backflipCard(page), { message: label, timeout: 20000 })
+        .toEqual({ ...BACKFLIP_CARD, alt: expected(code, BACKFLIP_CAT), motion, source });
+}
+
+/**
+ * Pictures of the cat's stage every 400 ms for 4.8 s: all the same bytes when it stands still, and false at the first
+ * one that differs. The span covers a whole loop of the animated WebP (4.45 s), whose first frame alone lasts 1.7 s.
+ * The stage is clipped from the page, because an element screenshot waits for a moving cat to settle and never ends.
+ */
+async function catStandsStill(page) {
+    const clip = await page.locator('main > .stage').boundingBox();
+    const first = await page.screenshot({ clip });
+    for (let shot = 0; shot < 12; shot++) {
+        await page.waitForTimeout(400);
+        if (!first.equals(await page.screenshot({ clip }))) return false;
+    }
+    return true;
+}
+
 // ---- C8: ordinary browser language settings ---------------------------------------------------------------------------
 
 // openProfile(languages, { channel, contextOptions }): a fresh profile whose language list is what the browser's
@@ -471,10 +537,11 @@ test.describe('S1 accounts mode', () => {
     test('display: 404 and session-expired pages in five languages at two sizes', async ({ browser }) => {
         for (const language of LANGUAGES) {
             for (const viewport of VIEWPORTS) {
-                const context = await accountContext(browser, app, { locale: language.locale, ...viewport.options });
+                const context = await accountContext(browser, app, { locale: language.locale, reducedMotion: 'reduce', ...viewport.options });
                 const page = await context.newPage();
                 await page.goto(app.url + '/no-such-page');
                 await expect(page.locator('h1')).toHaveText(expected(language.code, KEYS.notFoundTitle));
+                await expectBackflipCard(page, language.code, { label: `404 ${language.name} ${viewport.name}` });
                 await shoot(page, 'not-found', language, viewport);
                 await postWithoutToken(page, app.url);
                 await expect(page.locator('h1')).toHaveText(expected(language.code, KEYS.sessionTitle));
@@ -531,6 +598,28 @@ test.describe('S2 basic-auth mode', () => {
         expect(notFound.status()).toBe(404);
         await expect.poll(() => pageLang(page)).toBe('pt-pt');
         await expect(page.locator('h1')).toHaveText(expected('pt-pt', KEYS.notFoundTitle));
+        // Signed in, the cat and the locale script load at any depth, because the page asks for them from the root.
+        // The cache is off so that every visit asks the server again.
+        await (await context.newCDPSession(page)).send('Network.setCacheDisabled', { cacheDisabled: true });
+        const answers = [];
+        page.on('response', response => answers.push({ path: new URL(response.url()).pathname, status: response.status() }));
+        const failed = [];
+        page.on('requestfailed', request => failed.push(request.url()));
+        for (const pathname of ['/does/not/exist/deep', '/does/not/exist/deep/']) {
+            for (const [reducedMotion, motion, picture] of [['no-preference', 'neconyan-backflip', '/img/neconyan-pixel-cat.webp'], ['reduce', 'none', '/img/neconyan-pixel-cat-rest.webp']]) {
+                const label = `${pathname} motion ${reducedMotion}`;
+                await page.emulateMedia({ reducedMotion });
+                answers.length = 0;
+                const deep = await page.goto(app.url + pathname);
+                expect(deep.status(), label).toBe(404);
+                await expect(page.locator('h1'), label).toHaveText(expected('pt-pt', KEYS.notFoundTitle));
+                await expectBackflipCard(page, 'pt-pt', { motion, label });
+                expect(answers.filter(answer => answer.path !== pathname && answer.status >= 400), label).toEqual([]);
+                expect(answers.map(answer => answer.path), label).toEqual(expect.arrayContaining([picture, '/scripts/page-locale.js']));
+            }
+        }
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+        expect(failed).toEqual([]);
         await postWithoutToken(page, app.url);
         await expect.poll(() => pageLang(page)).toBe('pt-pt');
         await expect(page.locator('h1')).toHaveText(expected('pt-pt', KEYS.sessionTitle));
@@ -604,6 +693,78 @@ test.describe('S2 basic-auth mode', () => {
                     expect(control.right, `${language.name} ${viewport.name} ${control.id}`).toBeLessThanOrEqual(geometry.width);
                 }
                 await shoot(page, 'login', language, viewport);
+                await context.close();
+            }
+        }
+    });
+});
+
+// ---- S2b: the 404 page with the default config -----------------------------------------------------------------------
+
+test.describe('S2b 404 page with the default config', () => {
+    test.describe.configure({ mode: 'serial' });
+    let app;
+    test.beforeAll(async () => {
+        test.setTimeout(300000);
+        app = await startApp();
+    });
+    test.afterAll(async () => { await app?.stop(); });
+
+    test('S2b the card, the cat and the locale script load at any depth, and the brand goes back to Neconyan', async ({ browser }) => {
+        for (const pathname of ['/no-such-page', '/does/not/exist/deep', '/does/not/exist/deep/']) {
+            for (const reducedMotion of ['no-preference', 'reduce']) {
+                const label = `${pathname} motion ${reducedMotion}`;
+                const context = await browser.newContext({ serviceWorkers: 'block', locale: 'de-DE', reducedMotion });
+                const page = await context.newPage();
+                const answers = [];
+                const failed = [];
+                page.on('response', response => answers.push({ path: new URL(response.url()).pathname, status: response.status() }));
+                page.on('requestfailed', request => failed.push(request.url()));
+                const response = await page.goto(app.url + pathname);
+                expect(response.status(), label).toBe(404);
+                await expect.poll(() => pageLang(page), { message: label }).toBe('de-de');
+                await expect(page.locator('h1'), label).toHaveText(expected('de-de', KEYS.notFoundTitle));
+                await expect(page.locator('p'), label).toHaveText(expected('de-de', KEYS.notFoundText));
+                expect(await page.title(), label).toBe(expected('de-de', KEYS.notFoundTitle));
+                const still = reducedMotion === 'reduce';
+                const picture = still ? '/img/neconyan-pixel-cat-rest.webp' : '/img/neconyan-pixel-cat.webp';
+                await expectBackflipCard(page, 'de-de', { motion: still ? 'none' : 'neconyan-backflip', label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
+                expect(failed, label).toEqual([]);
+                expect(answers.filter(answer => answer.path !== pathname && answer.status >= 400), label).toEqual([]);
+                expect(answers.map(answer => answer.path), label).toEqual(expect.arrayContaining([picture, '/scripts/page-locale.js', '/locales/neconyan/de-de.json']));
+                await context.close();
+            }
+        }
+        const context = await browser.newContext({ serviceWorkers: 'block', locale: 'en-GB', ...VIEWPORTS[0].options });
+        const page = await context.newPage();
+        await page.goto(app.url + '/does/not/exist/deep');
+        const brand = page.locator('main > footer a.brand');
+        await expect(brand).toHaveAttribute('href', '/');
+        // A whole fingertip on a phone, with a ring in the accent when the keyboard reaches it.
+        const box = await brand.boundingBox();
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        await page.keyboard.press('Tab');
+        await expect(brand).toBeFocused();
+        expect(await brand.evaluate(link => {
+            const style = window.getComputedStyle(link);
+            return [style.outlineStyle, style.outlineWidth, style.outlineColor];
+        })).toEqual(['solid', '2px', 'rgb(214, 146, 112)']);
+        expect(await backflipCard(page)).toMatchObject({ overflow: 0, past: [], clipped: [] });
+        await brand.tap();
+        await expect(page).toHaveURL(app.url + '/');
+        await context.close();
+    });
+
+    test('display: the 404 page at a deep address in five languages at two sizes', async ({ browser }) => {
+        for (const language of LANGUAGES) {
+            for (const viewport of VIEWPORTS) {
+                const { context, page, response } = await visit(browser, app.url + '/does/not/exist/deep', { locale: language.locale, viewport: { reducedMotion: 'reduce', ...viewport.options } });
+                expect(response.status()).toBe(404);
+                await expect(page.locator('h1')).toHaveText(expected(language.code, KEYS.notFoundTitle));
+                await expectBackflipCard(page, language.code, { label: `deep 404 ${language.name} ${viewport.name}` });
+                await shoot(page, 'not-found-deep', language, viewport);
                 await context.close();
             }
         }
@@ -800,8 +961,38 @@ test.describe('S3 HTTPS-required page', () => {
         await context.close();
     });
 
+    test('S3 the one response draws the whole card: the styles and the still cat come inside the page', async ({ browser, request }) => {
+        // HTTP stops the cat's own address too, so the page cannot lean on it.
+        const cat = await request.get(app.pageUrl + '/img/neconyan-pixel-cat.webp', { headers: { Accept: 'image/webp,*/*' } });
+        expect(cat.status()).toBe(403);
+        for (const javaScriptEnabled of [true, false]) {
+            for (const reducedMotion of ['no-preference', 'reduce']) {
+                const label = `JavaScript ${javaScriptEnabled ? 'on' : 'off'} motion ${reducedMotion}`;
+                const { context, page, response, requests } = await visit(browser, app.pageUrl + '/', { locale: 'de-DE', javaScriptEnabled, viewport: { reducedMotion } });
+                expect(response.status(), label).toBe(403);
+                const still = reducedMotion === 'reduce';
+                await expectBackflipCard(page, 'de-de', { motion: still ? 'none' : 'neconyan-backflip', source: 'embedded', label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
+                expect(requests, `${label}: one request, the document`).toEqual([app.pageUrl + '/']);
+                const addresses = await page.evaluate(() => [...document.querySelectorAll('[src], [href], [srcset]')]
+                    .map(element => element.getAttribute('src') ?? element.getAttribute('href') ?? element.getAttribute('srcset')));
+                expect(addresses.length, label).toBeGreaterThan(0);
+                expect(addresses.filter(address => !address.startsWith('data:')), label).toEqual([]);
+                await context.close();
+            }
+        }
+    });
+
     test('display: the HTTPS page in five languages at two sizes', async ({ browser }) => {
-        await displayBlockedPage(browser, 'https-required', app.pageUrl + '/', { titleKey: KEYS.httpsTitle });
+        for (const language of LANGUAGES) {
+            for (const viewport of VIEWPORTS) {
+                const { context, page } = await visit(browser, app.pageUrl + '/', { locale: language.locale, viewport: { reducedMotion: 'reduce', ...viewport.options } });
+                expect(await page.title()).toBe(expected(language.code, KEYS.httpsTitle));
+                await expectBackflipCard(page, language.code, { source: 'embedded', label: `HTTPS ${language.name} ${viewport.name}` });
+                await shoot(page, 'https-required', language, viewport);
+                await context.close();
+            }
+        }
     });
 });
 
