@@ -5,6 +5,7 @@ import color from 'chalk';
 import _ from 'lodash';
 import { serverDirectory } from './server-directory.js';
 import { keyToEnv, setConfigFilePath } from './util.js';
+import { normaliseHostWhitelistEntry } from './host-whitelist-entries.js';
 
 const keyMigrationMap = [
     {
@@ -161,7 +162,7 @@ export function upgradeHostCheck(config) {
     const launchHostname = _.get(config, 'browserLaunch.hostname');
     if (typeof launchHostname === 'string') {
         const hostname = launchHostname.trim().toLowerCase();
-        const listed = hostList.some(host => typeof host === 'string' && host.trim().toLowerCase() === hostname);
+        const listed = hostList.some(host => normaliseHostWhitelistEntry(host)?.host === hostname);
         if (hostname && hostname !== 'auto' && !isAlwaysAllowedHostname(hostname) && !listed) {
             hostList.push(hostname);
             addedHosts.push(hostname);

@@ -1,0 +1,1 @@
+Pasting a full address such as `https://neconyan.example.com/` into `hostWhitelist.hosts` in `config.yaml` now works: Neconyan reads it as the host name and says so at startup, and entries it can't use now get a startup warning instead of failing silently.

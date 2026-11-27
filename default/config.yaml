@@ -169,7 +169,8 @@ hostWhitelist:
   # Scan incoming requests for potential host header spoofing
   scan: true
   # List of allowed hosts. Do not include localhost or IPs, these are always allowed.
-  # Use a dot to create subdomain patterns.
+  # Use a dot to create subdomain patterns. A pasted address such as
+  # https://example.com:8443/ is read as example.com.
   # Examples:
   # - example.com
   # - .trycloudflare.com
