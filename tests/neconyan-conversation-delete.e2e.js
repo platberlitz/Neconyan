@@ -200,6 +200,59 @@ async function uiDeleteHome(page, selector) {
 const homeRow = (page, selector) => page.locator(`article.recentChat[data-recent-chat-type="conversation"]${selector}`);
 const homeSelector = (avatar, groupId = '') => `[data-avatar="${avatar}"][data-group="${groupId}"]`;
 
+for (const opened of [false, true]) {
+    test(`Home keeps a deleted DM absent after Games ${opened ? 'opened' : 'was never opened'}`, async ({ app }) => {
+        const account = await app.account();
+        const { avatar, threadKey } = account;
+        const page = await account.open({ workspace: false });
+        await page.evaluate(async avatar => {
+            const core = await import('/script.js');
+            await core.getCharacters();
+            await core.selectCharacterById(core.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        }, avatar);
+        await openWorkspace(page, avatar);
+        const openGames = () => page.evaluate(async () => (await import('/scripts/neconyan-conversation/games/index.js')).openGames());
+        const games = page.locator('#neconyan-conversation-games');
+        if (opened) {
+            expect(await openGames()).toBe(true);
+            await expect(games).toBeVisible();
+        }
+        const original = (await pageStore(page)).characters[threadKey].branches.main;
+        expect(original.messages.length).toBeGreaterThan(0);
+        await page.evaluate(key => {
+            window.addEventListener('neconyan:conversation-store-refreshed', function refreshed(event) {
+                if (!event.detail?.threadKeys?.includes(key)) return;
+                window.__deletedGameThread = key;
+                window.removeEventListener('neconyan:conversation-store-refreshed', refreshed);
+            });
+        }, threadKey);
+        const deleted = page.waitForResponse(response => response.url().endsWith('/thread/delete'));
+        await uiDeleteHome(page, homeSelector(avatar));
+        const response = await deleted;
+        expect(response.ok()).toBe(true);
+        expect((await response.json()).store.characters[threadKey]).toBeUndefined();
+        await expect.poll(() => page.evaluate(() => window.__deletedGameThread)).toBe(threadKey);
+        await expect(homeRow(page, homeSelector(avatar))).toBeHidden();
+        expect(await page.evaluate(async () => ({
+            open: (await import('/scripts/neconyan-conversation/state.js')).conversationState.conversationWorkspaceOpen,
+            current: (await import('/scripts/neconyan-conversation/context.js')).getCurrentCharAvatar(),
+        }))).toEqual({ open: false, current: avatar });
+        expect.soft((await pageStore(page)).characters[threadKey], 'live browser after the delete notification').toBeUndefined();
+        expect((await account.store()).characters[threadKey], 'server before an unrelated save').toBeUndefined();
+        expect(await editControl(page, '', { global: true }), 'the unrelated settings save was acknowledged').toBe(true);
+        expect.soft((await account.store()).characters[threadKey], 'server after the unrelated save').toBeUndefined();
+        await expect(homeRow(page, homeSelector(avatar))).toBeHidden();
+        if (opened) {
+            expect(await openGames()).toBe(true);
+            await expect(games).toBeVisible();
+            const fresh = (await pageStore(page)).characters[threadKey].branches.main;
+            expect(fresh.lifetimeSeed).toBeTruthy();
+            expect(fresh.lifetimeSeed).not.toBe(original.lifetimeSeed);
+            expect(fresh.messages).toEqual([]);
+        }
+    });
+}
+
 /** Make the page stale: its refresh is blocked and a second client writes. */
 async function makeStale(account, page, B) {
     await page.route('**/api/neconyan-conversation/store/get', route => route.abort());

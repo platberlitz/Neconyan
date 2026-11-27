@@ -165,14 +165,17 @@ function defaultChoice(option) {
 
 /* The chat the panel is looking at */
 
-function resolveTarget() {
+function resolveTarget({ create = false } = {}) {
     const avatar = getCurrentCharAvatar();
     if (!avatar) {
         return null;
     }
     const groupId = getConversationGroupIdForAvatar(avatar);
     const personaId = getConversationPersonaId();
-    const branch = getActiveConversationBranch(avatar, { groupId, personaId, create: true });
+    const branch = getActiveConversationBranch(avatar, { groupId, personaId, create });
+    if (!branch) {
+        return null;
+    }
     const settings = getSettings(avatar, { groupId, personaId });
     const participants = getConversationParticipants(avatar, settings, { groupId, personaId });
     const names = getParticipantNamesForDisplay(participants).filter(Boolean);
@@ -906,7 +909,7 @@ function syncTarget() {
 }
 
 export async function openGames({ game = '' } = {}) {
-    const target = resolveTarget();
+    const target = resolveTarget({ create: true });
     if (!target) {
         globalThis.toastr?.warning?.(t`Open a conversation first, then start a game.`, '', SAFE_TOAST_OPTIONS);
         return false;
