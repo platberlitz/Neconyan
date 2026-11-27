@@ -21,7 +21,8 @@ for (const [runner, engine, widths] of [[test, 'chromium', [393, 900, 1280]], [w
                 saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
             } });
             await account.context.route('**/api/settings/get', async route => {
-                const response = await route.fetch(), data = await response.json();
+                // Retry a reset pooled socket; the app never sees this runner-side request.
+                const response = await route.fetch({ maxRetries: 2 }), data = await response.json();
                 if (typeof data.settings !== 'string') return route.fulfill({ response });
                 const saved = JSON.parse(data.settings);
                 saved.firstRun = false;
