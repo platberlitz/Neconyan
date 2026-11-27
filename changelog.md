@@ -51,7 +51,7 @@
 - **Quick Image Gen** fills in the selected configuration's name when you save, so saving over it takes one press.
 - BotSearcher shows a **JanitorAI needs a security check first** notice with a login window, as it already did for JannyAI.
 - Translations are more complete and read more naturally: whole sentences for counts, your own names and text left as written, and translated **Agents** starter kits and templates.
-- Search boxes find Turkish words with İ and ı, and so does the search in **Manage Chat Files**.
+- Search boxes across the app find Turkish words with İ and ı, and so does the search in **Manage chat files**, which looks through chat names and messages on the server.
 - Turkish and Vietnamese headings no longer mix thin letters into bold words.
 - Home opens before the rest of startup has finished.
 - A streaming reply adds its new words to the message on screen instead of building the whole message again each time.
@@ -96,7 +96,7 @@
 - The left cat ear on cards matches the right one on Home, the Server cards and the Characters header.
 - **Notes** opens in the Docker image, whichever user the container runs as.
 - Tightened security across local connections, imports, card rendering, extensions, Docker and the mobile apps.
-- Websites you didn't trust can't reach a Neconyan server running on your own device.
+- A new install only answers requests addressed to localhost, an IP address or a host listed under `hostWhitelist` in config.yaml, so a website can't reach your own server by pointing its domain at it. An existing config.yaml keeps the setting it already has; set `hostWhitelist.enabled` to `true` there for the same protection.
 - Android rescue backups made without your API keys really leave them out.
 
 ### Merged Staging PRs
