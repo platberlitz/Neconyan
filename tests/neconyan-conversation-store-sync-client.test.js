@@ -512,6 +512,60 @@ describe('conversation store synchronisation: unreconcilable saves and server ed
         expect(globalThis.toastr.error.mock.calls).toEqual([[FAILED_TEXT]]);
     });
 
+    test('a second 409 on a debounced save keeps the edit and saves it again by itself', async () => {
+        jest.useFakeTimers({ now: 9.3e12 });
+        seed(store({ 'nova.png': thread([message('a', 'Hi')]) }), 7);
+        const saves = [];
+        let version = 30;
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/store/get')) {
+                return jsonResponse(200, { store: store({ 'nova.png': thread([message('a', 'Hi')]) }), version });
+            }
+            const body = JSON.parse(options.body);
+            saves.push(body);
+            if (saves.length <= 2) {
+                version++;
+                return jsonResponse(409, { error: 'settings_conflict', version });
+            }
+            return jsonResponse(200, { store: body.store, version: body.version + 1 });
+        };
+        extension_settings[KEY].characters['nova.png'].branches.b1.messages[0].mes = 'Edit one';
+        storeSync.persistConversationStoreDebounced();
+        await jest.advanceTimersByTimeAsync(700);
+        expect(saves).toHaveLength(2);
+        await jest.advanceTimersByTimeAsync(700);
+        expect(saves).toHaveLength(3);
+        expect(saves[2].store.characters['nova.png'].branches.b1.messages[0].mes).toBe('Edit one');
+        expect(storeSync.getConversationSavedSnapshot().characters['nova.png'].branches.b1.messages[0].mes).toBe('Edit one');
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(2000);
+        expect(saves).toHaveLength(3);
+    });
+
+    test('an edit that keeps meeting a moved version says it was not saved and stays on the page', async () => {
+        jest.useFakeTimers({ now: 9.4e12 });
+        seed(store({ 'nova.png': thread([message('a', 'Hi')]) }), 7);
+        const saves = [];
+        let version = 30;
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/store/get')) {
+                return jsonResponse(200, { store: store({ 'nova.png': thread([message('a', 'Hi')]) }), version });
+            }
+            saves.push(JSON.parse(options.body));
+            version++;
+            return jsonResponse(409, { error: 'settings_conflict', version });
+        };
+        extension_settings[KEY].characters['nova.png'].branches.b1.messages[0].mes = 'Edit one';
+        storeSync.persistConversationStoreDebounced();
+        await jest.advanceTimersByTimeAsync(5000);
+        // The first save and three automatic tries, two requests each.
+        expect(saves).toHaveLength(8);
+        expect(globalThis.toastr.error.mock.calls).toEqual([[FAILED_TEXT]]);
+        expect(extension_settings[KEY].characters['nova.png'].branches.b1.messages[0].mes).toBe('Edit one');
+        await jest.advanceTimersByTimeAsync(5000);
+        expect(saves).toHaveLength(8);
+    });
+
     test('a second 409 on the retry keeps the edit and shows no notice', async () => {
         jest.useFakeTimers({ now: 9.5e12 });
         seed(store({ 'nova.png': thread([message('a', 'Hi')]), 'other.png': thread([message('o', 'Old')]) }), 7);
@@ -542,6 +596,9 @@ describe('conversation store synchronisation: unreconcilable saves and server ed
         const sent = saves[2].store.characters['nova.png'].branches.b1.messages;
         expect(sent.map(item => item.mes)).toEqual(['Edit one', 'Edit two']);
         expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        // The automatic try finds nothing left to save.
+        await jest.advanceTimersByTimeAsync(700);
+        expect(saves).toHaveLength(3);
     });
 
     test('a server edit runs after an in-flight save and drops the deleted thread locally', async () => {
