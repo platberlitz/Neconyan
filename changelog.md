@@ -62,18 +62,26 @@
 - A **Conversation** change that couldn't be saved because your settings were saved at the same moment is no longer lost quietly. Neconyan saves it again by itself and tells you if it still can't.
 - Renaming a character keeps their memory, mute, **Use as Narrator / GM** role and per-member model in every group they're in.
 - Deleting or renaming a lorebook updates every link to it, including other cards, unopened chats, personas, Notebooks and **Lorebook Override** in **Conversation**.
+- A lorebook whose file keeps its entries as a list opens with every entry, instead of showing none.
 - Outfit, vitals and map blocks from trackers no longer get copied into story replies as raw text.
 - Text inside comment macros such as `{{comment}}...{{/comment}}` really is kept from the model now.
 - **Stop** keeps the words that had already arrived.
 - A failed **Regenerate** keeps the reply you had.
 - Roleplay replies written on the server no longer stop when a saved lorebook link points at a deleted or damaged book; they use the rest.
 - A server that runs out of memory says so in its crash report and starts again.
+- **Stay open in the background** tells you when the browser or another app stopped its sound while you were away, instead of still saying it's keeping Neconyan open.
+- Neconyan no longer reloads itself for an update that isn't there when the server reports its version slightly differently after a restart.
 - The **Companion panel** opens without freezing, even with lots of themed companions or on iPhone.
 - The **Companion panel** reopens on the card you were reading.
+- Hiding the **Dice Roller** with the eye button in the **Companion panel** folds it down to its title like the other hidden companions, and it no longer rolls when the panel opens until you show it again.
 - When a **Scratchpad** session file is damaged, Scratchpad says it couldn't be read and leaves the file alone, instead of looking empty.
 - A **Scratchpad** reply finishes after a dropped connection instead of sticking on 'Working'.
 - **Mewmory** no longer refuses replies in chats with long hidden thinking data or inlined pictures.
 - **Recall** searches stay separate from the memories **Mewmory** picks for your next reply.
+- With **Keep new messages off the record** on in **Mewmory**, a reply continued on the server stays off the record too.
+- **Scratchpad** no longer uses memories from a chat that has **Mewmory** switched off.
+- A damaged **Mewmory** archive no longer stops later saves after you rename or delete a chat or character.
+- An API key you type in for a **Mewmory** model stays tied to the address you saved it with, so changing the address no longer sends it to another service.
 - **Name chats automatically** works with thinking models such as Gemini 4 Neon, and tells you when it couldn't name a chat.
 - The top-bar search brings up the keyboard on Android instead of closing again.
 - Adding a prompt in **Prompt Manager** right after saving another no longer closes and empties its editor.
@@ -86,6 +94,7 @@
 - **Deep Swipe** arrows no longer vanish when you swipe right after opening a chat.
 - Long group names wrap in the group editor.
 - The group editor's **Chat Lore**, **Ext. Media** and **Delete** buttons have labels.
+- The group editor shows the group's name at the top on phones.
 - **Scratchpad** edits to a Scenario Note no longer fail when the model gets the note's ID slightly wrong.
 - The persona picker stays open, where you left it, while you tick Scenario Notes.
 - The **UI Theme** gallery's **All**, **Dark** and **Light** buttons stay put, and each list starts at its first card.
