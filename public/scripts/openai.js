@@ -7994,6 +7994,7 @@ function onSettingsPresetChange() {
             }
 
             for (const [key, [selector, setting, isCheckbox, isConnection, isSampling]] of Object.entries(settingsToUpdate)) {
+                if (isBlankProfileProxyActive() && ['reverse_proxy', 'proxy_password'].includes(key)) continue;
                 if (isConnection && !oai_settings.bind_preset_to_connection) {
                     continue;
                 }
@@ -9432,6 +9433,22 @@ export function isReasoningSignatureSupported(settings = oai_settings) {
 /**
  * Proxy stuff
  */
+let blankProfileProxySignal = null;
+
+export function beginBlankProfileProxy(signal) { blankProfileProxySignal = signal; }
+export function endBlankProfileProxy(signal) { if (blankProfileProxySignal === signal) blankProfileProxySignal = null; }
+function isBlankProfileProxyActive() { return Boolean(blankProfileProxySignal && !blankProfileProxySignal.aborted); }
+
+export function selectBlankProfileProxy({ silent = false } = {}) {
+    if (!proxies.some(preset => preset.name === 'None')) {
+        const sentinel = normalizeProxyPreset({ name: 'None', url: '', password: '', source: '' });
+        proxies.push(sentinel);
+        updateProxyPresetOption(sentinel);
+    }
+    $('#openai_proxy_preset').val('None');
+    setProxyPreset('None', '', '', '', { applySource: false, silent, selectionOnly: true });
+}
+
 export function loadProxyPresets(settings) {
     let proxyPresets = settings.proxies;
     if (!Array.isArray(proxyPresets) || proxyPresets.length === 0) {
@@ -9452,7 +9469,10 @@ export function loadProxyPresets(settings) {
         appendProxyPresetOption(preset);
     }
     $('#openai_proxy_preset').val(selected_proxy.name);
-    setProxyPreset(selected_proxy.name, selected_proxy.url, selected_proxy.password, selected_proxy.source, { applySource: false, silent: true });
+    const saved = proxies.find(preset => preset.name === selected_proxy.name);
+    const blankCollision = selected_proxy.name === 'None' && !selected_proxy.url && !selected_proxy.password && !selected_proxy.source
+        && saved && (saved.url || saved.password || saved.source);
+    setProxyPreset(selected_proxy.name, selected_proxy.url, selected_proxy.password, selected_proxy.source, { applySource: false, silent: true, selectionOnly: Boolean(blankCollision) });
 }
 
 function normalizeProxyPreset(preset) {
@@ -9495,11 +9515,13 @@ function updateProxyPresetOption(preset) {
     }
 }
 
-function setProxyPreset(name, url, password, source = '', { applySource = true, silent = false } = {}) {
+function setProxyPreset(name, url, password, source = '', { applySource = true, silent = false, selectionOnly = false } = {}) {
     const normalizedPreset = normalizeProxyPreset({ name, url, password, source });
     const previousReverseProxy = oai_settings.reverse_proxy;
     const preset = proxies.find(p => p.name === normalizedPreset.name);
-    if (preset) {
+    if (selectionOnly) {
+        selected_proxy = normalizedPreset;
+    } else if (preset) {
         preset.url = normalizedPreset.url;
         preset.password = normalizedPreset.password;
         preset.source = normalizedPreset.source;
@@ -10724,7 +10746,7 @@ export function initOpenAI() {
         syncMaxContextUnlockedControl(oai_settings);
         toggleChatCompletionForms();
         applyConfigurableContextLimit();
-        syncProxyPresetToBoundSource(oai_settings.chat_completion_source);
+        if (!isBlankProfileProxyActive()) syncProxyPresetToBoundSource(oai_settings.chat_completion_source);
         // Neconyan: source switches should not reset the selected settings preset.
         restoreOpenAIPresetSelection(presetName);
         maybeApplyModelSamplingProfile();

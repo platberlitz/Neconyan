@@ -15,7 +15,7 @@ import { SlashCommandScope } from '../../slash-commands/SlashCommandScope.js';
 import { cancelDebounce, collapseSpaces, getUniqueName, isFalseBoolean, isTrueBoolean, uuidv4, waitUntilCondition } from '../../utils.js';
 import { t } from '../../i18n.js';
 import { getSecretLabelById } from '../../secrets.js';
-import { chat_completion_sources, maybeApplyModelSamplingProfile, oai_settings, selected_custom_endpoint_preset, syncCustomEndpointPresetSelectionBySecretId } from '../../openai.js';
+import { beginBlankProfileProxy, chat_completion_sources, endBlankProfileProxy, maybeApplyModelSamplingProfile, oai_settings, selectBlankProfileProxy, selected_custom_endpoint_preset, syncCustomEndpointPresetSelectionBySecretId } from '../../openai.js';
 import { performFuzzySearch } from '/scripts/power-user.js';
 import { StreamingDisplay } from '/scripts/streaming-display.js';
 import { confirmProfileProxy, ConnectionManagerRequestService, getProfileServiceTier } from '../shared.js';
@@ -1011,8 +1011,14 @@ async function applyConnectionProfile(profile) {
     spinner.start();
 
     const failedCommands = [];
+    const blankProxy = mode === 'cc' && profile.proxy === '' && !profile.exclude?.includes('proxy');
+    const signal = spinner.abortController.signal;
 
     try {
+        if (blankProxy) {
+            beginBlankProfileProxy(signal);
+            selectBlankProfileProxy({ silent: true });
+        }
         for (const command of commands) {
             if (spinner.isAborted()) {
                 throw new Error(PROFILE_APPLICATION_ABORTED);
@@ -1035,7 +1041,9 @@ async function applyConnectionProfile(profile) {
             }
             try {
                 const args = getNamedArguments(allowEmpty ? { force: 'true' } : {});
-                const commandPromise = SlashCommandParser.commands[command].callback(args, argument);
+                const commandPromise = blankProxy && command === 'proxy'
+                    ? Promise.resolve(selectBlankProfileProxy()).then(() => 'None')
+                    : SlashCommandParser.commands[command].callback(args, argument);
                 // Neconyan: profile application triggers UI handlers that queue partial settings saves.
                 // Keep persistence centralized in the explicit save after the full profile is applied.
                 cancelDebounce(saveSettingsDebounced);
@@ -1087,6 +1095,7 @@ async function applyConnectionProfile(profile) {
             );
         }
     } finally {
+        if (blankProxy) endBlankProfileProxy(signal);
         spinner.stop();
     }
 }

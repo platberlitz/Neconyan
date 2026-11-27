@@ -83,6 +83,7 @@ describe('a connection profile confirms its proxy when it is saved', () => {
 
     test.each([
         ['the proxy preset it names', { mode: 'cc', api: 'openai', proxy: 'Fixture proxy' }, 'https://preset.invalid', 'openai'],
+        ['an empty proxy selection', { mode: 'cc', api: 'openai', proxy: '' }, '', 'openai'],
         ['the proxy it would send with no preset named', { mode: 'cc', api: 'claude' }, 'https://global.invalid', 'claude'],
     ])('confirms %s', async (_label, profile, proxy, source) => {
         const confirmSavedProxy = jest.fn(async () => true);

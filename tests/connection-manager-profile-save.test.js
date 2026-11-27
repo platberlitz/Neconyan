@@ -47,9 +47,23 @@ describe('connection manager profile save wiring', () => {
 
         expect(connectionManagerSource).toContain('saveSettingsDebounced } from \'../../../script.js\';');
         expect(connectionManagerSource).toContain('cancelDebounce, collapseSpaces');
-        expect(applySource).toContain('const commandPromise = SlashCommandParser.commands[command].callback(args, argument);');
+        expect(applySource).toContain('SlashCommandParser.commands[command].callback(args, argument);');
         expect(applySource).toContain('cancelDebounce(saveSettingsDebounced);');
         expect(applySource).toContain('finally {\n                    cancelDebounce(saveSettingsDebounced);\n                }');
+    });
+
+    test('holds an included blank proxy through profile application and releases its signal', () => {
+        const source = getFunctionSource('applyConnectionProfile');
+        expect(source).toContain("profile.proxy === '' && !profile.exclude?.includes('proxy')");
+        const begin = source.indexOf('beginBlankProfileProxy(signal);');
+        const select = source.indexOf('selectBlankProfileProxy({ silent: true });');
+        const loop = source.indexOf('for (const command of commands)');
+        expect(begin).toBeGreaterThanOrEqual(0);
+        expect(select).toBeGreaterThan(begin);
+        expect(loop).toBeGreaterThan(select);
+        expect(source).toContain("blankProxy && command === 'proxy'");
+        expect(source).toContain("Promise.resolve(selectBlankProfileProxy()).then(() => 'None')");
+        expect(source).toContain('if (blankProxy) endBlankProfileProxy(signal);');
     });
 
     test('clears stale endpoint and secret fields when updating to providers without values', () => {
