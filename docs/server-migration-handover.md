@@ -1,5 +1,100 @@
 # Full server migration: continuation
 
+### 27 November 2026: 1.6.0 published, staging starts 1.6.1
+
+I published [Neconyan 1.6.0](https://github.com/platberlitz/Neconyan/releases/tag/v1.6.0)
+with annotated tag `v1.6.0` on `f03401f32a0d71e26a6e45836b7672e73df45bf3`.
+[PR #1004](https://github.com/platberlitz/Neconyan/pull/1004) prepared the
+release and fixed Conversation saves that gave up after a version conflict: a
+failed save now resets its retry count. [PR #1005](https://github.com/platberlitz/Neconyan/pull/1005)
+only reworded AGENTS.md. [PR #1006](https://github.com/platberlitz/Neconyan/pull/1006)
+fast-forwarded main to `6412658c`, but the iPhone build from that commit failed,
+so I didn't publish it. [PR #1007](https://github.com/platberlitz/Neconyan/pull/1007)
+fixed the two iPhone build failures and added nine missing fixes to the
+Highlights. [PR #1008](https://github.com/platberlitz/Neconyan/pull/1008)
+fast-forwarded main to `f03401f3` without a new merge commit. The changelog
+lists all 227 staging PRs, #776 through #1007. I didn't deploy my running
+instance.
+
+Verification and retained results:
+
+- The [full browser run](https://github.com/platberlitz/Neconyan/actions/runs/45901326118)
+  at staging `73555b9c` ran 20 groups: 3,453 tests, 3,401 first-attempt passes,
+  50 skips and no failures. The skips are the 42 from 1.5.7 plus 8 Scratchpad
+  tests that only take baseline screenshots. Two tests passed only on retry:
+  - lorebook-link-cleanup 'rename of a lorebook cleans up every link to it
+    (desktop)'. The test seeded Conversation data with a settings write that
+    could hit a settings conflict; `378fe84e` in #1004 retries that write.
+  - shell-plain-header-alignment 'plain included headers align at 393
+    (webkit)'. The test's settings read failed when its pooled connection
+    reset; `da578d81` in #1004 retries that read.
+  Both are test fixes, not app changes. Both tests passed first time in the
+  [focused run](https://github.com/platberlitz/Neconyan/actions/runs/45922125729)
+  at `da578d81` and again at `452172d9`. I didn't rely on a passing retry.
+- Focused runs, all first attempt: [45919942375](https://github.com/platberlitz/Neconyan/actions/runs/45919942375)
+  (43 tests at `da578d81`), [45938267696](https://github.com/platberlitz/Neconyan/actions/runs/45938267696),
+  [45938277672](https://github.com/platberlitz/Neconyan/actions/runs/45938277672)
+  and [45938286603](https://github.com/platberlitz/Neconyan/actions/runs/45938286603)
+  (141, 159 and 50 tests at `452172d9`, after the Conversation save fix),
+  [45948249268](https://github.com/platberlitz/Neconyan/actions/runs/45948249268)
+  (12 assistant help and What's new tests at `6412658c`) and
+  [45960953620](https://github.com/platberlitz/Neconyan/actions/runs/45960953620)
+  (the same 12 at `f03401f3`). I matched results by file, title and project,
+  with each later run replacing the earlier result. Combined: 3,453 tests,
+  3,403 first-attempt passes, 50 existing skips and nothing unresolved. Nothing
+  after `452172d9` changed app code apart from one assistant help sentence,
+  which the last focused run covers.
+- Exact-commit [PR checks](https://github.com/platberlitz/Neconyan/actions/runs/45961856134)
+  passed on `f03401f3`: unit, server, ESLint, frontend assets, Bun and the
+  browser smoke check.
+- Local checks with Node 24 at `07dee804`, which differs from the release
+  commit only in Markdown, AGENTS.md and the four files #1007 changed: 748 Jest
+  suites (12,221 passed, 3 existing skips) and 5,114 Node tests (5,113 passed, 1
+  existing skip). Root and test lint, frontend budgets, the frontend build
+  (2,807 assets) and the README mirror passed. Mewmory passed 200 of 200 at
+  `da578d81` and again on the candidate. On `f03401f3` I reran the tests that
+  read the changelog or #1007's files: 35 Node tests, 65 Jest tests, the 30
+  iPhone launcher tests with a normal and a symlinked temp folder, and root lint.
+- The first [iPhone build](https://github.com/platberlitz/Neconyan/actions/runs/45950598754)
+  on main at `6412658c` failed in the launcher tests. On macOS the temp folder is
+  reached through a symlink, so an Android startup test compared a resolved path
+  with an unresolved one. That test was added in #792, after the last iPhone
+  build, and fails every time on a Mac. The [next build](https://github.com/platberlitz/Neconyan/actions/runs/45953291393)
+  on the #1007 branch got past it and failed the packaged IPA check, which still
+  expected the old network setting after the security hardening in `82f76bc5`
+  had limited plain web loads to local networks. Both were real defects in
+  checks, not the app, and #1007 fixed both; its [iPhone build](https://github.com/platberlitz/Neconyan/actions/runs/45954604152)
+  passed every step. I didn't retry either failure. The [Android build](https://github.com/platberlitz/Neconyan/actions/runs/45950595930)
+  at `6412658c` passed but was superseded by the new release commit.
+- The final [Android workflow](https://github.com/platberlitz/Neconyan/actions/runs/45963638516)
+  passed first time on main at `f03401f3`: signed ARM64 and x86_64 builds, the
+  WebView fixture and startup and lifecycle checks on Android 11, 13 and 15
+  emulators and a 16 KiB Android 16 emulator. The optional comparison against
+  the previous release was skipped as intended.
+- The final [iPhone workflow](https://github.com/platberlitz/Neconyan/actions/runs/45963642500)
+  passed first time on main at `f03401f3`: storage and path checks, a real
+  13 GiB ZIP import, the packaged device IPA check, and startup and relaunch in
+  iPhone 17 Pro and iPad Pro 13-inch (M5) simulators. Neither workflow used a
+  physical phone.
+- I checked all 12 assets and ten checksum entries before uploading. Both APKs
+  had the official signing certificate and passed 16 KiB native alignment.
+  Both APKs and the unsigned IPA matched their recorded provenance. All 6,432
+  source ZIP entries matched the release tree. I downloaded all 12 files again
+  and verified they were byte-identical and matched GitHub's SHA-256 digests.
+  The verifier confirmed the annotated tag and latest public release.
+- The handbook for 1.6.0 went out in [#21](https://github.com/platberlitz/neconyan-docs/pull/21),
+  [#22](https://github.com/platberlitz/neconyan-docs/pull/22) and
+  [#23](https://github.com/platberlitz/neconyan-docs/pull/23), last published
+  by [Pages](https://github.com/platberlitz/neconyan-docs/actions/runs/45939887952)
+  at `efb3d8bc`. [The published release update](https://github.com/platberlitz/neconyan-docs/pull/25)
+  passed the strict build, link and browser checks. After [Pages deployed](https://github.com/platberlitz/neconyan-docs/actions/runs/45972132958)
+  `a6ac12fa7089c9fb3e9f40780cc13b1ce7f10923`, I checked that [About](https://platberlitz.github.io/neconyan-docs/help/about/)
+  and the Mewmory, Agents and Scratchpad guides link to the public 1.6.0
+  release and the exact release commit, with no candidate wording left.
+- The 1.6.1 staging bump passed all four current version-boundary tests and
+  lint for the changed test. The README still links to 1.6.0, the published
+  release.
+
 ### 20 November 2026: 1.5.7 published, staging starts 1.5.8
 
 I published [Neconyan 1.5.7](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.7)
