@@ -9,7 +9,7 @@ function runtime() {
     const context = vm.createContext({
         characters: [{ avatar: 'Assistant.png', name: 'Assistant' }], this_chid: 0,
         fetch: jest.fn(async () => ({ ok: true, json: async () => structuredClone(card) })),
-        getRequestHeaders: () => ({}), DOMPurify: { sanitize: value => value.replace(/<[^>]*>/g, '') },
+        getRequestHeaders: () => ({}), readCharacterName: card => card.name.replace(/<[^>]*>/g, ''),
         toastr: { error: jest.fn() }, t: (parts, value) => parts[0] + (value ?? '') + (parts[1] ?? ''),
     });
     vm.runInContext(body.replace(/^export /, ''), context);
@@ -73,7 +73,7 @@ test('keeps the current character list available until the refreshed response is
         characters, this_chid: undefined, startupCharacterListPromise: null,
         fetch: async () => ({ ok: true, json: () => { reportJsonRequest(); return json; } }),
         getRequestHeaders: () => ({}),
-        DOMPurify: { sanitize: value => value },
+        readCharacterName: card => card.name,
         getGroups: async () => {}, printCharacters: async () => {},
     });
     vm.runInContext(getCharacters, context);

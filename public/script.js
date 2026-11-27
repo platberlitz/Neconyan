@@ -2219,6 +2219,21 @@ export function getEntitiesList({ doFilter = false, doSort = true } = {}) {
     return entities;
 }
 
+const characterSourceNames = new WeakMap();
+
+function readCharacterName(card) {
+    const original = card.name;
+    let display = DOMPurify.sanitize(original);
+    if (typeof original === 'string' && original.includes('<') && !original.endsWith('<')) {
+        const fragment = DOMPurify.sanitize(original.replaceAll('&', '&amp;'), { RETURN_DOM_FRAGMENT: true });
+        if ([...fragment.childNodes].every(node => node.nodeType === Node.TEXT_NODE) && fragment.textContent === original) {
+            display = original;
+        }
+    }
+    if (typeof original === 'string' && display !== original) characterSourceNames.set(card, original);
+    return display;
+}
+
 export async function getOneCharacter(avatarUrl, { isCurrent = () => true, allowInsert = false } = {}) {
     if (!isCurrent()) return false;
     const response = await fetch('/api/characters/get', {
@@ -2233,7 +2248,7 @@ export async function getOneCharacter(avatarUrl, { isCurrent = () => true, allow
         const getData = await response.json();
         // Assistant reads must not publish into a different account or chat.
         if (!isCurrent()) return false;
-        getData.name = DOMPurify.sanitize(getData.name);
+        getData.name = readCharacterName(getData);
         getData.chat = String(getData.chat);
 
         const indexOf = characters.findIndex(x => x.avatar === avatarUrl);
@@ -2330,7 +2345,7 @@ export async function getCharacters() {
         characters.splice(0, characters.length);
         for (let i = 0; i < getData.length; i++) {
             characters[i] = getData[i];
-            characters[i].name = DOMPurify.sanitize(characters[i].name);
+            characters[i].name = readCharacterName(characters[i]);
             characters[i].chat = characters[i].chat ? String(characters[i].chat) : '';
         }
 
@@ -18356,7 +18371,7 @@ export function select_selected_character(chid, { switchMenu = true } = {}) {
     $('#add_avatar_button').val('');
     $('#avatar_div').css('display', 'flex');
 
-    $('#character_name_pole').val(characters[chid].name);
+    $('#character_name_pole').val(characterSourceNames.get(characters[chid]) ?? characters[chid].name);
     $('#description_textarea').val(characters[chid].description);
     $('#character_world').val(characters[chid].data?.extensions?.world || '');
     $('#creator_notes_textarea').val(characters[chid].data?.creator_notes || characters[chid].creatorcomment);

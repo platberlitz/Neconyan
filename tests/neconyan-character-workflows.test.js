@@ -192,7 +192,7 @@ describe('Neconyan save behaviour', () => {
             setCharacterId: id => { context.this_chid = id; },
             selectCharacterById: jest.fn(), getGroups: jest.fn(), printCharacters: jest.fn(),
         });
-        loadFunctions(context, script, ['getCharacters']);
+        loadFunctions(context, script, ['readCharacterName', 'getCharacters']);
         context.createOrEditCharacter.mockImplementation(async () => {
             await context.getCharacters();
             return true;
