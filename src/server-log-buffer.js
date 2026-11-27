@@ -140,7 +140,7 @@ function consumeNormalizedOutput(stream, chunk, encoding, { flushTrailing = fals
 
     const combined = `${state.pending[stream]}${normalizedChunk}`;
     const lines = combined.split('\n');
-    state.pending[stream] = lines.pop() ?? '';
+    state.pending[stream] = detachedText((lines.pop() ?? '').slice(0, MAX_SERVER_LOG_MESSAGE_LENGTH + 1));
 
     if (flushTrailing) {
         lines.push(state.pending[stream]);

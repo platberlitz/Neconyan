@@ -14,6 +14,75 @@ function runScript(code, { flags = [], args = [], silent = false } = {}) {
     return { ...result, report: result.status === 0 ? JSON.parse(result.stderr.trim().split('\n').at(-1)) : null };
 }
 
+test('unfinished lines stay bounded independently and flush once without losing following lines', () => {
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        const { getServerLogSnapshot } = await import(root + '/src/server-log-buffer.js');
+        const state = globalThis.__neconyanServerLogBuffer;
+        const prefix = 'x'.repeat(11997) + '  ' + 'z';
+        for (let i = 0; i < 3; i++) {
+            process.stdout.write(i === 0 ? prefix + 'A'.repeat(24000) : 'B'.repeat(24000));
+            process.stderr.write('e'.repeat(24000));
+        }
+        const before = { stdout: state.pending.stdout.length, stderr: state.pending.stderr.length, entries: state.entries.length };
+        process.stdout.write('\\nnext line\\n');
+        const afterNewline = { pending: state.pending.stdout, entries: state.entries.map(({ stream, message }) => ({ stream, message })) };
+        const snapshot = getServerLogSnapshot();
+        process.stderr.write('\\n' + JSON.stringify({ before, afterNewline, snapshot: snapshot.entries.map(({ stream, message }) => ({ stream, message })), pending: { ...state.pending } }) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    assert.deepEqual(report.before, { stdout: 12001, stderr: 12001, entries: 0 });
+    assert.equal(report.afterNewline.pending, '');
+    assert.deepEqual(report.afterNewline.entries, [
+        { stream: 'stdout', message: 'x'.repeat(11997) + '…' },
+        { stream: 'stdout', message: 'next line' },
+    ]);
+    assert.deepEqual(report.snapshot, [...report.afterNewline.entries, { stream: 'stderr', message: 'e'.repeat(11999) + '…' }]);
+    assert.deepEqual(report.pending, { stdout: '', stderr: '' });
+});
+
+test('exact cap, one over and short split writes keep their existing text', () => {
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        const { getServerLogSnapshot } = await import(root + '/src/server-log-buffer.js');
+        const state = globalThis.__neconyanServerLogBuffer;
+        process.stdout.write('a'.repeat(12000));
+        const exact = state.pending.stdout.length;
+        process.stdout.write('\\n');
+        process.stdout.write('b'.repeat(12000));
+        process.stdout.write(Buffer.from('c'));
+        const over = state.pending.stdout.length;
+        process.stdout.write('\\nshort ');
+        process.stdout.write(Buffer.from('split'));
+        const short = state.pending.stdout;
+        const entries = getServerLogSnapshot().entries.map(entry => entry.message);
+        process.stderr.write(JSON.stringify({ exact, over, short, entries }) + '\\n');
+    `, { silent: true });
+    assert.equal(status, 0, stderr);
+    assert.equal(report.exact, 12000);
+    assert.equal(report.over, 12001);
+    assert.equal(report.short, 'short split');
+    assert.deepEqual(report.entries, ['a'.repeat(12000), 'b'.repeat(11999) + '…', 'short split']);
+});
+
+test('an unfinished tail does not retain its large parent', () => {
+    const { status, stderr, report } = runScript(`
+        const root = process.argv.at(-1);
+        await import(root + '/src/server-log-buffer.js');
+        global.gc(); global.gc();
+        const before = process.memoryUsage().heapUsed;
+        const tail = 'known pending tail with at least 32 characters';
+        (() => { const text = 'x'.repeat(64 * 1024 * 1024) + '\\n' + tail; process.stdout.write(text); })();
+        global.gc(); global.gc();
+        const retainedMB = (process.memoryUsage().heapUsed - before) / 1048576;
+        const pending = globalThis.__neconyanServerLogBuffer.pending.stdout;
+        process.stderr.write(JSON.stringify({ retainedMB, pending }) + '\\n');
+    `, { flags: ['--expose-gc'], silent: true });
+    assert.equal(status, 0, stderr);
+    assert.equal(report.pending, 'known pending tail with at least 32 characters');
+    assert.ok(report.retainedMB < 32, `retained ${report.retainedMB} MiB`);
+});
+
 test('kept log lines do not pin the long output they were cut from', () => {
     const { status, stderr, report } = runScript(`
         const root = process.argv.at(-1);
@@ -320,6 +389,8 @@ test('what reaches the terminal is exactly what it was without the buffer', () =
         console.dir(Object.fromEntries(Array.from({ length: 300 }, (_, index) => ['dir' + index, index])));
         console.warn(Object.create(null, { hidden: { value: 1, enumerable: true } }));
         process.stdout.write('raw write\\n');
+        process.stdout.write('large '.repeat(5000));
+        process.stdout.write('end\\n');
         process.stderr.write(JSON.stringify({ done: true }) + '\\n');
     `;
     const bare = runScript(script, { args: ['bare'] });
