@@ -1,16 +1,17 @@
 import fs from 'node:fs';
-import { color, getConfigFilePath, getConfigValue } from '../util.js';
+import { color, getConfigFilePath, getConfigValue, keyToEnv } from '../util.js';
 import { sendBlockedPage } from '../error-pages.js';
+import { describeHostWhitelist, normaliseHostWhitelist, parseHostListEnv } from '../host-whitelist-entries.js';
 import { isHostAllowed } from 'host-validation-middleware';
 
 const knownHosts = new Set();
 const maxKnownHosts = 1000;
 
+const hostListEnvKey = keyToEnv('hostWhitelist.hosts');
+const hostListFromEnv = hostListEnvKey in process.env;
 const hostWhitelistEnabled = !!getConfigValue('hostWhitelist.enabled', true, 'boolean');
-const configuredHosts = getConfigValue('hostWhitelist.hosts', []);
-const hostWhitelist = Object.freeze((Array.isArray(configuredHosts) ? configuredHosts : [])
-    .filter(host => typeof host === 'string' && host.trim())
-    .map(host => host.trim().toLowerCase()));
+const configuredHosts = normaliseHostWhitelist(hostListFromEnv ? parseHostListEnv(process.env[hostListEnvKey] ?? '') : getConfigValue('hostWhitelist.hosts', []));
+const hostWhitelist = Object.freeze(configuredHosts.hosts);
 const hostWhitelistScan = !!getConfigValue('hostWhitelist.scan', false, 'boolean');
 
 /**
@@ -54,6 +55,21 @@ function configFileForLog() {
 }
 
 /**
+ * Gets where hostWhitelist.hosts was read from, for the startup note.
+ * @returns {string} The environment variable when it overrides the file, otherwise the config file
+ */
+function hostListSourceForLog() {
+    return hostListFromEnv ? `the ${hostListEnvKey} environment variable` : configFileForLog();
+}
+
+// The list is only read while the check or the scan is on, so a switched-off check stays quiet about it.
+if (hostWhitelistEnabled || hostWhitelistScan) {
+    const { notes, warnings } = describeHostWhitelist(configuredHosts, { source: hostListSourceForLog(), fromEnv: hostListFromEnv, enforced: hostWhitelistEnabled });
+    if (notes.length) console.info([color.yellow(notes[0]), ...notes.slice(1)].join('\n'));
+    if (warnings.length) console.warn([color.red(warnings[0]), ...warnings.slice(1)].join('\n'));
+}
+
+/**
  * Middleware to validate remote hosts.
  * Useful to protect against DNS rebinding attacks.
  * @param {import('express').Request} req Request
@@ -65,9 +81,12 @@ export default function hostWhitelistMiddleware(req, res, next) {
     if (hostWhitelistScan && hostValue && !isHostAllowed(hostValue, hostWhitelist) && !knownHosts.has(hostValue) && knownHosts.size < maxKnownHosts) {
         const isFirstWarning = knownHosts.size === 0;
         console.warn(color.red('Request from untrusted host:'), hostValue);
-        const configPath = configFileForLog();
         const hostname = displayableHostname(hostValue);
-        console.warn(`If you trust this host, add ${hostname ? color.yellow(hostname) + ' ' : 'it '}under ${color.yellow('hostWhitelist')} -> ${color.yellow('hosts')} in ${color.green(configPath)} and restart Neconyan.`);
+        if (hostListFromEnv) {
+            console.warn(`If you trust this host, add ${hostname ? color.yellow(hostname) + ' ' : 'it '}to the list in the ${color.green(hostListEnvKey)} environment variable and restart Neconyan.`);
+        } else {
+            console.warn(`If you trust this host, add ${hostname ? color.yellow(hostname) + ' ' : 'it '}under ${color.yellow('hostWhitelist')} -> ${color.yellow('hosts')} in ${color.green(configFileForLog())} and restart Neconyan.`);
+        }
         if (!hostWhitelistEnabled && isFirstWarning) {
             console.warn(`To protect against host spoofing, consider setting ${color.yellow('hostWhitelist.enabled')} to true`);
         }
