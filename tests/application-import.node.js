@@ -8,7 +8,7 @@ import archiver from 'archiver';
 import extractChunks from 'png-chunks-extract';
 import PNGtext from 'png-chunk-text';
 import encodeChunks from '../src/png/encode.js';
-import { fixture, png } from './roleplay-transactions-fixture.js';
+import { fixture, memoryParent, png } from './roleplay-transactions-fixture.js';
 
 const { retainUploadedArchive, capturedArchiveInput, readUploadedArchive } = await import('../src/operations/input-files.js');
 const { captureFolderImport, captureZipImport, openCapturedZipEntry, openImportArchive, resolveAccountImportRoot } = await import('../src/operations/account-import-sources.js');
@@ -19,7 +19,8 @@ const { runOperation, acceptApplicationOperation } = await import('../src/operat
 const { write: writeCard, read: readCard } = await import('../src/character-card-parser.js');
 const { getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
 const { stageImportBatch } = await import('../src/operations/import-batches.js');
-const { prepareBinaryOutput } = await import('../src/operations/binary-files.js');
+const { openSavedBinary, prepareBinaryOutput } = await import('../src/operations/binary-files.js');
+const { captureAccountBackup } = await import('../src/operations/account-backup.js');
 
 function importRenameTest(name, run) {
     test(name, run);
@@ -60,6 +61,21 @@ test('ZIP source detection keeps recognised names inside chat folders at their o
     const captured = await captureZipImport(source, { coreOnly: true });
     assert.equal(captured.sourceRoot, 'archive-account');
     assert.deepEqual(captured.files.map(file => file.relative), ['chats/characters/Only.jsonl']);
+});
+
+test('ZIP source detection preserves an account wrapped in a mewmory directory', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'upload.zip');
+    await zipFile(filename, [
+        ['mewmory/settings.json', '{}'],
+        ['mewmory/chats/Nova/Keep.jsonl', '{}'],
+        ['mewmory/mewmory/stories/witness.json', '{}'],
+    ]);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'mewmory-wrapper', filename);
+    const captured = await captureZipImport(source);
+    assert.equal(captured.sourceRoot, 'mewmory');
+    assert.deepEqual(captured.files.map(file => file.relative).sort(),
+        ['chats/Nova/Keep.jsonl', 'mewmory/stories/witness.json', 'settings.json']);
 });
 
 test('ZIP source detection selects default-user even when another account has more files', async t => {
@@ -158,6 +174,75 @@ async function accept(p, key, input = { mode: 'folder', path: p.sourceRoot }, de
     finalizeOperation({ ...p.base, job: accepted.job });
     return { ...accepted, context: { ...p.base, job: accepted.job, signal: new AbortController().signal, progress: async () => {} } };
 }
+
+test('complete folder and native backup imports restore Mewmory while core Chats leaves it out', async t => {
+    const source = fixture(t, false, 'memory-source');
+    const sourceBase = { owner: 'memory-source', directories: source.scope.directories };
+    fs.unlinkSync(source.filename);
+    fs.unlinkSync(path.join(sourceBase.directories.characters, 'Nova.png'));
+    fs.unlinkSync(path.join(sourceBase.directories.groups, 'group.json'));
+    fs.writeFileSync(path.join(sourceBase.directories.root, 'settings.json'), '{}');
+    const memory = memoryParent(source, 'Unique memory witness');
+    const attachment = 'user/files/unique-memory-attachment.txt';
+    fs.mkdirSync(path.dirname(path.join(sourceBase.directories.root, attachment)), { recursive: true });
+    fs.writeFileSync(path.join(sourceBase.directories.root, attachment), 'Synthetic attachment bytes');
+    const witnesses = [memory.paths.archive, memory.paths.guard].map(file => path.relative(sourceBase.directories.root, file));
+    witnesses.push(attachment);
+
+    const backupPlan = captureAccountBackup(sourceBase, source.scope, { handle: sourceBase.owner }, { includeSecrets: false });
+    const backup = admitOperation(sourceBase, source.scope, { key: 'memory-backup', kind: 'account-backup', input: {}, plan: backupPlan, label: 'Test backup' });
+    await runOperation({ ...sourceBase, job: backup.job, signal: new AbortController().signal, progress: async () => {} });
+    const output = openSavedBinary(sourceBase, 'memory-backup');
+    let backupBytes;
+    try { backupBytes = fs.readFileSync(output.fd); } finally { fs.closeSync(output.fd); }
+
+    for (const mode of ['folder', 'zip']) for (const content of ['all', 'core']) {
+        const p = setup(t, `${mode}-${content}`);
+        for (const relative of witnesses) assert.equal(fs.existsSync(path.join(p.base.directories.root, relative)), false, relative);
+        let input = { mode: 'folder', path: sourceBase.directories.root, content };
+        if (mode === 'zip') {
+            const upload = path.join(p.sourceRoot, 'native.zip');
+            fs.writeFileSync(upload, backupBytes);
+            const retained = await retainUploadedArchive(p.base, p.f.scope, 'memory-upload', upload);
+            input = { mode: 'zip', inputId: retained.id, content };
+        }
+        if (content === 'core') input.parts = ['chats'];
+        const accepted = await accept(p, 'memory-import', input);
+        await runOperation(accepted.context);
+        const record = readOperation(p.base, 'memory-import');
+        assert.equal(record.state, 'completed');
+        assert.equal(record.result.skippedCount, 0);
+        if (content === 'all') assert.equal(record.result.imported, accepted.record.plan.files.length);
+        for (const relative of witnesses) {
+            const destination = path.join(p.base.directories.root, relative);
+            if (content === 'core' && relative !== attachment) assert.equal(fs.existsSync(destination), false, relative);
+            else assert.deepEqual(fs.readFileSync(destination), fs.readFileSync(path.join(sourceBase.directories.root, relative)), relative);
+        }
+    }
+});
+
+for (const mode of ['folder', 'zip']) test(`complete ${mode} import excludes a bare mewmory file`, async t => {
+    const p = setup(t, `bare-${mode}`);
+    const attachment = 'user/files/bare-control.txt';
+    sourceFile(p, 'settings.json', '{"name1":"Bare control"}');
+    sourceFile(p, attachment, 'Ordinary attachment');
+    sourceFile(p, 'mewmory', 'Not a directory');
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'mewmory')), false);
+    let input = { mode: 'folder', path: p.sourceRoot };
+    if (mode === 'zip') {
+        const filename = path.join(p.sourceRoot, 'bare.zip');
+        await zipFile(filename, [['settings.json', '{"name1":"Bare control"}'], [attachment, 'Ordinary attachment'], ['mewmory', 'Not a directory']]);
+        const retained = await retainUploadedArchive(p.base, p.f.scope, 'bare-upload', filename);
+        input = { mode: 'zip', inputId: retained.id };
+    }
+    const accepted = await accept(p, 'bare-import', input);
+    assert.equal(accepted.record.plan.files.some(file => file.relative === 'mewmory'), false);
+    await runOperation(accepted.context);
+    assert.equal(readOperation(p.base, 'bare-import').state, 'completed');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(p.base.directories.root, 'settings.json'))).name1, 'Bare control');
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, attachment), 'utf8'), 'Ordinary attachment');
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'mewmory')), false);
+});
 
 test('extension sync retains manifest diagnostics and native-name shadowing with the accepted files', async t => {
     const p = setup(t);
