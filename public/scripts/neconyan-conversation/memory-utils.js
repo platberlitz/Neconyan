@@ -1,4 +1,5 @@
 import { DEFAULT_BRANCH_ID, GROUP_CONVERSATION_STORE_PREFIX } from './constants.js';
+import { isConversationGroupSpeakerEligible } from './partners-utils.js';
 
 function parseGroupConversationStoreKey(storeKey) {
     const value = String(storeKey || '');
@@ -43,15 +44,31 @@ export function collectSoloConversationMemorySummary(charactersStore, avatar) {
     };
 }
 
-export function collectGroupConversationMemorySummaries(charactersStore, avatar, { excludeGroupId = '', getGroupName = () => '', max = 4 } = {}) {
+export function collectGroupConversationMemorySummaries(charactersStore, avatar, { groups = [], personaId = '', excludeGroupId = '', getGroupName = () => '', max = 4 } = {}) {
     if (!avatar || !charactersStore || typeof charactersStore !== 'object') {
         return [];
     }
 
-    const items = [];
+    const persona = String(personaId || '').trim();
+    const knownGroupIds = new Set();
+    const eligibleGroups = new Map();
+    for (const group of groups) {
+        if (group?.id == null) continue;
+        const id = String(group.id).trim();
+        knownGroupIds.add(id);
+        const owner = String(group.personaId || group.persona || group.personaAvatar || group.userAvatar || '').trim();
+        if (owner === persona && Array.isArray(group.members) && isConversationGroupSpeakerEligible(group, avatar)) {
+            eligibleGroups.set(id, group);
+        }
+    }
+
+    const newest = new Map();
     Object.entries(charactersStore).forEach(([storeKey, threadStore]) => {
         const parsed = parseGroupConversationStoreKey(storeKey);
-        if (!parsed || parsed.avatar !== avatar || (excludeGroupId && parsed.groupId === String(excludeGroupId))) {
+        if (!parsed || (excludeGroupId && parsed.groupId === String(excludeGroupId))) return;
+        // Only unresolved legacy groups use the holder as the access rule.
+        const group = eligibleGroups.get(parsed.groupId);
+        if (!group && (knownGroupIds.has(parsed.groupId) || parsed.avatar !== avatar)) {
             return;
         }
 
@@ -61,19 +78,18 @@ export function collectGroupConversationMemorySummaries(charactersStore, avatar,
             return;
         }
 
-        const updatedAt = Number(threadStore?.memoryUpdatedAt || branch?.updatedAt || branch?.createdAt || 0);
-        const groupName = String(getGroupName(parsed.groupId) || '').trim();
-        items.push({
-            groupId: parsed.groupId,
-            groupName,
-            summary,
-            updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
-        });
+        const time = Number(threadStore?.memoryUpdatedAt || branch?.updatedAt || branch?.createdAt || 0);
+        const updatedAt = Number.isFinite(time) ? time : 0;
+        const previous = newest.get(parsed.groupId);
+        if (previous && (previous.memory.updatedAt > updatedAt || (previous.memory.updatedAt === updatedAt && previous.storeKey < storeKey))) return;
+
+        const groupName = String((group ? group.name : getGroupName(parsed.groupId)) || '').trim();
+        newest.set(parsed.groupId, { storeKey, memory: { groupId: parsed.groupId, groupName, summary, updatedAt } });
     });
 
     const parsedMax = Number(max);
     const limit = Number.isFinite(parsedMax) ? Math.max(0, parsedMax) : undefined;
-    return items
-        .sort((first, second) => Number(second.updatedAt || 0) - Number(first.updatedAt || 0))
+    return Array.from(newest.values(), item => item.memory)
+        .sort((first, second) => second.updatedAt - first.updatedAt)
         .slice(0, limit);
 }

@@ -25,13 +25,40 @@ test('saved context uses only the captured persona and evaluates schedules in th
             1: [{ time: '15:00-18:00', activity: 'working', status: 'dnd' }],
         } } },
     };
-    const current = { store: { characters, groups: [{ id: 'one', name: 'Pals' }] } };
+    const current = { store: { characters, groups: [{ id: 'one', name: 'Pals', personaId: target.personaId, members: [target.avatar, 'pal.png'] }] } };
     const result = await buildSavedConversationContext({}, current, target, { name: 'Nova' }, { include_related_memory: true },
         'Asia/Manila', Date.parse('2026-09-21T08:00:00Z'));
     assert.deepEqual(result.context.groupMemories.map(item => item.summary), ['Alice group memory']);
     assert.equal(result.context.groupMemories[0].groupName, 'Pals');
     assert.match(result.context.lifeContext, /16:00.*working \(status: dnd\)/);
     assert.deepEqual(result.speakers, [{ avatar: 'nova.png', name: 'Nova' }]);
+});
+
+test('solo group memories require opt-in and current membership in the captured persona', async () => {
+    const personaId = 'alice.png';
+    const group = { id: 'pals', personaId, name: 'Pals', members: ['holder', 'pal', 'muted'], disabled_members: ['muted'] };
+    const characters = {
+        [getConversationThreadKey('holder', group.id, personaId)]: { memorySummary: 'Shared', memoryUpdatedAt: 8 },
+        [getConversationThreadKey('pal', group.id, 'bob.png')]: { memorySummary: 'Other persona', memoryUpdatedAt: 20 },
+        [getConversationThreadKey('holder', 'foreign', personaId)]: { memorySummary: 'Foreign group' },
+        [getConversationThreadKey('holder', 'legacy', personaId)]: { memorySummary: 'Legacy holder' },
+    };
+    const current = { store: { characters, groups: [group, { id: 'foreign', personaId: 'bob.png', members: ['holder', 'pal'] }] } };
+    const memories = async (avatar, enabled = true) => {
+        const target = { avatar, personaId, groupId: '', branchId: 'main' };
+        const { context } = await buildSavedConversationContext({}, current, target, { name: avatar }, { include_related_memory: enabled }, 'UTC', Date.now());
+        return context.groupMemories.map(item => item.summary);
+    };
+    assert.deepEqual(await memories('holder'), ['Shared', 'Legacy holder']);
+    assert.deepEqual(await memories('pal'), ['Shared']);
+    assert.deepEqual(await memories('pal', false), []);
+    assert.deepEqual(await memories('outsider'), []);
+    assert.deepEqual(await memories('muted'), []);
+    group.disabled_members.push('holder');
+    assert.deepEqual(await memories('holder'), ['Legacy holder']);
+    group.disabled_members = [];
+    group.members = ['pal', 'muted'];
+    assert.deepEqual(await memories('holder'), ['Legacy holder']);
 });
 
 test('solo context resolves known partners while group discovery excludes muted, removed and non-members', async t => {

@@ -32,7 +32,7 @@ export async function buildSavedConversationContext(request, current, target, ch
         partnerNames: speakers.slice(1).map(speaker => speaker.name), lifeContext,
         soloMemory: settings.include_related_memory && target.groupId ? collectSoloConversationMemorySummary(characters, speakerAvatar) : null,
         groupMemories: settings.include_related_memory && !target.groupId ? collectGroupConversationMemorySummaries(characters, speakerAvatar, {
-            getGroupName: id => current.store.groups.find(item => String(item.id) === id)?.name || '', max: 4,
+            groups: current.store.groups, personaId: target.personaId, max: 4,
         }) : [],
     } };
 }

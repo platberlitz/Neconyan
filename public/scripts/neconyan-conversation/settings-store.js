@@ -375,6 +375,8 @@ export function getConversationMemorySummary(avatar = getCurrentCharAvatar(), { 
 
 export function getConversationGroupMemorySummaries(avatar = getCurrentCharAvatar(), { excludeGroupId = '', max = 4, personaId = getConversationPersonaId() } = {}) {
     return collectGroupConversationMemorySummaries(getCurrentPersonaMemoryCharactersStore(personaId), avatar, {
+        groups: getConversationStore().groups,
+        personaId,
         excludeGroupId,
         max,
         getGroupName: groupId => getConversationGroupById(groupId, { personaId })?.name || '',
