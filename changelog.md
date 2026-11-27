@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.1
+
+### Highlights
+- Host checking now switches on once for setups carried over from older versions, where it was off by default; if you switch it off again afterwards, it stays off. The **Forbidden** page now names the address it turned away and shows the exact lines to add to `config.yaml`.
+
+### Merged Staging PRs
+- PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
+
 ## v1.6.0
 
 ### Highlights
