@@ -217,6 +217,60 @@ test('B5(c) an allowed host passes through', async t => {
     assert.equal((await send(server, { headers: { host: 'blocked.test' } })).status, 403);
 });
 
+test('B5(d) the host page names the refused host without its port and shows the lines to add', async t => {
+    resetErrors();
+    const { default: hostWhitelistMiddleware, displayableHostname } = await import('../src/middleware/hostWhitelist.js');
+    const server = await serve(t, hostWhitelistMiddleware);
+    const named = await send(server, { headers: { host: 'St.Example.TEST:8443', 'accept-language': 'en-GB' } });
+    assert.equal(named.status, 403);
+    const $ = load(named.body.toString('utf8'));
+    const text = collapse($('body').text());
+    assert.ok(text.includes('Neconyan only opens at addresses on its allowed host list, and st.example.test is not on it.'), text);
+    assert.equal($('pre code').text(), 'hostWhitelist:\n  hosts:\n    - st.example.test');
+    assert.ok(text.includes('add the name under hostWhitelist in config.yaml, then restart Neconyan'), text);
+    assert.ok(text.includes('the Using config path line'), text);
+
+    // Anything that is not a plain DNS name is not echoed back.
+    const odd = await send(server, { headers: { host: 'evil"name<b>.test' } });
+    assert.equal(odd.status, 403);
+    const oddPage = odd.body.toString('utf8');
+    assert.ok(!oddPage.includes('evil'), oddPage);
+    assert.ok(oddPage.includes('Neconyan did not recognise the address this request was sent to'), oddPage);
+    assert.equal(load(oddPage)('pre').length, 0);
+
+    assert.equal(displayableHostname('example.test:'), 'example.test');
+    assert.equal(displayableHostname('a'.repeat(254)), undefined);
+    assert.equal(displayableHostname(undefined), undefined);
+});
+
+test('B5(e) the host page sentences are translated where the other pages before the app are', async t => {
+    resetErrors();
+    const { default: hostWhitelistMiddleware } = await import('../src/middleware/hostWhitelist.js');
+    const { translationFor } = await import('../public/scripts/page-locale.js');
+    const server = await serve(t, hostWhitelistMiddleware);
+    const fill = (text, holes) => holes.reduce((result, hole, index) => result.replace(`\${${index}}`, hole), text);
+    const sentences = [
+        ['Neconyan only opens at addresses on its allowed host list, and ${0} is not on it.', ['st.example.test']],
+        ['If you run this Neconyan and meant to open it at this address, add the name under ${0} in ${1}, then restart Neconyan:', ['hostWhitelist', 'config.yaml']],
+        ['The file is the one named on the ${0} line Neconyan prints when it starts. To turn host checking off instead, set ${1} to ${2} there.', ['Using config path', 'enabled', 'false']],
+    ];
+    const unnamed = 'Neconyan did not recognise the address this request was sent to, so it turned it away.';
+    for (const [acceptLanguage, locale] of [['de-DE', 'de-de'], ['it-IT', 'it-it'], ['pt-PT', 'pt-pt']]) {
+        const dictionary = realDictionary(locale);
+        const named = await send(server, { headers: { host: 'st.example.test:8443', 'accept': CHROMIUM_ACCEPT, 'accept-language': acceptLanguage } });
+        const paragraphs = load(named.body.toString('utf8'))('p').toArray().map(element => collapse(load(element).text()));
+        for (const [key, holes] of sentences) {
+            const translated = translationFor(dictionary, key);
+            assert.ok(translated, `${locale} translates '${key}'`);
+            assert.ok(paragraphs.includes(collapse(fill(translated, holes))), `${locale}: ${paragraphs.join(' | ')}`);
+        }
+        const odd = await send(server, { headers: { host: 'odd"name.test', 'accept': CHROMIUM_ACCEPT, 'accept-language': acceptLanguage } });
+        const oddText = collapse(load(odd.body.toString('utf8'))('body').text());
+        assert.ok(translationFor(dictionary, unnamed), `${locale} translates the unnamed-host sentence`);
+        assert.ok(oddText.includes(collapse(translationFor(dictionary, unnamed))), oddText);
+    }
+});
+
 test('B6(a) a browser page load gets the HTTPS page in the language of Accept-Language', async t => {
     resetErrors();
     const { default: requireHttpsMiddleware } = await import('../src/middleware/requireHttps.js');

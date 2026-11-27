@@ -46,7 +46,10 @@
   ],
   "default/content/errors/host-not-allowed.html": [
     "Forbidden",
-    "If you run this Neconyan, add the address you typed to open it (the hostname, such as a site name) to the allowed host list in ${0}, or turn host checking off there. The file is in the main Neconyan folder.",
+    "Neconyan only opens at addresses on its allowed host list, and ${0} is not on it.",
+    "If you run this Neconyan and meant to open it at this address, add the name under ${0} in ${1}, then restart Neconyan:",
+    "The file is the one named on the ${0} line Neconyan prints when it starts. To turn host checking off instead, set ${1} to ${2} there.",
+    "Neconyan did not recognise the address this request was sent to, so it turned it away.",
     "This address is not allowed to open Neconyan. The attempt was logged."
   ],
   "default/content/errors/https-required.html": [

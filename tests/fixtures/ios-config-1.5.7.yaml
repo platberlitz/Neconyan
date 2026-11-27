@@ -1,0 +1,198 @@
+dataRoot: /var/mobile/Containers/Data/Application/neconyan/Library/private/data
+notebooks:
+  obsidianHeadless:
+    enabled: false
+    executable: ""
+    allowedRoots: []
+    pollIntervalMs: 5000
+listen: true
+listenAddress:
+  ipv4: 127.0.0.1
+  ipv6: ::1
+protocol:
+  ipv4: true
+  ipv6: false
+dnsPreferIPv6: false
+browserLaunch:
+  enabled: false
+  browser: default
+  hostname: auto
+  port: -1
+  avoidLocalhost: false
+port: 28194
+heartbeatInterval: 0
+media:
+  referenceBaseUrl: ""
+enableKeepAlive: false
+ssl:
+  enabled: false
+  certPath: ./certs/cert.pem
+  keyPath: ./certs/privkey.pem
+  keyPassphrase: ""
+whitelistMode: true
+enableForwardedWhitelist: true
+whitelist:
+  - ::1
+  - 127.0.0.1
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+whitelistDockerHosts: true
+basicAuthMode: true
+basicAuthUser:
+  username: neconyan
+  password: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+enableCorsProxy: false
+cors:
+  enabled: true
+  origin:
+    - "null"
+  methods:
+    - OPTIONS
+  allowedHeaders: []
+  exposedHeaders: []
+  credentials: false
+  maxAge: null
+requestProxy:
+  enabled: false
+  url: socks5://username:password@example.com:1080
+  bypass:
+    - localhost
+    - 127.0.0.1
+enableUserAccounts: false
+enableDiscreetLogin: false
+perUserBasicAuth: false
+sso:
+  autheliaAuth: false
+  authentikAuth: false
+  trustedProxies:
+    - ::1
+    - 127.0.0.1
+hostWhitelist:
+  enabled: false
+  scan: true
+  hosts: []
+privateAddressWhitelist:
+  enabled: false
+  allowUnresolvedHosts: false
+  log:
+    blockedRequests: true
+    allowedRequests: false
+  allowedRanges:
+    - 127.0.0.0/8
+    - ::1/128
+sessionTimeout: -1
+disableCsrfProtection: false
+securityOverride: false
+logging:
+  enableAccessLog: false
+  minLogLevel: 1
+rateLimiting:
+  preferRealIpHeader: false
+  basicAuthMaxAttempts: 5
+  accountsLoginMaxAttempts: 5
+  accountsRecoverMaxAttempts: 5
+forwardedHeaders:
+  xRealIp: true
+  xForwardedFor: true
+  cfConnectingIp: false
+backups:
+  allowFullDataBackup: true
+  common:
+    numberOfBackups: 50
+  chat:
+    enabled: true
+    checkIntegrity: true
+    maxTotalBackups: 25
+    throttleInterval: 10000
+    logging: false
+thumbnails:
+  enabled: true
+  format: png
+  quality: 100
+  dimensions:
+    bg:
+      - 240
+      - 135
+    avatar:
+      - 864
+      - 1280
+    persona:
+      - 864
+      - 1280
+  mobile:
+    enabled: true
+    format: jpg
+    quality: 82
+    dimensions:
+      bg:
+        - 240
+        - 135
+      avatar:
+        - 320
+        - 480
+      persona:
+        - 320
+        - 480
+performance:
+  lazyLoadCharacters: true
+  memoryCacheCapacity: 100mb
+  useDiskCache: true
+  streaming:
+    enableConnectionPolling: true
+    connectionPollingInterval: 150
+  requestCompression:
+    enabled: false
+    minPayloadSize: 256kb
+    maxPayloadSize: 8mb
+    timeout: 4000
+  frontendBuild:
+    enabled: true
+    immutableMaxAge: 31536000
+cacheBuster:
+  enabled: false
+  userAgentPattern: ""
+allowKeysExposure: false
+skipContentCheck: false
+whitelistImportDomains:
+  - localhost
+  - cdn.discordapp.com
+  - files.catbox.moe
+  - raw.githubusercontent.com
+requestOverrides: []
+extensions:
+  enabled: true
+  autoUpdate: false
+  models:
+    autoDownload: true
+    classification: Cohee/distilbert-base-uncased-go-emotions-onnx
+    captioning: Xenova/vit-gpt2-image-captioning
+    embedding: Cohee/jina-embeddings-v2-base-en
+    speechToText: Xenova/whisper-small
+    textToSpeech: Xenova/speecht5_tts
+git:
+  backend: builtin
+enableDownloadableTokenizers: true
+promptPlaceholder: "[Start a new chat]"
+openai:
+  randomizeUserId: false
+  captionSystemPrompt: ""
+deepl:
+  formality: default
+mistral:
+  enablePrefix: false
+ollama:
+  keepAlive: -1
+  batchSize: -1
+claude:
+  enableSystemPromptCache: false
+  cachingAtDepth: -1
+  extendedTTL: false
+  enableAdaptiveThinking: false
+gemini:
+  apiVersion: v1beta
+  thoughtSignatures: true
+  enableSystemPromptCache: false
+  image:
+    personGeneration: allow_adult
+enableServerPlugins: false
+enableServerPluginsAutoUpdate: false

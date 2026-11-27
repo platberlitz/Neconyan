@@ -51,6 +51,14 @@ export function setConfigFilePath(configFilePath) {
 }
 
 /**
+ * Gets the config file path set at startup.
+ * @returns {string|null} Absolute path, or null before it is set
+ */
+export function getConfigFilePath() {
+    return CONFIG_PATH;
+}
+
+/**
  * Returns the config object from the config.yaml file.
  * @returns {object} Config object
  */
