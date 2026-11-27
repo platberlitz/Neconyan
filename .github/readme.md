@@ -60,11 +60,12 @@ Already using the full layout? Turn it on any time in **Settings → Appearance 
 
 ### Your chat, front and centre
 
-The chat and the composer get the room, and the sidebar keeps a short list of pages you'll actually open: Characters, Connections, Agents, Lorebooks, Notebooks, Scratchpad, Gallery, Presets, Persona and Dialogue Colors. On top of that you get three handy buttons:
+The chat and the composer get the room, and the sidebar keeps a short list of pages you'll actually open: Characters, Connections, Agents, Lorebooks, Notebooks, Scratchpad, Gallery, Presets, Persona and Dialogue Colors. On top of that you get four handy buttons:
 
 - **Find characters** searches for new cards. Pick one and its chat opens straight away, ready to go.
 - **Memory** opens **Story so far**, with one switch, a **Summarise now** button and the latest summary of your chat.
 - **Updates** checks for a new version and installs it without leaving Simple Mode.
+- **Reload Neconyan** saves your chat and settings, then reloads the page. It waits for a reply that's still arriving and asks first if something would be lost.
 
 When enabled in Guided Generations, **Guided Swipe** and **Guided Impersonate** sit next to **Switch chat**, even when you collapse the chat bar. The first keeps your original reply and makes an alternative. The second drafts your next message without sending it.
 
@@ -83,7 +84,7 @@ When enabled in Guided Generations, **Guided Swipe** and **Guided Impersonate** 
   <td width="28%"><img src="../docs/readme/phone-simple-authors-note.webp" alt="Author's Note and its four tabs in Simple Mode on a phone"></td>
 </tr></table>
 
-<img src="../docs/readme/phone-simple-menu.webp" width="260" alt="The shorter Simple Mode menu on a phone, with Memory, Updates and Show all features">
+<img src="../docs/readme/phone-simple-menu.webp" width="260" alt="The shorter Simple Mode menu on a phone, from Agents down to Memory, Updates, Reload Neconyan and Show all features">
 
 </details>
 
