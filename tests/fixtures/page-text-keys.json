@@ -40,12 +40,14 @@
   ],
   "default/content/errors/forbidden-by-whitelist.html": [
     "Forbidden",
+    "A pixel cat holding up a stop sign",
     "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file.",
     "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged.",
     "This connection from ${0} was blocked. The attempt was logged."
   ],
   "default/content/errors/host-not-allowed.html": [
     "Forbidden",
+    "A pixel cat holding up a stop sign",
     "Neconyan only opens at addresses on its allowed host list, and ${0} is not on it.",
     "If you run this Neconyan and meant to open it at this address, add the name under ${0} in ${1}, then restart Neconyan:",
     "The file is the one named on the ${0} line Neconyan prints when it starts. To turn host checking off instead, set ${1} to ${2} there.",

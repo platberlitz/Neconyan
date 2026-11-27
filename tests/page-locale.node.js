@@ -98,7 +98,7 @@ test('P2 the pages see the same translations as the app for every page key and m
     const factory = new Function('langs', 'fetch', 'console', 'assembleLocaleData', `${declaration(source, 'findLang')}\n${declaration(source, 'getLocaleData')}\nreturn getLocaleData;`);
     const getLocaleData = factory(languages, fetchStub, quiet, assembleLocaleData);
     const keys = [...new Set([...Object.values(pageKeys).flat(), ...LOGIN_MESSAGES])];
-    assert.equal(keys.length, 77);
+    assert.equal(keys.length, 78);
     for (const { lang } of languages) {
         const { dictionary: appDictionary } = await getLocaleData(lang);
         const pageDictionary = mergePageDictionary(parsed(`public/locales/${lang}.json`), parsed(`public/locales/neconyan/${lang}.json`));
@@ -186,7 +186,7 @@ function markedKeys(file) {
     return found;
 }
 
-test('P5 the marked texts of the client pages are the keys of the fixture, and the keys of the fixture are 44', () => {
+test('P5 the marked texts of the client pages are the keys of the fixture, and the keys of the fixture are 45', () => {
     for (const file of ['public/login.html', 'default/content/errors/invalid-csrf.html', 'default/content/errors/url-not-found.html']) {
         assert.deepEqual([...new Set(markedKeys(file))].sort(), [...pageKeys[file]].sort(), file);
     }
@@ -202,8 +202,8 @@ test('P5 the marked texts of the client pages are the keys of the fixture, and t
         'default/content/errors/host-not-allowed.html',
         'default/content/errors/https-required.html',
     ]);
-    assert.equal(Object.values(pageKeys).flat().length, 45);
-    assert.equal(new Set(Object.values(pageKeys).flat()).size, 44);
+    assert.equal(Object.values(pageKeys).flat().length, 47);
+    assert.equal(new Set(Object.values(pageKeys).flat()).size, 45);
     for (const keys of Object.values(pageKeys)) assert.equal(new Set(keys).size, keys.length);
 });
 
