@@ -87,7 +87,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 
 ## Motion and accessibility
 
-- Every `transition`/`animation` has a `prefers-reduced-motion: reduce` guard (a test enforces it). Ear twitch, whisker twitch and the backflipping pixel cat are the only decorative animations. CSS can't stop the frames of an animated WebP, so a page showing the backflipping cat picture wraps it in a `<picture>` whose `prefers-reduced-motion: reduce` source is the still `neconyan-pixel-cat-rest.webp`.
+- Every `transition`/`animation` has a `prefers-reduced-motion: reduce` guard (a test enforces it). Ear twitch, whisker twitch and the backflipping pixel cat are the only decorative animations. CSS can't stop the frames of an animated WebP, so a page showing the backflipping cat picture wraps it in a `<picture>` whose `prefers-reduced-motion: reduce` source is the still `neconyan-pixel-cat-rest.webp`, and hides that `<source>` (`display: none`) so it doesn't take a grid row and push the cat down.
 - Ease out only; no bounce.
 - Focus: 2px `--neco-ginger` outline, offset 2px (inset 3px on the composer textarea so it is not clipped).
 - Contrast: WCAG 2.2 AA via `theme-contrast.js`; light themes must set `color-scheme: light`.

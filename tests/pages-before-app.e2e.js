@@ -771,6 +771,105 @@ test.describe('S2b 404 page with the default config', () => {
     });
 });
 
+// ---- S2c: the cat on the 404, session-expired and unauthorized pages -------------------------------------------------
+
+const errorPage = name => readFileSync(path.join(root, 'default', 'content', 'errors', name), 'utf8');
+/** A page as it was before the still cat: the bare backflipping picture, without the <picture> around it. */
+const withoutStillCat = html => html
+    .replace('        .stage picture { display: contents; }\n', '')
+    .replace('        .stage source { display: none; }\n', '')
+    .replace(/ {12}<picture>\n {16}<source media="\(prefers-reduced-motion: reduce\)" srcset="\/img\/neconyan-pixel-cat-rest\.webp">\n {16}(<img class="flip"[^\n]*>)\n {12}<\/picture>\n/, '            $1\n');
+
+/** Where the card and everything in it sits; the cat by its layout box, since the backflip moves its painted one. */
+function cardLayout(page) {
+    return page.evaluate(() => {
+        const box = element => {
+            const rect = element.getBoundingClientRect();
+            return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 100) / 100);
+        };
+        const cat = document.querySelector('main > .stage img.flip');
+        return {
+            boxes: [...document.querySelectorAll('main, main > .stage, main > h1, main > p.lead, main > ol, main li, main code, main > footer')].map(element => [element.tagName, ...box(element)]),
+            cat: cat && [cat.offsetLeft, cat.offsetTop, cat.offsetWidth, cat.offsetHeight],
+            page: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+        };
+    });
+}
+
+test.describe('S2c the cat on the 404, session-expired and unauthorized pages', () => {
+    test.describe.configure({ mode: 'serial' });
+    let app;
+    test.beforeAll(async () => {
+        test.setTimeout(300000);
+        app = await startApp();
+    });
+    test.afterAll(async () => { await app?.stop(); });
+
+    test('S2c both pages show the still cat under reduced motion and the backflip otherwise, in the same layout as before', async ({ browser }) => {
+        const session = errorPage('invalid-csrf.html');
+        const unauthorized = errorPage('unauthorized.html');
+        // The bare-picture copy is exactly the session page Neconyan 1.3.3 shipped, so it stands in for the old layout.
+        expect(withoutStillCat(session)).toBe(readFileSync(path.join(root, 'tests', 'fixtures', 'shipped-error-pages', 'invalid-csrf.56ea4ecd4c.html'), 'utf8'));
+        // Nothing on the server answers with unauthorized.html any more (basic auth sends people to /login), so the
+        // shipped file is served here as the page under test, beside the real server's pictures.
+        // The 404 page is measured against itself with the bare picture, because its footer changed alongside the cat.
+        const routed = [
+            ['/c5-unauthorized', 401, unauthorized],
+            ['/c5-unauthorized-before', 401, withoutStillCat(unauthorized)],
+            ['/c5-session-before', 403, withoutStillCat(session)],
+            ['/c5-not-found-before', 404, withoutStillCat(errorPage('url-not-found.html'))],
+        ];
+        const motions = [
+            { reducedMotion: 'no-preference', still: false, motion: 'neconyan-backflip' },
+            { reducedMotion: 'reduce', still: true, motion: 'none' },
+        ];
+        for (const viewport of VIEWPORTS) {
+            for (const { reducedMotion, still, motion } of motions) {
+                const context = await browser.newContext({ serviceWorkers: 'block', locale: 'en-GB', reducedMotion, ...viewport.options });
+                for (const [pathname, status, body] of routed) {
+                    await context.route(app.url + pathname, route => route.fulfill({ status, contentType: 'text/html; charset=utf-8', body }));
+                }
+                const page = await context.newPage();
+
+                // The 404 page from the real server: the empty <source> takes no grid row, so the cat keeps its place.
+                let label = `404 ${viewport.name} motion ${reducedMotion}`;
+                await page.goto(app.url + '/no-such-page');
+                await expectBackflipCard(page, 'en', { motion, label });
+                const notFoundLayout = await cardLayout(page);
+                await page.goto(app.url + '/c5-not-found-before');
+                await expectBackflipCard(page, 'en', { motion, source: '/img/neconyan-pixel-cat.webp', label: `${label} before` });
+                expect(await cardLayout(page), `${label}: the layout is the one from before`).toEqual(notFoundLayout);
+
+                // The session-expired page, as the real server answers a form sent without its security token.
+                label = `session-expired ${viewport.name} motion ${reducedMotion}`;
+                await page.goto(app.url + '/no-such-page');
+                const answer = page.waitForResponse(response => new URL(response.url()).pathname === '/c5-probe');
+                await postWithoutToken(page, app.url);
+                expect((await answer).status(), label).toBe(403);
+                await expect(page.locator('h1'), label).toHaveText(KEYS.sessionTitle);
+                await expectBackflipCard(page, 'en', { motion, label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
+                const sessionLayout = await cardLayout(page);
+                await page.goto(app.url + '/c5-session-before');
+                await expectBackflipCard(page, 'en', { motion, source: '/img/neconyan-pixel-cat.webp', label: `${label} before` });
+                expect(await cardLayout(page), `${label}: the layout is the one from before`).toEqual(sessionLayout);
+
+                // The unauthorized page.
+                label = `unauthorized ${viewport.name} motion ${reducedMotion}`;
+                expect((await page.goto(app.url + '/c5-unauthorized')).status(), label).toBe(401);
+                await expect(page.locator('h1'), label).toHaveText('Unauthorized');
+                await expectBackflipCard(page, 'en', { motion, label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
+                const unauthorizedLayout = await cardLayout(page);
+                await page.goto(app.url + '/c5-unauthorized-before');
+                await expectBackflipCard(page, 'en', { motion, source: '/img/neconyan-pixel-cat.webp', label: `${label} before` });
+                expect(await cardLayout(page), `${label}: the layout is the one from before`).toEqual(unauthorizedLayout);
+                await context.close();
+            }
+        }
+    });
+});
+
 // ---- S3: the blocked pages ------------------------------------------------------------------------------------------
 
 /** One blocked page loaded with JavaScript on and off, in the given languages: status, language, title, text, one request. */

@@ -28,6 +28,8 @@
             box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
         }
         .stage { height: 178px; display: grid; place-items: center; }
+        .stage picture { display: contents; }
+        .stage source { display: none; }
         .flip {
             width: 132px;
             height: auto;
@@ -76,7 +78,10 @@
 <body>
     <main>
         <div class="stage">
-            <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
+            <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/img/neconyan-pixel-cat-rest.webp">
+                <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
+            </picture>
         </div>
         <h1 data-i18n="Session expired">Session expired</h1>
         <p class="lead" data-i18n-compose="This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.">This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.</p>

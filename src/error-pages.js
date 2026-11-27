@@ -80,9 +80,12 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // a96a8cdba9: Neconyan, Necodev (both folders), 2026-10-12, error-message pass (#138)
         '3743f4eb12d6459fe808d66a607fdfcbe62f058aa03ad7e705b232119bcde525',
         '40d1b7243cadee2f0dcd64254a6198205c1b9ba42c06325944c65bc6ceb3f86a',
-        // 56ea4ecd4c: translated page, this change
+        // 56ea4ecd4c: Neconyan 1.3.3 onwards, 2026-10-14, translated page (#160)
         '5165f89ab8052069cf2ed257649c3484ac1812d39b793281ab034cba878ddf92',
         '1d14234fb7df227d8fc91700bdb0acbceaf6eb675f3d1a79e690f9ffde37b427',
+        // 3a8373d33a: the still cat under reduced motion, this change
+        '258630a1ff41d04f574bdab7e784b6853ae9997d637c9ce8bbe1d59ca213bd7f',
+        'f46df4811aab3999253868f2ce1d71e6c06c22aa15e495bdd01c8f39b4f09390',
     ]),
     'url-not-found.html': Object.freeze([
         // 87974145f7: SillyTavern, SillyBunny, Neconyan, Necodev (default/public/error), 2025-01-25 to 2026-10-11
@@ -100,9 +103,12 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // d60dd8aa7a: Neconyan 1.3.3 onwards, 2026-10-14, translated page (#160), plain text with no card
         '941effef573c82dc463440d1e4e63a990f86910602b9ef0dc3e83624c3434053',
         '96cc599c25014557b5543b376b51b56247296cc40dc563996d72826966ceedc4',
-        // 01c707cdf4: dark card with the backflipping cat and a home link, this change
+        // 01c707cdf4: staging, 2026-11-27, dark card with the still cat whose empty source took a grid row
         '48d2d4dc85379e29a0793134bf0a6f3caa92534cf7b0b88c3d533eea44fd58c7',
         '1d1e1cc3b5535d36e5f3e63a055c63a3a8d473d724d92c8fd6a17018b624e912',
+        // 46c2802092: the still cat back in its place, this change
+        'd34095b5f960a21ef88c7c5831853dd6774abd97ef8c0ed4e0e039ba58c3e3ec',
+        'f3cc824fe0df433bcfe3430b4419cc40eb5952a09b8c25f011b79360248f26fc',
     ]),
 });
 

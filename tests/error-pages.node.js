@@ -32,11 +32,13 @@ const HISTORICAL = [
     ['https-required.html', 'af9b01869e', '335a16d447246b2419ec315245697ad89bb520a9b5a2a5d8804282f1994c9854', '7fa300ebfb3996ba1695b051e40c5ad1ae7cba6d2db9ae1b4f3ee0e808a94b77'],
     ['invalid-csrf.html', 'f72eb8cf14', 'f12a673046b026ff038a1a03131602fd565b3e35c8ec4564bd57652a0101ae86', '88c3239a0c066a93894af0ef19c19a6734504ff35d89aad13a229d3c898c462c'],
     ['invalid-csrf.html', 'a96a8cdba9', '3743f4eb12d6459fe808d66a607fdfcbe62f058aa03ad7e705b232119bcde525', '40d1b7243cadee2f0dcd64254a6198205c1b9ba42c06325944c65bc6ceb3f86a'],
+    ['invalid-csrf.html', '56ea4ecd4c', '5165f89ab8052069cf2ed257649c3484ac1812d39b793281ab034cba878ddf92', '1d14234fb7df227d8fc91700bdb0acbceaf6eb675f3d1a79e690f9ffde37b427'],
     ['url-not-found.html', '87974145f7', '2fe1a07c6871f156112a415625ef15955cab8c8b9b320285c6beb9fa6017e1d7', 'f6f27bd40fb4812c8d7156256e334a3f3481aae574dcad7b72f18339906a40e7'],
     ['url-not-found.html', '9c881dfc21', '5b142e6d20753118256ddf86c40095aaedf09f64619af7613fb2b77b9174ce1c', '3c9c01243df0eb3beaa4cd0b55c8b1caa30b54fd30348bca1e8452f91a101cbe'],
     ['url-not-found.html', '2c1fbbb301', '96c6be93236da2fecae436275bb11044600f122458e5ea1bafe9fc2cec094d2f', '90d8bce09439c41480a07a565b68fb399f1a1af7f065fb6da542b60b5115eb28'],
     ['url-not-found.html', 'c331cd018e', '7f28c4caef0586e2eca4b242985607ee4811f94fe9469c65c91e088504b9b3de', 'be2fa9f2bc98d17ca82bc88183366e6ff586f67505496225a059a196769b67d2'],
     ['url-not-found.html', 'd60dd8aa7a', '941effef573c82dc463440d1e4e63a990f86910602b9ef0dc3e83624c3434053', '96cc599c25014557b5543b376b51b56247296cc40dc563996d72826966ceedc4'],
+    ['url-not-found.html', '01c707cdf4', '48d2d4dc85379e29a0793134bf0a6f3caa92534cf7b0b88c3d533eea44fd58c7', '1d1e1cc3b5535d36e5f3e63a055c63a3a8d473d724d92c8fd6a17018b624e912'],
 ];
 
 test('G1 every page in default/content/errors has its current bytes in the hash list, and the old hashes are the real shipped ones', () => {
@@ -55,7 +57,7 @@ test('G1 every page in default/content/errors has its current bytes in the hash 
         assert.equal(sha256(toCrlf(bytes)), crlf, `${page} ${blob}: the fixture holds the real shipped bytes (CRLF)`);
     }
     const all = Object.values(SHIPPED_ERROR_PAGE_HASHES).flat();
-    assert.equal(all.length, 40, 'thirty old hashes and ten for the five current pages');
+    assert.equal(all.length, 44, 'thirty-four old hashes and ten for the five current pages');
     assert.equal(new Set(all).size, all.length, 'no duplicates');
     for (const hash of all) assert.match(hash, /^[0-9a-f]{64}$/);
     assert.ok(Object.isFrozen(SHIPPED_ERROR_PAGE_HASHES));
@@ -135,7 +137,7 @@ test('G2 every historical version of every page, LF and CRLF, is replaced by the
             cases++;
         }
     }
-    assert.equal(cases, 30);
+    assert.equal(cases, 34);
 });
 
 test('G2 a current page keeps its bytes and its modification time, and nothing is logged for it', t => {
@@ -169,6 +171,8 @@ test('G2 an administrator\'s page is kept byte for byte and logged, including ne
         [host, Buffer.from(current(host).replace('\n', '\r\n'))],
         // The plain page before the Neconyan look, with one line of the administrator's own.
         [host, Buffer.from(fixture(host, '7c1de68d4c').toString('utf8').replace('<hr />', '<hr />\n    <p>Ask me on Discord for access.</p>'))],
+        // The translated session page from before the still cat, with the administrator's own picture.
+        [csrf, Buffer.from(fixture(csrf, '56ea4ecd4c').toString('utf8').replace('/img/neconyan-pixel-cat.webp', '/img/my-own-cat.webp'))],
     ];
     for (const [name, bytes] of customised) {
         const install = newInstall(t, { seeded: true });
@@ -500,6 +504,29 @@ test('G8 the HTTPS and 404 pages wear the same dark card as the session-expired 
             assert.match(source, /\.brand \{[^}]*min-width: 44px;[^}]*min-height: 44px;/, 'the home link is a full tap target');
         }
     }
+});
+
+test('G9 every page with the backflipping cat swaps in the still cat under reduced motion', () => {
+    const restingCat = path.join(root, 'public', 'img', 'neconyan-pixel-cat-rest.webp');
+    assert.ok(fs.statSync(restingCat).size > 0, 'the still cat is shipped');
+    for (const name of ['invalid-csrf.html', 'unauthorized.html', 'url-not-found.html']) {
+        const source = shipped(name).toString('utf8');
+        const $ = load(source);
+        assert.equal($('main > .stage > img').length, 0, `${name}: the cat sits inside a picture`);
+        assert.equal($('main > .stage > picture').length, 1, name);
+        assert.deepEqual($('main > .stage > picture').children().toArray().map(node => node.tagName), ['source', 'img'], `${name}: the source comes before the img`);
+        const still = $('main > .stage > picture > source');
+        assert.equal(still.attr('media'), '(prefers-reduced-motion: reduce)', name);
+        assert.equal(still.attr('srcset'), '/img/neconyan-pixel-cat-rest.webp', `${name}: the still cat for reduced motion`);
+        const cat = $('main > .stage > picture > img.flip');
+        assert.equal(cat.attr('src'), '/img/neconyan-pixel-cat.webp', `${name}: the backflip everywhere else`);
+        assert.equal(cat.attr('alt'), 'A pixel cat doing a backflip', name);
+        assert.deepEqual([cat.attr('width'), cat.attr('height')], ['208', '192'], name);
+        assert.match(source, /\.stage picture \{ display: contents; \}/, `${name}: the picture adds no box, so the stage lays out the img as before`);
+        assert.match(source, /\.stage source \{ display: none; \}/, `${name}: the empty source takes no grid row, so the cat stays where it was`);
+        assert.match(source, /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}\s*\}/, `${name}: the CSS flip stops too`);
+    }
+    assert.equal(load(shipped('invalid-csrf.html').toString('utf8'))('img.flip').attr('data-i18n'), '[alt]A pixel cat doing a backflip', 'the session page still translates the alt text');
 });
 
 /* global globalThis */
