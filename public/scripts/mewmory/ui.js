@@ -1743,6 +1743,22 @@ function handleConfigState() {
     }
 }
 
+function autoTokenizerHint(tokenizer) {
+    return (tokenizer ? 'Auto uses ' + tokenizer + '.' : 'Auto’s local tokenizer match appears after these settings save.')
+        + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.';
+}
+
+function updateEmbeddingTokenizerHint(savedRole) {
+    const role = ui.draft?.roles?.embedding;
+    if (!role || role.provider === 'native' || role.tokenizer !== 'auto' || (role.profileId && !role.modelOverride)) return;
+    const { model, endpoint } = resolvedDraftRoleModel(ui.draft, 'embedding');
+    if (role.provider !== savedRole.provider || role.profileId !== savedRole.profileId || model !== savedRole.model ||
+        (!role.profileId && endpoint !== savedRole.endpoint)) return;
+    const caption = document.querySelector('#mewmory-field-tokenizer-embedding + .mewmory-caption');
+    const hint = autoTokenizerHint(savedRole.autoTokenizer);
+    if (caption && caption.textContent !== hint) caption.textContent = hint;
+}
+
 function handleConfigSaved(saved) {
     if (!mewmory.config || saved.revision >= mewmory.config.revision) {
         const previous = mewmory.config?.roles?.embedding?.native;
@@ -1752,6 +1768,8 @@ function handleConfigSaved(saved) {
         if (ui.tab === 'settings' && ui.role === 'embedding' &&
             (Boolean(previous) !== Boolean(native) || ['source', 'model', 'queryPrefix', 'documentPrefix'].some(key => previous?.[key] !== native?.[key]))) {
             queueRender();
+        } else if (ui.tab === 'settings' && ui.role === 'embedding' && saved.roles?.embedding) {
+            updateEmbeddingTokenizerHint(saved.roles.embedding);
         }
     }
     window.dispatchEvent(new Event('mewmory:configured'));
@@ -2371,8 +2389,7 @@ function renderSettings(root) {
         configField('Request timeout, seconds', typeof role.timeoutMs === 'number' ? role.timeoutMs / 1000 : '', value => { role.timeoutMs = value === '' ? '' : value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
         configField('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
             options: tokenizers.map(value => value === 'auto' ? ['auto', 'Auto (match this model)'] : value), key: 'tokenizer-' + ui.role,
-            hint: role.tokenizer === 'auto' ? (autoTokenizer ? 'Auto uses ' + autoTokenizer + '.' : 'Auto’s local tokenizer match appears after these settings save.')
-                + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
+            hint: role.tokenizer === 'auto' ? autoTokenizerHint(autoTokenizer) : '',
         }),
     );
     if (ui.role !== 'embedding') {
