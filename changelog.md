@@ -54,6 +54,7 @@
 - The Android and iPhone apps start, update and come back from the background more reliably.
 - **Lorebook Override** in **Conversation** loads the book you pick into replies, and **Character default** loads the card's own linked lorebooks. Before, neither put a single entry in the prompt.
 - Deleting a DM or group DM sticks now, even after a reload or in another tab.
+- A **Conversation** change that couldn't be saved because your settings were saved at the same moment is no longer lost quietly. Neconyan saves it again by itself and tells you if it still can't.
 - Renaming a character keeps their memory, mute, **Use as Narrator / GM** role and per-member model in every group they're in.
 - Deleting or renaming a lorebook updates every link to it, including other cards, unopened chats, personas, Notebooks and **Lorebook Override** in **Conversation**.
 - Outfit, vitals and map blocks from trackers no longer get copied into story replies as raw text.
