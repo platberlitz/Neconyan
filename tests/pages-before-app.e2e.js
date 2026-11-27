@@ -65,7 +65,9 @@ const KEYS = {
     whitelist: keyOf('default/content/errors/forbidden-by-whitelist.html', 'If you run this Neconyan'),
     connection: keyOf('default/content/errors/forbidden-by-whitelist.html', 'This connection from ${0} was blocked'),
     forwarded: keyOf('default/content/errors/forbidden-by-whitelist.html', 'This connection from ${0} (forwarded'),
-    host: keyOf('default/content/errors/host-not-allowed.html', 'If you run this Neconyan'),
+    host: keyOf('default/content/errors/host-not-allowed.html', 'Neconyan only opens'),
+    hostAdd: keyOf('default/content/errors/host-not-allowed.html', 'If you run this Neconyan'),
+    hostFile: keyOf('default/content/errors/host-not-allowed.html', 'The file is the one'),
     hostBlocked: keyOf('default/content/errors/host-not-allowed.html', 'This address is not allowed'),
     httpsTitle: 'Connection not secure',
     https: keyOf('default/content/errors/https-required.html', 'This connection is not secure'),
@@ -702,7 +704,14 @@ test.describe('S3 host page', () => {
         expect((await request.get(app.url + '/csrf-token')).ok()).toBe(true);
         await expectBlockedPage(browser, `http://blocked.test:${app.port}/`, {
             titleKey: KEYS.forbidden,
-            texts: code => [expected(code, KEYS.forbidden), expected(code, KEYS.host, ['config.yaml']), expected(code, KEYS.hostBlocked)],
+            texts: code => [
+                expected(code, KEYS.forbidden),
+                expected(code, KEYS.host, ['blocked.test']),
+                expected(code, KEYS.hostAdd, ['hostWhitelist', 'config.yaml']),
+                'hostWhitelist: hosts: - blocked.test',
+                expected(code, KEYS.hostFile, ['Using config path', 'enabled', 'false']),
+                expected(code, KEYS.hostBlocked),
+            ],
         });
     });
 

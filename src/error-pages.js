@@ -52,9 +52,12 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // 06a5cedc65: Neconyan, Necodev (both folders), 2026-10-12, error-message pass (#138)
         '2e70f9de45d1deaa58129f39304a1cc2c4a56b6254b2938cbf54452c3dc0e8d9',
         'f42c1feee224c6c82e80cb307766871dad3fbbbb01a04e04c607744daa678318',
-        // 2d021e9a90: translated page, this change
+        // 2d021e9a90: Neconyan 1.3.3 onwards, 2026-10-14, translated page (#160)
         '66ed8683edcb1faf35dda8d403cb3cf50ee62972e88fd49ed41d1b44b4851f33',
         'd2d12b267b2873e47e77804f40c5ba2ec6ad0ccbdfd6c9ee7c4f4af9059908ad',
+        // 7c1de68d4c: names the refused host and shows what to add, this change
+        '46aa5f44608df0c90073b3c71d6b81d108a6d31ed3500a91b4317816a9471db1',
+        'c827f67801f5db3d18c25c5cf06f446f69b44f094b0e89d67bf0908ad81c702f',
     ]),
     'https-required.html': Object.freeze([
         // af9b01869e: new in this change (there is no earlier version)
