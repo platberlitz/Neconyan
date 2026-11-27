@@ -282,6 +282,10 @@ body.neconyan.neconyan-notes-beside #sheld {
     color: var(--neco-ink);
 }
 
+.notes-pane-nav [data-section="list"] > .notes-nav-heading {
+    overflow-wrap: anywhere;
+}
+
 .notes-nav-heading::after,
 .notes-detail-heading::after {
     content: '';
