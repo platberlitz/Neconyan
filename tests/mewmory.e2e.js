@@ -171,6 +171,9 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await workspace.getByLabel('Model', { exact: true }).fill('text-embedding-3-small');
     await expect(settingsStatus).toHaveText('Configuration saved.');
     await expect(workspace.getByText(/Auto uses gpt-3.5-turbo/)).toBeVisible();
+    const savedEmbeddingConfig = (await post('/api/mewmory/config/get')).config;
+    expect(savedEmbeddingConfig.revision).toBeGreaterThan(beforeInvalidRole.revision);
+    expect(savedEmbeddingConfig.roles.embedding).toMatchObject({ model: 'text-embedding-3-small', autoTokenizer: 'gpt-3.5-turbo' });
     await navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
     headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
