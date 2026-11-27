@@ -5654,23 +5654,31 @@ function describeOpenLorebookScope() {
  * The open itself is noted at once, so opening another chat and coming straight back still counts as a reopen.
  */
 function scheduleLorebookLinkCheck() {
+    let opened = null;
     try {
-        noteLorebookChatOpened(describeOpenLorebookScope().chatKey);
+        const scope = describeOpenLorebookScope();
+        opened = { chatKey: scope.chatKey, roleplay: !scope.conversation };
+        noteLorebookChatOpened(scope.chatKey);
     } catch (error) {
         console.warn('[WI] Could not note the chat that opened', error);
     }
     clearTimeout(lorebookLinkCheckTimer);
-    lorebookLinkCheckTimer = setTimeout(() => void checkOpenChatLorebookLinks(), 400);
+    lorebookLinkCheckTimer = setTimeout(() => void checkOpenChatLorebookLinks(opened), 400);
 }
 
 /**
  * Lists the lorebooks the open chat links and, only when one is not in the page's list, hands it to the lazily
  * loaded notice. In the Conversation workspace that is the lorebook override of the open Conversation; in a
  * Roleplay chat it is the card (or group member) links and the chat's own lorebook. Changes no link and no data.
+ * @param {{ chatKey: string, roleplay: boolean }|null} [opened] The chat whose open scheduled this check
  */
-async function checkOpenChatLorebookLinks() {
+async function checkOpenChatLorebookLinks(opened = null) {
     try {
         const { chatKey, cards, conversation } = describeOpenLorebookScope();
+        // Another Roleplay chat is half-way open, its cards still without their embedded lorebook and its chat not
+        // loaded yet. Its own open event checks it once it has loaded.
+        if (opened?.roleplay && !conversation && chatKey !== opened.chatKey) return;
+        if (cards.some(card => card?.shallow)) return;
         noteLorebookChatOpened(chatKey);
         if (!chatKey) return;
         const links = conversation
