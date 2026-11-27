@@ -6,6 +6,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { load } from 'cheerio';
+
 import { MANAGED_ERROR_PAGES, SHIPPED_ERROR_PAGE_HASHES, isPageLoad, readErrorPage, readNotFoundPage, syncErrorPages } from '../src/error-pages.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,12 +27,14 @@ const HISTORICAL = [
     ['host-not-allowed.html', '19ec5e990b', '01a8748f57751cceb2af35c4568734707fc2bd290d038b03dd6b73773cd16db5', 'abe2288467514e97897ea10981116f55cc23050f88be797b7f5b808b4370b0eb'],
     ['host-not-allowed.html', '06a5cedc65', '2e70f9de45d1deaa58129f39304a1cc2c4a56b6254b2938cbf54452c3dc0e8d9', 'f42c1feee224c6c82e80cb307766871dad3fbbbb01a04e04c607744daa678318'],
     ['host-not-allowed.html', '2d021e9a90', '66ed8683edcb1faf35dda8d403cb3cf50ee62972e88fd49ed41d1b44b4851f33', 'd2d12b267b2873e47e77804f40c5ba2ec6ad0ccbdfd6c9ee7c4f4af9059908ad'],
+    ['https-required.html', 'af9b01869e', '335a16d447246b2419ec315245697ad89bb520a9b5a2a5d8804282f1994c9854', '7fa300ebfb3996ba1695b051e40c5ad1ae7cba6d2db9ae1b4f3ee0e808a94b77'],
     ['invalid-csrf.html', 'f72eb8cf14', 'f12a673046b026ff038a1a03131602fd565b3e35c8ec4564bd57652a0101ae86', '88c3239a0c066a93894af0ef19c19a6734504ff35d89aad13a229d3c898c462c'],
     ['invalid-csrf.html', 'a96a8cdba9', '3743f4eb12d6459fe808d66a607fdfcbe62f058aa03ad7e705b232119bcde525', '40d1b7243cadee2f0dcd64254a6198205c1b9ba42c06325944c65bc6ceb3f86a'],
     ['url-not-found.html', '87974145f7', '2fe1a07c6871f156112a415625ef15955cab8c8b9b320285c6beb9fa6017e1d7', 'f6f27bd40fb4812c8d7156256e334a3f3481aae574dcad7b72f18339906a40e7'],
     ['url-not-found.html', '9c881dfc21', '5b142e6d20753118256ddf86c40095aaedf09f64619af7613fb2b77b9174ce1c', '3c9c01243df0eb3beaa4cd0b55c8b1caa30b54fd30348bca1e8452f91a101cbe'],
     ['url-not-found.html', '2c1fbbb301', '96c6be93236da2fecae436275bb11044600f122458e5ea1bafe9fc2cec094d2f', '90d8bce09439c41480a07a565b68fb399f1a1af7f065fb6da542b60b5115eb28'],
     ['url-not-found.html', 'c331cd018e', '7f28c4caef0586e2eca4b242985607ee4811f94fe9469c65c91e088504b9b3de', 'be2fa9f2bc98d17ca82bc88183366e6ff586f67505496225a059a196769b67d2'],
+    ['url-not-found.html', 'd60dd8aa7a', '941effef573c82dc463440d1e4e63a990f86910602b9ef0dc3e83624c3434053', '96cc599c25014557b5543b376b51b56247296cc40dc563996d72826966ceedc4'],
 ];
 
 test('G1 every page in default/content/errors has its current bytes in the hash list, and the old hashes are the real shipped ones', () => {
@@ -49,7 +53,7 @@ test('G1 every page in default/content/errors has its current bytes in the hash 
         assert.equal(sha256(toCrlf(bytes)), crlf, `${page} ${blob}: the fixture holds the real shipped bytes (CRLF)`);
     }
     const all = Object.values(SHIPPED_ERROR_PAGE_HASHES).flat();
-    assert.equal(all.length, 32, 'twenty-two old hashes and ten for the five current pages');
+    assert.equal(all.length, 36, 'twenty-six old hashes and ten for the five current pages');
     assert.equal(new Set(all).size, all.length, 'no duplicates');
     for (const hash of all) assert.match(hash, /^[0-9a-f]{64}$/);
     assert.ok(Object.isFrozen(SHIPPED_ERROR_PAGE_HASHES));
@@ -129,7 +133,7 @@ test('G2 every historical version of every page, LF and CRLF, is replaced by the
             cases++;
         }
     }
-    assert.equal(cases, 22);
+    assert.equal(cases, 26);
 });
 
 test('G2 a current page keeps its bytes and its modification time, and nothing is logged for it', t => {
@@ -433,6 +437,61 @@ test('G7 a fresh install gets every page, and neither run touches public/error',
     assert.deepEqual(fs.readdirSync(seeded.errors).sort(), [...MANAGED_ERROR_PAGES, 'unauthorized.html'].sort());
     assert.equal(fs.existsSync(seeded.publicErrorRoot), false);
     assert.equal(fs.readFileSync(path.join(seeded.errors, 'unauthorized.html'), 'utf8'), fs.readFileSync(path.join(shippedRoot, 'unauthorized.html'), 'utf8'), 'unauthorized.html is left to the content seeding');
+});
+
+test('G8 the HTTPS and 404 pages wear the same dark card as the session-expired page', () => {
+    const collapse = text => text.replace(/\s+/g, ' ').trim();
+    const pageKeys = JSON.parse(fs.readFileSync(path.join(root, 'tests', 'fixtures', 'page-text-keys.json'), 'utf8'));
+    const card = [
+        ':root { color-scheme: dark; }',
+        'background: radial-gradient(circle at 50% 0%, #1e201d, #161716 72%);',
+        'color: #f6edda;',
+        'width: min(560px, 100%);',
+        'border: 1px solid #61534d;',
+        'border-radius: 20px;',
+        'background: #242420;',
+        'color: #ddd0bf;',
+        'animation: neconyan-backflip 1.5s cubic-bezier(.45, 0, .55, 1) infinite;',
+        'text-transform: uppercase;',
+    ];
+    const csrf = shipped('invalid-csrf.html').toString('utf8');
+    for (const rule of card) assert.ok(csrf.replace(/\s+/g, ' ').includes(rule), `invalid-csrf.html still has ${rule}`);
+    const cat = fs.readFileSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat.webp'));
+    for (const name of ['https-required.html', 'url-not-found.html']) {
+        const source = shipped(name).toString('utf8');
+        const flat = source.replace(/\s+/g, ' ');
+        for (const rule of card) assert.ok(flat.includes(rule), `${name} has ${rule}`);
+        assert.match(source, /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}\s*\}/, `${name} stops the backflip for reduced motion`);
+        assert.match(source, /h1 \{[^}]*overflow-wrap: anywhere;/, `${name} wraps a long heading`);
+        assert.match(source, /\.lead \{[^}]*overflow-wrap: anywhere;/, `${name} wraps a long address`);
+        const $ = load(source);
+        assert.equal($('main').length, 1);
+        assert.equal($('main > .stage > img.flip').length, 1);
+        assert.equal($('img.flip').attr('width'), '208');
+        assert.equal($('img.flip').attr('height'), '192');
+        assert.equal($('p').length, 1, 'one paragraph, as the translations expect');
+        assert.equal(collapse($('main > footer').text()), 'Neconyan');
+        const keys = pageKeys[`default/content/errors/${name}`];
+        if (name === 'https-required.html') {
+            assert.equal($('script').length, 0);
+            assert.equal(collapse($('title').text()), `{{t "${keys[0]}"}}`);
+            assert.equal(collapse($('h1').text()), `{{t "${keys[0]}"}}`);
+            assert.ok(source.includes(`alt="{{t "${keys[1]}"}}"`), 'the alt text is translated on the server');
+            assert.equal(collapse($('p').text()), `{{t "${keys[2]}"}}`);
+            const match = /^data:image\/webp;base64,([A-Za-z0-9+/]+=*)$/.exec($('img.flip').attr('src'));
+            assert.ok(match, 'the cat is part of the page, because HTTP stops every other file');
+            assert.deepEqual(Buffer.from(match[1], 'base64'), cat, 'the embedded cat is the shipped backflip');
+            assert.equal($('a').length, 0, 'no link that would only be blocked again');
+        } else {
+            assert.equal(collapse($('script[type="module"]').text()), 'import { startPageLocale } from \'/scripts/page-locale.js\'; startPageLocale();');
+            assert.equal($('img.flip').attr('src'), '/img/neconyan-pixel-cat.webp', 'root-relative, so it loads at any depth');
+            assert.equal($('img.flip').attr('alt'), keys[1]);
+            assert.equal($('img.flip').attr('data-i18n'), `[alt]${keys[1]}`);
+            assert.deepEqual([collapse($('title').text()), collapse($('h1').text()), collapse($('p').text())], [keys[0], keys[0], keys[2]]);
+            assert.deepEqual([$('title').attr('data-i18n'), $('h1').attr('data-i18n'), $('p').attr('data-i18n')], [keys[0], keys[0], keys[2]]);
+            assert.deepEqual($('a').toArray().map(link => [$(link).attr('href'), collapse($(link).text())]), [['/', 'Neconyan']]);
+        }
+    }
 });
 
 /* global globalThis */

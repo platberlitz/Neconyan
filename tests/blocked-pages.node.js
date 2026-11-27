@@ -413,12 +413,23 @@ test('B7 a blocked page is one self-contained response', async t => {
         pages.push(await send(https, { headers: { ...accept, host: 'neconyan.test' } }));
     }
     assert.equal(pages.length, 8);
-    for (const response of pages) {
+    for (const [index, response] of pages.entries()) {
         assert.equal(response.status, 403);
         const body = response.body.toString('utf8');
-        for (const forbidden of ['<script', '<style', 'src=', 'url(', '@import']) assert.equal(body.includes(forbidden), false, forbidden);
+        for (const forbidden of ['<script', 'url(', '@import', '<iframe', '<object', '<embed']) assert.equal(body.includes(forbidden), false, forbidden);
         assert.deepEqual(body.match(/<link\b[^>]*>/g), ['<link rel="icon" href="data:,">']);
         assert.match(body, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+        const $ = load(body);
+        const addresses = $('[src], [href], [srcset]').toArray().flatMap(element => ['src', 'href', 'srcset'].map(name => $(element).attr(name)).filter(Boolean));
+        for (const address of addresses) assert.match(address, /^data:/, 'every picture and link is part of the page');
+        if (index % 4 !== 3) continue;
+        // The HTTPS page carries its own style and the backflipping cat, because HTTP stops every other file.
+        assert.equal($('style').length, 1);
+        assert.equal($('main').length, 1);
+        assert.equal(collapse($('main > footer').text()), 'Neconyan');
+        assert.equal($('img.flip').length, 1);
+        assert.match($('img.flip').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+        assert.match($('style').text(), /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}/);
     }
 });
 

@@ -36,6 +36,7 @@
   ],
   "default/content/errors/url-not-found.html": [
     "Not found",
+    "A pixel cat doing a backflip",
     "This page does not exist. Check the address for typos, or go back to the main Neconyan page."
   ],
   "default/content/errors/forbidden-by-whitelist.html": [
@@ -54,6 +55,7 @@
   ],
   "default/content/errors/https-required.html": [
     "Connection not secure",
+    "A pixel cat doing a backflip",
     "This connection is not secure, so Neconyan cannot be opened from another computer yet. Ask the person running Neconyan to turn on HTTPS (the secure, padlock address) in config.yaml, then reload."
   ]
 }
