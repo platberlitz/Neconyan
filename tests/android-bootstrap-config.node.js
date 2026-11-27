@@ -149,7 +149,7 @@ test('real Android bootstrap keeps explicit wildcard and preferences across ordi
                 assert.equal(actual, expected, field);
             }
             assert.equal(config.port, 28193);
-            assert.equal(config.dataRoot, path.join(state, 'data'));
+            assert.equal(config.dataRoot, path.join(fs.realpathSync(state), 'data'));
             assert.deepEqual(config.basicAuthUser, { username: 'neconyan', password: 'a'.repeat(64) });
         };
         let config = launch('normal');
