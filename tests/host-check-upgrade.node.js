@@ -106,19 +106,68 @@ test('H6 a custom browser launch hostname is added to the list, so the server do
     assert.deepEqual(readConfig(listed).hostWhitelist.hosts, ['ST.example.test']);
 });
 
-test('H7 when the environment sets hostWhitelist.enabled, the file value is left alone', t => {
-    quiet(t);
+function withHostCheckVariable(t, value) {
     const previous = process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED;
-    process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED = 'false';
-    t.after(() => {
+    const restore = () => {
         if (previous === undefined) delete process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED;
         else process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED = previous;
+    };
+    if (value === undefined) delete process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED;
+    else process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED = value;
+    t.after(restore);
+}
+
+const fileState = file => ({ text: fs.readFileSync(file, 'utf8'), mtime: fs.statSync(file).mtimeMs });
+
+// A complete old config: today's template with host checking off and no marker, so nothing else
+// is missing and any rewrite would come from the host check alone.
+const FULL_OLD_CONFIG = (() => {
+    const config = yaml.parse(fs.readFileSync(path.join(root, 'default', 'config.yaml'), 'utf8'));
+    config.hostWhitelist.enabled = false;
+    delete config.hostWhitelist.upgraded;
+    return yaml.stringify(config);
+})();
+
+for (const value of ['false', 'true']) {
+    test(`H7 while SILLYTAVERN_HOSTWHITELIST_ENABLED=${value} decides, an old config is left alone, marker and all, without rewriting it each start`, t => {
+        withHostCheckVariable(t, value);
+        const lines = quiet(t);
+
+        const full = configFile(FULL_OLD_CONFIG);
+        const before = fileState(full);
+        addMissingConfigValues(full);
+        addMissingConfigValues(full);
+        assert.deepEqual(fileState(full), before, 'two starts leave the file as it was');
+        assert.ok(!fs.existsSync(`${full}.before-host-check`));
+
+        // A partial old file still gains its other missing values once, but never the marker.
+        const partial = configFile(OLD_SECTION);
+        addMissingConfigValues(partial);
+        const config = readConfig(partial);
+        assert.equal(config.hostWhitelist.enabled, false);
+        assert.equal(Object.hasOwn(config.hostWhitelist, 'upgraded'), false);
+        const settled = fileState(partial);
+        addMissingConfigValues(partial);
+        assert.deepEqual(fileState(partial), settled, 'the second start does not rewrite it');
+        assert.ok(!lines.some(line => line.includes('Host checking is now on.')), lines.join('\n'));
     });
-    const file = configFile(OLD_SECTION);
+}
+
+test('H13 once the variable is gone, the waiting one-time switch runs as on any old config', t => {
+    withHostCheckVariable(t, 'false');
+    quiet(t);
+    const file = configFile(FULL_OLD_CONFIG);
+    addMissingConfigValues(file);
+    assert.equal(readConfig(file).hostWhitelist.enabled, false);
+
+    delete process.env.SILLYTAVERN_HOSTWHITELIST_ENABLED;
+    const lines = quiet(t);
     addMissingConfigValues(file);
     const config = readConfig(file);
-    assert.equal(config.hostWhitelist.enabled, false);
+    assert.equal(config.hostWhitelist.enabled, true);
     assert.equal(config.hostWhitelist.upgraded, true);
+    assert.equal(fs.readFileSync(`${file}.before-host-check`, 'utf8'), FULL_OLD_CONFIG);
+    assert.ok(lines.some(line => line.includes('Host checking is now on.')), lines.join('\n'));
 });
 
 test('H8 before the one-time rewrite, a copy of the file with its comments is kept beside it, once, and named in the log', t => {
@@ -277,4 +326,175 @@ exit 1
     assert.equal(config.hostWhitelist.upgraded, true);
     assert.equal(fs.readFileSync(path.join(app, 'config', 'config.yaml.before-host-check'), 'utf8'), OLD_CONFIG);
     assert.equal(result.stdout.split('Host checking is now on.').length - 1 + result.stderr.split('Host checking is now on.').length - 1, 1, 'init switches it, the server start that follows does not repeat it');
+});
+
+test('H14 a read-only config.yaml is reported as not updated, with no claim that host checking is on', t => {
+    const lines = quiet(t);
+    const file = configFile(OLD_CONFIG);
+    fs.chmodSync(file, 0o444);
+    t.after(() => fs.chmodSync(file, 0o600));
+    for (let start = 0; start < 2; start++) {
+        addMissingConfigValues(file);
+    }
+    assert.equal(fs.readFileSync(file, 'utf8'), OLD_CONFIG, 'the file is unchanged');
+    assert.ok(!lines.some(line => line.includes('Host checking is now on.')), lines.join('\n'));
+    assert.equal(lines.filter(line => line.includes(`Could not update ${file}, so host checking stays off:`)).length, 2, lines.join('\n'));
+    assert.ok(!lines.some(line => line.includes('Could not add missing config values')), 'the plain message replaces the generic one');
+    const copy = `${file}.before-host-check`;
+    assert.ok(!fs.existsSync(copy), 'nothing was switched, so no copy is left beside the file');
+
+    fs.writeFileSync(copy, 'an older copy\n');
+    addMissingConfigValues(file);
+    assert.equal(fs.readFileSync(copy, 'utf8'), 'an older copy\n', 'a copy that was already there is left alone');
+    fs.rmSync(copy);
+
+    fs.chmodSync(file, 0o600);
+    addMissingConfigValues(file);
+    assert.equal(readConfig(file).hostWhitelist.enabled, true, 'once the file can be written, the switch is made');
+    assert.equal(fs.readFileSync(copy, 'utf8'), OLD_CONFIG);
+});
+
+test('H15 when the copy is made but its permissions cannot be copied, the copy is still named, not denied', t => {
+    const lines = quiet(t);
+    t.mock.method(fs, 'chmodSync', () => {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    });
+    const file = configFile(OLD_SECTION);
+    addMissingConfigValues(file);
+    const copy = `${file}.before-host-check`;
+    assert.equal(fs.readFileSync(copy, 'utf8'), OLD_SECTION);
+    assert.ok(lines.some(line => line.includes(`Kept a copy of config.yaml in ${copy}, but could not give it the same permissions`)), lines.join('\n'));
+    assert.ok(lines.some(line => line.startsWith('A copy of the file as it was before this change') && line.includes(copy)), lines.join('\n'));
+    assert.ok(!lines.some(line => line.includes('Could not keep a copy')), lines.join('\n'));
+    assert.equal(readConfig(file).hostWhitelist.enabled, true);
+});
+
+test('H16 when no copy can be kept, the switch still happens and no copy is claimed', t => {
+    const lines = quiet(t);
+    const directory = path.join(base, `locked-${++counter}`);
+    fs.mkdirSync(directory);
+    const file = path.join(directory, 'config.yaml');
+    fs.writeFileSync(file, OLD_SECTION);
+    fs.chmodSync(directory, 0o555);
+    t.after(() => fs.chmodSync(directory, 0o755));
+    addMissingConfigValues(file);
+    assert.equal(fs.existsSync(`${file}.before-host-check`), false);
+    assert.ok(lines.some(line => line.includes('Could not keep a copy of config.yaml before switching host checking on:')), lines.join('\n'));
+    assert.ok(!lines.some(line => line.startsWith('A copy of the file')), lines.join('\n'));
+    assert.equal(readConfig(file).hostWhitelist.enabled, true);
+    assert.ok(lines.some(line => line.includes('Host checking is now on.')));
+});
+
+test('H17 the log says how to put the copy back without the switch happening again, and that advice holds', t => {
+    const lines = quiet(t);
+    const file = configFile(OLD_SECTION);
+    addMissingConfigValues(file);
+    const copy = `${file}.before-host-check`;
+    assert.ok(lines.includes('To keep host checking off instead, set hostWhitelist.enabled back to false there. The file now records this switch, so it is not made again.'), lines.join('\n'));
+    assert.ok(lines.includes('That copy does not record the switch: if you put it back in place of the file and want host checking to stay off, add upgraded: true under hostWhitelist in it, or set hostWhitelist.enabled to false in the current file instead.'), lines.join('\n'));
+    assert.ok(!lines.some(line => line.includes('will not be repeated')));
+
+    // Put back as it is, the copy is switched on again; with the line added, it stays off.
+    fs.copyFileSync(copy, file);
+    const again = quiet(t);
+    addMissingConfigValues(file);
+    assert.equal(readConfig(file).hostWhitelist.enabled, true);
+    assert.ok(again.some(line => line.includes('Host checking is now on.')));
+
+    fs.writeFileSync(file, fs.readFileSync(copy, 'utf8').replace('  hosts: []\n', '  hosts: []\n  upgraded: true\n'));
+    const kept = quiet(t);
+    addMissingConfigValues(file);
+    assert.equal(readConfig(file).hostWhitelist.enabled, false);
+    assert.ok(!kept.some(line => line.includes('Host checking is now on.')));
+});
+
+test('H18 the copy in the app folder stays out of git, so updates still see a clean copy, and out of Docker images', () => {
+    const ignored = spawnSync('git', ['check-ignore', '--no-index', '-q', 'config.yaml.before-host-check'], { cwd: root });
+    assert.equal(ignored.status, 0, 'git ignores config.yaml.before-host-check in the app folder');
+    const dockerignore = fs.readFileSync(path.join(root, '.dockerignore'), 'utf8').split(/\r?\n/);
+    assert.ok(dockerignore.includes('/config.yaml.before-host-check'), '.dockerignore leaves the copy out of the image');
+    const tmpIgnored = spawnSync('git', ['check-ignore', '--no-index', '-q', '.config.yaml.4242.tmp'], { cwd: root });
+    assert.equal(tmpIgnored.status, 0, 'git ignores a temporary file a crash left mid-write');
+    assert.ok(dockerignore.includes('/.config.yaml.*.tmp'), '.dockerignore leaves that temporary file out of the image');
+});
+
+const noSpace = () => Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+const leftoverTmp = directory => fs.readdirSync(directory).filter(name => name.endsWith('.tmp'));
+
+test('H19 the switch replaces config.yaml whole or not at all, and a cut-short write keeps the only intact copy', async t => {
+    const realWrite = fs.writeFileSync;
+
+    await t.test('a full disk while writing the new file leaves config.yaml untouched, with nothing left behind', t => {
+        const lines = quiet(t);
+        const app = path.join(base, `full-${++counter}`);
+        fs.mkdirSync(path.join(app, 'config'), { recursive: true });
+        const real = path.join(app, 'config', 'config.yaml');
+        fs.writeFileSync(real, OLD_CONFIG);
+        fs.symlinkSync('./config/config.yaml', path.join(app, 'config.yaml'));
+        const before = fileState(real);
+        t.mock.method(fs, 'writeFileSync', (file, data, options) => {
+            if (String(file).endsWith('.tmp')) {
+                realWrite(file, String(data).slice(0, 4096), options);
+                throw noSpace();
+            }
+            return realWrite(file, data, options);
+        });
+        addMissingConfigValues(path.join(app, 'config.yaml'));
+        assert.deepEqual(fileState(real), before, 'config.yaml is not touched');
+        assert.ok(fs.lstatSync(path.join(app, 'config.yaml')).isSymbolicLink());
+        assert.deepEqual(leftoverTmp(path.join(app, 'config')), [], 'the temporary file is cleaned up');
+        assert.equal(fs.existsSync(`${real}.before-host-check`), false, 'the file is intact, so the copy made for it goes');
+        assert.ok(lines.some(line => line.includes(`Could not update ${real}, so host checking stays off:`) && line.includes('ENOSPC')), lines.join('\n'));
+        assert.ok(!lines.some(line => line.includes('Host checking is now on.') || line.includes('partially')), lines.join('\n'));
+    });
+
+    await t.test('where it has to write in place and that is cut short, the copy stays and the log does not claim checking is off', t => {
+        const lines = quiet(t);
+        const file = configFile(OLD_CONFIG);
+        const copy = `${file}.before-host-check`;
+        // A single-file bind mount cannot be renamed over.
+        t.mock.method(fs, 'renameSync', () => {
+            throw Object.assign(new Error('EBUSY: resource busy or locked, rename'), { code: 'EBUSY' });
+        });
+        t.mock.method(fs, 'writeFileSync', (target, data, options) => {
+            if (target === file) {
+                realWrite(target, String(data).slice(0, -1), options);
+                throw noSpace();
+            }
+            return realWrite(target, data, options);
+        });
+        addMissingConfigValues(file);
+        assert.notEqual(fs.readFileSync(file, 'utf8'), OLD_CONFIG, 'the in-place write got partway');
+        assert.equal(readConfig(file).hostWhitelist.enabled, true, 'which is why claiming checking stayed off would be wrong');
+        assert.equal(fs.readFileSync(copy, 'utf8'), OLD_CONFIG, 'the only intact copy is kept');
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+        assert.ok(lines.some(line => line.includes(`Could not finish writing ${file}, so it may only have been partially written:`) && line.includes('ENOSPC')), lines.join('\n'));
+        assert.ok(lines.some(line => line.includes(`The file as it was before, comments included, is kept in ${copy}.`)), lines.join('\n'));
+        assert.ok(!lines.some(line => line.includes('stays off') || line.includes('Host checking is now on.')), lines.join('\n'));
+    });
+
+    await t.test('where it cannot rename, a whole write in place still makes the switch', t => {
+        const lines = quiet(t);
+        const file = configFile(OLD_SECTION);
+        t.mock.method(fs, 'renameSync', () => {
+            throw Object.assign(new Error('EBUSY: resource busy or locked, rename'), { code: 'EBUSY' });
+        });
+        addMissingConfigValues(file);
+        assert.equal(readConfig(file).hostWhitelist.enabled, true);
+        assert.equal(fs.readFileSync(`${file}.before-host-check`, 'utf8'), OLD_SECTION);
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+        assert.ok(lines.some(line => line.includes('Host checking is now on.')), lines.join('\n'));
+    });
+
+    await t.test('the new file replaces the old one by rename and keeps its permissions', t => {
+        quiet(t);
+        const file = configFile(OLD_SECTION);
+        fs.chmodSync(file, 0o640);
+        const inode = fs.statSync(file).ino;
+        addMissingConfigValues(file);
+        assert.equal(readConfig(file).hostWhitelist.enabled, true);
+        assert.notEqual(fs.statSync(file).ino, inode, 'a new file was renamed into place');
+        assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+    });
 });

@@ -1,1 +1,0 @@
-Host checking now switches on once for setups carried over from older versions, where it was off by default; if you switch it off again afterwards, it stays off. The **Forbidden** page now names the address it turned away and shows the exact lines to add to `config.yaml`.
