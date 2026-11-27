@@ -16,7 +16,7 @@ import { formatList, indentLines } from './list-editing.js';
 import { renderHeadingOutline } from './outline.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=20';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=21';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261107-tour-card-pan';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
