@@ -38,12 +38,15 @@ const STORE_REQUEST_TIMEOUT_MS = 60000;
 const CONVERSATION_SAVE_CONFLICT_TEXT = 'Some recent Conversation changes were not saved because they also changed on the server. The latest version is shown now; make those changes again.';
 const CONVERSATION_SAVE_FAILED_TEXT = 'Could not save your last Conversation change. Try again in a moment.';
 const SAVE_FAILED_NOTICE_INTERVAL_MS = 10000;
+// A debounced save whose version moved twice under it tries again this many times before the person is told.
+const UNSAVED_EDIT_RETRIES = 3;
 
 let savedSnapshot = null;
 let savedVersion = null;
 let loadedAccount;
 let syncQueue = Promise.resolve();
 let lastSaveFailedNoticeAt = 0;
+let unsavedEditRetries = 0;
 
 function readLocalStore() {
     const store = extension_settings?.[CONVERSATION_STORE_KEY];
@@ -286,7 +289,7 @@ async function saveOnce(account, skipUnchanged) {
             return absorbSaveResult(body, retry);
         } catch (retryError) {
             if (retryError.status === 409 && retryError.message !== 'account_changed') {
-                // The version moved again after a clean merge: not a conflict. Keep the edit for the next save, as before.
+                // The version moved again after a clean merge: not a conflict. Keep the edit; a debounced save tries again (retryUnsavedEdit).
                 return false;
             }
             throw retryError;
@@ -355,11 +358,43 @@ function takePendingSave() {
 }
 
 /** Resolve a debounced save's waiters with its result; a save that failed says so (at most once per 10 s) and resolves `false`. */
-function settleDebouncedSave(save, resolve) {
-    save.then(resolve, error => {
+function settleDebouncedSave(save, resolve, account) {
+    save.then(saved => {
+        resolve(saved);
+        if (saved) {
+            unsavedEditRetries = 0;
+        } else {
+            retryUnsavedEdit(account);
+        }
+    }, error => {
+        unsavedEditRetries = 0;
         if (error?.message !== 'account_changed') noticeConversationSave('failed');
         resolve(false);
     });
+}
+
+/**
+ * A save that ended without an error but left edits unsaved (the version moved
+ * again after a clean merge) schedules another save, so the edit is not left
+ * only in this page. After a few tries in a row the person is told.
+ */
+function retryUnsavedEdit(account) {
+    const local = readLocalStore();
+    if (!local || conversationValuesEqual(local, savedSnapshot)) {
+        unsavedEditRetries = 0;
+        return;
+    }
+    if (unsavedEditRetries >= UNSAVED_EDIT_RETRIES) {
+        unsavedEditRetries = 0;
+        noticeConversationSave('failed');
+        return;
+    }
+    unsavedEditRetries += 1;
+    try {
+        scheduleConversationStoreSave(account);
+    } catch {
+        unsavedEditRetries = 0;
+    }
 }
 
 /** Coalesce rapid edits into one save. The returned promise resolves once the
@@ -378,7 +413,7 @@ function scheduleConversationStoreSave(account = getCurrentUserHandle()) {
     }
     saveTimer = setTimeout(() => {
         const resolve = takePendingSave();
-        settleDebouncedSave(persistConversationStoreNow(account, { skipUnchanged: true }), resolve);
+        settleDebouncedSave(persistConversationStoreNow(account, { skipUnchanged: true }), resolve, account);
     }, STORE_SAVE_DEBOUNCE_MS);
     return pendingSave;
 }
@@ -394,7 +429,7 @@ export async function flushConversationStore(account = getCurrentUserHandle()) {
     checkAccount(account);
     const resolve = pendingAccount === account ? takePendingSave() : null;
     const save = persistConversationStoreNow(account, { skipUnchanged: true });
-    if (resolve) settleDebouncedSave(save, resolve);
+    if (resolve) settleDebouncedSave(save, resolve, account);
     if (!await save) return false;
     return conversationValuesEqual(readLocalStore(), savedSnapshot) || !readLocalStore()
         || persistConversationStoreNow(account, { skipUnchanged: true });

@@ -745,4 +745,12 @@ export const refreshedKnowledgeCases = [
     ['What happens when Scratchpad opens while the Companions panel is open?', 'agents.companion-panel', 'yielding when Scratchpad or Notes opens'],
     ['How do I resize the docked Companions panel?', 'agents.companion-panel', 'width is remembered'],
     ['Can I resize the Companions panel with the keyboard?', 'agents.companion-panel', 'Left/Right arrow keys'],
+    ['My server crashed with JavaScript heap out of memory during an import, what can I do?', 'admin.server-memory', 'Raise the cap when a big import'],
+    ['Where is Server Memory (Node.js) and when does the heap cap apply?', 'admin.server-memory', 'it only takes effect after a restart'],
+    ['Why can\'t I see the Server Memory card in the Android app?', 'admin.server-memory', 'hidden where it cannot apply'],
+    ['How do I switch the interface to Turkish?', 'interface.language', 'Turkish (Türkçe, new in 1.6.0)'],
+    ['Where is the UI Language picker?', 'interface.language', 'sits at the top of User Settings'],
+    ['Will changing the interface language translate my messages?', 'interface.language', 'Only built-in labels change'],
+    ['What does Damaged entries mean in lorebook Health?', 'lorebooks.editing', 'records the editor cannot open'],
+    ['Why did I get Could not name this chat automatically?', 'chat.auto-naming', 'shows the error once'],
 ];
