@@ -78,7 +78,7 @@ def verify(ipa, commit):
         require(sorted(info.get('UIDeviceFamily', [])) == [1, 2], 'The app must run on iPhone and iPad')
         require(info.get('UIBackgroundModes') == ['audio'], 'Unexpected background modes')
         require(info.get('UIRequiredDeviceCapabilities') == ['arm64'], 'Missing arm64 device requirement')
-        require(info.get('NSAppTransportSecurity') == {'NSAllowsArbitraryLoads': True}, 'Unexpected App Transport Security settings')
+        require(info.get('NSAppTransportSecurity') == {'NSAllowsLocalNetworking': True}, 'Unexpected App Transport Security settings')
         require(isinstance(info.get('UIApplicationSceneManifest'), dict), 'Missing scene manifest')
         for key in USAGE_KEYS:
             require(isinstance(info.get(key), str) and info[key].strip(), f'Missing privacy text: {key}')

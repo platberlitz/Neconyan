@@ -33,6 +33,9 @@ test('iOS allows local networking only and keeps ATS for internet hosts', () => 
     const project = read('ios/project.yml');
     assert.doesNotMatch(project, /NSAllowsArbitraryLoads:\s*true/);
     assert.match(project, /NSAllowsLocalNetworking:\s*true/);
+    const verifier = read('scripts/verify-ios-build.py');
+    assert.match(verifier, /info\.get\('NSAppTransportSecurity'\) == \{'NSAllowsLocalNetworking': True\}/);
+    assert.doesNotMatch(verifier, /NSAllowsArbitraryLoads/);
 });
 
 test('iOS downloads need a workspace source frame, even for workspace URLs', () => {
