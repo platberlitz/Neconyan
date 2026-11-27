@@ -430,7 +430,7 @@ test('B7 a blocked page is one self-contained response', async t => {
         assert.equal($('main').length, 1);
         assert.equal(collapse($('main > footer').text()), 'Neconyan');
         assert.equal($('img.cat').length, 1);
-        assert.match($('img.cat').attr('src'), /^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
+        assert.match($('img.cat').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
     }
 });
 

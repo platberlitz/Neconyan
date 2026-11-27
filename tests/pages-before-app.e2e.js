@@ -640,7 +640,7 @@ function cardFacts(page) {
             footer: document.querySelector('main > footer')?.textContent.trim(),
             scripts: document.scripts.length,
             alt: cat?.alt,
-            embedded: /^data:image\/png;base64,/.test(cat?.getAttribute('src') ?? ''),
+            embedded: /^data:image\/webp;base64,/.test(cat?.getAttribute('src') ?? ''),
             drawn: Boolean(cat?.complete && cat.naturalWidth > 0),
             pixelated: cat && window.getComputedStyle(cat).imageRendering,
             external: addresses.filter(address => !address.startsWith('data:')),

@@ -226,7 +226,7 @@ test('T3 the Forbidden pages in the Neconyan look keep every word of the plain p
             assert.equal($('main').length, 1, label);
             assert.equal($('main > footer').text(), 'Neconyan', label);
             assert.equal($('img').length, 1, label);
-            assert.match($('img').attr('src'), /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/, label);
+            assert.match($('img').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/, label);
             assert.equal($('img').attr('alt'), alt[locale], label);
             assert.equal($('script').length, 0, label);
             if (locale === 'de-de') assert.equal($('h1').text(), 'Verboten', label);
@@ -235,8 +235,8 @@ test('T3 the Forbidden pages in the Neconyan look keep every word of the plain p
 });
 
 test('T3 a page with a large embedded picture renders it unchanged and still finds and fills its keys', () => {
-    const picture = `data:image/png;base64,${Buffer.alloc(300_000, 7).toString('base64')}`;
-    const source = readPage('host-not-allowed.html').replace(/data:image\/png;base64,[A-Za-z0-9+/=]+/, picture);
+    const picture = `data:image/webp;base64,${Buffer.alloc(300_000, 7).toString('base64')}`;
+    const source = readPage('host-not-allowed.html').replace(/data:image\/webp;base64,[A-Za-z0-9+/=]+/, picture);
     assert.ok(source.length > 400_000);
     assert.deepEqual(templateKeys(source), templateKeys(readPage('host-not-allowed.html')));
     const html = renderPageTemplate(source, { locale: 'de-de', translations: new Map([['Forbidden', '«de» Verboten']]), context: { host: 'blocked.test' } });
