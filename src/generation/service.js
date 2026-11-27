@@ -394,8 +394,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
             appendReasoning: value => value, // Native main prompts already contain the saved reasoning instruction.
             logPrompts: power.console_log_prompts, requestTokenProbabilities: power.request_token_probabilities,
             userName, characterName, getGroupNames: () => groupNames,
-            getLogitBias: () => runBackendRequest({ ...request, query: { model } }, handleChatCompletionsBias,
-                settings.bias_presets[settings.bias_preset_selected], { signal }),
+            getLogitBias: entries => runBackendRequest({ ...request, query: { model } }, handleChatCompletionsBias, entries, { signal }),
             getStoppingStrings,
             getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
             getReasoningEffort: metadata => resolveChatReasoningEffort(settings, model, catalog, metadata,
