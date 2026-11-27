@@ -200,6 +200,77 @@ function keepConfigCopy(configPath) {
 }
 
 /**
+ * Errors after which config.yaml is written in place instead: the folder takes no new files while the
+ * file itself is writable, or the file is a single-file bind mount that cannot be renamed over.
+ * A full disk is not among them, because writing in place is what leaves a half-written file.
+ */
+const WRITE_IN_PLACE_CODES = new Set(['EACCES', 'EPERM', 'EBUSY', 'EXDEV']);
+
+/**
+ * Replaces config.yaml through a temporary file beside it and a rename, so a full disk leaves the old
+ * file whole rather than cut short. The replacement keeps the original's permissions.
+ * @param {string} realPath Resolved path of config.yaml
+ * @param {string} text New contents
+ */
+function replaceConfigFile(realPath, text) {
+    // A file the owner made read-only stays as it is, even where the folder would let it be replaced.
+    fs.accessSync(realPath, fs.constants.W_OK);
+    const original = fs.statSync(realPath);
+    const tmpPath = path.join(path.dirname(realPath), `.${path.basename(realPath)}.${process.pid}.tmp`);
+    const removeTmp = () => {
+        try {
+            fs.rmSync(tmpPath, { force: true });
+        } catch {
+            // The error that brought us here is the one worth reporting.
+        }
+    };
+
+    try {
+        fs.writeFileSync(tmpPath, text, { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+        removeTmp();
+        if (!WRITE_IN_PLACE_CODES.has(error.code)) {
+            throw error;
+        }
+        fs.writeFileSync(realPath, text);
+        return;
+    }
+
+    try {
+        fs.chmodSync(tmpPath, original.mode & 0o777);
+        if (process.getuid && (original.uid !== process.getuid() || original.gid !== process.getgid())) {
+            fs.chownSync(tmpPath, original.uid, original.gid);
+        }
+    } catch (error) {
+        console.warn(color.yellow(`Could not give the updated ${realPath} the same owner and permissions as before:`), error.message);
+    }
+
+    try {
+        fs.renameSync(tmpPath, realPath);
+    } catch (error) {
+        removeTmp();
+        if (!WRITE_IN_PLACE_CODES.has(error.code)) {
+            throw error;
+        }
+        fs.writeFileSync(realPath, text);
+    }
+}
+
+/**
+ * Whether the file at filePath still holds exactly the given bytes.
+ * @param {string} filePath File to check
+ * @param {Buffer} bytes Expected contents
+ * @returns {boolean}
+ */
+function fileStillHolds(filePath, bytes) {
+    try {
+        return Buffer.compare(fs.readFileSync(filePath), bytes) === 0;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Prints what the one-time host check switch did and how to adjust it.
  * @param {{ addedHosts: string[] }} upgrade Result of upgradeHostCheck
  * @param {string} configPath Path to config.yaml
@@ -313,14 +384,29 @@ export function addMissingConfigValues(configPath) {
             return;
         }
 
+        const realPath = fs.realpathSync(configPath);
+        const originalBytes = fs.readFileSync(realPath);
         const copy = keepConfigCopy(configPath);
         try {
-            fs.writeFileSync(configPath, yaml.stringify(config));
+            replaceConfigFile(realPath, yaml.stringify(config));
         } catch (error) {
-            console.warn(color.yellow(`Could not update ${configPath}, so host checking stays off:`), error.message);
+            if (!fileStillHolds(realPath, originalBytes)) {
+                const kept = copy ? `The file as it was before, comments included, is kept in ${color.green(copy.path)}.` : 'No copy of the file as it was before could be kept.';
+                console.warn(color.red(`Could not finish writing ${realPath}, so it may only have been partially written:`), error.message);
+                console.warn(`Check that file before starting Neconyan again. ${kept}`);
+                return;
+            }
+            console.warn(color.yellow(`Could not update ${realPath}, so host checking stays off:`), error.message);
             // Nothing was switched, so a copy made just now would only go stale beside the file.
+            // It goes only while the file still matches it byte for byte.
             if (copy?.created) {
-                fs.rmSync(copy.path, { force: true });
+                try {
+                    if (fileStillHolds(realPath, fs.readFileSync(copy.path))) {
+                        fs.rmSync(copy.path, { force: true });
+                    }
+                } catch {
+                    // A stale copy is harmless beside an unchanged file.
+                }
             }
             return;
         }

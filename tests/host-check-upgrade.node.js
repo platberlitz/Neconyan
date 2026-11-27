@@ -413,4 +413,88 @@ test('H18 the copy in the app folder stays out of git, so updates still see a cl
     assert.equal(ignored.status, 0, 'git ignores config.yaml.before-host-check in the app folder');
     const dockerignore = fs.readFileSync(path.join(root, '.dockerignore'), 'utf8').split(/\r?\n/);
     assert.ok(dockerignore.includes('/config.yaml.before-host-check'), '.dockerignore leaves the copy out of the image');
+    const tmpIgnored = spawnSync('git', ['check-ignore', '--no-index', '-q', '.config.yaml.4242.tmp'], { cwd: root });
+    assert.equal(tmpIgnored.status, 0, 'git ignores a temporary file a crash left mid-write');
+    assert.ok(dockerignore.includes('/.config.yaml.*.tmp'), '.dockerignore leaves that temporary file out of the image');
+});
+
+const noSpace = () => Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+const leftoverTmp = directory => fs.readdirSync(directory).filter(name => name.endsWith('.tmp'));
+
+test('H19 the switch replaces config.yaml whole or not at all, and a cut-short write keeps the only intact copy', async t => {
+    const realWrite = fs.writeFileSync;
+
+    await t.test('a full disk while writing the new file leaves config.yaml untouched, with nothing left behind', t => {
+        const lines = quiet(t);
+        const app = path.join(base, `full-${++counter}`);
+        fs.mkdirSync(path.join(app, 'config'), { recursive: true });
+        const real = path.join(app, 'config', 'config.yaml');
+        fs.writeFileSync(real, OLD_CONFIG);
+        fs.symlinkSync('./config/config.yaml', path.join(app, 'config.yaml'));
+        const before = fileState(real);
+        t.mock.method(fs, 'writeFileSync', (file, data, options) => {
+            if (String(file).endsWith('.tmp')) {
+                realWrite(file, String(data).slice(0, 4096), options);
+                throw noSpace();
+            }
+            return realWrite(file, data, options);
+        });
+        addMissingConfigValues(path.join(app, 'config.yaml'));
+        assert.deepEqual(fileState(real), before, 'config.yaml is not touched');
+        assert.ok(fs.lstatSync(path.join(app, 'config.yaml')).isSymbolicLink());
+        assert.deepEqual(leftoverTmp(path.join(app, 'config')), [], 'the temporary file is cleaned up');
+        assert.equal(fs.existsSync(`${real}.before-host-check`), false, 'the file is intact, so the copy made for it goes');
+        assert.ok(lines.some(line => line.includes(`Could not update ${real}, so host checking stays off:`) && line.includes('ENOSPC')), lines.join('\n'));
+        assert.ok(!lines.some(line => line.includes('Host checking is now on.') || line.includes('partially')), lines.join('\n'));
+    });
+
+    await t.test('where it has to write in place and that is cut short, the copy stays and the log does not claim checking is off', t => {
+        const lines = quiet(t);
+        const file = configFile(OLD_CONFIG);
+        const copy = `${file}.before-host-check`;
+        // A single-file bind mount cannot be renamed over.
+        t.mock.method(fs, 'renameSync', () => {
+            throw Object.assign(new Error('EBUSY: resource busy or locked, rename'), { code: 'EBUSY' });
+        });
+        t.mock.method(fs, 'writeFileSync', (target, data, options) => {
+            if (target === file) {
+                realWrite(target, String(data).slice(0, -1), options);
+                throw noSpace();
+            }
+            return realWrite(target, data, options);
+        });
+        addMissingConfigValues(file);
+        assert.notEqual(fs.readFileSync(file, 'utf8'), OLD_CONFIG, 'the in-place write got partway');
+        assert.equal(readConfig(file).hostWhitelist.enabled, true, 'which is why claiming checking stayed off would be wrong');
+        assert.equal(fs.readFileSync(copy, 'utf8'), OLD_CONFIG, 'the only intact copy is kept');
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+        assert.ok(lines.some(line => line.includes(`Could not finish writing ${file}, so it may only have been partially written:`) && line.includes('ENOSPC')), lines.join('\n'));
+        assert.ok(lines.some(line => line.includes(`The file as it was before, comments included, is kept in ${copy}.`)), lines.join('\n'));
+        assert.ok(!lines.some(line => line.includes('stays off') || line.includes('Host checking is now on.')), lines.join('\n'));
+    });
+
+    await t.test('where it cannot rename, a whole write in place still makes the switch', t => {
+        const lines = quiet(t);
+        const file = configFile(OLD_SECTION);
+        t.mock.method(fs, 'renameSync', () => {
+            throw Object.assign(new Error('EBUSY: resource busy or locked, rename'), { code: 'EBUSY' });
+        });
+        addMissingConfigValues(file);
+        assert.equal(readConfig(file).hostWhitelist.enabled, true);
+        assert.equal(fs.readFileSync(`${file}.before-host-check`, 'utf8'), OLD_SECTION);
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+        assert.ok(lines.some(line => line.includes('Host checking is now on.')), lines.join('\n'));
+    });
+
+    await t.test('the new file replaces the old one by rename and keeps its permissions', t => {
+        quiet(t);
+        const file = configFile(OLD_SECTION);
+        fs.chmodSync(file, 0o640);
+        const inode = fs.statSync(file).ino;
+        addMissingConfigValues(file);
+        assert.equal(readConfig(file).hostWhitelist.enabled, true);
+        assert.notEqual(fs.statSync(file).ino, inode, 'a new file was renamed into place');
+        assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+        assert.deepEqual(leftoverTmp(path.dirname(file)), []);
+    });
 });

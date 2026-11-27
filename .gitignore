@@ -56,6 +56,7 @@ public/stats.json
 /config.conf
 /config.yaml
 /config.yaml.before-host-check
+/.config.yaml.*.tmp
 /config.conf.bak
 /docker/config
 /docker/user

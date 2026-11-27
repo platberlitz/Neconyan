@@ -53,6 +53,7 @@
 /playwright-report
 /config.yaml
 /config.yaml.before-host-check
+/.config.yaml.*.tmp
 
 # --- Sensitive Info ---
 **/.env*
