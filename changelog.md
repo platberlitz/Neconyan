@@ -8,6 +8,9 @@
 - Restoring a complete account from a ZIP or folder now brings back your **Mewmory** stories and their recovery records.
 - Clear the proxy in a **Chat Completion** profile and both replies and helper requests connect directly, even if you previously used a proxy for that provider.
 - The **Forbidden** pages for an address that isn't on the allowed host list or the IP whitelist now have the Neconyan look, with a pixel cat holding up a stop sign, and long addresses wrap on phones instead of running off the screen.
+- A long line without a line break can no longer keep growing in the server log buffer.
+- **Mewmory**’s **Embeddings** settings now show the matched tokenizer as soon as the automatic choice saves.
+- **Chat Completion** and helper requests use their own **Word Bias** preset, even if you change it while another request is starting.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -15,6 +18,9 @@
 - PR #1011 (2026-11-27) `fix(import): restore mewmory with complete account backups`
 - PR #1012 (2026-11-27) `fix(characters): preserve character names on read and save`
 - PR #1013 (2026-11-27) `fix(profiles): honour a cleared proxy for profile requests`
+- PR #1014 (2026-11-27) `fix(server): bound unfinished lines in the log buffer`
+- PR #1015 (2026-11-27) `fix(mewmory): refresh the tokenizer hint after saving`
+- PR #1016 (2026-11-27) `fix(generation): use the word bias selected for each request`
 
 ## v1.6.0
 
