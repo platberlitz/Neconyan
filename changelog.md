@@ -326,6 +326,7 @@
 - PR #1002 (2026-11-26) `fix(i18n): align Agents feature names, library captions, kit counts and cat-pun features across all 17 locales`
 - PR #1003 (2026-11-26) `fix(chat): keep card id references working and clear nightly failures`
 - PR #1004 (2026-11-27) `chore(release): prepare 1.6.0`
+- PR #1005 (2026-11-27) `docs(agents): keep staging candidate wording to the handbook`
 
 ### Local Commits
 - `fc965a8 fix(mobile): keep the normal layout while typing in portrait`
