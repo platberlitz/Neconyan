@@ -24,9 +24,11 @@ const fixture = (page, blob) => fs.readFileSync(path.join(fixtureFolder, `${page
 const HISTORICAL = [
     ['forbidden-by-whitelist.html', '70ff71852b', 'fb177a81be2d7d7648fd5fa9df0a9d8b70cd8cd2e53fc69719de0918493cb5a0', '123b84855ce2104be082c58438641532a92b71fb17848ac828000c1b88f0ede0'],
     ['forbidden-by-whitelist.html', '8a0722beee', '3cf4f89d0448c48897062e736ead115352c04350ec2c97c77cf82b37d451b327', 'e6c23ded13b70e2b60766f85be46a1ae2c3ab21dadb2fa07e3247a2aeec06a0b'],
+    ['forbidden-by-whitelist.html', 'd858ef2eef', 'fab2e63f76d9e75aa313b3fc4190bd3a2e7edee410d06580c80c7f0069f8f3ff', 'a1655309b6899da81b720b64250f1ce16697efdbde6827edbb74c6855fa6b3d0'],
     ['host-not-allowed.html', '19ec5e990b', '01a8748f57751cceb2af35c4568734707fc2bd290d038b03dd6b73773cd16db5', 'abe2288467514e97897ea10981116f55cc23050f88be797b7f5b808b4370b0eb'],
     ['host-not-allowed.html', '06a5cedc65', '2e70f9de45d1deaa58129f39304a1cc2c4a56b6254b2938cbf54452c3dc0e8d9', 'f42c1feee224c6c82e80cb307766871dad3fbbbb01a04e04c607744daa678318'],
     ['host-not-allowed.html', '2d021e9a90', '66ed8683edcb1faf35dda8d403cb3cf50ee62972e88fd49ed41d1b44b4851f33', 'd2d12b267b2873e47e77804f40c5ba2ec6ad0ccbdfd6c9ee7c4f4af9059908ad'],
+    ['host-not-allowed.html', '7c1de68d4c', '46aa5f44608df0c90073b3c71d6b81d108a6d31ed3500a91b4317816a9471db1', 'c827f67801f5db3d18c25c5cf06f446f69b44f094b0e89d67bf0908ad81c702f'],
     ['https-required.html', 'af9b01869e', '335a16d447246b2419ec315245697ad89bb520a9b5a2a5d8804282f1994c9854', '7fa300ebfb3996ba1695b051e40c5ad1ae7cba6d2db9ae1b4f3ee0e808a94b77'],
     ['invalid-csrf.html', 'f72eb8cf14', 'f12a673046b026ff038a1a03131602fd565b3e35c8ec4564bd57652a0101ae86', '88c3239a0c066a93894af0ef19c19a6734504ff35d89aad13a229d3c898c462c'],
     ['invalid-csrf.html', 'a96a8cdba9', '3743f4eb12d6459fe808d66a607fdfcbe62f058aa03ad7e705b232119bcde525', '40d1b7243cadee2f0dcd64254a6198205c1b9ba42c06325944c65bc6ceb3f86a'],
@@ -53,7 +55,7 @@ test('G1 every page in default/content/errors has its current bytes in the hash 
         assert.equal(sha256(toCrlf(bytes)), crlf, `${page} ${blob}: the fixture holds the real shipped bytes (CRLF)`);
     }
     const all = Object.values(SHIPPED_ERROR_PAGE_HASHES).flat();
-    assert.equal(all.length, 36, 'twenty-six old hashes and ten for the five current pages');
+    assert.equal(all.length, 40, 'thirty old hashes and ten for the five current pages');
     assert.equal(new Set(all).size, all.length, 'no duplicates');
     for (const hash of all) assert.match(hash, /^[0-9a-f]{64}$/);
     assert.ok(Object.isFrozen(SHIPPED_ERROR_PAGE_HASHES));
@@ -133,7 +135,7 @@ test('G2 every historical version of every page, LF and CRLF, is replaced by the
             cases++;
         }
     }
-    assert.equal(cases, 26);
+    assert.equal(cases, 30);
 });
 
 test('G2 a current page keeps its bytes and its modification time, and nothing is logged for it', t => {
@@ -165,6 +167,8 @@ test('G2 an administrator\'s page is kept byte for byte and logged, including ne
         [notFound, Buffer.concat([shipped(notFound), Buffer.from('\n')])],
         [whitelist, Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), shipped(whitelist)])],
         [host, Buffer.from(current(host).replace('\n', '\r\n'))],
+        // The plain page before the Neconyan look, with one line of the administrator's own.
+        [host, Buffer.from(fixture(host, '7c1de68d4c').toString('utf8').replace('<hr />', '<hr />\n    <p>Ask me on Discord for access.</p>'))],
     ];
     for (const [name, bytes] of customised) {
         const install = newInstall(t, { seeded: true });

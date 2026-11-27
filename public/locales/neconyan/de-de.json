@@ -12629,6 +12629,7 @@
   "Invalid CSRF token. Please refresh the page and try again.": "Ungültiges CSRF-Token. Bitte aktualisiere die Seite und versuche es erneut.",
   "Session expired": "Sitzung abgelaufen",
   "A pixel cat doing a backflip": "Eine Pixelkatze, die einen Rückwärtssalto macht",
+  "A pixel cat holding up a stop sign": "Eine Pixelkatze, die ein Stoppschild hochhält",
   "This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.": "Diese Seite enthält noch einen alten Sicherheitscode (ein Token, das beweist, dass eine Anfrage von dir kommt), deshalb hat Neconyan die Anfrage abgewiesen. Meistens hilft es, die Seite neu zu laden; die Schritte unten decken den Rest ab.",
   "Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.": "Lade zuerst die Seite neu. Neconyan ersetzt den alten Code von selbst, sodass du nach einem einfachen Neuladen oft direkt wieder drin bist.",
   "Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as ${0}.": "Nach dem Neuladen immer noch abgelehnt? Schließe diesen Tab und öffne die Website erneut. Ein Tab, der lange geöffnet war, kann den alten Code behalten, und der Server meldet das als ${0}.",

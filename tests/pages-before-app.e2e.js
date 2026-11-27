@@ -24,7 +24,9 @@ const screenshotRoot = path.join(root, 'screenshots', 'pages-before-app');
 const pageKeys = JSON.parse(readFileSync(path.join(root, 'tests', 'fixtures', 'page-text-keys.json'), 'utf8'));
 
 // Only the made-up name blocked.test is sent to this computer; tests/playwright.config.js sets no launchOptions.
-test.use({ launchOptions: { args: ['--host-resolver-rules=MAP blocked.test 127.0.0.1'] }, serviceWorkers: 'block' });
+// A refused host name long enough to test the phone layout, still within the 63-character limit for one label.
+const LONG_HOST = 'the-extraordinarily-long-name-of-my-home-server-by-the-stairs.cat-tower.example.test';
+test.use({ launchOptions: { args: [`--host-resolver-rules=MAP blocked.test 127.0.0.1, MAP ${LONG_HOST} 127.0.0.1`] }, serviceWorkers: 'block' });
 test.setTimeout(240000);
 
 const LANGUAGES = [
@@ -62,6 +64,7 @@ const KEYS = {
         { start: 'An extension or script', holes: [] },
     ].map(step => ({ key: keyOf('default/content/errors/invalid-csrf.html', step.start), holes: step.holes })),
     forbidden: 'Forbidden',
+    stopCat: keyOf('default/content/errors/forbidden-by-whitelist.html', 'A pixel cat holding up a stop sign'),
     whitelist: keyOf('default/content/errors/forbidden-by-whitelist.html', 'If you run this Neconyan'),
     connection: keyOf('default/content/errors/forbidden-by-whitelist.html', 'This connection from ${0} was blocked'),
     forwarded: keyOf('default/content/errors/forbidden-by-whitelist.html', 'This connection from ${0} (forwarded'),
@@ -732,7 +735,7 @@ test.describe('S2b 404 page with the default config', () => {
 // ---- S3: the blocked pages ------------------------------------------------------------------------------------------
 
 /** One blocked page loaded with JavaScript on and off, in the given languages: status, language, title, text, one request. */
-async function expectBlockedPage(browser, url, { status = 403, titleKey, texts, headers }) {
+async function expectBlockedPage(browser, url, { status = 403, titleKey, texts, headers, card = false }) {
     for (const [locale, code] of [['de-DE', 'de-de'], ['de', 'de-de'], ['nb-NO', 'en']]) {
         for (const javaScriptEnabled of [true, false]) {
             const { context, page, response, requests } = await visit(browser, url, { locale, javaScriptEnabled, headers });
@@ -743,9 +746,42 @@ async function expectBlockedPage(browser, url, { status = 403, titleKey, texts, 
             const text = await bodyText(page);
             for (const sentence of texts(code)) expect(text, label).toContain(squash(sentence));
             expect(requests, `${label}: the page load makes exactly one request, the document`).toHaveLength(1);
+            if (card) expect(await cardFacts(page), label).toEqual({ main: 1, footer: 'Neconyan', scripts: 0, alt: expected(code, KEYS.stopCat), embedded: true, drawn: true, pixelated: 'pixelated', external: [] });
             await context.close();
         }
     }
+}
+
+/** The Neconyan card on a Forbidden page: one card, the footer, the stop-sign cat drawn from the page itself, no script. */
+function cardFacts(page) {
+    return page.evaluate(() => {
+        const cat = document.querySelector('main img.cat');
+        const addresses = [...document.querySelectorAll('[src], [href], [srcset]')].flatMap(element => ['src', 'href', 'srcset'].map(name => element.getAttribute(name)).filter(Boolean));
+        return {
+            main: document.querySelectorAll('main').length,
+            footer: document.querySelector('main > footer')?.textContent.trim(),
+            scripts: document.scripts.length,
+            alt: cat?.alt,
+            embedded: /^data:image\/webp;base64,/.test(cat?.getAttribute('src') ?? ''),
+            drawn: Boolean(cat?.complete && cat.naturalWidth > 0),
+            pixelated: cat && window.getComputedStyle(cat).imageRendering,
+            external: addresses.filter(address => !address.startsWith('data:')),
+        };
+    });
+}
+
+/** At phone width in German nothing on a blocked page reaches past the right edge of the screen. */
+async function expectFitsPhone(browser, url, { headers, texts }) {
+    const { context, page, response } = await visit(browser, url, { locale: 'de-DE', headers, viewport: VIEWPORTS[0].options });
+    expect(response.status()).toBe(403);
+    const text = await bodyText(page);
+    for (const sentence of texts) expect(text).toContain(squash(sentence));
+    const sticking = await page.evaluate(() => {
+        const width = document.documentElement.clientWidth;
+        return { width, scrollWidth: document.documentElement.scrollWidth, past: [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > width + 0.5).map(element => element.tagName) };
+    });
+    expect(sticking).toEqual({ width: 393, scrollWidth: 393, past: [] });
+    await context.close();
 }
 
 async function displayBlockedPage(browser, name, url, { titleKey, headers }) {
@@ -773,6 +809,7 @@ test.describe('S3 whitelist page', () => {
         await expectBlockedPage(browser, app.url + '/', {
             titleKey: KEYS.forbidden,
             texts: code => [expected(code, KEYS.forbidden), expected(code, KEYS.whitelist, ['config.yaml']), expected(code, KEYS.connection, ['127.0.0.1'])],
+            card: true,
         });
     });
 
@@ -781,7 +818,13 @@ test.describe('S3 whitelist page', () => {
             titleKey: KEYS.forbidden,
             headers: { 'X-Forwarded-For': '203.0.113.7' },
             texts: code => [expected(code, KEYS.forwarded, ['127.0.0.1', '203.0.113.7'])],
+            card: true,
         });
+    });
+
+    test('S3 at phone width a long forwarded IPv6 address in German stays inside the screen', async ({ browser }) => {
+        const address = '2001:db8:85a3:1234:5678:8a2e:370:7334';
+        await expectFitsPhone(browser, app.url + '/', { headers: { 'X-Forwarded-For': address }, texts: [expected('de-de', KEYS.forwarded, ['127.0.0.1', address])] });
     });
 
     test('display: the whitelist page in five languages at two sizes', async ({ browser }) => {
@@ -834,7 +877,12 @@ test.describe('S3 host page', () => {
                 expected(code, KEYS.hostFile, ['Using config path', 'enabled', 'false']),
                 expected(code, KEYS.hostBlocked),
             ],
+            card: true,
         });
+    });
+
+    test('S3 at phone width a very long refused host name in German stays inside the screen', async ({ browser }) => {
+        await expectFitsPhone(browser, `http://${LONG_HOST}:${app.port}/`, { texts: [expected('de-de', KEYS.host, [LONG_HOST]), `hostWhitelist: hosts: - ${LONG_HOST}`] });
     });
 
     test('display: the host page in five languages at two sizes', async ({ browser }) => {

@@ -103,7 +103,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 - Composer (`#send_form`): Chat tools menu (`#options`), wand, textarea, palette, Send/Stop, agent cancel, Guided Generations and Input History rows.
 - Messages: standard chat, Ripple (sticky avatar), reasoning pill, conversation bubbles with the three-dot menu on the name row.
 - Feedback: toasts (solid surface, coloured left edge and icon), progress bars for imports, 'Preparing your Neconyan workspace' skeleton.
-- Error pages: Unauthorized (401) and Invalid CSRF (403) with the backflipping cat and troubleshooting steps; Connection not secure (HTTPS required, 403) and Not found (404) wear the same dark card and cat. The HTTPS page carries its styles and the cat inside the page, because a blocked HTTP request can't load any other file.
+- Error pages: Unauthorized (401) and Invalid CSRF (403) with the backflipping cat and troubleshooting steps; Connection not secure (HTTPS required, 403) and Not found (404) wear the same dark card and cat. The HTTPS page carries its styles and the cat inside the page, because a blocked HTTP request can't load any other file. The two Forbidden pages (403, address not on the allowed host list, IP address not on the whitelist) show a still pixel cat holding a stop sign. The Forbidden pages are one self-contained file each, with the cat embedded and no script, because nothing else loads for a refused visitor.
 ## Catline icons
 
 I use Catline SVGs for interface icons. The action comes first and has to read at 16px; the cat is part of the shape, never a mark stuck beside it. Keep the existing control size and accessible label; colour comes from `currentColor`.

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>{{t "Forbidden"}}</title>
+</head>
+
+<body>
+    <h1>{{t "Forbidden"}}</h1>
+    {{#if host}}
+    <p>
+        {{t "Neconyan only opens at addresses on its allowed host list, and ${0} is not on it." (code host)}}
+    </p>
+    <p>
+        {{t "If you run this Neconyan and meant to open it at this address, add the name under ${0} in ${1}, then restart Neconyan:" (code "hostWhitelist") (code "config.yaml")}}
+    </p>
+    <pre><code>hostWhitelist:
+  hosts:
+    - {{host}}</code></pre>
+    <p>
+        {{t "The file is the one named on the ${0} line Neconyan prints when it starts. To turn host checking off instead, set ${1} to ${2} there." (code "Using config path") (code "enabled") (code "false")}}
+    </p>
+    {{else}}
+    <p>
+        {{t "Neconyan did not recognise the address this request was sent to, so it turned it away."}}
+    </p>
+    {{/if}}
+    <hr />
+    <p>
+        <em>{{t "This address is not allowed to open Neconyan. The attempt was logged."}}</em>
+    </p>
+</body>
+
+</html>

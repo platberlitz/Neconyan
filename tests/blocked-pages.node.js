@@ -143,7 +143,9 @@ test('B3 a forwarded address that is a tag is shown as text and the refusal is l
         assert.equal(response.status, 403);
         const body = response.body.toString('utf8');
         assert.equal(body.includes(hostile), false);
-        assert.equal(load(body)('img').length, 0);
+        const $ = load(body);
+        assert.deepEqual($('img').toArray().map(image => $(image).attr('class')), ['cat']);
+        assert.equal($('[onerror]').length, 0);
         assert.match(body, /&lt;img src&#x3D;x onerror&#x3D;1&gt;/);
     }
     assert.ok(warn.mock.calls.some(call => String(call.arguments[0]).includes('Blocked connection from')), 'the refusal is logged');
@@ -422,14 +424,19 @@ test('B7 a blocked page is one self-contained response', async t => {
         const $ = load(body);
         const addresses = $('[src], [href], [srcset]').toArray().flatMap(element => ['src', 'href', 'srcset'].map(name => $(element).attr(name)).filter(Boolean));
         for (const address of addresses) assert.match(address, /^data:/, 'every picture and link is part of the page');
-        if (index % 4 !== 3) continue;
-        // The HTTPS page carries its own style and the backflipping cat, because HTTP stops every other file.
+        // Every blocked page carries its own style and picture, because nothing else loads for a refused visitor.
         assert.equal($('style').length, 1);
         assert.equal($('main').length, 1);
         assert.equal(collapse($('main > footer').text()), 'Neconyan');
-        assert.equal($('img.flip').length, 1);
-        assert.match($('img.flip').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
-        assert.match($('style').text(), /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}/);
+        if (index % 4 === 3) {
+            // The HTTPS page has the backflipping cat, which stands still under reduced motion.
+            assert.equal($('img.flip').length, 1);
+            assert.match($('img.flip').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+            assert.match($('style').text(), /@media \(prefers-reduced-motion: reduce\) \{\s*\.flip \{ animation: none; \}/);
+        } else {
+            assert.equal($('img.cat').length, 1);
+            assert.match($('img.cat').attr('src'), /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/);
+        }
     }
 });
 

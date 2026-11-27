@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>{{t "Forbidden"}}</title>
+</head>
+
+<body>
+    <h1>{{t "Forbidden"}}</h1>
+    <p>
+        {{t "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file." (code "config.yaml")}}
+    </p>
+    <hr />
+    <p>
+        <em>{{#if forwardedIp}}{{t "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged." clientIp forwardedIp}}{{else}}{{t "This connection from ${0} was blocked. The attempt was logged." clientIp}}{{/if}}</em>
+    </p>
+</body>
+
+</html>
