@@ -32,6 +32,34 @@ const context = {
     getSamplerMetadata: () => undefined,
 };
 
+describe('word bias lookup', () => {
+    const entries = [{ text: 'test', value: 3 }];
+    const settings = { ...baseSettings, bias_preset_selected: 'selected', bias_presets: { selected: entries } };
+
+    test('passes the selected entries from the snapshot and the actual request model', async () => {
+        const getLogitBias = jest.fn(async () => ({ 101: 3 }));
+        const { generate_data } = await createChatGenerationParameters(settings, 'override', 'quiet', [], { ...context, getLogitBias });
+        expect(getLogitBias).toHaveBeenCalledTimes(1);
+        const [selected, snapshot, model] = getLogitBias.mock.calls[0];
+        expect(model).toBe('override');
+        expect(selected).toEqual(entries);
+        expect(selected).not.toBe(entries);
+        expect(snapshot.bias_presets.selected).toBe(selected);
+        expect(generate_data.logit_bias).toEqual({ 101: 3 });
+    });
+
+    test.each([
+        { chat_completion_source: 'claude' },
+        { bias_preset_selected: '' },
+        { bias_presets: {} },
+        { bias_presets: { selected: [] } },
+    ])('skips lookup for %j', async override => {
+        const getLogitBias = jest.fn();
+        await createChatGenerationParameters({ ...settings, ...override }, 'fixture', 'quiet', [], { ...context, getLogitBias });
+        expect(getLogitBias).not.toHaveBeenCalled();
+    });
+});
+
 async function buildImageFields(imageSettings) {
     const { generate_data: data } = await createChatGenerationParameters(
         { ...baseSettings, ...imageSettings }, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], context);

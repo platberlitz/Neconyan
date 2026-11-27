@@ -12,6 +12,8 @@ import { rememberGroupSpeaker, restoreGroupSpeaker } from '../public/scripts/gro
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
+import { bindChatInputSettings } from '../public/scripts/chat-input-capabilities.js';
+import { resolveChatTokenizerModel } from '../public/scripts/chat-prompt-tokens.js';
 import { cleanGeneratedText, normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from '../public/scripts/generation-format.js';
 import { textgen_types, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from '../public/scripts/text-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
@@ -1112,6 +1114,133 @@ describe('owned host generation flow', () => {
         expect(context.saveChatConditional).toHaveBeenCalledWith({ skipUnchanged: true });
         expect(received).not.toHaveBeenCalled();
         expect(context.chat[0].mes).toBe('Existing prose. abcd');
+    });
+});
+
+describe('request word bias', () => {
+    function biasRuntime() {
+        const { context } = makeRuntime();
+        load(context, 'scripts/openai.js', ['biasCache', 'calculateLogitBias']);
+        Object.assign(context, {
+            bindChatInputSettings, resolveChatTokenizerModel,
+            getTokenizerModel: () => context.oai_settings.openai_model,
+            fetch: jest.fn(),
+        });
+        const settings = context.oai_settings;
+        Object.assign(settings, {
+            bias_preset_selected: 'A',
+            bias_presets: { A: [{ text: 'one', value: 23 }], B: [{ text: 'two', value: -37 }] },
+        });
+        const send = async (request = settings, model = settings.openai_model) => {
+            const { generate_data } = await context.createGenerationParameters(request, model, 'quiet', [{ role: 'user', content: 'Hello' }]);
+            return generate_data.logit_bias;
+        };
+        return { context, settings, send };
+    }
+
+    const response = bias => ({ ok: true, json: async () => bias });
+
+    test('selecting B while A is held sends B on the next request', async () => {
+        const { context, settings, send } = biasRuntime();
+        const pending = Promise.withResolvers();
+        context.fetch.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(response({ 202: -37 }));
+        const a = send();
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+        settings.bias_preset_selected = 'B';
+        pending.resolve(response({ 101: 23 }));
+        expect(await a).toEqual({ 101: 23 });
+        expect(await send()).toEqual({ 202: -37 });
+        expect(JSON.parse(context.fetch.mock.calls[1][1].body)).toEqual(settings.bias_presets.B);
+    });
+
+    test('a late A cannot replace B after B finishes first', async () => {
+        const { context, settings, send } = biasRuntime();
+        const pending = Promise.withResolvers();
+        context.fetch.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(response({ 202: -37 }));
+        const a = send();
+        settings.bias_preset_selected = 'B';
+        expect(await send()).toEqual({ 202: -37 });
+        pending.resolve(response({ 101: 23 }));
+        expect(await a).toEqual({ 101: 23 });
+        expect(await send()).toEqual({ 202: -37 });
+        expect(context.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('identical requests share an in-flight lookup but have independent bias objects', async () => {
+        const { context, send } = biasRuntime();
+        const pending = Promise.withResolvers();
+        context.fetch.mockReturnValueOnce(pending.promise);
+        const first = send();
+        const second = send();
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+        pending.resolve(response({ 101: 23 }));
+        (await first)[101] = 10;
+        expect(await second).toEqual({ 101: 23 });
+        expect(await send()).toEqual({ 101: 23 });
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('edits and reordering under the same preset name submit the current entries', async () => {
+        const { context, settings, send } = biasRuntime();
+        const entries = settings.bias_presets.A;
+        entries.push({ text: 'two', value: 7 });
+        context.fetch.mockImplementation(async (_url, { body }) => response({ 101: JSON.parse(body)[0].value }));
+        expect(await send()).toEqual({ 101: 23 });
+        entries[0].value = 4;
+        expect(await send()).toEqual({ 101: 4 });
+        entries.reverse();
+        expect(await send()).toEqual({ 101: 7 });
+        expect(context.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    test('uses the request model and its own OpenRouter catalogue even with identical entries', async () => {
+        const { context, settings, send } = biasRuntime();
+        const model = 'fixture/opaque';
+        context.modelSamplerMetadataBySource.set('openrouter', new Map([[model, { id: model, architecture: { tokenizer: 'Llama3' } }]]));
+        context.fetch.mockResolvedValue(response({ 101: 23 }));
+        await send({ ...settings, chat_completion_source: 'custom' }, 'custom/a & b');
+        await send({ ...settings, chat_completion_source: 'openrouter', openrouter_model: 'old-model' }, model);
+        expect(context.fetch.mock.calls.map(([url]) => url)).toEqual([
+            '/api/backends/chat-completions/bias?model=custom%2Fa%20%26%20b',
+            '/api/backends/chat-completions/bias?model=llama3',
+        ]);
+    });
+
+    test('an empty HTTP 200 can retry and a late empty result leaves the newer result cached', async () => {
+        const { context, settings, send } = biasRuntime();
+        const empty = { ok: true, status: 200, json: async () => ({}) };
+        const pending = Promise.withResolvers();
+        context.fetch.mockResolvedValueOnce(empty)
+            .mockReturnValueOnce(pending.promise)
+            .mockResolvedValueOnce(response({ 202: -37 }))
+            .mockResolvedValueOnce(response({ 101: 23 }));
+        expect(await send()).toBeUndefined();
+        const a = send();
+        expect(context.fetch).toHaveBeenCalledTimes(2);
+        settings.bias_preset_selected = 'B';
+        expect(await send()).toEqual({ 202: -37 });
+        pending.resolve(empty);
+        expect(await a).toBeUndefined();
+        expect(await send()).toEqual({ 202: -37 });
+        expect(context.fetch).toHaveBeenCalledTimes(3);
+        settings.bias_preset_selected = 'A';
+        expect(await send()).toEqual({ 101: 23 });
+    });
+
+    test('a failed lookup can retry and a late failure leaves the newer result cached', async () => {
+        const { context, settings, send } = biasRuntime();
+        const pending = Promise.withResolvers();
+        context.fetch.mockResolvedValueOnce({ ok: false, status: 503 })
+            .mockReturnValueOnce(pending.promise)
+            .mockResolvedValueOnce(response({ 202: -37 }));
+        expect(await send()).toBeUndefined();
+        const a = send();
+        settings.bias_preset_selected = 'B';
+        expect(await send()).toEqual({ 202: -37 });
+        pending.reject(new Error('disconnected'));
+        expect(await a).toBeUndefined();
+        expect(await send()).toEqual({ 202: -37 });
+        expect(context.fetch).toHaveBeenCalledTimes(3);
     });
 });
 

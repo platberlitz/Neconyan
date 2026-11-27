@@ -1,8 +1,8 @@
 import { cleanMewmoryCountView, createMewmoryBudgetMessage } from './mewmory/prompt-proof.js';
 import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError, streamCompletionSignal, truncatedGenerationOutcome } from './generation-outcome.js';
 import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
-import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
-import { getChatImageTokenCost } from './chat-prompt-tokens.js';
+import { bindChatInputSettings, supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
+import { getChatImageTokenCost, resolveChatTokenizerModel } from './chat-prompt-tokens.js';
 import { injectChatPromptDepth } from './chat-prompt-depth.js';
 import { capturePresetPrompts, setPreparedPresetPrompts } from './extensions/in-chat-agents/agent-context-macros.js';
 /*
@@ -88,7 +88,7 @@ import {
     stringFormat,
     uuidv4,
 } from './utils.js';
-import { countChatCompletionPayloadTokensOpenAIAsync, countTokensOpenAIAsync, getTokenizerModel, primeOpenAITokenCache } from './tokenizers.js';
+import { countChatCompletionPayloadTokensOpenAIAsync, countTokensOpenAIAsync, primeOpenAITokenCache } from './tokenizers.js';
 import { isMobile } from './RossAscends-mods.js';
 import { saveLogprobsForActiveMessage } from './logprobs.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
@@ -5499,7 +5499,7 @@ export async function createGenerationParameters(settings, model, type, messages
         logPrompts: power_user.console_log_prompts,
         requestTokenProbabilities: power_user.request_token_probabilities,
         userName: name1, characterName: name2, getGroupNames,
-        getLogitBias: async () => { biasCache = biasCache || await calculateLogitBias(); return biasCache; },
+        getLogitBias: (entries, snapshot, requestModel) => calculateLogitBias(entries, snapshot, requestModel),
         getIncludeReasoning: () => shouldRequestReasoning(settings),
         getReasoningEffort: metadata => getReasoningEffort(settings, model, metadata),
         getVerbosity: () => getVerbosity(settings),
@@ -5943,23 +5943,36 @@ function parseOpenAITextLogprobs(logprobs) {
     });
 }
 
-async function calculateLogitBias() {
-    const body = JSON.stringify(oai_settings.bias_presets[oai_settings.bias_preset_selected]);
-    let result = {};
+async function calculateLogitBias(entries, settings, model) {
+    const source = settings.chat_completion_source;
+    const record = modelSamplerMetadataBySource.get(source)?.get(model);
+    const tokenizer = resolveChatTokenizerModel(bindChatInputSettings(settings, source, model), { model_list: record ? [record] : [] });
+    const body = JSON.stringify(entries);
 
-    try {
-        const reply = await fetch(`/api/backends/chat-completions/bias?model=${getTokenizerModel()}`, {
+    async function fetchBias() {
+        const reply = await fetch(`/api/backends/chat-completions/bias?model=${encodeURIComponent(tokenizer)}`, {
             method: 'POST',
             headers: getRequestHeaders(),
             body,
         });
-
-        result = await reply.json();
-    } catch (err) {
-        result = {};
-        console.error(err);
+        if (!reply.ok) throw new Error(`Word bias lookup failed (HTTP ${reply.status})`);
+        return reply.json();
     }
-    return result;
+
+    if (biasCache?.tokenizer !== tokenizer || biasCache?.body !== body) {
+        biasCache = { tokenizer, body, promise: fetchBias() };
+    }
+    const lookup = biasCache;
+    try {
+        const bias = await lookup.promise;
+        // The endpoint also returns an empty object when its tokenizer is unavailable.
+        if (biasCache === lookup && Object.keys(bias).length === 0) biasCache = undefined;
+        return { ...bias };
+    } catch (err) {
+        if (biasCache === lookup) biasCache = undefined;
+        console.error(err);
+        return {};
+    }
 }
 
 class TokenHandler {
@@ -7617,14 +7630,12 @@ function onLogitBiasPresetChange() {
         },
     });
 
-    biasCache = undefined;
     saveSettingsDebounced();
 }
 
 function createNewLogitBiasEntry() {
     const entry = { id: uuidv4(), text: '', value: 0 };
     normalizeLogitBiasState().push(entry);
-    biasCache = undefined;
     createLogitBiasListItem(entry);
     saveSettingsDebounced();
 }
@@ -7638,7 +7649,6 @@ function createLogitBiasListItem(entry) {
     template.data('id', id);
     template.find('.openai_logit_bias_text').val(entry.text).on('input', function () {
         entry.text = String($(this).val());
-        biasCache = undefined;
         saveSettingsDebounced();
     });
     template.find('.openai_logit_bias_value').val(entry.value).on('input', function () {
@@ -7657,7 +7667,6 @@ function createLogitBiasListItem(entry) {
         }
 
         entry.value = value;
-        biasCache = undefined;
         saveSettingsDebounced();
     });
     template.find('.openai_logit_bias_remove').on('click', function () {
@@ -7944,7 +7953,6 @@ async function onLogitBiasPresetDeleteClick() {
         $('#openai_logit_bias_preset').trigger('change');
     }
 
-    biasCache = undefined;
     saveSettingsDebounced();
 }
 
@@ -8433,7 +8441,6 @@ function setEffectiveTemperatureRange(maximum) {
 }
 
 async function onModelChange() {
-    biasCache = undefined;
     let value = String($(this).val() || '');
     if ($(this).is('#model_google_select') && oai_settings.chat_completion_source === 'makersuite'
         && value !== String(oai_settings.google_model || '')) {

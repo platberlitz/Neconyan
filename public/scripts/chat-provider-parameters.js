@@ -47,8 +47,10 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
     // The lookup can await a model list: give it the snapshot so its billing choice matches the fields sent below.
     const serviceTier = source === 'nanogpt' ? await context.getServiceTier(settings) : undefined;
     let bias = {};
-    if (settings.bias_preset_selected && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)
-        && Array.isArray(settings.bias_presets?.[settings.bias_preset_selected]) && settings.bias_presets[settings.bias_preset_selected].length) bias = await context.getLogitBias();
+    const biasEntries = settings.bias_preset_selected && settings.bias_presets?.[settings.bias_preset_selected];
+    if (Array.isArray(biasEntries) && biasEntries.length && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)) {
+        bias = await context.getLogitBias(biasEntries, settings, model);
+    }
     const data = {
         type, messages, model, log_prompts: Boolean(context.logPrompts),
         temperature: Number(settings.temp_openai), frequency_penalty: Number(settings.freq_pen_openai),
