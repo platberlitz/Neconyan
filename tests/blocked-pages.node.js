@@ -444,15 +444,47 @@ test('B7 a blocked page is one self-contained response', async t => {
     }
 });
 
-test('B7(b) the 404 page shows the still cat under reduced motion and the backflipping one otherwise', () => {
-    const $ = load(fs.readFileSync(path.join(shippedFolder, 'url-not-found.html'), 'utf8'));
-    const picture = $('main > .stage > picture');
-    assert.equal(picture.length, 1);
-    assert.deepEqual(picture.children().toArray().map(element => element.tagName), ['source', 'img']);
-    assert.equal(picture.children('source').attr('media'), '(prefers-reduced-motion: reduce)');
-    assert.equal(picture.children('source').attr('srcset'), '/img/neconyan-pixel-cat-rest.webp');
-    assert.equal(picture.children('img.flip').attr('src'), '/img/neconyan-pixel-cat.webp');
+test('B7(b) the 404, session-expired and unauthorized pages show the still cat under reduced motion and the backflipping one otherwise', () => {
+    for (const name of ['url-not-found.html', 'invalid-csrf.html', 'unauthorized.html']) {
+        const $ = load(fs.readFileSync(path.join(shippedFolder, name), 'utf8'));
+        const picture = $('main > .stage > picture');
+        assert.equal(picture.length, 1, name);
+        assert.deepEqual(picture.children().toArray().map(element => element.tagName), ['source', 'img'], name);
+        assert.equal(picture.children('source').attr('media'), '(prefers-reduced-motion: reduce)', name);
+        assert.equal(picture.children('source').attr('srcset'), '/img/neconyan-pixel-cat-rest.webp', name);
+        assert.equal(picture.children('img.flip').attr('src'), '/img/neconyan-pixel-cat.webp', name);
+        assert.match($('style').text(), /\.stage source \{ display: none; \}/, `${name}: the empty source takes no grid row`);
+    }
     assert.ok(fs.existsSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat-rest.webp')));
+});
+
+test('B7(c) an install still holding the 1.3.3 session-expired page is moved to the still-cat page and serves it', async t => {
+    const { syncErrorPages, readErrorPage } = await import('../src/error-pages.js');
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-blocked-pages-csrf-'));
+    t.after(() => fs.rmSync(install, { recursive: true, force: true }));
+    const errors = path.join(install, '_errors');
+    fs.mkdirSync(errors, { recursive: true });
+    fs.writeFileSync(path.join(errors, 'invalid-csrf.html'), fixture('invalid-csrf', '56ea4ecd4c'));
+    const log = { info: () => {}, warn: () => {}, error: () => {} };
+    syncErrorPages({ dataRoot: install, shippedRoot: shippedFolder, publicErrorRoot: path.join(install, 'public', 'error'), log });
+    const served = readErrorPage('invalid-csrf.html', { dataRoot: install, shippedRoot: shippedFolder });
+    assert.equal(served, fs.readFileSync(path.join(shippedFolder, 'invalid-csrf.html'), 'utf8'));
+    assert.equal(load(served)('main > .stage > picture > source').attr('srcset'), '/img/neconyan-pixel-cat-rest.webp');
+});
+
+test('B7(d) an install holding the staging 404 page, whose empty source pushed the cat down, is moved to the current page', async t => {
+    const { syncErrorPages, readNotFoundPage } = await import('../src/error-pages.js');
+    const install = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-blocked-pages-404-'));
+    t.after(() => fs.rmSync(install, { recursive: true, force: true }));
+    const errors = path.join(install, '_errors');
+    fs.mkdirSync(errors, { recursive: true });
+    fs.writeFileSync(path.join(errors, 'url-not-found.html'), fixture('url-not-found', '01c707cdf4'));
+    const log = { info: () => {}, warn: () => {}, error: () => {} };
+    const publicErrorRoot = path.join(install, 'public', 'error');
+    syncErrorPages({ dataRoot: install, shippedRoot: shippedFolder, publicErrorRoot, log });
+    const served = readNotFoundPage({ dataRoot: install, shippedRoot: shippedFolder, publicErrorRoot });
+    assert.equal(served, fs.readFileSync(path.join(shippedFolder, 'url-not-found.html'), 'utf8'));
+    assert.match(served, /\.stage source \{ display: none; \}/);
 });
 
 test('B8 when no copy of a page can be read the answer is a plain 403', async t => {
