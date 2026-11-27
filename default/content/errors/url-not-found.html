@@ -28,6 +28,7 @@
             box-shadow: 0 18px 42px rgba(0, 0, 0, .45);
         }
         .stage { height: 178px; display: grid; place-items: center; }
+        .stage picture { display: contents; }
         .flip {
             width: 132px;
             height: auto;
@@ -42,10 +43,22 @@
         }
         h1 { margin: 8px 0 6px; font-size: 24px; letter-spacing: .01em; overflow-wrap: anywhere; }
         .lead { margin: 0; color: #ddd0bf; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
-        footer { margin-top: 16px; color: #a89b8c; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-        footer a { color: inherit; text-decoration: underline; text-decoration-color: #61534d; text-underline-offset: 3px; }
-        footer a:hover { color: #f6edda; text-decoration-color: #d69270; }
-        footer a:focus-visible { outline: 2px solid #d69270; outline-offset: 2px; border-radius: 4px; }
+        footer { display: flex; justify-content: center; margin: 2px 0 -14px; color: #a89b8c; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 44px;
+            min-height: 44px;
+            padding: 0 12px;
+            border-radius: 10px;
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-color: #61534d;
+            text-underline-offset: 3px;
+        }
+        .brand:hover { color: #f6edda; text-decoration-color: #d69270; }
+        .brand:focus-visible { outline: 2px solid #d69270; outline-offset: 0; }
         @media (prefers-reduced-motion: reduce) {
             .flip { animation: none; }
         }
@@ -56,13 +69,16 @@
 <body>
     <main>
         <div class="stage">
-            <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
+            <picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/img/neconyan-pixel-cat-rest.webp">
+                <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
+            </picture>
         </div>
         <h1 data-i18n="Not found">Not found</h1>
         <p class="lead" data-i18n="This page does not exist. Check the address for typos, or go back to the main Neconyan page.">
             This page does not exist. Check the address for typos, or go back to the main Neconyan page.
         </p>
-        <footer><a href="/">Neconyan</a></footer>
+        <footer><a class="brand" href="/">Neconyan</a></footer>
     </main>
 </body>
 

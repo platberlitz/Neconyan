@@ -335,7 +335,7 @@ function backflipCard(page) {
     return page.evaluate(() => {
         const style = element => element && window.getComputedStyle(element);
         const main = document.querySelector('main');
-        const cat = document.querySelector('main > .stage > img.flip');
+        const cat = document.querySelector('main > .stage img.flip');
         const width = document.documentElement.clientWidth;
         return {
             scheme: style(document.documentElement).colorScheme,
@@ -346,6 +346,7 @@ function backflipCard(page) {
             drawn: Boolean(cat?.complete && cat.naturalWidth === 208 && cat.naturalHeight === 192),
             alt: cat?.alt,
             motion: style(cat)?.animationName,
+            source: cat?.currentSrc.startsWith('data:image/webp;base64,') ? 'embedded' : cat && new URL(cat.currentSrc).pathname,
             overflow: document.documentElement.scrollWidth - width,
             past: [...document.querySelectorAll('body *')].filter(element => {
                 const box = element.getBoundingClientRect();
@@ -356,10 +357,28 @@ function backflipCard(page) {
     });
 }
 
-/** The card in a language: the colours, the cat with its translated alt text, the motion, and nothing past the screen. */
-async function expectBackflipCard(page, code, { motion = 'none', label } = {}) {
+/**
+ * The card in a language: the colours, the cat with its translated alt text, the motion, and nothing past the screen.
+ * The 404 page swaps the moving picture for the still one under reduced motion; the HTTPS page embeds the still one.
+ */
+async function expectBackflipCard(page, code, { motion = 'none', source = motion === 'none' ? '/img/neconyan-pixel-cat-rest.webp' : '/img/neconyan-pixel-cat.webp', label } = {}) {
     await expect.poll(() => backflipCard(page), { message: label, timeout: 20000 })
-        .toEqual({ ...BACKFLIP_CARD, alt: expected(code, BACKFLIP_CAT), motion });
+        .toEqual({ ...BACKFLIP_CARD, alt: expected(code, BACKFLIP_CAT), motion, source });
+}
+
+/**
+ * Pictures of the cat's stage every 400 ms for 4.8 s: all the same bytes when it stands still, and false at the first
+ * one that differs. The span covers a whole loop of the animated WebP (4.45 s), whose first frame alone lasts 1.7 s.
+ * The stage is clipped from the page, because an element screenshot waits for a moving cat to settle and never ends.
+ */
+async function catStandsStill(page) {
+    const clip = await page.locator('main > .stage').boundingBox();
+    const first = await page.screenshot({ clip });
+    for (let shot = 0; shot < 12; shot++) {
+        await page.waitForTimeout(400);
+        if (!first.equals(await page.screenshot({ clip }))) return false;
+    }
+    return true;
 }
 
 // ---- C8: ordinary browser language settings ---------------------------------------------------------------------------
@@ -587,14 +606,19 @@ test.describe('S2 basic-auth mode', () => {
         const failed = [];
         page.on('requestfailed', request => failed.push(request.url()));
         for (const pathname of ['/does/not/exist/deep', '/does/not/exist/deep/']) {
-            answers.length = 0;
-            const deep = await page.goto(app.url + pathname);
-            expect(deep.status(), pathname).toBe(404);
-            await expect(page.locator('h1'), pathname).toHaveText(expected('pt-pt', KEYS.notFoundTitle));
-            await expectBackflipCard(page, 'pt-pt', { motion: 'neconyan-backflip', label: pathname });
-            expect(answers.filter(answer => answer.path !== pathname && answer.status >= 400), pathname).toEqual([]);
-            expect(answers.map(answer => answer.path), pathname).toEqual(expect.arrayContaining(['/img/neconyan-pixel-cat.webp', '/scripts/page-locale.js']));
+            for (const [reducedMotion, motion, picture] of [['no-preference', 'neconyan-backflip', '/img/neconyan-pixel-cat.webp'], ['reduce', 'none', '/img/neconyan-pixel-cat-rest.webp']]) {
+                const label = `${pathname} motion ${reducedMotion}`;
+                await page.emulateMedia({ reducedMotion });
+                answers.length = 0;
+                const deep = await page.goto(app.url + pathname);
+                expect(deep.status(), label).toBe(404);
+                await expect(page.locator('h1'), label).toHaveText(expected('pt-pt', KEYS.notFoundTitle));
+                await expectBackflipCard(page, 'pt-pt', { motion, label });
+                expect(answers.filter(answer => answer.path !== pathname && answer.status >= 400), label).toEqual([]);
+                expect(answers.map(answer => answer.path), label).toEqual(expect.arrayContaining([picture, '/scripts/page-locale.js']));
+            }
         }
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
         expect(failed).toEqual([]);
         await postWithoutToken(page, app.url);
         await expect.poll(() => pageLang(page)).toBe('pt-pt');
@@ -702,18 +726,33 @@ test.describe('S2b 404 page with the default config', () => {
                 await expect(page.locator('h1'), label).toHaveText(expected('de-de', KEYS.notFoundTitle));
                 await expect(page.locator('p'), label).toHaveText(expected('de-de', KEYS.notFoundText));
                 expect(await page.title(), label).toBe(expected('de-de', KEYS.notFoundTitle));
-                await expectBackflipCard(page, 'de-de', { motion: reducedMotion === 'reduce' ? 'none' : 'neconyan-backflip', label });
+                const still = reducedMotion === 'reduce';
+                const picture = still ? '/img/neconyan-pixel-cat-rest.webp' : '/img/neconyan-pixel-cat.webp';
+                await expectBackflipCard(page, 'de-de', { motion: still ? 'none' : 'neconyan-backflip', label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
                 expect(failed, label).toEqual([]);
                 expect(answers.filter(answer => answer.path !== pathname && answer.status >= 400), label).toEqual([]);
-                expect(answers.map(answer => answer.path), label).toEqual(expect.arrayContaining(['/img/neconyan-pixel-cat.webp', '/scripts/page-locale.js', '/locales/neconyan/de-de.json']));
+                expect(answers.map(answer => answer.path), label).toEqual(expect.arrayContaining([picture, '/scripts/page-locale.js', '/locales/neconyan/de-de.json']));
                 await context.close();
             }
         }
-        const context = await browser.newContext({ serviceWorkers: 'block', locale: 'en-GB' });
+        const context = await browser.newContext({ serviceWorkers: 'block', locale: 'en-GB', ...VIEWPORTS[0].options });
         const page = await context.newPage();
         await page.goto(app.url + '/does/not/exist/deep');
-        await expect(page.locator('main > footer a')).toHaveAttribute('href', '/');
-        await page.locator('main > footer a').click();
+        const brand = page.locator('main > footer a.brand');
+        await expect(brand).toHaveAttribute('href', '/');
+        // A whole fingertip on a phone, with a ring in the accent when the keyboard reaches it.
+        const box = await brand.boundingBox();
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        await page.keyboard.press('Tab');
+        await expect(brand).toBeFocused();
+        expect(await brand.evaluate(link => {
+            const style = window.getComputedStyle(link);
+            return [style.outlineStyle, style.outlineWidth, style.outlineColor];
+        })).toEqual(['solid', '2px', 'rgb(214, 146, 112)']);
+        expect(await backflipCard(page)).toMatchObject({ overflow: 0, past: [], clipped: [] });
+        await brand.tap();
         await expect(page).toHaveURL(app.url + '/');
         await context.close();
     });
@@ -922,7 +961,7 @@ test.describe('S3 HTTPS-required page', () => {
         await context.close();
     });
 
-    test('S3 the one response draws the whole card: the styles and the moving cat come inside the page', async ({ browser, request }) => {
+    test('S3 the one response draws the whole card: the styles and the still cat come inside the page', async ({ browser, request }) => {
         // HTTP stops the cat's own address too, so the page cannot lean on it.
         const cat = await request.get(app.pageUrl + '/img/neconyan-pixel-cat.webp', { headers: { Accept: 'image/webp,*/*' } });
         expect(cat.status()).toBe(403);
@@ -931,7 +970,9 @@ test.describe('S3 HTTPS-required page', () => {
                 const label = `JavaScript ${javaScriptEnabled ? 'on' : 'off'} motion ${reducedMotion}`;
                 const { context, page, response, requests } = await visit(browser, app.pageUrl + '/', { locale: 'de-DE', javaScriptEnabled, viewport: { reducedMotion } });
                 expect(response.status(), label).toBe(403);
-                await expectBackflipCard(page, 'de-de', { motion: reducedMotion === 'reduce' ? 'none' : 'neconyan-backflip', label });
+                const still = reducedMotion === 'reduce';
+                await expectBackflipCard(page, 'de-de', { motion: still ? 'none' : 'neconyan-backflip', source: 'embedded', label });
+                expect(await catStandsStill(page), `${label}: the cat stands still only under reduced motion`).toBe(still);
                 expect(requests, `${label}: one request, the document`).toEqual([app.pageUrl + '/']);
                 const addresses = await page.evaluate(() => [...document.querySelectorAll('[src], [href], [srcset]')]
                     .map(element => element.getAttribute('src') ?? element.getAttribute('href') ?? element.getAttribute('srcset')));
@@ -947,7 +988,7 @@ test.describe('S3 HTTPS-required page', () => {
             for (const viewport of VIEWPORTS) {
                 const { context, page } = await visit(browser, app.pageUrl + '/', { locale: language.locale, viewport: { reducedMotion: 'reduce', ...viewport.options } });
                 expect(await page.title()).toBe(expected(language.code, KEYS.httpsTitle));
-                await expectBackflipCard(page, language.code, { label: `HTTPS ${language.name} ${viewport.name}` });
+                await expectBackflipCard(page, language.code, { source: 'embedded', label: `HTTPS ${language.name} ${viewport.name}` });
                 await shoot(page, 'https-required', language, viewport);
                 await context.close();
             }

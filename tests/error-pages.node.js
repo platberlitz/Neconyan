@@ -460,7 +460,7 @@ test('G8 the HTTPS and 404 pages wear the same dark card as the session-expired 
     ];
     const csrf = shipped('invalid-csrf.html').toString('utf8');
     for (const rule of card) assert.ok(csrf.replace(/\s+/g, ' ').includes(rule), `invalid-csrf.html still has ${rule}`);
-    const cat = fs.readFileSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat.webp'));
+    const restingCat = fs.readFileSync(path.join(root, 'public', 'img', 'neconyan-pixel-cat-rest.webp'));
     for (const name of ['https-required.html', 'url-not-found.html']) {
         const source = shipped(name).toString('utf8');
         const flat = source.replace(/\s+/g, ' ');
@@ -470,7 +470,7 @@ test('G8 the HTTPS and 404 pages wear the same dark card as the session-expired 
         assert.match(source, /\.lead \{[^}]*overflow-wrap: anywhere;/, `${name} wraps a long address`);
         const $ = load(source);
         assert.equal($('main').length, 1);
-        assert.equal($('main > .stage > img.flip').length, 1);
+        assert.equal($(name === 'https-required.html' ? 'main > .stage > img.flip' : 'main > .stage > picture > img.flip').length, 1);
         assert.equal($('img.flip').attr('width'), '208');
         assert.equal($('img.flip').attr('height'), '192');
         assert.equal($('p').length, 1, 'one paragraph, as the translations expect');
@@ -484,16 +484,20 @@ test('G8 the HTTPS and 404 pages wear the same dark card as the session-expired 
             assert.equal(collapse($('p').text()), `{{t "${keys[2]}"}}`);
             const match = /^data:image\/webp;base64,([A-Za-z0-9+/]+=*)$/.exec($('img.flip').attr('src'));
             assert.ok(match, 'the cat is part of the page, because HTTP stops every other file');
-            assert.deepEqual(Buffer.from(match[1], 'base64'), cat, 'the embedded cat is the shipped backflip');
+            assert.ok(Buffer.from(match[1], 'base64').equals(restingCat), 'the embedded cat is the still one, flipped by CSS alone');
+            assert.ok(Buffer.byteLength(source) < 30 * 1024, `the HTTPS page stays small (${Buffer.byteLength(source)} bytes)`);
             assert.equal($('a').length, 0, 'no link that would only be blocked again');
         } else {
             assert.equal(collapse($('script[type="module"]').text()), 'import { startPageLocale } from \'/scripts/page-locale.js\'; startPageLocale();');
             assert.equal($('img.flip').attr('src'), '/img/neconyan-pixel-cat.webp', 'root-relative, so it loads at any depth');
+            assert.equal($('picture > source[media="(prefers-reduced-motion: reduce)"]').attr('srcset'), '/img/neconyan-pixel-cat-rest.webp', 'the still cat for reduced motion');
             assert.equal($('img.flip').attr('alt'), keys[1]);
             assert.equal($('img.flip').attr('data-i18n'), `[alt]${keys[1]}`);
             assert.deepEqual([collapse($('title').text()), collapse($('h1').text()), collapse($('p').text())], [keys[0], keys[0], keys[2]]);
             assert.deepEqual([$('title').attr('data-i18n'), $('h1').attr('data-i18n'), $('p').attr('data-i18n')], [keys[0], keys[0], keys[2]]);
             assert.deepEqual($('a').toArray().map(link => [$(link).attr('href'), collapse($(link).text())]), [['/', 'Neconyan']]);
+            assert.equal($('a').attr('class'), 'brand');
+            assert.match(source, /\.brand \{[^}]*min-width: 44px;[^}]*min-height: 44px;/, 'the home link is a full tap target');
         }
     }
 });

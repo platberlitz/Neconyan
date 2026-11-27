@@ -69,9 +69,9 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // af9b01869e: Neconyan 1.3.3 onwards, 2026-10-14, translated page (#160), plain text with no card
         '335a16d447246b2419ec315245697ad89bb520a9b5a2a5d8804282f1994c9854',
         '7fa300ebfb3996ba1695b051e40c5ad1ae7cba6d2db9ae1b4f3ee0e808a94b77',
-        // dca6064725: dark card with the backflipping cat embedded in the page, this change
-        '117cc591134e8cf23f22c56e9821b42f9a66a1a4fdfe3923b9f6c9138dceaa40',
-        'ae0385bf18dabce86c050f3e0ba8f0f406e5147076e7a2317eaba52a01cd2e91',
+        // 150799462c: dark card with the still cat embedded in the page, this change
+        '7c8ee14d23f4efd851257618bd512ef9acfa6487f01eff2efda43557a13b6cd4',
+        '7de374451a70b6b5f85c91cdace3bb808f661d44d65205b1b5c0498ee4e69b46',
     ]),
     'invalid-csrf.html': Object.freeze([
         // f72eb8cf14: Neconyan, Necodev (both folders), 2026-09-15 to 2026-10-11
@@ -100,9 +100,9 @@ export const SHIPPED_ERROR_PAGE_HASHES = Object.freeze({
         // d60dd8aa7a: Neconyan 1.3.3 onwards, 2026-10-14, translated page (#160), plain text with no card
         '941effef573c82dc463440d1e4e63a990f86910602b9ef0dc3e83624c3434053',
         '96cc599c25014557b5543b376b51b56247296cc40dc563996d72826966ceedc4',
-        // 3645b485ab: dark card with the backflipping cat and a home link, this change
-        '451e33c06a6ceef26bad6724ea29f45de5b056d70ddcddea68101ff10ab52420',
-        '135cec2cbb298daaac8669c275395954f61632a725d6cb36a60a46c5f05b19f8',
+        // 01c707cdf4: dark card with the backflipping cat and a home link, this change
+        '48d2d4dc85379e29a0793134bf0a6f3caa92534cf7b0b88c3d533eea44fd58c7',
+        '1d1e1cc3b5535d36e5f3e63a055c63a3a8d473d724d92c8fd6a17018b624e912',
     ]),
 });
 
