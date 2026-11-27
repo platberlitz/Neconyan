@@ -17,6 +17,7 @@
 - Pasting a full address such as `https://neconyan.example.com/` into `hostWhitelist.hosts` in `config.yaml` now works: Neconyan reads it as the host name and says so at startup, and entries it can't use now get a startup warning instead of failing silently.
 - The **Connection not secure** and **Not found** pages now wear the same dark card and backflipping cat as **Session expired**, and **Not found** has a link back to Neconyan.
 - The **Missing lorebook links** notice waits for a character that's still loading, so it no longer leaves out the reminder to import the card's embedded lorebook.
+- With reduced motion turned on in your device settings, the cat on the **Session expired** page now stands still instead of backflipping, just like the one on **Not found**.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -33,6 +34,7 @@
 - PR #1020 (2026-11-27) `fix(notebooks): wrap long folder headings`
 - PR #1021 (2026-11-27) `feat(security): accept pasted addresses in hostWhitelist.hosts`
 - PR #1022 (2026-11-27) `fix(lorebooks): wait for a loading card before naming missing links`
+- PR #1023 (2026-11-27) `fix(pages): keep the session and sign-in cats still under reduced motion`
 
 ## v1.6.0
 
