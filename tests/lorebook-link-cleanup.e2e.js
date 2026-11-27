@@ -119,9 +119,19 @@ async function setExtras(page, avatar, books) {
     }, [avatar, books]);
 }
 
+/** The open page may save settings between the read and the write; reread the version and try again, as changeStore does. */
+async function storeWrite(account, route, body) {
+    for (let attempt = 1; ; attempt++) {
+        const current = await account.post('/api/neconyan-conversation/store/get');
+        const response = await account.context.request.post(route, { headers: account.headers, data: { ...body, version: current.version } });
+        if (response.ok()) return response.json();
+        const text = await response.text();
+        expect(attempt < 5 && text.includes('settings_conflict'), route + ': ' + text).toBe(true);
+    }
+}
+
 async function threadFor(account, body) {
-    const current = await account.post('/api/neconyan-conversation/store/get');
-    return account.post('/api/neconyan-conversation/thread/save', { personaId: account.personaId, version: current.version,
+    return storeWrite(account, '/api/neconyan-conversation/thread/save', { personaId: account.personaId,
         messages: [{ id: 'seed-' + randomUUID(), role: 'user', name: 'User', mes: 'Hello there.', timestamp: 1700000000000 }], ...body });
 }
 
@@ -324,9 +334,8 @@ for (const device of ['desktop', 'phone']) {
                 chats.group = { group: true, chat: await chatId(page) };
 
                 const kaiThread = await threadFor(account, { avatar: cards.kai });
-                const groupStore = await account.post('/api/neconyan-conversation/store/get');
-                const conversationGroup = await account.post('/api/neconyan-conversation/group/create', { name: 'Conversation trio', members: [account.avatar, cards.kai],
-                    personaId: account.personaId, version: groupStore.version });
+                const conversationGroup = await storeWrite(account, '/api/neconyan-conversation/group/create', { name: 'Conversation trio', members: [account.avatar, cards.kai],
+                    personaId: account.personaId });
                 const groupThread = await threadFor(account, { avatar: account.avatar, groupId: conversationGroup.group.id });
                 await setOverrides(account, { [account.threadKey]: TARGET, [kaiThread.threadKey]: 'Target Book Two', [groupThread.threadKey]: TARGET });
 
