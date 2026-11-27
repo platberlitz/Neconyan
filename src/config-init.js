@@ -117,6 +117,19 @@ function isAlwaysAllowedHostname(hostname) {
 }
 
 /**
+ * Tells whether the one-time host check switch has to wait because the environment, not the file,
+ * decides `hostWhitelist.enabled` for now. Recording the marker then would leave the file's old
+ * `false` in charge, silently, once the variable is removed.
+ * @param {object} config Saved config, before defaults are merged in
+ * @returns {boolean} True when the file still has the old `false`, no marker, and the variable is set
+ */
+function isHostCheckUpgradeWaiting(config) {
+    return !_.has(config, HOST_CHECK_MARKER_KEY)
+        && _.get(config, 'hostWhitelist.enabled') === false
+        && keyToEnv('hostWhitelist.enabled') in process.env;
+}
+
+/**
  * Turns the host check on once for a config saved by a version that shipped it off.
  * Configs written before the check was on by default carry `hostWhitelist.enabled: false` from
  * the old template. They have no marker, so the first start on this version switches the check
@@ -125,13 +138,13 @@ function isAlwaysAllowedHostname(hostname) {
  * @returns {{ addedHosts: string[] }|null} What changed, or null when nothing did
  */
 export function upgradeHostCheck(config) {
-    if (!config || typeof config !== 'object' || _.has(config, HOST_CHECK_MARKER_KEY)) {
+    if (!config || typeof config !== 'object' || _.has(config, HOST_CHECK_MARKER_KEY) || isHostCheckUpgradeWaiting(config)) {
         return null;
     }
 
     _.set(config, HOST_CHECK_MARKER_KEY, true);
 
-    if (_.get(config, 'hostWhitelist.enabled') !== false || keyToEnv('hostWhitelist.enabled') in process.env) {
+    if (_.get(config, 'hostWhitelist.enabled') !== false) {
         return null;
     }
 
@@ -162,21 +175,28 @@ export function upgradeHostCheck(config) {
  * Keeps a copy of config.yaml beside the real file before the one-time host check switch rewrites it,
  * since the rewrite drops its comments. An existing copy is never overwritten.
  * @param {string} configPath Path to config.yaml, which may be a symlink (as in the Docker image)
- * @returns {string|null} Path of the copy, or null when none could be kept
+ * @returns {{ path: string, created: boolean }|null} The copy, and whether this call made it, or null when none could be kept
  */
 function keepConfigCopy(configPath) {
+    let realPath;
+    let copyPath;
     try {
-        const realPath = fs.realpathSync(configPath);
-        const copyPath = `${realPath}.before-host-check`;
-        if (!fs.existsSync(copyPath)) {
-            fs.copyFileSync(realPath, copyPath, fs.constants.COPYFILE_EXCL);
-            fs.chmodSync(copyPath, fs.statSync(realPath).mode & 0o777);
+        realPath = fs.realpathSync(configPath);
+        copyPath = `${realPath}.before-host-check`;
+        if (fs.existsSync(copyPath)) {
+            return { path: copyPath, created: false };
         }
-        return copyPath;
+        fs.copyFileSync(realPath, copyPath, fs.constants.COPYFILE_EXCL);
     } catch (error) {
         console.warn(color.yellow('Could not keep a copy of config.yaml before switching host checking on:'), error.message);
         return null;
     }
+    try {
+        fs.chmodSync(copyPath, fs.statSync(realPath).mode & 0o777);
+    } catch (error) {
+        console.warn(color.yellow(`Kept a copy of config.yaml in ${copyPath}, but could not give it the same permissions as the original:`), error.message);
+    }
+    return { path: copyPath, created: true };
 }
 
 /**
@@ -197,9 +217,10 @@ function logHostCheckUpgrade({ addedHosts }, configPath, copyPath) {
         console.warn('Added the browser launch hostname to the list:', addedHosts.join(', '));
     }
     console.warn(`If you open Neconyan through a domain name (a reverse proxy, a tunnel or a local DNS name), add that name under ${color.yellow('hostWhitelist')} -> ${color.yellow('hosts')} in ${color.green(configPath)} and restart.`);
-    console.warn(`To keep host checking off instead, set ${color.yellow('hostWhitelist.enabled')} back to false there. This change is made once and will not be repeated.`);
+    console.warn(`To keep host checking off instead, set ${color.yellow('hostWhitelist.enabled')} back to false there. The file now records this switch, so it is not made again.`);
     if (copyPath) {
         console.warn('A copy of the file as it was before this change, comments included, is kept in', color.green(copyPath));
+        console.warn(`That copy does not record the switch: if you put it back in place of the file and want host checking to stay off, add ${color.yellow('upgraded: true')} under ${color.yellow('hostWhitelist')} in it, or set ${color.yellow('hostWhitelist.enabled')} to false in the current file instead.`);
     }
 }
 
@@ -261,10 +282,13 @@ export function addMissingConfigValues(configPath) {
         // Get all keys from the original config
         const originalKeys = getAllKeys(config);
 
+        // While the environment decides hostWhitelist.enabled over an old `false`, the template's
+        // marker stays out too, or the switch would be skipped for good once the variable is gone.
+        const defaults = isHostCheckUpgradeWaiting(config) ? _.omit(defaultConfig, HOST_CHECK_MARKER_KEY) : defaultConfig;
         const hostCheckUpgrade = upgradeHostCheck(config);
 
         // Use lodash's defaultsDeep function to recursively apply default properties
-        config = _.defaultsDeep(config, defaultConfig);
+        config = _.defaultsDeep(config, defaults);
 
         // Get all keys from the updated config
         const updatedKeys = getAllKeys(config);
@@ -284,11 +308,23 @@ export function addMissingConfigValues(configPath) {
             console.log('Migrating config values in config.yaml:', migratedKeys);
         }
 
-        if (hostCheckUpgrade) {
-            logHostCheckUpgrade(hostCheckUpgrade, configPath, keepConfigCopy(configPath));
+        if (!hostCheckUpgrade) {
+            fs.writeFileSync(configPath, yaml.stringify(config));
+            return;
         }
 
-        fs.writeFileSync(configPath, yaml.stringify(config));
+        const copy = keepConfigCopy(configPath);
+        try {
+            fs.writeFileSync(configPath, yaml.stringify(config));
+        } catch (error) {
+            console.warn(color.yellow(`Could not update ${configPath}, so host checking stays off:`), error.message);
+            // Nothing was switched, so a copy made just now would only go stale beside the file.
+            if (copy?.created) {
+                fs.rmSync(copy.path, { force: true });
+            }
+            return;
+        }
+        logHostCheckUpgrade(hostCheckUpgrade, configPath, copy?.path ?? null);
     } catch (error) {
         console.warn(color.yellow('Could not add missing config values to config.yaml'), error);
     }

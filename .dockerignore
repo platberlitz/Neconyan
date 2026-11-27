@@ -52,6 +52,7 @@
 /test-results
 /playwright-report
 /config.yaml
+/config.yaml.before-host-check
 
 # --- Sensitive Info ---
 **/.env*
