@@ -14,6 +14,7 @@
 - Opening **Games** no longer brings back an empty **Conversation** DM after you delete it.
 - In **Conversation**, **Remember group DMs in this solo DM** now includes group memories for every active member who enables it.
 - Long folder names wrap above the note list in **Notebooks**.
+- Pasting a full address such as `https://neconyan.example.com/` into `hostWhitelist.hosts` in `config.yaml` now works: Neconyan reads it as the host name and says so at startup, and entries it can't use now get a startup warning instead of failing silently.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -27,6 +28,7 @@
 - PR #1018 (2026-11-27) `fix(games): keep deleted solo DMs closed`
 - PR #1019 (2026-11-27) `fix(conversation): remember group DMs for their active members`
 - PR #1020 (2026-11-27) `fix(notebooks): wrap long folder headings`
+- PR #1021 (2026-11-27) `feat(security): accept pasted addresses in hostWhitelist.hosts`
 
 ## v1.6.0
 
