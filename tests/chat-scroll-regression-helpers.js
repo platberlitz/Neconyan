@@ -357,7 +357,45 @@ export async function settleCssTransitions(page) {
     await waitForAnimationFrames(page);
 }
 
+const syntheticChatSettingsByPage = new WeakMap();
+
+/**
+ * The synthetic chat sets its render window on the live settings, which the next settings save
+ * would keep for the shared preview account (as a deliberate low-memory choice, too). Saves from
+ * this page send the account's own values instead while the synthetic window is still set.
+ */
+async function keepSyntheticChatSettingsLocal(page, visibleCount) {
+    const known = syntheticChatSettingsByPage.get(page);
+    if (known) {
+        known.visibleCount = visibleCount;
+        return;
+    }
+    const base = await page.evaluate(() => {
+        const settings = window.SillyTavern.getContext().powerUserSettings;
+        return {
+            chatTruncation: settings.chat_truncation,
+            autoScroll: settings.auto_scroll_chat_to_bottom,
+            truncationExplicit: settings.low_memory_preferences?.explicit?.chat_truncation === true,
+        };
+    });
+    const state = { base, visibleCount };
+    syntheticChatSettingsByPage.set(page, state);
+    await page.route('**/api/settings/save', route => {
+        const request = route.request();
+        if (request.method() !== 'POST' || request.headers()['content-encoding']) return route.fallback();
+        const settings = request.postDataJSON();
+        const powerUser = settings?.power_user;
+        if (!powerUser || powerUser.chat_truncation !== state.visibleCount) return route.fallback();
+        powerUser.chat_truncation = state.base.chatTruncation;
+        powerUser.auto_scroll_chat_to_bottom = state.base.autoScroll;
+        const explicit = powerUser.low_memory_preferences?.explicit;
+        if (explicit && !state.base.truncationExplicit) delete explicit.chat_truncation;
+        return route.fallback({ postData: JSON.stringify(settings) });
+    });
+}
+
 async function renderSyntheticLongChat(page, { messageCount, visibleCount }) {
+    await keepSyntheticChatSettingsLocal(page, visibleCount);
     await page.evaluate(async ({ messageCount: syntheticMessageCount, visibleCount: syntheticVisibleCount }) => {
         const context = window.SillyTavern.getContext();
         const chatElement = document.querySelector('#chat');

@@ -417,6 +417,45 @@ for (const device of ['desktop', 'phone']) {
             expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} ${EMBEDDED_LINE} Review links`);
         });
 
+        test(`waits for a slow-loading card before naming its embedded lorebook (${device})`, async ({ app }) => {
+            test.setTimeout(240000);
+            const account = await app.account({ phone, configureSettings(saved) { saved.power_user.world_import_dialog = false; } });
+            const eve = await embeddedCard(account);
+            const olive = await card(account, 'Other Olive');
+            const page = await account.open({ workspace: false });
+            await select(page, eve);
+            await expect(page.locator('.toast-info').filter({ hasText: 'Embed Eve has an embedded World/Lorebook' })).toHaveCount(0, { timeout: 20000 });
+            // Eve's full card arrives late, as on a slow connection, and Eve opens straight after Olive, so the check
+            // Olive's open scheduled runs while Eve is only half open.
+            let held = 0;
+            let release;
+            const gate = new Promise(resolve => { release = resolve; });
+            await page.route('**/api/characters/get', async route => {
+                if (route.request().postDataJSON()?.avatar_url !== eve) return route.continue();
+                held += 1;
+                await gate;
+                await route.continue();
+            });
+            await page.evaluate(async ([first, second]) => {
+                const context = window.SillyTavern.getContext();
+                const id = avatar => context.characters.findIndex(character => character.avatar === avatar);
+                await context.selectCharacterById(id(first));
+                await context.getCharacters();
+                window.lorebookTestOpening = context.selectCharacterById(id(second)).then(() => 'opened', error => String(error));
+            }, [olive, eve]);
+            await expect.poll(() => held).toBe(1);
+            await page.waitForTimeout(1000);
+            await expect(notices(page)).toHaveCount(0);
+            // A check that Eve's own half-open state schedules waits for the full card too.
+            await page.evaluate(() => window.dispatchEvent(new CustomEvent('sb:conversation-workspace-state-changed', { detail: { open: false } })));
+            await page.waitForTimeout(1000);
+            await expect(notices(page)).toHaveCount(0);
+            release();
+            expect(await page.evaluate(() => window.lorebookTestOpening)).toBe('opened');
+            await expect(notices(page)).toHaveCount(1, { timeout: 20000 });
+            expect(await noticeText(notices(page))).toBe(`Missing lorebook links ${INTRO} ${EMBEDDED_LINE} Review links`);
+        });
+
         test(`takes the notice away when another chat opens (${device})`, async ({ app }) => {
             test.setTimeout(240000);
             const account = await app.account({ phone });
