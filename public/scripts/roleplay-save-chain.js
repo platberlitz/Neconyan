@@ -10,7 +10,9 @@ const sameAccount = (a, b) => a?.accountId === b?.accountId && a?.dataEpoch === 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 const changedAccount = () => failure('ROLEPLAY_ACCOUNT_CHANGED', 'The account changed. Reload before saving.');
 const missingRead = () => failure('ROLEPLAY_READ_REQUIRED', 'Reload the chat before saving; its saved version is unavailable.');
-const uncertainSave = () => failure('ROLEPLAY_SAVE_UNCERTAIN', 'The save could not be confirmed. Keep a copy of your edits before reloading.');
+// reason says why: 'unreachable' (no reply from Neconyan's server), 'server' (it replied with an error), 'verifying' (an earlier save is unconfirmed)
+// or 'changed' (the saved copy changed elsewhere while a save was unconfirmed, so this chain stays stopped).
+const uncertainSave = (reason = 'verifying') => Object.assign(failure('ROLEPLAY_SAVE_UNCERTAIN', 'The save could not be confirmed. Keep a copy of your edits before reloading.'), { reason });
 // Waits between resends of one unconfirmed save, long enough to ride out a server restart or a dropped connection.
 const DEFAULT_RETRY_DELAYS = Object.freeze([250, 500, 1000, 2000, 3000, 5000]);
 let retryDelays = DEFAULT_RETRY_DELAYS;
@@ -79,7 +81,7 @@ export function parseRoleplayRead(response, locator, stamp = roleplayAccountStam
 function chainFor(locator) {
     roleplayAccountStamp();
     const key = locatorKey(locator);
-    if (!binding.chains.has(key)) binding.chains.set(key, { head: null, tail: null, editorTail: null, lineage: null, blocked: false, unsettled: [], recovering: null });
+    if (!binding.chains.has(key)) binding.chains.set(key, { head: null, tail: null, editorTail: null, lineage: null, blocked: false, unsettled: [], recovering: null, recoveryFailure: null });
     return binding.chains.get(key);
 }
 
@@ -206,6 +208,14 @@ function definitiveRefusal(response, data) {
             || (response.status === 507 && data.error === 'roleplay_store_full'));
 }
 
+/** Why one attempt went unconfirmed. A proxy's 502/503/504 page carries no JSON error, so Neconyan's server never answered. */
+function unconfirmedReason(response, data, error) {
+    if (error?.code === 'ROLEPLAY_SAVE_UNCERTAIN') return 'verifying';
+    if (!response) return 'unreachable';
+    if ([502, 503, 504].includes(response.status) && !(object(data) && typeof data.error === 'string')) return 'unreachable';
+    return 'server';
+}
+
 /** Sets the waits between resends of one save, for tests. Returns the previous waits. */
 export function setRoleplaySaveRetryDelays(delays = DEFAULT_RETRY_DELAYS) {
     if (!Array.isArray(delays) || delays.some(delay => !Number.isFinite(delay) || delay < 0)) throw new TypeError('Retry delays must be non-negative numbers.');
@@ -221,8 +231,10 @@ export function setRoleplaySaveRetryDelays(delays = DEFAULT_RETRY_DELAYS) {
 async function deliver(record, send, delays) {
     for (let attempt = 0; attempt <= delays.length; attempt++) {
         assertCurrent(record);
+        let response = null;
+        let data;
         try {
-            const response = await send(record.attempt, record.binding.stamp, record.attemptKind);
+            response = await send(record.attempt, record.binding.stamp, record.attemptKind);
             if (record.attemptKind === 'patch' && (response.status === 404 || response.status === 405)) {
                 // An older server has no patch route. Nothing was written: send the whole chat, as before.
                 markChatPatchUnsupported();
@@ -232,7 +244,7 @@ async function deliver(record, send, delays) {
                 attempt = -1;
                 continue;
             }
-            const data = await response.json();
+            data = await response.json();
             assertCurrent(record);
             if (data?.error === 'account_changed' || data?.code === 'ROLEPLAY_ACCOUNT_CHANGED') {
                 binding.available = false;
@@ -258,8 +270,10 @@ async function deliver(record, send, delays) {
                 return true;
             }
             if (definitiveRefusal(response, data)) return { status: response.status, data };
+            record.failure = unconfirmedReason(response, data);
         } catch (error) {
             if (error.code === 'ROLEPLAY_ACCOUNT_CHANGED') throw error;
+            record.failure = unconfirmedReason(response, data, error);
         }
         if (attempt < delays.length) await wait(delays[attempt]);
     }
@@ -301,7 +315,11 @@ async function recoverChain(caller, send, loadVacancy) {
     const pending = unsettled.filter(record => record.attempt);
     let verified = null;
     if (!pending.length) {
-        if (!await serverStillHolds(caller, entry.head, loadVacancy)) return false;
+        if (!await serverStillHolds(caller, entry.head, loadVacancy)) {
+            // The read worked (a failed one throws), so the saved copy moved on without this chain.
+            if (entry.head && typeof loadVacancy === 'function') entry.recoveryFailure = 'changed';
+            return false;
+        }
         verified = entry.head;
     }
     for (const record of pending) {
@@ -311,6 +329,8 @@ async function recoverChain(caller, send, loadVacancy) {
         } else if (outcome && await serverStillHolds(record, record.source, loadVacancy)) {
             settleRecovered(record, 'refused', record.source);
         } else {
+            if (!outcome) entry.recoveryFailure = record.failure ?? null;
+            else if (record.source && typeof loadVacancy === 'function') entry.recoveryFailure = 'changed';
             return false;
         }
         verified = record.source;
@@ -328,8 +348,11 @@ async function recoverChain(caller, send, loadVacancy) {
 async function recoverRoleplayChain(record, send, loadVacancy) {
     const entry = record.entry;
     if (!entry.recovering) {
+        entry.recoveryFailure = null;
         entry.recovering = recoverChain(record, send, loadVacancy).catch(error => {
             if (error.code === 'ROLEPLAY_ACCOUNT_CHANGED') throw error;
+            // A read that never reached the server fails with a bare network error, not one of this chain's codes.
+            if (!error.code) entry.recoveryFailure = 'unreachable';
             return false;
         }).finally(() => { entry.recovering = null; });
     }
@@ -342,7 +365,9 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
     if (!record || record.complete) throw uncertainSave();
     assertCurrent(record);
     if (record.status === 'ok') return record.result;
-    if (record.entry.blocked && !await recoverRoleplayChain(record, send, loadVacancy)) throw uncertainSave();
+    if (record.entry.blocked && !await recoverRoleplayChain(record, send, loadVacancy)) {
+        throw uncertainSave(record.entry.recoveryFailure ?? 'verifying');
+    }
     assertCurrent(record);
     if (!record.attempt) {
         try {
@@ -372,7 +397,7 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
     if (outcome === true) return record.result;
     if (outcome) return refuse(record, outcome.status, outcome.data);
     record.status = 'unknown';
-    throw uncertainSave();
+    throw uncertainSave(record.failure);
 }
 
 /** Called only after the existing explicit overwrite confirmation. Successors still await this token. */

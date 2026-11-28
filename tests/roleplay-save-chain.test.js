@@ -468,6 +468,56 @@ describe('unconfirmed save recovery', () => {
         expect(JSON.parse(send.mock.calls[1][0]).roleplay.source.revision).toBe(2);
     });
 
+    test('an unconfirmed save says whether the server was unreachable, answered with an error or is still being checked', async () => {
+        const notJson = status => async () => ({ ok: false, status, json: async () => { throw new SyntaxError('Unexpected token <'); } });
+        const cases = [
+            [offline, 'unreachable'],
+            [notJson(502), 'unreachable'],
+            [async () => response(504, null), 'unreachable'],
+            [async () => response(503, { error: 'roleplay_recovery_required', code: 'ELOCKED' }), 'server'],
+            [async () => response(500, { error: 'boom' }), 'server'],
+            [notJson(500), 'server'],
+            [async body => acknowledged(body, { operationKey: 'someone-else' }), 'verifying'],
+        ];
+        for (const [index, [reply, reason]] of cases.entries()) {
+            const target = { ...locator, chat: `Reason ${index}` };
+            expect(rememberRoleplayRead(target, { account, source: { ...source, instanceId: `33333333-3333-4333-8333-00000000000${index}` } })).toBe(true);
+            const token = beginRoleplaySave(target, { operationKey: `reason-${index}` });
+            await expect(sendRoleplaySave(token, { ...payload(), file_name: target.chat }, jest.fn(reply))).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason });
+            await finishRoleplaySave(token);
+        }
+    });
+
+    test('a blocked chain says whether the server was unreachable, answered with an error or is still being checked', async () => {
+        await blockedChain('reason-blocked');
+        const offlineAgain = beginRoleplaySave(locator, { operationKey: 'reason-offline' });
+        await expect(sendRoleplaySave(offlineAgain, payload(), jest.fn(offline))).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason: 'unreachable' });
+        await finishRoleplaySave(offlineAgain);
+        const busy = beginRoleplaySave(locator, { operationKey: 'reason-busy' });
+        const send = jest.fn(async () => response(503, { error: 'roleplay_recovery_required', code: 'ELOCKED' }));
+        await expect(sendRoleplaySave(busy, payload(), send)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason: 'server' });
+        await finishRoleplaySave(busy);
+        expect(send).toHaveBeenCalledTimes(1);
+        const unverified = beginRoleplaySave(locator, { operationKey: 'reason-unverified' });
+        await expect(sendRoleplaySave(unverified, payload(), jest.fn(async body => acknowledged(body, { operationKey: 'someone-else' }))))
+            .rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason: 'verifying' });
+        await finishRoleplaySave(unverified);
+    });
+
+    test('a blocked chain whose saved copy changed elsewhere says so', async () => {
+        await blockedChain('reason-changed');
+        const moved = { ...source, revision: 9, rawHash: 'e'.repeat(64) };
+        const load = jest.fn(async () => readResponse({ account, locator, source: moved }));
+        const token = beginRoleplaySave(locator, { operationKey: 'reason-changed-second' });
+        const send = jest.fn(async () => response(400, { error: 'integrity', roleplay: { account, source: moved } }));
+        await expect(sendRoleplaySave(token, payload(), send, load)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason: 'changed' });
+        await finishRoleplaySave(token);
+        expect(load).toHaveBeenCalledTimes(1);
+        const noReader = beginRoleplaySave(locator, { operationKey: 'reason-changed-no-reader' });
+        await expect(sendRoleplaySave(noReader, payload(), send)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN', reason: 'verifying' });
+        await finishRoleplaySave(noReader);
+    });
+
     test('a refused key with no way to read the server stays blocked', async () => {
         await blockedChain('no-reader');
         const token = beginRoleplaySave(locator, { operationKey: 'no-reader-second' });

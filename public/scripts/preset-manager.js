@@ -47,6 +47,7 @@ import {
     textgenerationwebui_presets,
 } from './textgen-settings.js';
 import { download, ensurePlainObject, equalsIgnoreCaseAndAccents, getSanitizedFilename, parseJsonFile, waitUntilCondition } from './utils.js';
+import { saveFailureKind, settingsSaveFailureMessage } from './save-failure-wording.js';
 
 const presetManagers = {};
 const PRESET_CHANGE_EVENT_APIS = new Set(['kobold', 'novel', 'openai', 'textgenerationwebui']);
@@ -924,17 +925,29 @@ class PresetManager {
         const preset = settings ?? this.getPresetSettings(name);
         if (!isCurrent()) throw new DOMException('The preset edit is no longer current.', 'AbortError');
 
-        const response = await fetch('/api/presets/save', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ preset, name, apiId: this.apiId, ...(expectedPreset !== undefined ? { expected_preset: expectedPreset } : {}) }),
-        });
+        // saveNoticeShown tells callers the failure toast is already up, so they do not add a second one.
+        const presetSaveFailure = (saveFailure, cause) => {
+            if (!quiet) toastr.error(settingsSaveFailureMessage(saveFailure), t`Preset could not be saved`);
+            return Object.assign(new Error('Preset could not be saved', cause ? { cause } : undefined), { saveFailure, saveNoticeShown: !quiet });
+        };
+
+        let response;
+        try {
+            response = await fetch('/api/presets/save', {
+                method: 'POST',
+                headers: getRequestHeaders(),
+                body: JSON.stringify({ preset, name, apiId: this.apiId, ...(expectedPreset !== undefined ? { expected_preset: expectedPreset } : {}) }),
+            });
+        } catch (error) {
+            console.error('Preset could not be saved', error);
+            throw presetSaveFailure(saveFailureKind(error), error);
+        }
 
         if (!response.ok) {
             if (response.status === 409 && expectedPreset !== undefined) throw new Error(t`This preset changed elsewhere. Reload it and review the suggestion again.`);
-            if (!quiet) toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
+            const data = await response.json().catch(() => null);
             console.error(`Preset could not be saved: HTTP ${response.status} ${response.statusText}`.trim(), response);
-            throw new Error('Preset could not be saved');
+            throw presetSaveFailure(saveFailureKind(null, { status: response.status, data }));
         }
 
         const data = await response.json();
@@ -958,10 +971,10 @@ class PresetManager {
             throw new Error('New name must be different from old name');
         }
         try {
-            await this.savePreset(newName);
+            await this.savePreset(newName, undefined, { quiet: true });
             await this.deletePreset(oldName);
         } catch (error) {
-            toastr.error(t`The preset could not be renamed. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be renamed`);
+            toastr.error(settingsSaveFailureMessage(saveFailureKind(error)), t`Preset could not be renamed`);
             console.error('Preset could not be renamed', error);
             throw new Error('Preset could not be renamed');
         }
@@ -1715,7 +1728,9 @@ export async function initPresetManager() {
             toastr.success(successToast);
         } catch (error) {
             console.error('Could not import preset', error);
-            toastr.error(t`Could not import this preset. Check the file and your connection to Neconyan, then try again.`);
+            if (!error?.saveNoticeShown) {
+                toastr.error(error?.saveFailure ? settingsSaveFailureMessage(error.saveFailure) : t`Could not import this preset. Check the file, then try again.`);
+            }
         } finally {
             e.target.value = '';
         }
@@ -1899,7 +1914,9 @@ export async function initPresetManager() {
             await PresetManager.performMasterImport(data, fileName);
         } catch (error) {
             console.error('Could not import formatting templates', error);
-            toastr.error(t`Could not import these templates. Check the file and your connection to Neconyan, then try again.`);
+            if (!error?.saveNoticeShown) {
+                toastr.error(error?.saveFailure ? settingsSaveFailureMessage(error.saveFailure) : t`Could not import these templates. Check the file, then try again.`);
+            }
         } finally {
             e.target.value = '';
         }
