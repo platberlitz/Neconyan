@@ -1512,6 +1512,21 @@ describe('in-chat agent bundled templates', () => {
         }
     });
 
+    test('installs Pura\'s randomisers by default, disabled, before the reply', () => {
+        const groups = readTemplate('groups.json');
+        const catalog = readTemplate('index.json');
+        const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
+        const hidden = readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS');
+        const randomisers = groups.find(group => group.id === 'grp-pura-randomisers').agentTemplateIds;
+
+        expect(randomisers.length).toBeGreaterThan(5);
+        for (const id of randomisers) {
+            expect(defaults).toContain(`'${id}'`);
+            expect(hidden).not.toContain(`'${id}'`);
+            expect(catalog.find(template => template.id === id)).toMatchObject({ category: 'randomizer', phase: 'pre', enabled: false });
+        }
+    });
+
     test('keeps every catalog template category renderable in the browser', async () => {
         const { AGENT_CATEGORIES } = await importAgentStore();
         const catalog = readTemplate('index.json');

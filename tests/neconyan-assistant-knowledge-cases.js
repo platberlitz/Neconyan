@@ -474,6 +474,7 @@ export const refreshedKnowledgeCases = [
     ['How do I preview the Clothing Tracker card in another theme?', 'agents.clothing-companion', 'in the preview picker'],
     ['How do I turn on the Vitals companion with Health and Satiety bars?', 'agents.vitals-companion', 'comes already installed in every account'],
     ['Does the AI see my Vitals Hydration and Morale?', 'agents.vitals-companion', 'added to the next reply prompt'],
+    ['Do I need to add Chaos Mode from the library?', 'agents.install-trackers', 'Pura\'s randomisers, such as Chaos Mode'],
     ['Where is the Dice Roller now?', 'tools.dice-roller', 'Companion panel'],
     ['How do I turn on Dice Roller?', 'tools.dice-roller', 'switched off'],
     ['Does Dice Roller make an extra model request?', 'tools.dice-roller', 'no extra model request'],

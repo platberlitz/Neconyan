@@ -771,8 +771,9 @@ let templateLoad = null;
 const BUNDLED_CATALOGUE_REVISION_KEY = 'ica--catalogue-revision';
 let autoSeededTemplateIds = new Set();
 
-// Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
-// Only" kit in templates/groups.json; the Ethereality kit stays library-only.
+// Seeded once per account, disabled. The trackers and randomisers mirror the
+// "Pura's Trackers Only" and "Pura's Randomisers Only" kits in templates/groups.json;
+// the Ethereality kit stays library-only.
 // The scene cards, Vitals and the local Dice Roller are the companions seeded by default.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
@@ -810,6 +811,14 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-status-tracker',
     'tpl-time-tracker',
     'tpl-world-detail',
+    'tpl-chaos-mode',
+    'tpl-grounded-complication',
+    'tpl-genre-randomiser',
+    'tpl-scene-driving-force',
+    'tpl-scene-pressure',
+    'tpl-combined-directors-cut',
+    'tpl-dead-dove-escalation',
+    'tpl-intimacy-kink-randomiser',
     'tpl-position-tracker-companion',
     'tpl-clothing-tracker-companion',
     'tpl-visual-map-companion',
