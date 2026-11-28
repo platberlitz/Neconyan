@@ -25,6 +25,7 @@
 - A chat save cut off by a brief server restart or dropped connection now keeps retrying, and the chat unlocks once the server confirms it, instead of refusing every later save, reply and **Mewmory** update until you reload. Repeated failures show one **Chat could not be saved** notice instead of one per attempt, **Group Chat** saves that lose the connection now say so, and a save a crash left half-done no longer locks the whole account until the server restarts.
 - With **After-reply agents** set to **Run together**, at most four **Agents** or **Companions** now send their requests at once, several Agents failing in one pass share a single toast that names them instead of one toast each, a provider error from a background Agent or Companion request no longer shows a second toast of its own, saying no to **Connecting To Proxy** shows its message once for every request that was waiting, and on a server reply the additions from Agents that finished are kept when another one running beside them fails.
 - With Reduce Motion on in your iPhone settings or **Reduced Motion** on in Neconyan, Safari and iPhone no longer download the 347 KB moving pixel cat when **Home** opens.
+- A burst of the same error no longer stacks a pile of identical notices on screen: you see one, at most four error and warning notices show at a time and the rest wait their turn, and every error and warning notice is now also written to the browser console so there's something to go on when reporting a problem.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -49,6 +50,7 @@
 - PR #1028 (2026-11-28) `fix(i18n): finish the Agents and Companion translations in 17 languages`
 - PR #1029 (2026-11-28) `fix(chat): recover unconfirmed saves instead of locking the chat`
 - PR #1030 (2026-11-28) `fix(agents): cap parallel Agents at four and share one failure toast`
+- PR #1031 (2026-11-28) `fix(toasts): merge repeated alert toasts and log every one`
 
 ## v1.6.0
 

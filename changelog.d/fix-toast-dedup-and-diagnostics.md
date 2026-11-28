@@ -1,1 +1,0 @@
-A burst of the same error no longer stacks a pile of identical notices on screen: you see one, at most four error and warning notices show at a time and the rest wait their turn, and every error and warning notice is now also written to the browser console so there's something to go on when reporting a problem.
