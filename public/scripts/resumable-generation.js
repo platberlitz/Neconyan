@@ -34,6 +34,9 @@ const activeRequests = new Map();
 const ownedReplies = new Map();
 /** Replies this page stopped whose cancel has not reached the server yet. Never offered for recovery. */
 const stoppedReplies = new Set();
+/** Neconyan: replies whose failure this page already showed while they ran, newest last. */
+const shownFailures = new Set();
+const SHOWN_FAILURE_LIMIT = 50;
 const CANCEL_RETRY_DELAYS_MS = Object.freeze([0, 1000, 3000, 10000, 30000]);
 /** @type {Set<(busy: boolean) => void>} */
 const activityListeners = new Set();
@@ -618,7 +621,9 @@ export async function listRecoverableGenerations(headers) {
         return [];
     }
     const data = await response.json();
-    return (Array.isArray(data?.jobs) ? data.jobs : []).filter(job => !activeRequests.has(job.id) && !ownedReplies.has(job.id) && !stoppedReplies.has(job.id));
+    return (Array.isArray(data?.jobs) ? data.jobs : [])
+        .filter(job => !activeRequests.has(job.id) && !ownedReplies.has(job.id) && !stoppedReplies.has(job.id))
+        .map(job => shownFailures.has(job.id) ? { ...job, failureShown: true } : job);
 }
 
 /**
@@ -649,8 +654,17 @@ export async function heldReplyHasMore(context, headers) {
 /**
  * The caller has finished processing this reply. A failed chat save leaves the server copy available.
  * @param {Record<string, any>|null} context The context passed to setGenerationContext
+ * @param {{ failureShown?: boolean }} [options] failureShown: the page already told the user this reply failed,
+ * so recovery drops a failed server copy without a second notice
  */
-export function releaseGenerationContext(context) {
+export function releaseGenerationContext(context, { failureShown = false } = {}) {
+    if (failureShown && context?.id) {
+        shownFailures.delete(context.id);
+        shownFailures.add(context.id);
+        if (shownFailures.size > SHOWN_FAILURE_LIMIT) {
+            shownFailures.delete(shownFailures.values().next().value);
+        }
+    }
     ownedReplies.get(context?.id)?.release();
 }
 

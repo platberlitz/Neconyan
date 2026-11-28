@@ -224,6 +224,24 @@ function isAbortError(error) {
     return error?.name === 'AbortError';
 }
 
+const CHAT_LABEL_REQUEST_FAILURE_STATUSES = new Set([401, 402, 403, 408, 425, 429]);
+const CHAT_LABEL_REQUEST_FAILURE_PATTERN = /failed to fetch|load failed|network ?error|offline|unreachable|timed? ?out|connection (?:lost|refused|reset|closed|error)|socket hang up|econn(?:reset|refused|aborted)|enotfound|etimedout|bad gateway|service unavailable|gateway time-?out|overloaded|rate.?limit|too many requests|quota|insufficient (?:credits|balance|funds)|unauthori[sz]ed|forbidden|authentication|api[_ -]?key|invalid token/i;
+
+/**
+ * True when a chat label request failed on the way to or from the model (no connection, rate limit,
+ * refused key, cancelled) rather than because the model turned down the request's format. Asking
+ * again without the format would fail the same way.
+ */
+export function isChatLabelRequestFailure(error) {
+    if (!error) return false;
+    if (isAbortError(error) || error.name === 'TimeoutError') return true;
+    if (error.code === 'GENERATION_CONNECTION_LOST') return true;
+    const message = String(error.message ?? error);
+    const status = Number(error.status ?? error.statusCode ?? message.match(/\bresponse status (\d{3})\b/i)?.[1]);
+    if (CHAT_LABEL_REQUEST_FAILURE_STATUSES.has(status) || status >= 500) return true;
+    return CHAT_LABEL_REQUEST_FAILURE_PATTERN.test(message);
+}
+
 /**
  * Names timestamp-named chats in the background once they are long enough and nothing else is running.
  * Every dependency is injected so the browser wiring stays thin and the timing rules are testable.
@@ -232,6 +250,8 @@ function isAbortError(error) {
  * rename(target, { signal, canCommit }) asks the model and renames; it resolves { status } or throws.
  * A run that is cancelled before it commits is retried after the next activity; a failed or
  * unusable answer is not retried for that chat until the page reloads.
+ * Neconyan: a request that failed on its way to the model (see isChatLabelRequestFailure) is logged
+ * through onRequestFailure, without a notice, and tried again after the next activity.
  */
 export function createChatAutoNamer({
     isEnabled,
@@ -249,6 +269,7 @@ export function createChatAutoNamer({
     setTimer = (callback, ms) => setTimeout(callback, ms),
     clearTimer = id => clearTimeout(id),
     onError = error => console.warn('Could not name the chat automatically:', error),
+    onRequestFailure = error => console.warn('Could not reach the model to name the chat; trying again after the next reply:', error),
 } = {}) {
     const finished = new Set();
     let timer = null;
@@ -333,6 +354,10 @@ export function createChatAutoNamer({
         } catch (error) {
             // Cancelled before the rename: the next message, reply or idle moment tries again.
             if (isAbortError(error) && !attempt.committing) return;
+            if (!attempt.committing && isChatLabelRequestFailure(error)) {
+                onRequestFailure(error);
+                return;
+            }
             finished.add(target.key);
             if (!isAbortError(error)) onError(error);
         } finally {

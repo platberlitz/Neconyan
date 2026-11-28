@@ -876,6 +876,93 @@ describe('TTS Conversation integration', () => {
         expect(context.completeTtsJob).not.toHaveBeenCalled();
     });
 
+    function narrationQueue(ttsImpl) {
+        const context = createTtsContext({
+            Error, TypeError,
+            console: { debug: jest.fn(), log: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+            toastr: { error: jest.fn(), info: jest.fn() },
+            safeClone: value => structuredClone(value),
+            extension_settings: { tts: { enabled: true, narrate_by_paragraphs: true, multi_voice_enabled: false } },
+            power_user: { allow_name2_display: true },
+            DEFAULT_VOICE_MARKER: '[Default Voice]', DISABLED_VOICE_MARKER: 'disabled',
+            voiceMap: { Mona: 'mona-voice' },
+            ttsProvider: { getVoice: jest.fn(async name => ({ voice_id: name })) },
+            ttsJobQueue: [], currentTtsJob: null, audioPaused: false,
+            substituteParams: text => text,
+            filterTtsAsterisks: text => text,
+            localizeMessage: text => text,
+            parseMessageSegments: text => text.split('|').map(part => ({ type: 'other', text: part.trim() })),
+            completeTtsJob: jest.fn(() => { context.currentTtsJob = null; }),
+            scheduleTtsQueueWakeup: jest.fn(),
+            resetTtsPlayback: jest.fn(),
+            getContext: () => ({ chat: [] }),
+        });
+        context.tts = jest.fn(async text => {
+            await ttsImpl(text);
+            context.currentTtsJob = null;
+        });
+        for (const name of ['createTtsBatch', 'getTtsQueueErrorMessage', 'isTtsConnectionError', 'settleTtsQueueFailure', 'processAndQueueTtsMessage', 'processTtsQueue', 'playFullConversation']) {
+            evaluateInContext(name, context);
+        }
+        const drain = async () => {
+            for (let pass = 0; pass < 50 && (context.ttsJobQueue.length || context.currentTtsJob); pass++) {
+                await context.processTtsQueue();
+            }
+        };
+        return { context, drain, spoken: () => context.tts.mock.calls.map(([text]) => text) };
+    }
+
+    test('a voice provider that cannot be reached is reported once per message and the rest of it is dropped', async () => {
+        const { context, drain, spoken } = narrationQueue(async () => { throw new TypeError('Failed to fetch'); });
+        context.processAndQueueTtsMessage({ name: 'Mona', mes: 'One | Two\nThree | Four' }, 4);
+        context.processAndQueueTtsMessage({ name: 'Mona', mes: 'Later' }, 5);
+
+        await drain();
+
+        // The first part fails; the rest of message 4 is not tried. Message 5 is its own request.
+        expect(spoken()).toEqual(['One', 'Later']);
+        expect(context.toastr.error.mock.calls).toEqual([['Failed to fetch'], ['Failed to fetch']]);
+        expect(context.ttsJobQueue).toEqual([]);
+    });
+
+    test('reading a whole conversation stops at the first unreachable provider, with one notice', async () => {
+        const { context, drain, spoken } = narrationQueue(async () => { throw new Error('HTTP 503: Service Unavailable'); });
+        context.getContext = () => ({ chat: [{ name: 'Mona', mes: 'First' }, { name: 'Mona', mes: 'Second' }, { name: 'Mona', mes: 'Third' }] });
+
+        context.playFullConversation();
+        await drain();
+
+        expect(spoken()).toEqual(['First']);
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('a failure that is not about the connection is shown once and the other parts still play', async () => {
+        const { context, drain, spoken } = narrationQueue(async text => {
+            if (text !== 'Three') throw new Error('HTTP 400: Voice not allowed');
+        });
+        context.processAndQueueTtsMessage({ name: 'Mona', mes: 'One | Two\nThree' }, 4);
+
+        await drain();
+
+        expect(spoken()).toEqual(['One', 'Two', 'Three']);
+        expect(context.toastr.error.mock.calls).toEqual([['HTTP 400: Voice not allowed']]);
+        expect(context.console.warn).toHaveBeenCalledWith('Text to speech failed again:', expect.any(Error));
+    });
+
+    test.each([
+        [new TypeError('Failed to fetch'), true],
+        [new TypeError('NetworkError when attempting to fetch resource.'), true],
+        [new Error('HTTP 429: Too Many Requests'), true],
+        [new Error('HTTP 502: Bad Gateway'), true],
+        [Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }), true],
+        [new Error('HTTP 401: Unauthorized'), false],
+        [new TypeError('Cannot read properties of undefined'), false],
+        ['Mona not in voicemap. Configure character in extension settings voice map', false],
+    ])('%s counts as a connection failure: %s', (error, expected) => {
+        const { context } = narrationQueue(async () => {});
+        expect(context.isTtsConnectionError(error)).toBe(expected);
+    });
+
     test('capability registration happens at activation start, before shell/provider work finishes', () => {
         const initStart = ttsSource.indexOf('export function init()');
         const registerCallIndex = ttsSource.indexOf('registerTtsCapability();', initStart);

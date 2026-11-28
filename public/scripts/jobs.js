@@ -225,6 +225,17 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
         schedule();
     };
     const wake = () => { if (globalThis.document?.visibilityState !== 'hidden') changed(); };
+    // Neconyan: a caller's handler that throws is the caller's bug, not a lost server. It is logged
+    // under the handler's name and never counts as a failed read or a server recovery.
+    const runHandler = async (name, handler, job, again = true) => {
+        try {
+            await handler?.(job);
+            return true;
+        } catch (error) {
+            console.warn(`Job ${id}: ${name} failed${again ? ' and runs again after the next read' : ''}.`, error);
+            return false;
+        }
+    };
 
     const tickOnce = async () => {
         if (stopped || signal?.aborted) return;
@@ -237,20 +248,26 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
             if (readFailed) { readFailed = false; try { globalThis.NeconyanCrashDiagnostics?.serverRecovered?.(); } catch { /* Optional diagnostics. */ } }
             const job = body?.job ?? null;
             if (job) {
+                let handlerFailed = false;
                 diagnostic(body?.diagnostics || null);
                 if (JSON.stringify(job) !== JSON.stringify(previous)) {
                     // Remembered only once applied, so a failed update is offered again.
-                    await onUpdate?.(job);
-                    previous = job;
+                    handlerFailed = !await runHandler('onUpdate', onUpdate, job);
+                    if (!handlerFailed) previous = job;
                 }
                 checkAccount(account);
                 if (stopped || signal?.aborted) return;
-                await onSnapshot?.(job);
+                if (!handlerFailed) handlerFailed = !await runHandler('onSnapshot', onSnapshot, job);
                 checkAccount(account);
                 if (stopped || signal?.aborted) return;
+                if (handlerFailed) {
+                    // A failing handler backs off like a failed read, so it is not run in a tight loop.
+                    delay = Math.min(MAX_INTERVAL_MS, Math.round(delay * 1.5));
+                    return;
+                }
                 // A terminal job stops the job poll, but a failed readback must
                 // still be retried, so only stop once the snapshot succeeded.
-                if (TERMINAL.has(job.state)) { stop('done'); await onDone?.(job); return; }
+                if (TERMINAL.has(job.state)) { stop('done'); await runHandler('onDone', onDone, job, false); return; }
                 // Reopen a dropped stream on a later poll, at most once per interval.
                 if (changes?.droppedAt() && Date.now() - changes.droppedAt() >= intervalMs) {
                     changes.stop();

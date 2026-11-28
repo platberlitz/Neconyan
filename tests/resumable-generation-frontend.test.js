@@ -654,6 +654,26 @@ describe('held generation context', () => {
         expect(discardCalls[0][1].headers['X-CSRF-Token']).toBe('csrf');
     });
 
+    test('a reply released after its failure was shown is listed as already reported', async () => {
+        fetchMock.mockImplementation(async (url) => {
+            if (url === DISCARD_URL) return new Response(null, { status: 204 });
+            return Response.json({ error: { message: 'Rate limited' } }, { status: 429 });
+        });
+        const controller = new AbortController();
+        const failed = { v: 1, chatId: 'chat', type: 'normal' };
+        setGenerationContext(controller.signal, failed);
+        await (await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal })).text();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        fetchMock.mockImplementation(async (url) => url === LIST_URL
+            ? Response.json({ jobs: [{ id: failed.id, status: 'failed' }, { id: 'other', status: 'finished' }] })
+            : new Response(null, { status: 204 }));
+        releaseGenerationContext(failed, { failureShown: true });
+        expect(await listRecoverableGenerations({})).toEqual([
+            { id: failed.id, status: 'failed', failureShown: true },
+            { id: 'other', status: 'finished' },
+        ]);
+    });
+
     test('reports the page busy through parsing and saving, then idle once released', async () => {
         fetchMock.mockResolvedValue(new Response(bodyFrom(['data: a\n\n']), { status: 200 }));
         const states = [];

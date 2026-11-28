@@ -771,7 +771,7 @@ function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
         const message = data.message || data.error?.message || response.statusText;
         console.warn('[NovelAI API] The backend returned an error.', message, data.error ?? data);
         if (!quiet) toastr.error(message, 'NovelAI API');
-        throw new Error(message);
+        throw Object.assign(new Error(message), { failureShown: !quiet });
     }
 }
 

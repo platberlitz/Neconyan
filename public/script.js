@@ -68,7 +68,7 @@ import { chatSaveNoticeKey, clearSaveFailureNotice, showSaveFailureNotice } from
 import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages, digestMessageFingerprints } from './scripts/chat-patch-save.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
-import { CHAT_LABEL_TITLE_LIMIT, beginChatNameCommit, createChatAutoNamer, extractGeneratedChatLabel, getPendingChatNameCommit, getPlainChatLabelMessage, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
+import { CHAT_LABEL_TITLE_LIMIT, beginChatNameCommit, createChatAutoNamer, extractGeneratedChatLabel, getPendingChatNameCommit, getPlainChatLabelMessage, isChatLabelRequestFailure, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
 
 import {
     world_info,
@@ -1557,7 +1557,9 @@ async function firstLoadInit() {
         addShowdownPatch(showdown);
         addDOMPurifyHooks();
         // Neconyan: card script detection - see #94.
-        eventSource.on(event_types.CHAT_CHANGED, scheduleHeldGenerationRecovery);
+        eventSource.on(event_types.CHAT_CHANGED, (_chatId, change) => {
+            if (change?.sameChat !== true) scheduleHeldGenerationRecovery();
+        });
         document.addEventListener('visibilitychange', scheduleHeldGenerationRecovery);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'hidden') refreshRenderedMessageMetaBadges();
@@ -5362,6 +5364,9 @@ export async function refreshCurrentChatFromSaved({ signal } = {}) {
     }
 }
 
+/** Neconyan: CHAT_CHANGED's second argument, and part of CHAT_LOADED's detail, when the open chat only caught up with its saved copy. */
+const SAME_CHAT_REFRESH = Object.freeze({ sameChat: true });
+
 async function adoptSavedChatTail(signal) {
     const characterId = this_chid;
     const chatId = getCurrentChatId();
@@ -5505,9 +5510,11 @@ async function adoptSavedChatTail(signal) {
     }
 
     // A rebuilt chat announced itself; extensions still expect that, but never as a new message.
-    await eventSource.emit(event_types.CHAT_CHANGED, getCurrentChatId());
+    // Neconyan: it is still the same chat, so listeners that react to opening another one (recovery passes,
+    // cancelled requests, reset playback, chat-change automation, settings saves) skip it.
+    await eventSource.emit(event_types.CHAT_CHANGED, getCurrentChatId(), SAME_CHAT_REFRESH);
     if (!isCurrent()) return true;
-    eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid] } });
+    eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid], ...SAME_CHAT_REFRESH } });
     return true;
 }
 
@@ -7849,7 +7856,7 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
     const externalSignal = signal instanceof AbortSignal ? signal : null;
     const quietAbortController = externalSignal ? new AbortController() : null;
     const abortFromExternalSignal = quietAbortController
-        ? () => quietAbortController.abort(externalSignal.reason ?? new Error('Cancelled by external signal'))
+        ? () => quietAbortController.abort(externalSignal.reason ?? new DOMException('Cancelled by external signal', 'AbortError'))
         : null;
 
     if (externalSignal) {
@@ -9291,7 +9298,8 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
 
     const abortController = new AbortController();
     const externalSignal = signal instanceof AbortSignal ? signal : null;
-    const abortFromExternalSignal = () => abortController.abort(externalSignal.reason ?? new Error('Cancelled by external signal'));
+    // Neconyan: cancellations reject as an AbortError, which callers already treat as 'stopped', not 'failed'.
+    const abortFromExternalSignal = () => abortController.abort(externalSignal.reason ?? new DOMException('Cancelled by external signal', 'AbortError'));
     if (externalSignal) {
         if (externalSignal.aborted) {
             abortFromExternalSignal();
@@ -9308,8 +9316,8 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
     // Allow extensions to stop generation before it happens
     const eventAbortController = new AbortController();
     const abortHook = () => {
-        abortController.abort(new Error('Cancelled by stop event'));
-        eventAbortController.abort(new Error('Cancelled by extension'));
+        abortController.abort(new DOMException('Cancelled by stop event', 'AbortError'));
+        eventAbortController.abort(new DOMException('Cancelled by extension', 'AbortError'));
     };
     eventSource.on(event_types.GENERATION_STOPPED, abortHook);
 
@@ -9375,7 +9383,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         } else if (api === 'openai') {
             data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, reasoningEffort, ...requestControls, stream: typeof onChunk === 'function' ? true : undefined });
         } else if (api === 'textgenerationwebui' && typeof onChunk === 'function') {
-            data = await generateTextGenWithStreaming(generateData, abortController.signal);
+            data = await generateTextGenWithStreaming(generateData, abortController.signal, { quiet: true });
         } else {
             data = await requestBackendJson(api, generateData, abortController.signal);
         }
@@ -9831,6 +9839,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
     };
     const notifyBlocked = (hasText, outcome) => {
         suppressAutomaticGeneration(agentGenerationContext);
+        // A lost connection says nothing about the reply itself; the server copy may still finish or fail.
+        if (outcome?.reason !== 'connection_lost') failureShown = true;
         toastr.warning(generationBlockedNotice(hasText, outcome));
     };
 
@@ -9838,6 +9848,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
     // the Agents and Companions an empty swipe to work on.
     const discardEmptyReply = async () => {
         suppressAutomaticGeneration(agentGenerationContext);
+        failureShown = true;
         toastr.error(t`The AI sent back an empty reply, so nothing was changed. Try again.`, t`Reply failed`, { timeOut: 10000, extendedTimeOut: 20000 });
         await restoreBlockedAttempt();
         unblockGeneration(type);
@@ -9845,6 +9856,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
     let activeStream = null;
     let recoveryContext = null;
+    // Neconyan: this reply's failure has had its notice, so held-reply recovery must not repeat it.
+    let failureShown = false;
     let delegatedGeneration = false;
     const run = !dryRun && !isAuxiliaryGeneration ? {
         controller: requestController,
@@ -11820,9 +11833,14 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else if (typeof exception?.error?.message === 'string') {
                 // If the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message.
                 toastr.error(exception.error.message, t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+                failureShown = true;
             } else if (exception?.error === true) {
                 // The app server's { error: true, status, response } for a text backend that failed.
                 toastr.error(readableBackendError(exception), t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
+                failureShown = true;
+            } else if (exception?.failureShown === true) {
+                // The backend's own reader has shown this error already.
+                failureShown = true;
             }
 
             if (!isAuxiliaryGeneration) {
@@ -11842,7 +11860,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (run?.pendingRegenerate?.ownsChat() && !hasReplacementReply(chat[priorReplyIndex])) {
             await restoreBlockedAttempt(true).catch(error => console.error('Could not restore prior reply', error));
         }
-        releaseGenerationContext(recoveryContext);
+        releaseGenerationContext(recoveryContext, { failureShown });
         if (recoveryContext) scheduleHeldGenerationRecovery();
         externalSignal?.removeEventListener('abort', onAbort);
         requestController?.signal.removeEventListener('abort', stopStream);
@@ -12525,15 +12543,17 @@ export async function sendStreamingRequest(type, data, options = {}) {
         data = applyGenerationRequestControls(data, { model: getGeneratingModel(), ...options });
     }
     setGenerationContext(streamingProcessor.requestAbortController.signal, options.recoveryContext ?? null);
+    // Neconyan: a quiet request reports its own errors, so the backends do not toast them as well.
+    const quiet = type === 'quiet';
     switch (main_api) {
         case 'openai':
             return await sendOpenAIRequest(type, data.prompt, streamingProcessor.requestAbortController.signal, options);
         case 'textgenerationwebui':
-            return await generateTextGenWithStreaming(data, streamingProcessor.requestAbortController.signal);
+            return await generateTextGenWithStreaming(data, streamingProcessor.requestAbortController.signal, { quiet });
         case 'novel':
-            return await generateNovelWithStreaming(data, streamingProcessor.requestAbortController.signal);
+            return await generateNovelWithStreaming(data, streamingProcessor.requestAbortController.signal, { quiet });
         case 'kobold':
-            return await generateKoboldWithStreaming(data, streamingProcessor.requestAbortController.signal);
+            return await generateKoboldWithStreaming(data, streamingProcessor.requestAbortController.signal, { quiet });
         default:
             throw new Error('Streaming is enabled, but the current API does not support streaming.');
     }
@@ -12661,14 +12681,22 @@ async function recoverHeldGenerationPass() {
             await applyHeldGeneration(job, headers, () => isCurrent() && isIdle());
             heldRecoveryFailures.delete(job.id);
         } catch (error) {
-            // Neconyan: a held reply this page cannot read (a provider error inside the stream, a stream
-            // with no end marker) fails the same way every time. Retry a little, then let it go.
+            // Neconyan: the held reply is the provider's error. Its reader has just shown it, or this page
+            // did while the reply ran, and reading it again gives the same answer.
+            if (typeof error?.failureShown === 'boolean') {
+                heldRecoveryFailures.delete(job.id);
+                console.warn('Held reply was a provider error', error);
+                await discardGeneration(job.id, headers).catch(() => undefined);
+                continue;
+            }
+            // Neconyan: a held reply this page cannot read (a stream with no end marker) fails the same way
+            // every time. Retry a little, then let it go.
             const failures = (heldRecoveryFailures.get(job.id) ?? 0) + 1;
             heldRecoveryFailures.set(job.id, failures);
             if (failures < 3 || !isCurrent()) throw error;
             heldRecoveryFailures.delete(job.id);
             console.warn('Held reply could not be restored', error);
-            toastr.error(t`A reply that ran in the background failed.`);
+            if (!job.failureShown) toastr.error(t`A reply that ran in the background failed.`);
             await discardGeneration(job.id, headers).catch(() => undefined);
         }
     }
@@ -12685,6 +12713,12 @@ async function recoverHeldGenerationPass() {
 async function applyHeldGeneration(job, headers, isCurrent) {
     const ctx = job.context;
     const discard = () => discardGeneration(job.id, headers);
+    // Neconyan: a reply whose failure this page showed while it ran goes without a second notice.
+    const dropFailed = () => {
+        if (job.failureShown) console.warn('Held reply failed after its notice', job.id);
+        else toastr.error(t`A reply that ran in the background failed.`);
+        return discard();
+    };
     if (!isCurrent()) return;
     let target = getHeldReplyTarget(chat, ctx, job.id);
     if (!target) return;
@@ -12694,10 +12728,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         return;
     }
 
-    if (job.status === 'failed') {
-        toastr.error(t`A reply that ran in the background failed.`);
-        return discard();
-    }
+    if (job.status === 'failed') return dropFailed();
 
     const response = await openHeldGeneration(job.id, headers);
     if (!isCurrent()) {
@@ -12718,8 +12749,8 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     if (ctx.streaming) {
         let last = null;
         const read = {
-            openai: () => readChatCompletionStream(response, { chatCompletionSource: ctx.source, canMultiSwipe: true }),
-            textgenerationwebui: () => readTextGenerationStream(response),
+            openai: () => readChatCompletionStream(response, { chatCompletionSource: ctx.source, canMultiSwipe: true, quiet: Boolean(job.failureShown) }),
+            textgenerationwebui: () => readTextGenerationStream(response, { quiet: Boolean(job.failureShown) }),
             kobold: () => readKoboldStream(response),
             novel: () => readNovelStream(response),
         }[ctx.api];
@@ -12746,10 +12777,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         generationOutcome = classifyGenerationOutcome(data);
         providerLengthStop = isGenerationLengthFinish(data);
         choiceOutcomes = Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)]));
-        if (data?.error && !generationOutcome) {
-            toastr.error(t`A reply that ran in the background failed.`);
-            return discard();
-        }
+        if (data?.error && !generationOutcome) return dropFailed();
         getMessage = extractMessageFromData(data, ctx.api);
         structuredPrefill = data.choices?.[0]?.structured_prefill;
         title = ctx.api === 'koboldhorde' ? data.workerName : '';
@@ -12765,13 +12793,14 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     if (!target || target.type === 'saved') return;
     const isContinue = ctx.type === 'continue';
     if (generationOutcome) {
-        toastr.warning(generationBlockedNotice(Boolean(getMessage.trim()), generationOutcome));
-        if (!getMessage.trim()) return discard();
+        const hasText = Boolean(getMessage.trim());
+        if (hasText || !job.failureShown) toastr.warning(generationBlockedNotice(hasText, generationOutcome));
+        if (!hasText) return discard();
     }
     getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, includeUserPromptBias: !structuredPrefill, displayIncompleteSentences: providerLengthStop || Boolean(generationOutcome) });
     reasoning = getRegexedString(reasoning, regex_placement.REASONING);
     if (!getMessage.trim() && !reasoning.trim() && !imageUrls.length) {
-        toastr.warning(t`A reply that finished in the background had no text to restore.`);
+        if (!job.failureShown) toastr.warning(t`A reply that finished in the background had no text to restore.`);
         return discard();
     }
 
@@ -14607,11 +14636,44 @@ export function getSavedMessageExpression(message) {
     return readMessageExpression(message, getMessageExpressionAvatar(message));
 }
 
+/** Neconyan: expressions shown while a reply, a server Roleplay job or Agents were still writing the chat. */
+const deferredExpressionSaves = new Set();
+let deferredExpressionSaveTimer = null;
+const DEFERRED_EXPRESSION_SAVE_MS = 1000;
+
+/**
+ * Saves expressions held back while the chat was busy, once it is not. Saving earlier would race the
+ * job's own saves, which usually carry them already. A chat switch drops them.
+ * @param {number} generation Chat generation the expressions belong to.
+ */
+function saveDeferredExpressions(generation) {
+    clearTimeout(deferredExpressionSaveTimer);
+    deferredExpressionSaveTimer = setTimeout(async () => {
+        deferredExpressionSaveTimer = null;
+        if (getChatGeneration() !== generation) return deferredExpressionSaves.clear();
+        if (is_send_press || isAgentWorkPending()) return saveDeferredExpressions(generation);
+        const messages = [...deferredExpressionSaves];
+        deferredExpressionSaves.clear();
+        try {
+            await saveChatConditional({ throwOnError: true });
+            messages.forEach(message => unsavedExpressions.delete(message));
+        } catch (error) {
+            console.warn('A held-back expression could not be saved:', error);
+            toastr.error('Could not save this expression. Select it again to retry.', 'Character Expressions');
+        }
+    }, DEFERRED_EXPRESSION_SAVE_MS);
+}
+
 export async function recordMessageExpression(target, src) {
     if (!isExpressionTargetCurrent(target)) return false;
     ensureSwipes(target.message);
     if (writeMessageExpression(target.message, target.avatar, src)) unsavedExpressions.add(target.message);
     renderMessageExpression(document.querySelector(`#chat .mes[mesid="${target.index}"]`), target.message, target.avatar);
+    if (unsavedExpressions.has(target.message) && (is_send_press || isAgentWorkPending())) {
+        deferredExpressionSaves.add(target.message);
+        saveDeferredExpressions(target.generation);
+        return true;
+    }
     if (unsavedExpressions.has(target.message)) {
         try {
             await saveChatConditional({ throwOnError: true });
@@ -17380,7 +17442,9 @@ ${transcript}`,
                 return structuredLabel;
             }
         } catch (error) {
-            if (isChatHistoryToolAbort(error)) {
+            // Neconyan: only a model that turned down the label format is asked again without it. A request that
+            // never got an answer (no connection, rate limit, refused key) would fail the same way twice.
+            if (isChatHistoryToolAbort(error) || isChatLabelRequestFailure(error)) {
                 throw error;
             }
 

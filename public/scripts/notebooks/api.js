@@ -77,14 +77,26 @@ export function attachmentUrl(notebookId, relative) {
     return `${BASE}/attachments/file?${query}`;
 }
 
+// Neconyan: a stream that keeps failing is retried after 5 s, 10 s, 20 s and so on, up to five minutes,
+// each wait shortened at random by up to half so open tabs do not reconnect together. A hidden or
+// offline page waits instead, and showing it again or coming back online reconnects at once.
+const EVENTS_RETRY_MS = 5000;
+const EVENTS_RETRY_MAX_MS = 5 * 60 * 1000;
+
 export function subscribeNotes(listener) {
     if (typeof EventSource !== 'function') return () => {};
     let source = null;
     let closed = false;
     let retry = null;
+    let failures = 0;
+    const paused = () => globalThis.document?.visibilityState === 'hidden' || globalThis.navigator?.onLine === false;
     const open = () => {
-        if (closed) return;
+        retry = null;
+        if (closed || source || paused()) return;
         source = new EventSource(`${BASE}/events`);
+        source.onopen = () => {
+            failures = 0;
+        };
         source.onmessage = event => {
             try {
                 const change = JSON.parse(event.data);
@@ -95,13 +107,26 @@ export function subscribeNotes(listener) {
         };
         source.onerror = () => {
             source?.close();
-            if (!closed) retry = setTimeout(open, 5000);
+            source = null;
+            if (closed) return;
+            const ceiling = Math.min(EVENTS_RETRY_MAX_MS, EVENTS_RETRY_MS * 2 ** failures++);
+            retry = setTimeout(open, Math.round(ceiling * (1 - Math.random() / 2)));
         };
     };
+    const wake = () => {
+        if (closed || source || paused()) return;
+        clearTimeout(retry);
+        open();
+    };
+    globalThis.document?.addEventListener?.('visibilitychange', wake);
+    globalThis.window?.addEventListener?.('online', wake);
     open();
     return () => {
         closed = true;
         clearTimeout(retry);
         source?.close();
+        source = null;
+        globalThis.document?.removeEventListener?.('visibilitychange', wake);
+        globalThis.window?.removeEventListener?.('online', wake);
     };
 }

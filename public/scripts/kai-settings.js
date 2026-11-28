@@ -259,7 +259,7 @@ function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
         const message = data.error.message || response.statusText;
         console.warn('[KoboldAI API] The backend returned an error.', message, data.error);
         if (!quiet) toastr.error(message, 'KoboldAI API');
-        throw new Error(message);
+        throw Object.assign(new Error(message), { failureShown: !quiet });
     }
 }
 

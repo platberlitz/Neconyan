@@ -297,7 +297,7 @@ const updateCharacterQuickReplySets = (oldAvatar, newAvatar) => {
     }
 };
 
-const onChatChanged = async (chatIdx) => {
+const onChatChanged = async (chatIdx, change) => {
     log('CHAT_CHANGED', chatIdx);
 
     handleCharChange();
@@ -313,6 +313,9 @@ const onChatChanged = async (chatIdx) => {
     manager.rerender();
     buttons.refresh();
 
+    // Neconyan: a chat that only caught up with its saved copy (after a server reply) was not opened
+    // again, so 'Execute on chat change' replies do not run.
+    if (change?.sameChat === true) return;
     await autoExec.handleChatChanged();
 };
 eventSource.on(event_types.CHAT_CHANGED, (...args) => executeIfReadyElseQueue(onChatChanged, args));

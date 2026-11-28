@@ -38,6 +38,8 @@ let latestRefresh;
 let activeRefresh = null;
 let pendingEnable;
 let autoHiding = false;
+/** Neconyan: the automatic-hiding failure last shown for a chat, so a reply does not repeat it. */
+let shownAutoHideFailure = null;
 let restoringVisibility = false;
 let pendingDisable = null;
 let lastRecall = null;
@@ -507,6 +509,15 @@ export async function hideOverflowAutomatically({ limit } = {}) {
     if (autoHiding || restoringVisibility || !getMewmoryLocator()) return 0;
     const scope = getMewmoryScope();
     autoHiding = true;
+    let failed = false;
+    // Neconyan: every reply runs this, so one failure is shown once and only logged while it lasts.
+    const reportFailure = message => {
+        failed = true;
+        console.warn('Mewmory could not hide older messages automatically:', message);
+        if (shownAutoHideFailure?.scope === scope && shownAutoHideFailure.message === message) return;
+        shownAutoHideFailure = { scope, message };
+        toastr.error(message);
+    };
     try {
         if (!mewmory.config) {
             await refreshMewmory();
@@ -520,13 +531,18 @@ export async function hideOverflowAutomatically({ limit } = {}) {
             if (scope !== getMewmoryScope() || !pendingSave.ok || !mewmory.config?.autoHide) return 0;
         }
         if (!mewmory.view && mewmory.error) {
-            toastr.error('Could not hide older messages automatically: ' + mewmory.error);
-            return 0;
+            // The error can be left from an earlier reply, so read the chat again before reporting it.
+            await refreshMewmory();
+            if (scope !== getMewmoryScope()) return 0;
+            if (!mewmory.view && mewmory.error) {
+                reportFailure('Could not hide older messages automatically: ' + mewmory.error);
+                return 0;
+            }
         }
         const flushed = await flushMewmoryConfigAutosave();
         if (scope !== getMewmoryScope()) return 0;
         if (!flushed.ok) {
-            toastr.error('Could not hide older messages automatically because Mewmory settings were not saved: '
+            reportFailure('Could not hide older messages automatically because Mewmory settings were not saved: '
                 + (flushed.error || 'the settings in the Mewmory panel are incomplete.'));
             return 0;
         }
@@ -562,10 +578,12 @@ export async function hideOverflowAutomatically({ limit } = {}) {
         }
         return hidden;
     } catch (error) {
-        if (scope === getMewmoryScope()) toastr.error('Could not hide older messages automatically: ' + error.message);
+        if (scope === getMewmoryScope()) reportFailure('Could not hide older messages automatically: ' + error.message);
         return 0;
     } finally {
         autoHiding = false;
+        // A clean pass means the next failure is news again.
+        if (!failed && shownAutoHideFailure?.scope === scope && scope === getMewmoryScope()) shownAutoHideFailure = null;
     }
 }
 
@@ -812,8 +830,15 @@ export function initMewmory() {
         void refreshMewmory();
         scheduleUpdate();
     };
+    // Neconyan: a chat that only caught up with its saved copy is the same chat. Its memories are read
+    // again, but work under way is not cancelled as if another chat had opened.
+    const caughtUp = () => {
+        invalidateMewmoryRefresh();
+        void refreshMewmory();
+        scheduleUpdate();
+    };
     const created = () => { void enableMewmoryForNewChat(); };
-    eventSource.on(event_types.CHAT_CHANGED, changed);
+    eventSource.on(event_types.CHAT_CHANGED, (_chatId, change) => change?.sameChat === true ? caughtUp() : changed());
     eventSource.on(event_types.CHAT_RENAMED, changed);
     window.addEventListener('sb:conversation-workspace-state-changed', changed);
     for (const event of [

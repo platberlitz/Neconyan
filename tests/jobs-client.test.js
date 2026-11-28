@@ -158,6 +158,7 @@ describe('browser jobs observer snapshot callbacks', () => {
     test('a failed terminal snapshot readback retries before signalling completion', async () => {
         globalThis.fetch = jest.fn(async () => jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
         const { observeJob } = await import('../public/scripts/jobs.js');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const onSnapshot = jest.fn().mockRejectedValueOnce(new Error('Readback unavailable')).mockResolvedValue(undefined);
         const onDone = jest.fn();
         const stop = observeJob('job-1', { intervalMs: 1, onSnapshot, onDone });
@@ -165,7 +166,8 @@ describe('browser jobs observer snapshot callbacks', () => {
             await wait(40);
             expect(onSnapshot).toHaveBeenCalledTimes(2);
             expect(onDone).toHaveBeenCalledTimes(1);
-        } finally { stop(); }
+            expect(warn).toHaveBeenCalledWith('Job job-1: onSnapshot failed and runs again after the next read.', expect.any(Error));
+        } finally { stop(); warn.mockRestore(); }
     });
 
     test('a completed job stops polling and does not read again', async () => {
@@ -247,6 +249,7 @@ describe('browser jobs observer snapshot callbacks', () => {
     test('an update that failed to apply is offered again on the next poll', async () => {
         globalThis.fetch = jest.fn(async url => url.endsWith('/events') ? jsonResponse(null, 404) : jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
         const { observeJob } = await import('../public/scripts/jobs.js');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const onUpdate = jest.fn().mockRejectedValueOnce(new Error('Could not apply')).mockResolvedValue(undefined);
         const onDone = jest.fn();
         const stop = observeJob('job-1', { intervalMs: 1, onUpdate, onDone });
@@ -254,7 +257,54 @@ describe('browser jobs observer snapshot callbacks', () => {
             await wait(40);
             expect(onUpdate).toHaveBeenCalledTimes(2);
             expect(onDone).toHaveBeenCalledTimes(1);
-        } finally { stop(); }
+            expect(warn).toHaveBeenCalledWith('Job job-1: onUpdate failed and runs again after the next read.', expect.any(Error));
+        } finally { stop(); warn.mockRestore(); }
+    });
+
+    test('a handler that throws is logged as its own bug, never as a missing job or a server recovery', async () => {
+        globalThis.fetch = jest.fn(async url => url.endsWith('/events') ? jsonResponse(null, 404) : jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        const serverRecovered = jest.fn();
+        globalThis.NeconyanCrashDiagnostics = { serverRecovered };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        // A caller bug that happens to carry a 404 must not look like a pruned job.
+        const bug = Object.assign(new Error('Bubble render failed'), { status: 404 });
+        const onSnapshot = jest.fn().mockRejectedValueOnce(bug).mockResolvedValue(undefined);
+        const onDone = jest.fn();
+        const onStop = jest.fn();
+        const stop = observeJob('job-1', { intervalMs: 1, onSnapshot, onDone, onStop });
+        try {
+            await wait(60);
+            expect(onSnapshot).toHaveBeenCalledTimes(2);
+            expect(onDone).toHaveBeenCalledTimes(1);
+            expect(onStop).toHaveBeenCalledTimes(1);
+            expect(onStop).toHaveBeenCalledWith('done');
+            expect(serverRecovered).not.toHaveBeenCalled();
+            expect(warn).toHaveBeenCalledWith('Job job-1: onSnapshot failed and runs again after the next read.', bug);
+        } finally { stop(); warn.mockRestore(); }
+    });
+
+    test('a completion handler that throws is logged once and does not poll again', async () => {
+        globalThis.fetch = jest.fn(async url => url.endsWith('/events') ? jsonResponse(null, 404) : jsonResponse({ job: { id: 'job-1', state: 'completed' } }));
+        const serverRecovered = jest.fn();
+        globalThis.NeconyanCrashDiagnostics = { serverRecovered };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const bug = new Error('Could not show the finished reply');
+        const onDone = jest.fn(() => { throw bug; });
+        const onStop = jest.fn();
+        const stop = observeJob('job-1', { intervalMs: 1, onDone, onStop });
+        try {
+            await wait(40);
+            const reads = globalThis.fetch.mock.calls.length;
+            await wait(40);
+            expect(globalThis.fetch.mock.calls.length).toBe(reads);
+            expect(onDone).toHaveBeenCalledTimes(1);
+            expect(onStop).toHaveBeenCalledWith('done');
+            expect(serverRecovered).not.toHaveBeenCalled();
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(warn).toHaveBeenCalledWith('Job job-1: onDone failed.', bug);
+        } finally { stop(); warn.mockRestore(); }
     });
 
     test('a change stream that dropped is opened again while a job is still watched', async () => {

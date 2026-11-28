@@ -349,6 +349,22 @@ test('native chat changes and returning from Conversation load immediately', asy
     expect(mewmory.view.locator.chat).toBe('first');
 });
 
+test('a chat that only caught up with its saved copy reads its memories again without cancelling work', async () => {
+    initMewmory();
+    await refreshMewmory();
+    const scope = getMewmoryScope();
+    const view = mewmory.view;
+    fetch.mockClear();
+    listeners.get('CHAT_CHANGED')('first', { sameChat: true });
+    expect(fetch).toHaveBeenCalled();
+    expect(getMewmoryScope()).toBe(scope);
+    expect(mewmory.view).toBe(view);
+    await refreshMewmory();
+    listeners.get('CHAT_CHANGED')('first');
+    expect(getMewmoryScope()).not.toBe(scope);
+    await expect(requestMewmory('index', {}, { scope })).rejects.toThrow('active chat changed');
+});
+
 test('first generation checks its saved chat without loading the closed memory panel', async () => {
     fetch.mockResolvedValueOnce(response({ enabled: false, excludedIndices: [], npcText: '', memoryText: '' }));
     const messages = [{ mes: 'Hello', mewmorySourceIndex: 0 }];
@@ -717,6 +733,51 @@ test('automatic hiding refreshes the view and only runs where Mewmory is on and 
     expect(savedHiddenRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
     expect(global.toastr.info).toHaveBeenLastCalledWith('Hid 4 older messages after reaching 30 tokens. Mewmory still remembers them.');
     expect(await hideOverflowAutomatically()).toBe(0);
+});
+
+test('automatic hiding shows a lasting failure once, logs the repeats and looks again before reporting a stale error', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    chat.splice(0, chat.length, { is_user: true, mes: 'a'.repeat(20) }, { is_user: false, mes: 'b'.repeat(20) });
+    mewmory.config = { ...config, autoHide: true, autoHideTokens: 30 };
+    let failure = 'Upstream down';
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: mewmory.config, stories: [] });
+        if (url.endsWith('/inspect') && failure) return { ok: false, status: 502, json: async () => ({ error: failure }) };
+        return response({ locator: JSON.parse(body).locator, enabled: false, revision: 1 });
+    });
+    // A failure left by an earlier reply.
+    mewmory.error = 'Old failure';
+    for (let reply = 0; reply < 3; reply++) expect(await hideOverflowAutomatically()).toBe(0);
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/inspect'))).toHaveLength(3);
+    expect(global.toastr.error).toHaveBeenCalledTimes(1);
+    expect(global.toastr.error).toHaveBeenCalledWith('Could not hide older messages automatically: Upstream down');
+    expect(warn).toHaveBeenCalledTimes(3);
+
+    failure = 'Another failure';
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(global.toastr.error).toHaveBeenCalledTimes(2);
+    expect(global.toastr.error).toHaveBeenLastCalledWith('Could not hide older messages automatically: Another failure');
+
+    // Once a reply gets through, the same failure is news again.
+    failure = '';
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(mewmory.error).toBe('');
+    mewmory.view = null;
+    failure = 'Another failure';
+    await refreshMewmory();
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(global.toastr.error).toHaveBeenCalledTimes(3);
+});
+
+test('a stale error is not reported when reading the chat again succeeds', async () => {
+    chat.splice(0, chat.length, { is_user: true, mes: 'a' }, { is_user: false, mes: 'b' });
+    mewmory.config = { ...config, autoHide: true, autoHideTokens: 30 };
+    mewmory.error = 'Mewmory could not reach the server. Check your connection and try again.';
+    chatEnabled = true;
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(mewmory.view?.enabled).toBe(true);
+    expect(mewmory.error).toBe('');
+    expect(global.toastr.error).not.toHaveBeenCalled();
 });
 
 test('automatic hiding waits for running agents before it saves and reloads the chat', async () => {

@@ -1196,6 +1196,12 @@ class PromptManager {
 
         // Re-render when the character changes.
         eventSource.on(event_types.CHAT_LOADED, (event) => {
+            // Neconyan: a chat that only caught up with its saved copy keeps its character, so there is
+            // nothing to select or save.
+            if (event?.detail?.sameChat === true) {
+                this.renderDebounced();
+                return;
+            }
             this.handleCharacterSelected(event);
             this.saveServiceSettings().then(() => this.renderDebounced());
         });

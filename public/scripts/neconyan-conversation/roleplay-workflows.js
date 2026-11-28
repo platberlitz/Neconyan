@@ -1756,10 +1756,13 @@ export function initNativeRoleplayWorkflows() {
     // The account binding arrives after the first paint, so discovery retries then.
     globalThis.addEventListener?.('sb:roleplay-account-bound', resume);
     prewarmDialogueColorsModule();
-    eventSource.on(event_types.CHAT_CHANGED, () => {
+    eventSource.on(event_types.CHAT_CHANGED, (_chatId, change) => {
         prewarmDialogueColorsModule();
         syncJobControls();
         void flushPendingKeptReply();
+        // Neconyan: a chat that only caught up with its saved copy was not opened again, so its jobs
+        // are already being followed.
+        if (change?.sameChat === true) return;
         if (isVisible() && getCurrentChatId() && !busyName && !isGenerating() && !activeReload) {
             void resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
         }

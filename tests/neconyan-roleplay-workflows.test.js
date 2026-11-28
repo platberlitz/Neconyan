@@ -1576,6 +1576,18 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
     expect(observers.has('stale-account-job')).toBe(false);
 });
 
+test('a chat that only caught up with its saved copy does not look for its jobs again', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    listJobs.mockClear();
+    await eventSource.emit(event_types.CHAT_CHANGED, currentChatId, { sameChat: true });
+    await settle();
+    expect(listJobs).not.toHaveBeenCalled();
+    await eventSource.emit(event_types.CHAT_CHANGED, currentChatId);
+    await settle();
+    expect(listJobs).toHaveBeenCalledTimes(1);
+});
+
 test('a hanging receipt honours its abort signal on return and resolves the original generation without resubmitting', async () => {
     workflows.initNativeRoleplayWorkflows();
     await settle();

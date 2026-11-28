@@ -486,7 +486,12 @@ function isTtsProcessing() {
 }
 
 /**
- * @typedef {ChatMessage & { id?: number, manual?: boolean, segmentText?: string, segmentType?: string }} TtsMessage
+ * @typedef {ChatMessage & { id?: number, manual?: boolean, segmentText?: string, segmentType?: string, ttsBatch?: TtsBatch }} TtsMessage
+ */
+
+/**
+ * The parts of one narration request: a message's paragraphs and voice segments, or a whole read conversation.
+ * @typedef {{ shownErrors: string[] }} TtsBatch
  */
 
 /**
@@ -496,14 +501,16 @@ function isTtsProcessing() {
  * @param {number|null} [messageId=null] - The chat message index to associate with TTS events.
  * @param {object} [options={}] - Additional options for processing.
  * @param {boolean} [options.manual=false] - Whether this TTS job was manually triggered (e.g., from the UI) rather than automatically from a new chat message.
+ * @param {TtsBatch|null} [options.batch=null] - The narration request this message belongs to; a new one by default.
  * @returns {void}
  */
-function processAndQueueTtsMessage(message, messageId = null, { manual = false, isStillVisible = null } = {}) {
+function processAndQueueTtsMessage(message, messageId = null, { manual = false, isStillVisible = null, batch = null } = {}) {
     /** @type {TtsMessage} */
     const clone = safeClone(message);
     clone.id = messageId ?? null;
     clone.manual = manual ?? false;
     clone.isStillVisible = isStillVisible;
+    clone.ttsBatch = batch ?? createTtsBatch();
 
     if (!extension_settings.tts.narrate_by_paragraphs) {
         ttsJobQueue.push(clone);
@@ -911,6 +918,48 @@ function getTtsQueueErrorMessage(error) {
     return error.message || String(error);
 }
 
+/** @returns {TtsBatch} */
+function createTtsBatch() {
+    return { shownErrors: [] };
+}
+
+/**
+ * Whether narration failed because the voice provider could not be reached, rather than over a setting or the text.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isTtsConnectionError(error) {
+    const { name, message: ownMessage } = /** @type {{ name?: unknown, message?: unknown }} */ (Object(error ?? {}));
+    if (name === 'NetworkError' || name === 'TimeoutError') return true;
+    const message = typeof ownMessage === 'string' ? ownMessage : String(error ?? '');
+    return /^HTTP (?:408|429|5\d\d)\b/.test(message)
+        || /failed to fetch|load failed|network ?error|timed? ?out|connection (?:lost|refused|reset|closed)|socket hang up|econn(?:refused|reset)|unreachable|bad gateway|service unavailable|gateway time-?out/i.test(message);
+}
+
+/**
+ * Neconyan: one notice per narration request. When the provider cannot be reached, the request's remaining parts are
+ * dropped instead of each failing with the same toast; a repeat of a notice already shown is only logged.
+ * @param {TtsMessage|null} job
+ * @param {unknown} error
+ * @returns {boolean} Whether to show the error.
+ */
+function settleTtsQueueFailure(job, error) {
+    const batch = job?.ttsBatch;
+    if (!batch) return true;
+    if (isTtsConnectionError(error)) {
+        for (let i = ttsJobQueue.length - 1; i >= 0; i--) {
+            if (ttsJobQueue[i].ttsBatch === batch) ttsJobQueue.splice(i, 1);
+        }
+    }
+    const message = getTtsQueueErrorMessage(error);
+    if (batch.shownErrors.includes(message)) {
+        console.warn('Text to speech failed again:', error);
+        return false;
+    }
+    batch.shownErrors.push(message);
+    return true;
+}
+
 async function processTtsQueue() {
     // Called each moduleWorker iteration to pull chat messages from queue
     if (currentTtsJob || ttsJobQueue.length <= 0 || audioPaused) {
@@ -974,7 +1023,7 @@ async function processTtsQueue() {
             // Pass the full voiceMapKey (e.g., "User ("Quotes")") as well with character name
             await tts(segmentText, voiceId, char, voiceMapKey);
         } catch (error) {
-            toastr.error(getTtsQueueErrorMessage(error));
+            if (settleTtsQueueFailure(currentTtsJob, error)) toastr.error(getTtsQueueErrorMessage(error));
             console.error(error);
             currentTtsJob = null;
             scheduleTtsQueueWakeup();
@@ -1058,6 +1107,7 @@ async function processTtsQueue() {
         }
 
         // Add all segments to the queue as separate jobs (in reverse order so they process in correct order)
+        const ttsBatch = currentTtsJob.ttsBatch ?? createTtsBatch();
         for (let i = segments.length - 1; i >= 0; i--) {
             const segmentJob = {
                 name: char,
@@ -1069,6 +1119,7 @@ async function processTtsQueue() {
                 id: currentTtsJob.id,
                 manual: currentTtsJob.manual,
                 isStillVisible: currentTtsJob.isStillVisible,
+                ttsBatch,
             };
             ttsJobQueue.unshift(segmentJob);
         }
@@ -1077,7 +1128,7 @@ async function processTtsQueue() {
         currentTtsJob = null;
         scheduleTtsQueueWakeup();
     } catch (error) {
-        toastr.error(getTtsQueueErrorMessage(error));
+        if (settleTtsQueueFailure(currentTtsJob, error)) toastr.error(getTtsQueueErrorMessage(error));
         console.error(error);
         currentTtsJob = null;
         scheduleTtsQueueWakeup();
@@ -1092,10 +1143,11 @@ async function playFullConversation() {
     }
 
     const context = getContext();
+    const batch = createTtsBatch();
 
     context.chat.forEach((msg, i) => {
         if (!msg.is_system && msg.mes !== '...' && msg.mes !== '') {
-            processAndQueueTtsMessage(msg, i, { manual: false });
+            processAndQueueTtsMessage(msg, i, { manual: false, batch });
         }
     });
 
@@ -1380,7 +1432,9 @@ export function saveTtsProviderSettings() {
 // voiceMap Handling //
 //###################//
 
-async function onChatChanged() {
+async function onChatChanged(_chatId, change) {
+    // Neconyan: a chat that only caught up with its saved copy is still the one being read aloud.
+    if (change?.sameChat === true) return;
     await onGenerationEnded();
     resetTtsPlayback();
     const voiceMapInit = initVoiceMap();

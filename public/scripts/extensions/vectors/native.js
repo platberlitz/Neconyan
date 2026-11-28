@@ -50,7 +50,12 @@ export async function serviceVectorBrowserWork(job, { signal } = {}) {
     await handleBrowserWork(client, job.intent.operations.key, signal);
 }
 
-export async function runVectorWork(action, input = {}, { signal, onProgress, automatic = false } = {}) {
+/**
+ * Neconyan: `isBusy` returns true while a reply, a server Roleplay job or Agents may still write the chat.
+ * Saving it then would change the source they work from, so the work is put off with an error marked
+ * `deferred` before anything is saved or sent.
+ */
+export async function runVectorWork(action, input = {}, { signal, onProgress, automatic = false, isBusy } = {}) {
     const owner = getCurrentUserHandle();
     const selected = locator();
     const scope = `vectors:${action}:${JSON.stringify({ selected, ...input })}`;
@@ -60,6 +65,7 @@ export async function runVectorWork(action, input = {}, { signal, onProgress, au
     const promise = client.run(action === 'purge' ? 'vector-purge' : 'vectors', action === 'purge' ? input : { ...input, action }, {
         scope, signal, prepareInput: async value => {
             if (owner !== getCurrentUserHandle() || JSON.stringify(selected) !== JSON.stringify(locator())) throw new Error('The account or chat changed before vector work was accepted.');
+            if (isBusy?.()) throw Object.assign(new Error('The chat is still being written, so vector work waits for it.'), { deferred: true });
             if (!automatic && !await saveSettings(0, { returnResult: true })) throw new Error('Save the vector settings before starting this work.');
             if (selected) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
             if (owner !== getCurrentUserHandle() || JSON.stringify(selected) !== JSON.stringify(locator())) throw new Error('The account or chat changed before vector work was accepted.');
