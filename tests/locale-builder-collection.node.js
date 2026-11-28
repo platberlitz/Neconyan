@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -82,4 +84,142 @@ test('the adjacent-placeholder check names a new key and tolerates a retired one
     assert.throws(() => checkAdjacentKeys([...keys, 'Planted: ${0}${1}'], allowed), error => error.message.includes('"Planted: ${0}${1}"'));
     assert.throws(() => checkAdjacentKeys([...keys, 'Planted: ${0}\n${1}'], allowed), assert.AssertionError);
     assert.deepEqual(checkAdjacentKeys([...keys, 'Planted: ${0}${1}'], [...allowed, 'Planted: ${0}${1}']), ['Retired: ${0}${1}']);
+});
+
+const builderScript = join(root, 'scripts', 'build-interface-locales.js');
+
+function writeFixtureFile(scratch, file, text) {
+    mkdirSync(dirname(join(scratch, file)), { recursive: true });
+    writeFileSync(join(scratch, file), text);
+}
+
+function makeFixtureTree(files) {
+    const scratch = mkdtempSync(join(tmpdir(), 'neconyan-l10n-collect-'));
+    writeFixtureFile(scratch, 'public/locales/lang.json', JSON.stringify([{ lang: 'xx-yy', display: 'Test language' }]));
+    writeFixtureFile(scratch, 'public/locales/xx-yy.json', '{}');
+    writeFixtureFile(scratch, 'default/content/assistants/manifest.json', JSON.stringify({ personalities: [] }));
+    for (const [file, text] of Object.entries(files)) {
+        writeFixtureFile(scratch, file, text);
+    }
+    return scratch;
+}
+
+function listFixture(scratch) {
+    const run = spawnSync(process.execPath, [builderScript, '--list'], {
+        cwd: scratch,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        env: { ...process.env, NECONYAN_TRANSLATION_COMMAND: '' },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    return new Set(JSON.parse(run.stdout));
+}
+
+test('model-only assistant knowledge files are excluded while quiet-context UI strings and AutoComplete counts remain', () => {
+    const keys = new Set(collectedKeys());
+    const en = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+    for (const excluded of [
+        'Schedules, reminders and quiet hours',
+        'Memory Shard and hiding summarised messages',
+        'First paws tour',
+        'No matching verified section is available for this turn. Ask for the feature name or clarify the task before giving undocumented app instructions.',
+    ]) {
+        assert.ok(!keys.has(excluded), `model-only key leaked into --list: ${excluded}`);
+        assert.ok(!Object.hasOwn(en, excluded), `model-only key leaked into en.json: ${excluded}`);
+    }
+    for (const retained of [
+        'The account reset is complete.',
+        'Connection profile reloaded',
+        'Restore page-tour invitations you hid or already tried.',
+        '1 match',
+        '${0} matches',
+    ]) {
+        assert.ok(keys.has(retained), `expected UI key missing from --list: ${retained}`);
+        assert.ok(Object.hasOwn(en, retained), `expected UI key missing from en.json: ${retained}`);
+    }
+
+    const scratch = makeFixtureTree({
+        'public/scripts/neconyan-assistant-knowledge/sample.js': 'export const topic = { title: \'Model only topic title\', content: \'Use <tag>fragment text\' };\n',
+        'public/scripts/neconyan-assistant-knowledge.js': 'export const fallback = \'\\nModel fallback sentence.\';\n',
+        'public/scripts/ui.js': 'export const dialog = { title: \'Visible dialog title\' };\n',
+    });
+    try {
+        const fixtureKeys = listFixture(scratch);
+        assert.ok(!fixtureKeys.has('Model only topic title'));
+        assert.ok(!fixtureKeys.has('fragment text'));
+        assert.ok(!fixtureKeys.has('Model fallback sentence.'));
+        assert.ok(fixtureKeys.has('Visible dialog title'));
+    } finally {
+        rmSync(scratch, { recursive: true, force: true });
+    }
+});
+
+test('sortable and CSS-class placeholders are excluded while hyphenated UI placeholders and sortable error messages remain', () => {
+    const keys = new Set(collectedKeys());
+    const en = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+    for (const excluded of [
+        'ica--agent-card-placeholder',
+        'ica--cdash-row-placeholder',
+        'ica--tpanel-agent-placeholder',
+        'neconyan-rail-placeholder',
+    ]) {
+        assert.ok(!keys.has(excluded), `CSS placeholder leaked into --list: ${excluded}`);
+        assert.ok(!Object.hasOwn(en, excluded), `CSS placeholder leaked into en.json: ${excluded}`);
+    }
+    assert.ok(keys.has('The new order could not be saved. Try again.'));
+    assert.ok(Object.hasOwn(en, 'The new order could not be saved. Try again.'));
+
+    const scratch = makeFixtureTree({
+        'public/scripts/sortable-ui.js': [
+            'rows.sortable({ placeholder: \'my-slot-placeholder extra-class\', stop: () => toastr.error(err || \'Sortable error message.\') });',
+            'const indirect = { placeholder: \'custom--drag-placeholder\', hint: \'Sortable file parsed sentinel.\' };',
+            'const inputs = [{ placeholder: \'e-mail\' }, { placeholder: \'read-only\' }, { placeholder: \'Search items...\' }];',
+        ].join('\n'),
+    });
+    try {
+        const fixtureKeys = listFixture(scratch);
+        assert.ok(!fixtureKeys.has('my-slot-placeholder extra-class'));
+        assert.ok(!fixtureKeys.has('custom--drag-placeholder'));
+        assert.ok(fixtureKeys.has('Sortable error message.'));
+        assert.ok(fixtureKeys.has('Sortable file parsed sentinel.'));
+        assert.ok(fixtureKeys.has('e-mail'));
+        assert.ok(fixtureKeys.has('read-only'));
+        assert.ok(fixtureKeys.has('Search items...'));
+    } finally {
+        rmSync(scratch, { recursive: true, force: true });
+    }
+});
+
+test('keyboard key lists are excluded while theme names and standalone labels remain', () => {
+    const keys = new Set(collectedKeys());
+    const en = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+    for (const excluded of ['Escape', 'End']) {
+        assert.ok(!keys.has(excluded), `keyboard key leaked into --list: ${excluded}`);
+        assert.ok(!Object.hasOwn(en, excluded), `keyboard key leaked into en.json: ${excluded}`);
+    }
+    for (const retained of ['Amber Dusk', 'Witching Hour', 'Home']) {
+        assert.ok(keys.has(retained), `expected UI key missing from --list: ${retained}`);
+        assert.ok(Object.hasOwn(en, retained), `expected UI key missing from en.json: ${retained}`);
+    }
+
+    const scratch = makeFixtureTree({
+        'public/scripts/keys-ui.js': [
+            'const NAV = new Set([\'Escape\', \'Enter\', \'ArrowDown\', \'End\']);',
+            'const PAGING = [\'PageUp\', \'PageDown\', \'Home\'];',
+            'const THEMES = new Set([\'Amber Dusk\', \'Witching Hour\']);',
+            'const LABELS = [\'Home\', \'Help\'];',
+            'export const sentinel = \'Keyboard fixture sentinel.\';',
+        ].join('\n'),
+    });
+    try {
+        const fixtureKeys = listFixture(scratch);
+        for (const excluded of ['Escape', 'End', 'PageUp', 'PageDown']) {
+            assert.ok(!fixtureKeys.has(excluded), `unexpected keyboard key in fixture: ${excluded}`);
+        }
+        for (const retained of ['Amber Dusk', 'Witching Hour', 'Home', 'Help', 'Keyboard fixture sentinel.']) {
+            assert.ok(fixtureKeys.has(retained), `missing positive sentinel in fixture: ${retained}`);
+        }
+    } finally {
+        rmSync(scratch, { recursive: true, force: true });
+    }
 });

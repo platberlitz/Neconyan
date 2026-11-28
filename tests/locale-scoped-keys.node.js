@@ -83,7 +83,7 @@ test('every real scoped key is a catalogued image choice or an explicit collisio
     // The catalogue carries 51 image-choice entries plus the explicit non-image scoped keys.
     const catalogued = Object.keys(catalogue).filter(isScopedKey);
     assert.equal(catalogued.filter(key => key.startsWith('scoped.prompt_media.')).length, 51);
-    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')), EXTRA_SCOPED_KEYS);
+    assert.deepEqual(catalogued.filter(key => !key.startsWith('scoped.prompt_media.')).sort(), [...EXTRA_SCOPED_KEYS].sort());
     assert.equal(catalogue[NANO_REASONING_SCOPED_KEY], '${0} (unavailable)');
     assert.equal(catalogue[SCRATCHPAD_HISTORY_SCOPED_KEY], 'Change history');
     assert.equal(catalogue['scoped.connections.openai_follow'], 'Follow');

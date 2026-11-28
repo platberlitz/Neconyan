@@ -1,3 +1,4 @@
+import { t } from '../i18n.js';
 import { power_user } from '../power-user.js';
 import { debounce, escapeRegex } from '../utils.js';
 import { AutoCompleteOption } from './AutoCompleteOption.js';
@@ -408,8 +409,8 @@ export class AutoComplete {
         }
         if (this.headerCountDom) {
             this.headerCountDom.textContent = count === 0
-                ? 'No matches'
-                : (count === 1 ? '1 match' : `${count} matches`);
+                ? t`No matches`
+                : (count === 1 ? t`1 match` : t`${count} matches`);
         }
         if (this.detailsTitleTextDom) {
             this.detailsTitleTextDom.textContent = detailsTitle;

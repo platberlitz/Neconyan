@@ -3,6 +3,9 @@ import { jest } from '@jest/globals';
 
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user: {} }));
 jest.unstable_mockModule('../public/scripts/utils.js', () => ({ debounce: fn => fn, escapeRegex: value => value }));
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+    t: (strings, ...values) => strings.reduce((acc, part, index) => acc + part + (values[index] ?? ''), ''),
+}));
 const { AutoComplete } = await import('../public/scripts/autocomplete/AutoComplete.js');
 
 function completion(text = '/ec Keep the rest | /pass tail') {
