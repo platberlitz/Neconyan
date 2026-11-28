@@ -30,6 +30,7 @@
 - After a reply with **Agents** finishes, a reply that already showed its error no longer comes back a few seconds later as 'A reply that ran in the background failed', **Mewmory** shows a lasting automatic-hiding problem once instead of after every reply, automatic chat naming tries again after the next reply when the model can't be reached instead of showing an error, **Text to Speech** reports a voice service it can't reach once per message and stops reading the rest of it, **Quick Image Gen** and **Notebooks** stop repeating the same connection error, **Vector Storage** and **Character Expressions** wait for a running reply, Roleplay job or Agents before saving the chat, and a server reply finishing no longer runs **Quick Replies** set to run on chat change, stops speech or cancels image generation as if you'd switched chats.
 - On a phone with reduced motion turned on, dragging a button in **Edit sidebar** no longer drops it one place further down than where you let go.
 - Replies and **Agents** keep going while the Android or iPhone app is in the background, the Android app no longer reloads your workspace after one missed check of its local server, quiet replies stay open behind a reverse proxy, and Android diagnostics now include a short, redacted record of page warnings and errors.
+- **Mewmory** retains less memory after reading very large chats or archives.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -61,6 +62,7 @@
 - PR #1035 (2026-11-28) `test(e2e): pass reducedMotion through contextOptions`
 - PR #1036 (2026-11-28) `fix: stop repeat notices and chat-change churn after replies finish`
 - PR #1037 (2026-11-28) `fix(i18n): translate Home and Simple Mode character-finding strings`
+- PR #1038 (2026-11-28) `fix(mewmory): keep oversized reads out of the cache`
 
 ## v1.6.0
 
