@@ -11,7 +11,7 @@ import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, pla
 import { isLikelyPromptTransformRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { buildThinkingRecoveryMessages, cleanThinkingRecoveryOutput, isThinkingRecoveryAgent } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { readRoleplayAgents, readRoleplayHistoryAgents } from './roleplay-agents-source.js';
 import { captureAgentHistoryScripts, captureCompanionHistoryPolicies } from './agent-history.js';
@@ -370,6 +370,22 @@ async function runLegacyPromptTransformStages({ agents, text, isAppend, runRewri
 const UNSAFE_RECOVERY_CODES = new Set(['PROVIDER_OUTCOME_UNKNOWN', 'ROLEPLAY_AGENT_RECOVERY', 'ROLEPLAY_RECOVERY_REQUIRED', 'ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_AGENT_SOURCE_CHANGED']);
 
 /**
+ * Record a parallel append Agent that failed with a known outcome, so its siblings'
+ * finished edits still apply. Stops, changed sources and requests whose result is
+ * unknown keep the whole-pass failure path, which retries once and never repeats a
+ * request that may have been paid for.
+ */
+function failedParallelAppendRun(context, agent, error) {
+    if (context.signal?.aborted || error?.name === 'AbortError' || isRoleplayAgentStop(error)
+        || UNSAFE_RECOVERY_CODES.has(error?.code) || String(error?.code ?? '').startsWith('ROLEPLAY_')
+        || unresolvedProviderStep(context.directories, context.job.id, { scope: context.providerScope })) throw error;
+    const message = String(error?.message ?? error);
+    console.warn(`[Agents] ${agent.name} failed; the other parallel Agents' edits are kept.`, message);
+    return { agentId: agent.id, agentName: agent.name, order: agent.injection.order, outputText: '', rawText: '', status: 'error', error: message,
+        profileLabel: '', modelLabel: '', timestamp: Date.now(), modelHash: null };
+}
+
+/**
  * Writes the reply for a completed generation that returned only thinking.
  * Runs once per job and identity; a failure is saved as an empty text so a
  * restart reports it instead of paying for the same request again.
@@ -504,9 +520,11 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             };
             if (parallel) {
                 const settled = await Promise.allSettled(batch.map(runAppend));
-                const failed = settled.find(item => item.status === 'rejected');
+                // Companion notes and manual runs keep their all-or-nothing contract.
+                const failed = (companionOutput || manual) && settled.find(item => item.status === 'rejected');
                 if (failed) throw failed.reason;
-                results = settled.map(item => item.value);
+                results = settled.map((item, offset) => item.status === 'fulfilled' ? item.value
+                    : failedParallelAppendRun(scope, batch[offset], item.reason));
             } else {
                 results = [];
                 for (const item of batch) results.push(await runAppend(item));

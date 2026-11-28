@@ -246,24 +246,30 @@ export function getKoboldGenerationData(finalPrompt, settings, maxLength, maxCon
     return generate_data;
 }
 
-function tryParseStreamingError(response, decoded) {
+function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
+    let data;
     try {
-        const data = JSON.parse(decoded);
-
-        if (!data) {
-            return;
-        }
-
-        if (data.error) {
-            toastr.error(data.error.message || response.statusText, 'KoboldAI API');
-            throw new Error(data);
-        }
+        data = JSON.parse(decoded);
     } catch {
         // No JSON. Do nothing.
+        return;
+    }
+
+    if (data?.error) {
+        const message = data.error.message || response.statusText;
+        console.warn('[KoboldAI API] The backend returned an error.', message, data.error);
+        if (!quiet) toastr.error(message, 'KoboldAI API');
+        throw new Error(message);
     }
 }
 
-export async function generateKoboldWithStreaming(generate_data, signal) {
+/**
+ * @param {object} generate_data
+ * @param {AbortSignal} signal
+ * @param {object} [options]
+ * @param {boolean} [options.quiet] Leave backend errors to the caller instead of showing a toast
+ */
+export async function generateKoboldWithStreaming(generate_data, signal, { quiet = false } = {}) {
     const watch = watchTextBackend({ kind: 'kobold', model: main_api === 'kobold' && online_status !== 'no_connection' ? online_status : '', data: generate_data, signal });
     return watch.run(async () => {
         const response = await fetchResumable('/api/backends/kobold/generate', {
@@ -275,7 +281,7 @@ export async function generateKoboldWithStreaming(generate_data, signal) {
         if (!response.ok) {
             const body = await response.text();
             watch.rejected(response, body);
-            tryParseStreamingError(response, body);
+            tryParseStreamingError(response, body, { quiet });
             throw new Error(`Got response status ${response.status}`);
         }
         await watch.inspect(response);

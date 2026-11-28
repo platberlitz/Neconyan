@@ -385,6 +385,33 @@ describe('Chat Completion reverse proxy validation', () => {
         expect(context.Popup.show.confirm).toHaveBeenCalledTimes(1);
     });
 
+    test('requests waiting on one declined address share one toast but each stops', async () => {
+        const { context } = createHarness();
+        const popup = deferred();
+        context.online_status = 'Valid';
+        context.accountStorage.getItem = () => 'false';
+        context.Popup.show.confirm.mockReturnValueOnce(popup.promise);
+        const waiting = Array.from({ length: 4 }, () => context.validateReverseProxy(undefined, 'https://agents.invalid', { markConnection: false }));
+        await new Promise(resolve => setImmediate(resolve));
+        popup.resolve(false);
+        const settled = await Promise.allSettled(waiting);
+        expect(settled.map(result => result.status)).toEqual(['rejected', 'rejected', 'rejected', 'rejected']);
+        expect(settled.every(result => result.reason?.message === 'Proxy connection denied.')).toBe(true);
+        expect(context.Popup.show.confirm).toHaveBeenCalledTimes(1);
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.online_status).toBe('Valid');
+    });
+
+    test('a later question for the same address gets its own decline toast', async () => {
+        const { context } = createHarness();
+        context.accountStorage.getItem = () => 'false';
+        context.Popup.show.confirm.mockResolvedValue(false);
+        await expect(context.validateReverseProxy(undefined, 'https://again.invalid')).rejects.toThrow('Proxy connection denied.');
+        await expect(context.validateReverseProxy(undefined, 'https://again.invalid')).rejects.toThrow('Proxy connection denied.');
+        expect(context.Popup.show.confirm).toHaveBeenCalledTimes(2);
+        expect(context.toastr.error).toHaveBeenCalledTimes(2);
+    });
+
     test('a confirmed address is not asked about again', async () => {
         const { context } = createHarness();
         const stored = new Map();

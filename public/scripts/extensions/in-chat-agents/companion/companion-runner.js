@@ -92,6 +92,7 @@ import { runDiceCompanionLocally } from './dice-companion-local.js';
 import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets.js';
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { isLikelyCompanionNoteRefusal } from '../prompt-transform-refusal.js';
+import { mapWithConcurrency, PARALLEL_AGENT_REQUEST_LIMIT } from '../request-concurrency.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
 import { buildTrackerEchoGuard, getActiveCompanionTrackerLineKeys, getActiveInlineTrackerLineKeys, getOwnedCompanionTrackerLineKeys, getVisibleCompanionTrackerLineKeys, stripTrackerLineEchoes } from './companion-tracker-context.js';
 
@@ -954,7 +955,9 @@ export function recoverInterruptedCompanionRuns() {
         let messageChanged = false;
         const recover = (results, swipeId) => {
             for (const [agentId, result] of Object.entries(results ?? {})) {
-                if (result?.status !== 'pending' || companionRuns.get(message)?.get(`${swipeId}:${agentId}`)?.isCurrent()) continue;
+                // A run still in flight settles its own card when it ends, even when a same-chat
+                // reload has already told it to stop; only a card with no run behind it was cut off.
+                if (result?.status !== 'pending' || companionRuns.get(message)?.has(`${swipeId}:${agentId}`)) continue;
                 const previous = result.previousResult;
                 results[agentId] = previous?.status === 'done'
                     ? { ...previous, lastRunError: COMPANION_FAILURE_MESSAGES.interrupted, lastRunFailureKind: 'interrupted' }
@@ -2593,7 +2596,7 @@ async function runCompanionUnits(units, messageIndex, generationType, cancelRevi
             results.push(...(await runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs })));
         }
     } else {
-        const unitResults = await Promise.all(units.map(unit => runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs })));
+        const unitResults = await mapWithConcurrency(units, PARALLEL_AGENT_REQUEST_LIMIT, unit => runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs }));
         results.push(...unitResults.flat());
     }
 

@@ -1244,6 +1244,43 @@ describe('request word bias', () => {
     });
 });
 
+describe('provider errors on quiet Chat Completion requests', () => {
+    const providerError = { error: { message: 'Provider is busy' } };
+    const responses = {
+        reply: () => new Response(JSON.stringify(providerError)),
+        status: () => new Response(JSON.stringify(providerError), { status: 502, statusText: 'Bad Gateway' }),
+        stream: () => new Response(`event: error\ndata: ${JSON.stringify(providerError)}\n\n`),
+    };
+
+    async function failingRequest(type, mode) {
+        const { context } = makeRuntime();
+        load(context, 'scripts/openai.js', ['tryParseStreamingError']);
+        context.fetchResumable.mockResolvedValue(responses[mode]());
+        const sending = (async () => {
+            const result = await context.sendOpenAIRequest(type, [{ role: 'user', content: 'Hello' }], undefined, { stream: mode === 'stream' });
+            if (typeof result === 'function') {
+                for await (const chunk of result()) void chunk;
+            }
+        })();
+        await expect(sending).rejects.toThrow();
+        return context;
+    }
+
+    test.each(Object.keys(responses))('a quiet request logs the error and leaves the toast to its caller: %s', async mode => {
+        const context = await failingRequest('quiet', mode);
+        expect(context.toastr.error).not.toHaveBeenCalled();
+        expect(context.checkQuotaError.mock.calls.every(([, options]) => options?.quiet === true)).toBe(true);
+        expect(context.console.warn).toHaveBeenCalledWith('[Chat Completion API] The provider returned an error.', 'Provider is busy', expect.anything());
+    });
+
+    test.each(Object.keys(responses))('a normal request still shows the error once: %s', async mode => {
+        const context = await failingRequest('normal', mode);
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.toastr.error.mock.calls[0][0]).toBe('Provider is busy');
+        expect(context.console.warn).toHaveBeenCalledWith('[Chat Completion API] The provider returned an error.', 'Provider is busy', expect.anything());
+    });
+});
+
 describe('reverse proxy confirmation with a held bias lookup', () => {
     function proxyRuntime({ held = false } = {}) {
         const runtime = makeRuntime();

@@ -55,7 +55,7 @@ import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
-import { isRoleplayAgentStop, markRoleplayAgentsFailed, markRoleplayAgentsRefused, roleplayAgentsStopped, roleplayAgentsStoppedByOwner, withRoleplayAgentStop } from './roleplay-agent-stop.js';
+import { isRoleplayAgentStop, markRoleplayAgentsFailed, markRoleplayAgentsPartlyFailed, markRoleplayAgentsRefused, roleplayAgentsStopped, roleplayAgentsStoppedByOwner, withRoleplayAgentStop } from './roleplay-agent-stop.js';
 import { isLikelyMainReplyRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
@@ -458,6 +458,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                     companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs, onProgress });
                 }
+                if (post.runs?.some(run => run?.mode === 'append' && run.status === 'error')) markRoleplayAgentsPartlyFailed(context);
                 if (effect === 'continue') output.continuedText = post.text;
                 else if (message.mes !== undefined) message.mes = post.text;
                 else output.text = post.text;

@@ -758,4 +758,6 @@ export const refreshedKnowledgeCases = [
     ['Will changing the interface language translate my messages?', 'interface.language', 'Only built-in labels change'],
     ['What does Damaged entries mean in lorebook Health?', 'lorebooks.editing', 'records the editor cannot open'],
     ['Why did I get Could not name this chat automatically?', 'chat.auto-naming', 'shows the error once'],
+    ['How many append agents send requests at once when they run together?', 'agents.rewrite-order', 'at most four append agents'],
+    ['Why did one toast say several Agents failed?', 'agents.rewrite-order', 'one toast names them all'],
 ];
