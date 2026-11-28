@@ -228,6 +228,8 @@ describe('localizeString', () => {
 
         for (const language of ['vi-vn', 'de-de', 'fr-fr', 'pt-pt', 'ja-jp']) {
             const dictionary = loadDictionary(language);
+            // Strip the exact entry so the shipped broad 1-word pattern ('Import ${0}') is tested against an untranslated caption.
+            delete dictionary['Import a character'];
             expect(localizeString('Import a character', dictionary)).toBe('Import a character');
         }
 
