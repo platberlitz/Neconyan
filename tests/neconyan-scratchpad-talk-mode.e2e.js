@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { expect } from '@playwright/test';
 import { test as base } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
-import { showContextSection, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
+import { showContextSection, openContextDrawer, showVoiceButtons } from './neconyan-scratchpad-context-helpers.js';
 
 const before = process.env.NECONYAN_SCRATCHPAD_BEFORE === '1';
 if (before && !process.env.NECONYAN_SCRATCHPAD_BASELINE_ROOT) throw new Error('Set NECONYAN_SCRATCHPAD_BASELINE_ROOT for before captures.');
@@ -67,6 +67,16 @@ async function settle(page) {
     });
 }
 
+// The voice buttons are opt-in, so the row starts with only the message box and Send.
+async function revealVoiceButtons(page, phone) {
+    await expect(page.locator('.scratchpad-talk-toggle')).toBeHidden();
+    await expect(page.locator('.scratchpad-dictate')).toBeHidden();
+    await picture(page, 'default', phone);
+    await showVoiceButtons(page);
+    await expect(page.locator('.scratchpad-composer')).toBeEnabled();
+    await settle(page);
+}
+
 async function picture(page, name, phone) {
     await fs.mkdir('../screenshots', { recursive: true });
     await page.screenshot({ path: `../screenshots/scratchpad-talk-mode-${name}-${phone ? 'phone' : 'desktop'}-${before ? 'before' : 'after'}.png`,
@@ -122,6 +132,7 @@ for (const phone of [false, true]) {
         const composer = page.locator('.scratchpad-composer');
         await expect(composer).toBeEnabled();
         await settle(page);
+        if (!before) await revealVoiceButtons(page, phone);
         const idle = await composeGeometry(page);
         expect(idle.scrollWidth).toBeLessThanOrEqual(width);
         await picture(page, 'idle', phone);
@@ -335,5 +346,16 @@ for (const phone of [false, true]) {
         await page.locator('body.neconyan-rail-ready').waitFor();
         await open('context');
         await expect(pause).toHaveValue('patient');
+
+        // The buttons stay on after a reload, and turning Talk mode off mid-talk ends it and lets go of the microphone.
+        await open('chat');
+        await expect(toggle).toBeVisible();
+        await expect(page.locator('.scratchpad-dictate')).toBeVisible();
+        await toggle.click();
+        await expect(status).toHaveText('Listening…');
+        expect(await microphone()).toMatchObject({ open: 1 });
+        await showVoiceButtons(page, { dictate: true, talk: false });
+        await expect(bar).toBeHidden();
+        expect(await microphone()).toMatchObject({ open: 0 });
     });
 }

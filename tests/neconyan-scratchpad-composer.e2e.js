@@ -3,6 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { showVoiceButtons } from './neconyan-scratchpad-context-helpers.js';
 
 async function expectIconButton(button, label, icon) {
     await expect(button).toHaveAccessibleName(label);
@@ -42,9 +43,14 @@ for (const phone of [false, true]) {
         await expect(plus).toBeFocused();
         await expect(web).toHaveAttribute('aria-pressed', 'false');
         const row = await page.locator('.scratchpad-compose-row').boundingBox();
-        await expect(page.locator('.scratchpad-compose-row .scratchpad-dictate')).toBeVisible();
-        await expect(page.locator('.scratchpad-compose-row .scratchpad-talk-toggle')).toBeVisible();
-        expect((await composer.boundingBox()).width, 'The message gets all space beyond four 44px buttons and four 8px gaps').toBeCloseTo(row.width - 208, 1);
+        await expect(page.locator('.scratchpad-compose-row .scratchpad-dictate')).toBeHidden();
+        await expect(page.locator('.scratchpad-compose-row .scratchpad-talk-toggle')).toBeHidden();
+        expect((await composer.boundingBox()).width, 'Voice buttons are opt-in, so the message gets all space beyond two 44px buttons and two 8px gaps').toBeCloseTo(row.width - 104, 1);
+        await showVoiceButtons(page);
+        await expect(composer).toBeEnabled();
+        expect((await composer.boundingBox()).width, 'Turned on, the message gets all space beyond four 44px buttons and four 8px gaps').toBeCloseTo(row.width - 208, 1);
+        await expectIconButton(page.locator('.scratchpad-dictate'), 'Dictate', 'fa-microphone-lines');
+        await expectIconButton(page.locator('.scratchpad-talk-toggle'), 'Talk mode', 'fa-comments');
         await expect(composer).toHaveAttribute('rows', '1');
         const measure = () => composer.evaluate(input => {
             const style = getComputedStyle(input);

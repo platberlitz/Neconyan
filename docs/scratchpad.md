@@ -48,7 +48,7 @@ The quick prompts sit in one row above the message box, on desktop and on phones
 
 You can add your own. Press the pencil pinned at the right of the row (**Edit quick prompts**), choose **Add a prompt**, give it a **Name on the button** and the **Text it fills in**, then press **Save quick prompts**. **Move up**, **Move down** and **Delete prompt** rearrange the list. Your prompts are saved for your account, so they show in every Scratchpad and on your other devices, ahead of the built-in ones. You can keep up to 24.
 
-**Dictate**, the microphone button beside **Send**, records you and puts what you said into the message box as text. Press it, speak, then press **Stop and transcribe**; the words are added after anything already in the box, and nothing is sent until you press **Send**. A recording stops by itself after 2 minutes. Under **Context → Setup → Dictation and voice**, **Transcription service** chooses who turns the recording into text: **This server (Whisper, no key needed)**, which is slow the first time while it fetches its speech model, or OpenAI, Groq or Mistral, which use the API key saved for that service and receive your recording. The button only appears in browsers that can record from a microphone, and the browser asks for microphone permission the first time.
+**Dictate**, the microphone button beside **Send**, is off until you turn on **Show Dictate beside Send** under **Context → Setup → Dictation and voice**. It records you and puts what you said into the message box as text. Press it, speak, then press **Stop and transcribe**; the words are added after anything already in the box, and nothing is sent until you press **Send**. A recording stops by itself after 2 minutes. Under **Context → Setup → Dictation and voice**, **Transcription service** chooses who turns the recording into text: **This server (Whisper, no key needed)**, which is slow the first time while it fetches its speech model, or OpenAI, Groq or Mistral, which use the API key saved for that service and receive your recording. The switch only appears in browsers that can record from a microphone, and the browser asks for microphone permission the first time.
 
 **Typed tools** work out small things before the message is sent, so the assistant reads a settled result. Start a line with one of these:
 
@@ -87,7 +87,7 @@ With **Random** off, round-table assistants answer at the same time. They share 
 
 ### Talk mode
 
-**Talk mode**, the button between **Dictate** and **Send**, turns Scratchpad into a spoken conversation. Press it and speak; a bar above the message box shows **Listening…**, then **Hearing you…** once it picks up your voice, with a small level meter. When you stop talking for a moment, your turn ends by itself: the recording is turned into text with the same **Transcription service** as **Dictate**, sent as your message, and the reply is read aloud with Text to Speech. Then it listens again, so you can keep going without touching the screen.
+**Talk mode**, the speech bubbles button beside **Send**, turns Scratchpad into a spoken conversation. It is off until you turn on **Show Talk mode beside Send** under **Context → Setup → Dictation and voice**; turning the switch off ends a talk. Press it and speak; a bar above the message box shows **Listening…**, then **Hearing you…** once it picks up your voice, with a small level meter. When you stop talking for a moment, your turn ends by itself: the recording is turned into text with the same **Transcription service** as **Dictate**, sent as your message, and the reply is read aloud with Text to Speech. Then it listens again, so you can keep going without touching the screen.
 
 - **Send now** ends your turn straight away instead of waiting for the pause.
 - **Interrupt**, shown while a reply is being read, stops the voice and goes back to listening.
@@ -95,7 +95,7 @@ With **Random** off, round-table assistants answer at the same time. They share 
 
 The microphone is only on while it is listening: it is let go as soon as your turn ends, before anything is transcribed, sent or read aloud, and whenever Talk mode stops. Round table and **Compare connections** replies are read one after another. Change cards are never saved for you; they wait in the chat as usual, and a reply that is only a change card goes straight back to listening. If Text to Speech is off, Scratchpad says **Text to speech is off, so replies will appear as text.** once and carries on. If nothing is heard for 20 seconds, or three turns in a row come back empty, it stops with **Stopped talk mode because no speech was heard.** When follow-ups are queued, Talk mode waits for them to finish before it listens.
 
-Under **Context → Setup → Dictation and voice**, **Talk mode pause** sets how much quiet ends your turn: **Short (1.0 s)**, **Normal (1.6 s)** or **Patient (2.5 s)**. It is saved with your Scratchpad layout. Like **Dictate**, Talk mode only appears in browsers that can record from a microphone.
+Under **Context → Setup → Dictation and voice**, **Talk mode pause** sets how much quiet ends your turn: **Short (1.0 s)**, **Normal (1.6 s)** or **Patient (2.5 s)**. It is saved with your Scratchpad layout. Like **Dictate**, the Talk mode switch only appears in browsers that can record from a microphone.
 
 ### Compare connections
 

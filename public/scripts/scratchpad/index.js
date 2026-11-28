@@ -284,6 +284,8 @@ const app = {
     dictating: null,
     talkPause: 'normal',
     talk: null,
+    showDictate: false,
+    showTalk: false,
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     everyList: { query: '', loading: false, results: [], more: false, error: '' },
@@ -313,6 +315,8 @@ function readPrefs() {
         if (typeof saved.contextSetup === 'string') app.contextSetup = saved.contextSetup;
         if (DICTATION_SERVICES.some(service => service.id === saved.dictation)) app.dictation = saved.dictation;
         if (TALK_PAUSES.some(pause => pause.id === saved.talkPause)) app.talkPause = saved.talkPause;
+        if (typeof saved.showDictate === 'boolean') app.showDictate = saved.showDictate;
+        if (typeof saved.showTalk === 'boolean') app.showTalk = saved.showTalk;
         if (CONTEXT_SUB_TABS.includes(saved.contextSubTab)) app.contextSubTab = saved.contextSubTab;
         for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
@@ -335,6 +339,8 @@ function writePrefs() {
         connections: app.connections,
         dictation: app.dictation,
         talkPause: app.talkPause,
+        showDictate: app.showDictate,
+        showTalk: app.showTalk,
         contextSetup: app.contextSetup,
         contextSubTab: app.contextSubTab,
     }));
@@ -3282,6 +3288,7 @@ function dictationProblem(error) {
 function renderDictate(disabled) {
     const button = app.el.dictate;
     if (!button) return;
+    placeVoiceButton(button, app.showDictate, app.el.talk?.parentNode ? app.el.talk : app.el.send);
     const state = app.dictating?.state ?? 'idle';
     const label = state === 'recording' ? t`Stop and transcribe` : state === 'transcribing' ? t`Transcribing…` : t`Dictate`;
     button.setAttribute('aria-label', label);
@@ -3361,11 +3368,39 @@ function renderDictationSettings() {
     select.value = app.dictation;
     return h('section', { class: 'scratchpad-section scratchpad-dictation' },
         h('h3', { class: 'scratchpad-section-title', text: t`Dictation` }),
+        h('p', { class: 'scratchpad-muted', text: t`The voice buttons stay hidden until you turn them on here.` }),
+        checkbox(t`Show Dictate beside Send`, app.showDictate, checked => showVoiceButton('dictate', checked)),
+        app.el.talk ? checkbox(t`Show Talk mode beside Send`, app.showTalk, checked => showVoiceButton('talk', checked)) : null,
         h('p', { class: 'scratchpad-muted', text: t`The microphone button beside Send records you, and the service below turns the recording into text in the message box. Nothing is sent until you press Send.` }),
         h('div', { class: 'scratchpad-field' },
             h('label', { for: 'scratchpad-dictation-service', text: t`Transcription service` }), select),
         h('p', { class: 'scratchpad-muted', text: t`This server needs no key, but it is slow the first time while it fetches its speech model. The others use the API key saved for that service, and your recording is sent to them.` }),
         renderTalkSettings());
+}
+
+/** Shows or hides a voice button beside Send; hiding one stops anything it is recording or saying. */
+function showVoiceButton(kind, show) {
+    if (kind === 'dictate') {
+        app.showDictate = show;
+        if (!show) cancelDictation();
+    } else {
+        app.showTalk = show;
+        if (!show) endTalk();
+    }
+    writePrefs();
+    renderDictate(app.el.composer.disabled);
+    renderTalk();
+    refreshContextLive();
+}
+
+/** Puts a voice button in the row before `next`, or takes it out; the theme's button rules outrank `[hidden]`. */
+function placeVoiceButton(button, show, next) {
+    if (!show) button.remove();
+    else if (!button.parentNode) next.before(button);
+}
+
+function voiceBadge() {
+    return app.showDictate || app.showTalk ? dictationServiceLabel(app.dictation) : t`Off`;
 }
 
 /* Talk mode */
@@ -3415,6 +3450,7 @@ function talkStateLabel({ state, hearing }) {
 function renderTalk() {
     const el = app.el;
     if (!el.talk) return;
+    placeVoiceButton(el.talk, app.showTalk, el.send);
     const snapshot = app.talk?.controller.snapshot() ?? { state: 'idle', hearing: false, active: false };
     el.talk.setAttribute('aria-pressed', String(snapshot.active));
     el.talk.disabled = !snapshot.active && el.composer.disabled;
@@ -4002,7 +4038,7 @@ function renderContextSetupPane() {
                 onRefresh: () => void refreshWebSearchConfig({ quiet: false }),
                 onDraft: draft => { app.webSearchDraft = draft; },
             }))),
-        dictation ? contextDrawer('dictation', t`Dictation and voice`, { badge: () => dictationServiceLabel(app.dictation) }, untitled(dictation)) : null,
+        dictation ? contextDrawer('dictation', t`Dictation and voice`, { badge: voiceBadge }, untitled(dictation)) : null,
     ];
 }
 
