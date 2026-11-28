@@ -758,24 +758,30 @@ export function adjustNovelInstructionPrompt(prompt) {
     return stripedPrompt;
 }
 
-function tryParseStreamingError(response, decoded) {
+function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
+    let data;
     try {
-        const data = JSON.parse(decoded);
-
-        if (!data) {
-            return;
-        }
-
-        if (data.message || data.error) {
-            toastr.error(data.message || data.error?.message || response.statusText, 'NovelAI API');
-            throw new Error(data);
-        }
+        data = JSON.parse(decoded);
     } catch {
         // No JSON. Do nothing.
+        return;
+    }
+
+    if (data?.message || data?.error) {
+        const message = data.message || data.error?.message || response.statusText;
+        console.warn('[NovelAI API] The backend returned an error.', message, data.error ?? data);
+        if (!quiet) toastr.error(message, 'NovelAI API');
+        throw new Error(message);
     }
 }
 
-export async function generateNovelWithStreaming(generate_data, signal) {
+/**
+ * @param {object} generate_data
+ * @param {AbortSignal} signal
+ * @param {object} [options]
+ * @param {boolean} [options.quiet] Leave backend errors to the caller instead of showing a toast
+ */
+export async function generateNovelWithStreaming(generate_data, signal, { quiet = false } = {}) {
     generate_data.streaming = nai_settings.streaming_novel;
 
     const watch = watchTextBackend({ kind: 'novel', model: generate_data.model, data: generate_data, signal });
@@ -789,7 +795,7 @@ export async function generateNovelWithStreaming(generate_data, signal) {
         if (!response.ok) {
             const body = await response.text();
             watch.rejected(response, body);
-            tryParseStreamingError(response, body);
+            tryParseStreamingError(response, body, { quiet });
             throw new Error(`Got response status ${response.status}`);
         }
         await watch.inspect(response);

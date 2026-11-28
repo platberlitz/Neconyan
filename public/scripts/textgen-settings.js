@@ -1285,10 +1285,12 @@ function setSettingByName(setting, value, trigger) {
  * Sends a streaming request for textgenerationwebui.
  * @param {object} generate_data
  * @param {AbortSignal} signal
+ * @param {object} [options]
+ * @param {boolean} [options.quiet] Leave provider errors to the caller instead of showing a toast
  * @returns {Promise<(function(): AsyncGenerator<{swipes: [], text: string, toolCalls: [], logprobs: {token: string, topLogprobs: Candidate[]}|null}, void, *>)|*>}
  * @throws {Error} - If the response status is not OK, or from within the generator
  */
-export async function generateTextGenWithStreaming(generate_data, signal) {
+export async function generateTextGenWithStreaming(generate_data, signal, { quiet = false } = {}) {
     generate_data.stream = true;
 
     const watch = watchTextBackend({ kind: 'text', type: generate_data.api_type ?? textgenerationwebui_settings.type, model: generate_data.model, data: generate_data, signal });
@@ -1305,19 +1307,25 @@ export async function generateTextGenWithStreaming(generate_data, signal) {
         if (!response.ok) {
             const body = await response.text();
             watch.rejected(response, body);
-            tryParseStreamingError(response, body);
+            tryParseStreamingError(response, body, { quiet });
             // Reached only when the body held no error message, such as the bare 'Bad Request' of a missing server address.
             const said = body.trim() ? readableBackendError(body).slice(0, 300) : response.statusText;
-            toastr.error(said ? `HTTP ${response.status}: ${said}` : `HTTP ${response.status}`, 'Text Completion API');
+            const message = said ? `HTTP ${response.status}: ${said}` : `HTTP ${response.status}`;
+            console.warn('[Text Completion API] The backend returned an error.', message);
+            if (!quiet) toastr.error(message, 'Text Completion API');
             throw new Error(`Got response status ${response.status}`);
         }
 
-        return readTextGenerationStream(response);
+        return readTextGenerationStream(response, { quiet });
     });
 }
 
-/** @param {Response} response Live or retained provider response */
-export function readTextGenerationStream(response) {
+/**
+ * @param {Response} response Live or retained provider response
+ * @param {object} [options]
+ * @param {boolean} [options.quiet] Leave provider errors to the caller instead of showing a toast
+ */
+export function readTextGenerationStream(response, { quiet = false } = {}) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();
@@ -1338,7 +1346,7 @@ export function readTextGenerationStream(response) {
             }
             if (value.data === '[DONE]') return;
 
-            tryParseStreamingError(response, value.data);
+            tryParseStreamingError(response, value.data, { quiet });
 
             let data = JSON.parse(value.data);
             completed ||= streamCompletionSignal(data) || data.stop === true;
@@ -1442,13 +1450,15 @@ export function parseTabbyLogprobs(data) {
 }
 
 /**
- * Parses errors in streaming responses and displays them in toastr.
+ * Parses errors in streaming responses, logs them and displays them in toastr unless the request is quiet.
  * @param {Response} response - Response from the server.
  * @param {string} decoded - Decoded response body.
+ * @param {object} [options]
+ * @param {boolean} [options.quiet] Leave the error to the caller instead of showing a toast
  * @returns {void} Nothing.
  * @throws {Error} If the response contains an error message, throws Error with the message.
  */
-function tryParseStreamingError(response, decoded) {
+function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
     let data = {};
 
     try {
@@ -1462,7 +1472,8 @@ function tryParseStreamingError(response, decoded) {
     if (message && typeof message !== 'string') message = readableBackendError(data);
 
     if (message) {
-        toastr.error(message, 'Text Completion API');
+        console.warn('[Text Completion API] The backend returned an error.', message);
+        if (!quiet) toastr.error(message, 'Text Completion API');
         throw new Error(message);
     }
 }

@@ -645,15 +645,18 @@ export async function validateReverseProxy(signal, proxy = oai_settings.reverse_
         throw err;
     }
 
-    const confirmation = await confirmProxyAddress(proxy, { signal });
+    // Requests waiting on the same question share one 'no', so they share one toast too.
+    // A profile's or preset's proxy (markConnection false) is declined for that request; the message names where to change it.
+    const confirmation = await confirmProxyAddress(proxy, {
+        signal,
+        onDeclined: () => toastr.error(markConnection ? t`Update or remove your reverse proxy settings.` : t`Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.`),
+    });
 
     if (signal?.aborted) {
         return;
     }
 
     if (!confirmation) {
-        // A profile's or preset's proxy (markConnection false) is declined for that request; the message names where to change it.
-        toastr.error(markConnection ? t`Update or remove your reverse proxy settings.` : t`Request not sent, because you did not confirm its proxy address. Update or remove the reverse proxy in the connection profile or preset it uses.`);
         if (markConnection) {
             setOnlineStatus('no_connection');
             resultCheckStatus();
@@ -670,21 +673,27 @@ const pendingProxyConfirmations = new Map();
  * @param {string} proxy Proxy address
  * @param {object} [options]
  * @param {AbortSignal} [options.signal] A caller that has been cancelled does not record the answer
+ * @param {() => void} [options.onDeclined] Runs once per declined question, for the first caller still waiting on it
  * @returns {Promise<boolean>} True when the address is confirmed, now or before
  */
-export async function confirmProxyAddress(proxy, { signal } = {}) {
+export async function confirmProxyAddress(proxy, { signal, onDeclined } = {}) {
     const rememberKey = `Proxy_SkipConfirm_${getStringHash(proxy)}`;
     if (accountStorage.getItem(rememberKey) === 'true') {
         return true;
     }
     if (!pendingProxyConfirmations.has(rememberKey)) {
-        const question = (async () => Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(proxy) })))();
-        pendingProxyConfirmations.set(rememberKey, question);
-        question.finally(() => pendingProxyConfirmations.delete(rememberKey)).catch(() => {});
+        const answer = (async () => Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(proxy) })))();
+        pendingProxyConfirmations.set(rememberKey, { answer, declineReported: false });
+        answer.finally(() => pendingProxyConfirmations.delete(rememberKey)).catch(() => {});
     }
-    const confirmed = Boolean(await pendingProxyConfirmations.get(rememberKey));
+    const question = pendingProxyConfirmations.get(rememberKey);
+    const confirmed = Boolean(await question.answer);
     if (confirmed && !signal?.aborted) {
         accountStorage.setItem(rememberKey, String(true));
+    }
+    if (!confirmed && onDeclined && !signal?.aborted && !question.declineReported) {
+        question.declineReported = true;
+        onDeclined();
     }
     return confirmed;
 }
@@ -1972,6 +1981,7 @@ export function tryParseStreamingError(response, decoded, { quiet = false, event
     if (outcome) throw providerBlockedError(outcome);
     const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
     if (failure) recordRequestFailure({ ...failure, status: Number(data.provider_status) || (response.ok ? 0 : response.status), message });
+    console.warn('[Chat Completion API] The provider returned an error.', message, data.error ?? data);
     checkQuotaError(data, { quiet });
     checkModerationError(data, { quiet });
     if (!quiet) toastr.error(message, 'Chat Completion API');
@@ -5579,24 +5589,27 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
 
     if (!response.ok) {
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus({ verification: 'failed' });
-        tryParseStreamingError(response, await response.text(), { failure: failureSource });
+        // Quiet requests (Agents, Companions, summaries) report failures through their caller, which can combine them.
+        tryParseStreamingError(response, await response.text(), { quiet: type === 'quiet', failure: failureSource });
         recordRequestFailure({ ...failureSource, status: response.status, message: response.statusText });
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
-        return readChatCompletionStream(response, { canMultiSwipe, expectedPrefill: Boolean(generate_data.structured_prefill), overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null, failure: failureSource });
+        return readChatCompletionStream(response, { canMultiSwipe, expectedPrefill: Boolean(generate_data.structured_prefill), overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null, failure: failureSource, quiet: type === 'quiet' });
     } else {
         const data = await response.json();
         if (generate_data.structured_prefill) (await import('./structured-prefill.js')).reportStructuredPrefillStatus(data.choices?.[0]?.structured_prefill ?? { verification: data.error ? 'failed' : 'skipped' });
         if (classifyGenerationOutcome(data)) return data;
 
-        checkQuotaError(data);
-        checkModerationError(data);
+        const quiet = type === 'quiet';
+        checkQuotaError(data, { quiet });
+        checkModerationError(data, { quiet });
 
         if (data.error) {
             const message = data.error.message || response.statusText || t`Unknown error`;
             recordRequestFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
-            toastr.error(message, t`API returned an error`);
+            console.warn('[Chat Completion API] The provider returned an error.', message, data.error);
+            if (!quiet) toastr.error(message, t`API returned an error`);
             throw new Error(message);
         }
 
@@ -5624,9 +5637,10 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
  * @param {boolean} [options.expectedPrefill] Report when a requested prefill was skipped or failed.
  * @param {string?} [options.chatCompletionSource] Source override (defaults to the current setting)
  * @param {boolean?} [options.overrideShowThoughts] Read any reasoning supplied for an auxiliary viewer.
+ * @param {boolean} [options.quiet] Leave provider errors to the caller instead of showing a toast
  * @returns {() => AsyncGenerator<{text: string, swipes: string[], logprobs: any, toolCalls: any[], state: object}>}
  */
-export function readChatCompletionStream(response, { canMultiSwipe = false, expectedPrefill = false, chatCompletionSource = null, overrideShowThoughts = null, failure = null } = {}) {
+export function readChatCompletionStream(response, { canMultiSwipe = false, expectedPrefill = false, chatCompletionSource = null, overrideShowThoughts = null, failure = null, quiet = false } = {}) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();
@@ -5690,7 +5704,7 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, expe
                 if (!previous && state.outcomes[index]?.status === 'error' && frame.error) console.warn('The provider ended the reply with an error.', frame.error);
                 if (generationErrorEnvelope(frame, value.type)) {
                     if (failure?.request) failure.request.received = text;
-                    if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type, failure });
+                    if (!state.outcome) tryParseStreamingError(response, rawData, { quiet, eventType: value.type, failure });
                     if (!state.outcome) throw new Error('The AI service rejected the reply.');
                     continue;
                 }
