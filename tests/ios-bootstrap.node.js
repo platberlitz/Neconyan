@@ -227,3 +227,16 @@ test('iOS simulator tests run with Spotlight indexing off', () => {
     assert.match(steps[spotlight].run, /sudo mdutil -a -i off/);
     assert.ok(spotlight < indexOf('Start an iPhone and an iPad simulator'));
 });
+
+test('iOS page feature taps are retried only after the page saw the touch cancelled', () => {
+    const swift = fs.readFileSync(path.join(root, 'ios/Tests/StandaloneTests.swift'), 'utf8');
+    assert.ok(swift.includes('window.addEventListener(\'touchcancel\''));
+    assert.ok(swift.includes('status.textContent = `Cancelled touches: ${cancelled}`;'));
+    assert.match(swift, /guard attempt < 3, cancelled\.label != before else \{\s*return false\s*\}/);
+    assert.match(swift, /tapPageButton\(skipTour, in: app\) \{ skipTour\.waitForNonExistence\(timeout: 10\) \}/);
+    for (const label of ['Test alert', 'Test download', 'Test popup']) {
+        assert.ok(swift.includes(`tapPageButton(app.buttons["${label}"], in: app)`), label);
+        assert.ok(!swift.includes(`app.buttons["${label}"].tap()`), label);
+    }
+    assert.ok(!swift.includes('skipTour.tap()'));
+});
