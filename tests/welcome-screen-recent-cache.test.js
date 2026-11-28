@@ -473,7 +473,7 @@ describe('Home recent chat identifiers after template sanitisation', () => {
         const capture = action => (...args) => { calls.push([action, ...args]); };
         const context = vm.createContext({
             console, HTMLElement: Element, welcomeRequestId: 1,
-            document: { getElementById: () => new Element(), createRange: () => ({ createContextualFragment: () => fragment }),
+            document: { getElementById: () => new Element(), createElement: () => ({ innerHTML: '', content: fragment }),
                 body: { classList: { contains: () => true, add() {} } } },
             window: {}, getWelcomeHost: () => new Element(),
             buildWelcomeTemplateData: () => ({}), renderTemplateAsync: async () => '',

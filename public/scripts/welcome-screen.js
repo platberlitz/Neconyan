@@ -1557,7 +1557,11 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
         if (requestId !== welcomeRequestId) {
             return;
         }
-        const fragment = document.createRange().createContextualFragment(template);
+        // Parse into an inert template so WebKit does not start fetching the moving cat
+        // before initializeNeconyanHome swaps it for the resting one under reduced motion.
+        const parsed = document.createElement('template');
+        parsed.innerHTML = template;
+        const fragment = parsed.content;
         const nextPanel = fragment.querySelector('.welcomePanel');
         const welcomeHost = getWelcomeHost();
         if (!(welcomeHost instanceof HTMLElement)) {
