@@ -37,6 +37,7 @@
 - Scratchpad's **Dictate** and **Talk mode** buttons are now off until you turn them on with **Show Dictate beside Send** and **Show Talk mode beside Send** under **Context → Setup → Dictation and voice**.
 - Deleting a message or a selection of messages while the chat can't be saved now puts them back with a **Message not deleted** notice, instead of taking them off the screen while the saved chat still has them. **Chat could not be saved** and the settings, theme and preset save notices now say what actually went wrong instead of always blaming your connection to Neconyan, and a connection problem between Neconyan and your AI provider now says so instead of showing a bare 'Connection error.'
 - If a drag in **Edit sidebar** gets interrupted, such as by a system gesture, an alert or switching apps, the button now goes back to where it was instead of staying stuck under your finger, and the next drag works first time.
+- In **Edit sidebar** on phones, holding a button's drag handle no longer selects text or opens the phone's long-press menu, so the drag starts instead of being cancelled.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -76,6 +77,7 @@
 - PR #1043 (2026-11-28) `feat(agents): seed Pura's randomisers by default`
 - PR #1044 (2026-11-28) `fix(chat): keep deletions that cannot be saved and say why saves fail`
 - PR #1045 (2026-11-28) `test(undo): skip first-run setup in the message Undo fixture`
+- PR #1046 (2026-11-28) `fix(rail): stop long-press menus cancelling edit sidebar grip drags`
 
 ## v1.6.0
 
