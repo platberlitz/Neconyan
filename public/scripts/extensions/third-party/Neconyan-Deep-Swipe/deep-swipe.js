@@ -39,6 +39,7 @@ async function submitDeepSwipeWorkflow(name, { instruction, messageId }) {
     try {
         await workflows.submitRoleplayWorkflow({ name, intent: { instruction: text }, page, messageIndex: messageId });
     } catch (submitError) {
+        console.warn('[DeepSwipe] Server workflow request failed:', submitError);
         if (!isImageInputIssue(submitError)) toastr.error(String(submitError?.message || 'Deep Swipe could not send this request. Try again.'), 'Deep Swipe');
     }
     return true;
@@ -63,24 +64,47 @@ let chatBackupTimestamp = null;
  * which is alarming and wrong here. Suppress exactly that message, only while
  * our own generation is in flight, and only after logging it.
  *
- * @returns {() => void} Call to restore the original toastr.error
+ * The filter goes on toastr.error once and stays there; each run only takes and
+ * gives back a hold. Swapping toastr.error in and out per run let overlapping
+ * runs put back a stale copy, which left the filter on for good or dropped a
+ * wrapper something else had added in the meantime.
+ *
+ * @returns {() => void} Call once the run is over to give its hold back
  */
-function suppressTruncationSaveToast() {
-    if (typeof toastr === 'undefined' || typeof toastr.error !== 'function') {
+function suppressTruncationSaveToast(toastrApi = globalThis.toastr) {
+    if (!toastrApi || typeof toastrApi.error !== 'function') {
         return () => {};
     }
 
-    const original = toastr.error;
-    toastr.error = function (message, title, ...rest) {
-        if (typeof message === 'string'
-            && (message.includes('would have deleted messages') || message.includes('would have wiped messages'))) {
+    installTruncationSaveToastFilter(toastrApi);
+    truncationSaveToastHolds += 1;
+    let released = false;
+    return () => {
+        if (released) return;
+        released = true;
+        truncationSaveToastHolds = Math.max(0, truncationSaveToastHolds - 1);
+    };
+}
+
+let truncationSaveToastHolds = 0;
+const filteredToastApis = new WeakSet();
+
+function isTruncationSaveMessage(message) {
+    return typeof message === 'string'
+        && (message.includes('would have deleted messages') || message.includes('would have wiped messages'));
+}
+
+function installTruncationSaveToastFilter(toastrApi) {
+    if (filteredToastApis.has(toastrApi)) return;
+    const next = toastrApi.error;
+    toastrApi.error = function (message, title, ...rest) {
+        if (truncationSaveToastHolds > 0 && isTruncationSaveMessage(message)) {
             console.debug('[Deep Swipe] Suppressed the destructive-save warning for our own truncated window. The chat file was left unchanged and is saved in full once the swipe completes.');
             return;
         }
-        return original.call(this, message, title, ...rest);
+        return next.call(this, message, title, ...rest);
     };
-
-    return () => { toastr.error = original; };
+    filteredToastApis.add(toastrApi);
 }
 
 /**

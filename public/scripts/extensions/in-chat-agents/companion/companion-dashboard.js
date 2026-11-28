@@ -518,8 +518,10 @@ function reportRetryOutcome(results = []) {
         return;
     }
 
-    const failedAgain = results.filter(result => result?.status !== 'done' || result?.lastRunError).length;
+    const failures = results.filter(result => result?.status !== 'done' || result?.lastRunError);
+    const failedAgain = failures.length;
     if (failedAgain > 0) {
+        console.warn('[InChatAgents] Companion retry failed again:', failures.map(result => ({ status: result?.status ?? 'missing', error: result?.lastRunError || result?.error || null })));
         toastr.warning(failedAgain === 1
             ? t`1 companion failed again. Check your connection, then try again.`
             : t`${failedAgain} companions failed again. Check your connection, then try again.`);

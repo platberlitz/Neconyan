@@ -643,9 +643,12 @@ describe('companion dashboard', () => {
         expect(runner.retryFailedCompanionsOnMessage).toHaveBeenCalledWith(1);
         expect(globalThis.toastr.success).toHaveBeenLastCalledWith('Retried 1 companion.');
 
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error', error: 'Request failed' }]);
         await view.click('retry-failed');
         expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check your connection, then try again.');
+        expect(warn).toHaveBeenCalledWith('[InChatAgents] Companion retry failed again:', [{ status: 'error', error: 'Request failed' }]);
+        warn.mockRestore();
         expect(translatedKeys).toContain('1 companion failed again. Check your connection, then try again.');
 
         runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error' }, { status: 'error' }]);

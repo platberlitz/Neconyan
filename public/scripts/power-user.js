@@ -4383,7 +4383,7 @@ async function saveTheme(name = undefined, theme = undefined) {
 
     if (!response.ok) {
         toastr.error('Your changes were not saved. Check your connection to Neconyan, then reload before editing more.', 'Theme could not be saved');
-        console.error('Theme could not be saved', response);
+        console.error(`Theme could not be saved: HTTP ${response.status} ${response.statusText}`.trim(), response);
         throw new Error('Theme could not be saved');
     }
 

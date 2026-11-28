@@ -446,6 +446,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
         }
         observeNativeConversationJob(accepted.job.id, account);
     } catch (error) {
+        console.warn('Conversation reply not sent:', error);
         if (!raiseImageRefusalNotice(error, origin)) toastr.error(escapeHtmlText(error.message || 'The saved connection could not be used.'), 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
@@ -505,6 +506,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
             observeNativeConversationJob(accepted.job.id, account);
         }
     } catch (error) {
+        console.warn('Conversation reply not sent:', error);
         if (!raiseImageRefusalNotice(error, origin)) toastr.error(escapeHtmlText(error.message || 'The saved connection could not be used.'), 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
@@ -544,18 +546,22 @@ async function acceptConversationSubmission(payload, meta = {}) {
     const { account = getCurrentUserHandle() } = meta;
     const signature = JSON.stringify([payload.mode, payload.target, payload.branchCreatedAt, payload.messages, payload.triggers, payload.replyTarget, payload.force, payload.timeZone, payload.bindingRequest]);
     let flushed = false;
+    let flushError = null;
     try {
         flushed = await flushConversationStore(account);
-    } catch {
+    } catch (error) {
         flushed = false;
+        flushError = error;
     }
     if (!flushed) {
+        console.warn('Conversation reply not sent: changes could not be saved first.', flushError || '');
         toastr.error('Conversation changes could not be saved. Check your connection to Neconyan and try again.', 'Reply not sent');
         return null;
     }
     try {
         const accepted = await postConversationSubmission(payload, account);
         if (!accepted?.job || accepted.inputDurable !== true) {
+            console.warn('Conversation reply not accepted by the server:', accepted);
             toastr.warning('The Conversation reply was not accepted. Try again.', 'Reply not sent');
             return null;
         }
@@ -567,6 +573,7 @@ async function acceptConversationSubmission(payload, meta = {}) {
         const alreadyUncertain = pendingSubmission?.account === account && pendingSubmission?.key === payload.submissionKey;
         pendingSubmission = !alreadyUncertain && error.status >= 400 && error.status < 500 ? null
             : { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
+        console.warn('Conversation reply submission failed:', error);
         if (raiseImageRefusalNotice(error, meta.origin)) return null;
         const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
         toastr.error(escapeHtmlText(detail), 'Reply not sent');

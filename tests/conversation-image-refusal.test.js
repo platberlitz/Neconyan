@@ -477,6 +477,23 @@ describe('a server-run Conversation request refused for an image', () => {
             expect(events()).toHaveLength(0);
             nothingAccepted();
         });
+
+        test('every Reply not sent toast has its reason in the console too', async () => {
+            const submitted = ordinary(503);
+            accept.submission.mockRejectedValueOnce(submitted);
+            await send('Logged server failure');
+            expect(toastr.error).toHaveBeenLastCalledWith('conversation_request_failed', 'Reply not sent');
+            expect(consoleWarn).toHaveBeenCalledWith('Conversation reply submission failed:', expect.objectContaining({ status: 503 }));
+            consoleWarn.mockClear();
+            accept.preflight.mockRejectedValueOnce(ordinary(503));
+            await send('Logged preflight failure');
+            expect(consoleWarn).toHaveBeenCalledWith('Conversation reply not sent:', expect.any(Error));
+            consoleWarn.mockClear();
+            accept.preflight.mockRejectedValueOnce(ordinary(503));
+            await forceReply();
+            expect(consoleWarn).toHaveBeenCalledWith('Conversation reply not sent:', expect.any(Error));
+            expect(toastr.error).toHaveBeenCalledTimes(3);
+        });
     });
 
     describe('the Polish control (Rewrite reply with AI)', () => {

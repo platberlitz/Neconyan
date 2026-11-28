@@ -2919,10 +2919,12 @@ async function handlePanelAction(event) {
         button.prop('disabled', true);
         try {
             const results = await retryFailedCompanionsOnMessage(retryIndex);
-            const failedAgain = results.filter(result => result?.status !== 'done' || result?.lastRunError).length;
+            const failures = results.filter(result => result?.status !== 'done' || result?.lastRunError);
+            const failedAgain = failures.length;
             if (!results.length) {
                 toastr.info('The chat changed before the retry finished.');
             } else if (failedAgain > 0) {
+                console.warn('[InChatAgents] Companion retry failed again:', failures.map(result => ({ status: result?.status ?? 'missing', error: result?.lastRunError || result?.error || null })));
                 toastr.warning(failedAgain === 1
                     ? t`1 companion failed again. Check your connection, then try again.`
                     : t`${failedAgain} companions failed again. Check your connection, then try again.`);
