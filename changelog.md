@@ -31,6 +31,7 @@
 - On a phone with reduced motion turned on, dragging a button in **Edit sidebar** no longer drops it one place further down than where you let go.
 - Replies and **Agents** keep going while the Android or iPhone app is in the background, the Android app no longer reloads your workspace after one missed check of its local server, quiet replies stay open behind a reverse proxy, and Android diagnostics now include a short, redacted record of page warnings and errors.
 - **Mewmory** retains less memory after reading very large chats or archives.
+- Saved **Scratchpad** discussions remain readable if notebook proposal data is damaged.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -63,6 +64,7 @@
 - PR #1036 (2026-11-28) `fix: stop repeat notices and chat-change churn after replies finish`
 - PR #1037 (2026-11-28) `fix(i18n): translate Home and Simple Mode character-finding strings`
 - PR #1038 (2026-11-28) `fix(mewmory): keep oversized reads out of the cache`
+- PR #1040 (2026-11-28) `fix(scratchpad): keep saved discussions readable after proposal damage`
 
 ## v1.6.0
 
