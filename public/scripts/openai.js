@@ -6973,7 +6973,9 @@ function loadOpenAISettings(data, settings) {
     for (const key of Object.keys(default_settings)) {
         // Invalid NanoGPT restrictions must reach request validation, not become unrestricted defaults.
         const isNanoGptRequestSetting = ['nanogpt_allowed_providers', 'nanogpt_ignored_providers', 'nanogpt_payg_override'].includes(key);
-        oai_settings[key] = isNanoGptRequestSetting && Object.hasOwn(settings, key) ? settings[key] : settings[key] ?? default_settings[key];
+        oai_settings[key] = isNanoGptRequestSetting && Object.hasOwn(settings, key)
+            ? settings[key]
+            : settings[key] ?? (key === 'prompts' ? structuredClone(default_settings.prompts) : default_settings[key]);
         const settingToUpdate = Object.values(settingsToUpdate).find(([_, k]) => k === key);
         if (settingToUpdate) {
             const [selector] = settingToUpdate;

@@ -1115,9 +1115,8 @@ test('AC 17: a reset Nsfw and Jailbreak prompt keep their translated names in th
     });
 });
 
-// Rule D (M71-A7). An account whose saved settings hold no prompts uses the default prompt list itself as its prompt list (the app's
-// sanitizeServiceSettings sets it with setPrompts), so a prompt added there, or a default prompt renamed there, also changes that
-// list. isBuiltInPromptName reads a copy taken at load, so such names stay as written and the untouched defaults still translate.
+// Rule D (M71-A7). An account whose saved settings hold no prompts gets its own copy of the defaults.
+// Names chosen in that copy stay as written and untouched default names still translate.
 test('rule D: a prompt a person adds or renames keeps its name when the account uses the default prompt list', async ({ app }, info) => {
     info.setTimeout(10 * 60 * 1000);
     const account = await app.account({});
@@ -1132,16 +1131,18 @@ test('rule D: a prompt a person adds or renames keeps its name when the account 
     await shell(page, 'left', 'presets');
     await page.evaluate(() => document.getElementById('openai-tab-btn-prompts')?.click());
     await page.waitForSelector('#completion_prompt_manager_list li[data-pm-identifier="nsfw"]', { state: 'attached' });
-    // The app's own path for an empty prompt list: sanitizeServiceSettings calls setPrompts(chatCompletionDefaultPrompts.prompts).
-    const shared = await page.evaluate(async () => {
+    // Exercise the app's fallback for an empty prompt list.
+    const ownership = await page.evaluate(async () => {
         const { promptManager } = await import('/scripts/openai.js');
         const { chatCompletionDefaultPrompts } = await import('/scripts/PromptManager.js');
         promptManager.serviceSettings.prompts = [];
         promptManager.sanitizeServiceSettings();
         await promptManager.render(false);
-        return promptManager.serviceSettings.prompts === chatCompletionDefaultPrompts.prompts;
+        const prompts = promptManager.serviceSettings.prompts;
+        const defaults = chatCompletionDefaultPrompts.prompts;
+        return { sharedList: prompts === defaults, sharedEntries: prompts.some(prompt => defaults.includes(prompt)) };
     });
-    expect(shared, 'the account uses the default prompt list itself').toBe(true);
+    expect(ownership, 'the account owns its fallback list and entries').toEqual({ sharedList: false, sharedEntries: false });
     await page.waitForFunction(() => { const list = document.querySelector('#completion_prompt_manager_list'); if (!list?.querySelector('li[data-pm-identifier="nsfw"] .prompt-manager-edit-action')) return false; if (window.a7SettledList !== list) { window.a7SettledList = list; window.a7SettledSince = Date.now(); return false; } return Date.now() - window.a7SettledSince >= 3000; }, undefined, { polling: 250, timeout: 30000 });
     // A new prompt named Draft, made in the prompt editor.
     await page.evaluate(() => document.querySelector('#completion_prompt_manager_new, #completion_prompt_manager_prompt_manager_new').click());

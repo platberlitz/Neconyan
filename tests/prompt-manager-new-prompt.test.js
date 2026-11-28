@@ -269,3 +269,92 @@ describe('unsaved new-prompt draft across async redraws', () => {
         expect(manager.isPendingNewPromptDraft()).toBe(false);
     });
 });
+
+describe('default prompt ownership', () => {
+    async function loadPromptModule() {
+        const events = { SETTINGS_LOADED_BEFORE: 'settings-load', OAI_PRESET_CHANGED_BEFORE: 'preset-change' };
+        const handlers = new Map();
+        const { PromptManager, chatCompletionDefaultPrompts, registerPromptManagerMigration } = await loadIsolated('scripts/PromptManager.js', {
+            '../script.js': { eventSource: { on: (event, handler) => handlers.set(event, handler) }, event_types: events },
+        });
+        return { PromptManager, defaults: chatCompletionDefaultPrompts.prompts, registerPromptManagerMigration, handlers, events };
+    }
+
+    test('empty prompt lists own separate copies of the catalogue and its entries', async () => {
+        const { PromptManager, defaults } = await loadPromptModule();
+        const pristine = structuredClone(defaults);
+        const first = new PromptManager();
+        const second = new PromptManager();
+        for (const manager of [first, second]) {
+            manager.serviceSettings = { prompts: [] };
+            manager.sanitizeServiceSettings();
+            expect(manager.serviceSettings.prompts).toEqual(pristine);
+            expect(manager.serviceSettings.prompts).not.toBe(defaults);
+            for (const prompt of defaults) expect(manager.getPromptById(prompt.identifier)).not.toBe(prompt);
+        }
+        expect(first.serviceSettings.prompts).not.toBe(second.serviceSettings.prompts);
+        first.getPromptById('main').name = 'Edited main';
+        first.serviceSettings.prompts.push({ identifier: 'new', name: 'Added prompt' });
+        expect(defaults).toEqual(pristine);
+        expect(second.serviceSettings.prompts).toEqual(pristine);
+    });
+
+    test('partial lists keep saved entries and get independent copies of the missing defaults', async () => {
+        const { PromptManager, defaults } = await loadPromptModule();
+        const pristine = structuredClone(defaults);
+        const saved = { identifier: 'main', name: 'Saved main', content: 'Saved instructions.' };
+        const order = [{ identifier: 'nsfw', enabled: false }, { identifier: 'main', enabled: true }];
+        const manager = new PromptManager();
+        manager.activeCharacter = { id: 100000 };
+        manager.serviceSettings = { prompts: [saved], prompt_order: [{ character_id: 100000, order }] };
+        manager.sanitizeServiceSettings();
+        expect(manager.getPromptOrderForCharacter(manager.activeCharacter)).toEqual(order);
+        expect(manager.serviceSettings.prompts).toEqual([saved, ...pristine.filter(prompt => prompt.identifier !== 'main')]);
+        expect(manager.getPromptById('main')).toBe(saved);
+        for (const prompt of defaults.filter(prompt => prompt.identifier !== 'main')) {
+            expect(manager.getPromptById(prompt.identifier)).not.toBe(prompt);
+        }
+        manager.getPromptById('nsfw').content = 'Edited auxiliary instructions.';
+        expect(defaults).toEqual(pristine);
+    });
+
+    test('settings and named preset migrations own their legacy replacements and keep other defaults', async () => {
+        const { defaults, registerPromptManagerMigration, handlers, events } = await loadPromptModule();
+        const pristine = structuredClone(defaults);
+        registerPromptManagerMigration();
+        const savePreset = jest.fn();
+        const settings = { main_prompt: 'Legacy account main.', extension: 'account' };
+        handlers.get(events.SETTINGS_LOADED_BEFORE)(settings);
+        expect(settings).toEqual({
+            prompts: pristine.map(prompt => prompt.identifier === 'main' ? { ...prompt, content: 'Legacy account main.' } : prompt),
+            extension: 'account',
+        });
+
+        const preset = { prompts: [], nsfw_prompt: 'Legacy auxiliary.', jailbreak_prompt: 'Legacy post-history.' };
+        handlers.get(events.OAI_PRESET_CHANGED_BEFORE)({ preset, presetName: 'Legacy preset', savePreset });
+        expect(preset).toEqual({ prompts: pristine.map(prompt => {
+            if (prompt.identifier === 'nsfw') return { ...prompt, content: 'Legacy auxiliary.' };
+            if (prompt.identifier === 'jailbreak') return { ...prompt, content: 'Legacy post-history.' };
+            return prompt;
+        }) });
+        expect(savePreset).toHaveBeenCalledTimes(1);
+        expect(savePreset).toHaveBeenCalledWith('Legacy preset', preset, false);
+        expect(defaults).toEqual(pristine);
+        for (const [index, prompt] of defaults.entries()) {
+            expect(settings.prompts[index]).not.toBe(prompt);
+            expect(preset.prompts[index]).not.toBe(prompt);
+        }
+    });
+
+    test('the Default preset bypasses legacy migration and saving', async () => {
+        const { defaults, registerPromptManagerMigration, handlers, events } = await loadPromptModule();
+        const pristine = structuredClone(defaults);
+        registerPromptManagerMigration();
+        const preset = { prompts: [], main_prompt: 'Legacy main.' };
+        const savePreset = jest.fn();
+        handlers.get(events.OAI_PRESET_CHANGED_BEFORE)({ preset, presetName: 'Default', savePreset });
+        expect(preset).toEqual({ prompts: [], main_prompt: 'Legacy main.' });
+        expect(savePreset).not.toHaveBeenCalled();
+        expect(defaults).toEqual(pristine);
+    });
+});
