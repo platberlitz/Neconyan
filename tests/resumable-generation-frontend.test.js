@@ -226,6 +226,91 @@ describe('fetchResumable', () => {
         expect(JSON.parse(callsTo(RESUME_URL)[0][1].body).offset).toBe('data: a\n\n'.length);
     });
 
+    test('waking up leaves a request alone while it waits for its first answer', async () => {
+        // A non-streaming reply sends nothing until it is complete, and over plain HTTP/1.1 the
+        // browser queues everything past six connections, so a long silence is normal here.
+        let answer;
+        let connection;
+        fetchMock.mockImplementation((url, init) => {
+            if (url === RESUME_URL) return Promise.resolve(new Response(null, { status: 404 }));
+            connection = init.signal;
+            return new Promise(resolve => {
+                answer = resolve;
+            });
+        });
+
+        const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' });
+        await new Promise(resolve => setTimeout(resolve, 10));
+        reconnectStaleGenerations(Date.now() + 10 * 60 * 1000);
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(connection.aborted).toBe(false);
+        expect(callsTo(RESUME_URL)).toHaveLength(0);
+        answer(Response.json({ choices: [{ text: 'done' }] }));
+        const response = await outcome;
+        await expect(response.json()).resolves.toEqual({ choices: [{ text: 'done' }] });
+        expect(callsTo(RESUME_URL)).toHaveLength(0);
+    });
+
+    test('a request whose own timeout fires rejects with a TimeoutError, even where WebKit reports an AbortError', async () => {
+        const signal = AbortSignal.timeout(20);
+        fetchMock.mockImplementation(async (url, init) => {
+            if (url === CANCEL_URL) return new Response(null, { status: 204 });
+            return new Promise((_resolve, reject) => {
+                // WebKit rejects with a plain AbortError rather than the signal's reason.
+                init.signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true });
+            });
+        });
+
+        const error = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal }).catch(caught => caught);
+        expect(error.name).toBe('TimeoutError');
+        expect(error).toBe(signal.reason);
+        expect(callsTo(RESUME_URL)).toHaveLength(0);
+    });
+
+    test('a stream whose own timeout fires mid-reply errors with a TimeoutError, not an AbortError', async () => {
+        const controller = new AbortController();
+        fetchMock.mockImplementation(async (url, init) => {
+            if (url === CANCEL_URL) return new Response(null, { status: 204 });
+            return new Response(new ReadableStream({
+                start(stream) {
+                    stream.enqueue(encoder.encode('data: a\n\n'));
+                    // WebKit errors the body with a plain AbortError rather than the signal's reason.
+                    init.signal.addEventListener('abort', () => stream.error(new DOMException('The operation was aborted.', 'AbortError')), { once: true });
+                },
+            }), { status: 200 });
+        });
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+        const text = response.text().catch(caught => caught);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        controller.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+
+        const error = await text;
+        expect(error.name).toBe('TimeoutError');
+        expect(callsTo(RESUME_URL)).toHaveLength(0);
+    });
+
+    test('a person\'s Stop before the first answer still rejects with an AbortError', async () => {
+        const controller = new AbortController();
+        fetchMock.mockImplementation(async (url, init) => {
+            if (url === CANCEL_URL) return new Response(null, { status: 204 });
+            return new Promise((_resolve, reject) => {
+                init.signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true });
+            });
+        });
+
+        const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal }).catch(caught => caught);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        controller.abort();
+
+        const error = await outcome;
+        expect(error.name).toBe('AbortError');
+        expect(error).toBe(controller.signal.reason);
+        expect(callsTo(RESUME_URL)).toHaveLength(0);
+        expect(callsTo(CANCEL_URL)).toHaveLength(1);
+    });
+
     describe('while the page stays visible', () => {
         beforeEach(() => {
             jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
@@ -271,6 +356,168 @@ describe('fetchResumable', () => {
                 await jest.advanceTimersByTimeAsync(40000);
                 expect(callsTo(STATUS_URL)).toHaveLength(2);
                 expect(callsTo(RESUME_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        /**
+         * A request that waits for its whole answer, as a non-streaming Agent or Companion call
+         * does. The status check is answered by status(), which gets its own abort signal.
+         */
+        function waitingRequest(status) {
+            const original = {};
+            fetchMock.mockImplementation((url, init) => {
+                if (url === STATUS_URL) return status(init.signal);
+                if (url === CANCEL_URL) return Promise.resolve(new Response(null, { status: 204 }));
+                if (url === RESUME_URL) return Promise.resolve(resumeResponse(['{"resumed":true}'], { contentType: 'application/json' }));
+                original.signal = init.signal;
+                return new Promise((resolve, reject) => {
+                    original.answer = resolve;
+                    init.signal.addEventListener('abort', () => reject(original.webkit ? new DOMException('The operation was aborted.', 'AbortError') : init.signal.reason), { once: true });
+                });
+            });
+            return original;
+        }
+
+        /** A status check stuck in the browser's queue behind six busy connections. */
+        function queuedStatus(signal) {
+            return new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            });
+        }
+
+        test('a status check that times out in the connection queue never aborts a healthy request', async () => {
+            const original = waitingRequest(queuedStatus);
+            const controller = new AbortController();
+            try {
+                const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(callsTo(STATUS_URL)).toHaveLength(1);
+                // The check gives up after 10 s, and is asked again on the next watchdog tick.
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(callsTo(STATUS_URL)).toHaveLength(2);
+                await jest.advanceTimersByTimeAsync(60000);
+                expect(original.signal.aborted).toBe(false);
+                expect(callsTo(RESUME_URL)).toHaveLength(0);
+
+                original.answer(Response.json({ choices: [{ text: 'done' }] }));
+                const response = await outcome;
+                await expect(response.json()).resolves.toEqual({ choices: [{ text: 'done' }] });
+                expect(callsTo(RESUME_URL)).toHaveLength(0);
+                expect(callsTo(CANCEL_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test('a status check that cannot reach the server never aborts a quiet stream, and is tried again on the next tick', async () => {
+            let connection;
+            fetchMock.mockImplementation(async (url, init) => {
+                if (url === STATUS_URL) throw new TypeError('Load failed');
+                if (url === CANCEL_URL) return new Response(null, { status: 204 });
+                if (url === RESUME_URL) return resumeResponse(['data: b\n\n', 'data: [DONE]\n\n']);
+                connection = init.signal;
+                return new Response(bodyFrom(['data: a\n\n'], { hang: true, signal: init.signal }), { status: 200 });
+            });
+            const controller = new AbortController();
+            try {
+                const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                response.text().catch(() => undefined);
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(callsTo(STATUS_URL)).toHaveLength(1);
+                await jest.advanceTimersByTimeAsync(5000);
+                expect(callsTo(STATUS_URL)).toHaveLength(2);
+                await jest.advanceTimersByTimeAsync(60000);
+                expect(connection.aborted).toBe(false);
+                expect(callsTo(RESUME_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test('a request still queued in the browser is not given up on when the server does not know it yet', async () => {
+            let checks = 0;
+            const original = waitingRequest(async () => {
+                if (++checks === 1) return new Response(null, { status: 404 });
+                return Response.json({ done: true, headersReady: true, size: '{"resumed":true}'.length });
+            });
+            const controller = new AbortController();
+            try {
+                const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(checks).toBe(1);
+                expect(original.signal.aborted).toBe(false);
+
+                // Later the server holds the finished reply, but this connection never got it.
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(checks).toBe(2);
+                const response = await outcome;
+                await expect(response.json()).resolves.toEqual({ resumed: true });
+                expect(original.signal.reason).toMatchObject({ code: 'GENERATION_RECONNECT' });
+                expect(original.signal.reason.name).not.toBe('AbortError');
+                expect(callsTo(CANCEL_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test('a quiet stream that speaks while it is being checked is not dropped', async () => {
+            let stream;
+            let connection;
+            let answerStatus;
+            fetchMock.mockImplementation(async (url, init) => {
+                if (url === STATUS_URL) return new Promise(resolve => {
+                    answerStatus = resolve;
+                });
+                if (url === CANCEL_URL) return new Response(null, { status: 204 });
+                if (url === RESUME_URL) return resumeResponse(['data: [DONE]\n\n']);
+                connection = init.signal;
+                return new Response(new ReadableStream({
+                    start(controller) {
+                        stream = controller;
+                        controller.enqueue(encoder.encode('data: a\n\n'));
+                        init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+                    },
+                }), { status: 200 });
+            });
+            const controller = new AbortController();
+            try {
+                const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                response.text().catch(() => undefined);
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(callsTo(STATUS_URL)).toHaveLength(1);
+                stream.enqueue(encoder.encode('data: b\n\n'));
+                await jest.advanceTimersByTimeAsync(0);
+                answerStatus(Response.json({ done: false, headersReady: true, size: 1000 }));
+                await jest.advanceTimersByTimeAsync(1000);
+                expect(connection.aborted).toBe(false);
+                expect(callsTo(RESUME_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test.each([
+            [404, 'Chromium'],
+            [410, 'Chromium'],
+            [404, 'WebKit'],
+            [410, 'WebKit'],
+        ])('a watchdog drop answered by %i (%s) says the connection was lost, not that the person stopped', async (status, browser) => {
+            const original = waitingRequest(async () => Response.json({ done: true, headersReady: true, size: 10 }));
+            original.webkit = browser === 'WebKit';
+            fetchMock.mockImplementation((impl => (url, init) => (url === RESUME_URL ? Promise.resolve(new Response(null, { status })) : impl(url, init)))(fetchMock.getMockImplementation()));
+            const controller = new AbortController();
+            try {
+                const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal }).catch(error => error);
+                await jest.advanceTimersByTimeAsync(15000);
+                const error = await outcome;
+                expect(error).toBeInstanceOf(Error);
+                expect(error.name).not.toBe('AbortError');
+                expect(error.code).toBe('GENERATION_CONNECTION_LOST');
+                expect(callsTo(RESUME_URL)).toHaveLength(1);
+                expect(callsTo(CANCEL_URL)).toHaveLength(0);
+                expect(controller.signal.aborted).toBe(false);
             } finally {
                 controller.abort();
             }

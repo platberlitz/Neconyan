@@ -263,15 +263,24 @@ export function withoutRecentRequestText(text, { addresses = false } = {}) {
     }
 }
 
+/** @param {unknown} value */
+function isTimeout(value) {
+    return /** @type {{ name?: unknown } | null | undefined} */ (value)?.name === 'TimeoutError';
+}
+
 /**
  * True for a request the person stopped, or one that was cut off on purpose (such as the
- * length limit), which is not a failure.
+ * length limit), which is not a failure. A request that ran out of time is a failure, even
+ * where the browser reports it as an AbortError: WebKit rejects a fetch whose
+ * AbortSignal.timeout() fired with an AbortError, while the signal's reason is the TimeoutError.
  * @param {unknown} error
  * @param {AbortSignal | null | undefined} signal
  */
 export function isStoppedRequest(error, signal) {
+    if (signal?.aborted) return !isTimeout(signal.reason);
+    if (isTimeout(error)) return false;
     const named = /** @type {{ name?: unknown }} */ (error ?? {});
-    return Boolean(signal?.aborted) || named.name === 'AbortError' || (Boolean(signal) && error === signal?.reason);
+    return named.name === 'AbortError' || (Boolean(signal) && error === signal?.reason);
 }
 
 /** @param {string} kind 'kobold', 'novel' or 'text' @param {string} type The text completion type, such as 'llamacpp' */

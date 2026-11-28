@@ -25,6 +25,7 @@ const STALE_STREAM_MS = 5000;
 const QUIET_STREAM_MS = 15000;
 const WATCHDOG_INTERVAL_MS = 5000;
 const STATUS_TIMEOUT_MS = 10000;
+const GENERATION_RECONNECT = 'GENERATION_RECONNECT';
 const SKIPPED_RESPONSE_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
 
 /** @type {Map<string, ResumableRequest>} */
@@ -113,11 +114,39 @@ function createGenerationId() {
 }
 
 /**
+ * The caller's own reason, so a timeout stays a TimeoutError: WebKit rejects a fetch whose
+ * AbortSignal.timeout() fired with a plain AbortError, which callers read as Stop.
  * @param {AbortSignal|null} signal Aborted signal
  * @returns {any} What fetch would have rejected with
  */
 function abortError(signal) {
     return signal?.reason ?? new DOMException('The operation was aborted.', 'AbortError');
+}
+
+/**
+ * Neconyan: the reason for a connection this page drops by itself to reattach to the reply. It is
+ * coded, and deliberately not an AbortError, because callers treat an AbortError as Stop.
+ * @returns {Error}
+ */
+function reconnectReason() {
+    return Object.assign(new Error('The connection was dropped to reattach to the reply.'), { name: 'GenerationReconnect', code: GENERATION_RECONNECT });
+}
+
+/**
+ * @param {any} error What a connection failed with while the caller had not stopped it
+ * @returns {boolean} Whether the connection was aborted, by this page to reattach or by the browser
+ */
+function isDroppedConnection(error) {
+    return error?.code === GENERATION_RECONNECT || error?.name === 'AbortError' || error?.name === 'TimeoutError';
+}
+
+/**
+ * @param {string} message What went wrong
+ * @param {any} cause What broke the connection
+ * @returns {Error} Coded so callers report a lost connection rather than a stop
+ */
+function connectionLostError(message, cause) {
+    return Object.assign(new Error(message, { cause }), { code: GENERATION_CONNECTION_LOST });
 }
 
 /**
@@ -223,7 +252,7 @@ class ResumableRequest {
      * @returns {Promise<Response>}
      */
     connect(url, init) {
-        this.connection?.abort();
+        this.connection?.abort(reconnectReason());
         const connection = new AbortController();
         this.connection = connection;
         this.hasResponse = false;
@@ -245,7 +274,7 @@ class ResumableRequest {
         } catch (error) {
             if (this.aborted) {
                 this.finish();
-                throw error;
+                throw abortError(this.outerSignal);
             }
             // Nothing came back, but the server may well be working on it: a non-streaming reply
             // sends nothing until the whole answer is in. Ask for it rather than giving up.
@@ -274,7 +303,7 @@ class ResumableRequest {
                     } catch (error) {
                         if (this.aborted) {
                             this.finish();
-                            controller.error(error);
+                            controller.error(abortError(this.outerSignal));
                             return;
                         }
                         let resumed;
@@ -361,7 +390,12 @@ class ResumableRequest {
             if (this.received > 0) {
                 // Neconyan: part of the reply arrived and the server no longer holds the rest (it
                 // restarted, usually). Say so, instead of leaving a half reply that looks complete.
-                throw Object.assign(new Error('The server no longer holds the rest of this reply.', { cause }), { code: GENERATION_CONNECTION_LOST });
+                throw connectionLostError('The server no longer holds the rest of this reply.', cause);
+            }
+            if (isDroppedConnection(cause)) {
+                // Neconyan: nothing arrived and the connection was aborted without the caller asking,
+                // usually by the watchdog here. Passing that AbortError on would read as Stop.
+                throw connectionLostError('The connection to the server was lost before the reply finished.', cause);
             }
             // The reply never arrived. Let the original failure surface.
             throw cause;
@@ -370,7 +404,7 @@ class ResumableRequest {
         // Neconyan: the server could not be reached for any attempt. Stop waiting and say why.
         this.connectionLost = true;
         this.finish();
-        throw Object.assign(new Error('The connection to the server was lost before the reply finished.', { cause }), { code: GENERATION_CONNECTION_LOST });
+        throw connectionLostError('The connection to the server was lost before the reply finished.', cause);
     }
 
     /**
@@ -440,14 +474,25 @@ class ResumableRequest {
     }
 
     /**
-     * Drops a connection that has gone quiet, so the reader falls into resume().
+     * Drops a streaming connection that has gone quiet, so the reader falls into resume().
      * @param {number} [now] Current time
      */
     reconnectIfStale(now = Date.now()) {
-        if (this.finished || this.aborted || now - this.lastByteAt < STALE_STREAM_MS) {
+        // Neconyan: a request still waiting for its response headers is left alone. A non-streaming
+        // reply sends nothing until it is complete, and over plain HTTP/1.1 the browser opens six
+        // connections per server and queues the rest, so a quiet wait says nothing about its health.
+        // checkIfQuiet() asks the server about those instead.
+        if (this.finished || this.aborted || !this.hasResponse || now - this.lastByteAt < STALE_STREAM_MS) {
             return;
         }
-        this.connection?.abort();
+        this.drop(this.connection);
+    }
+
+    /**
+     * @param {AbortController|null} connection Connection to drop so the reader reattaches
+     */
+    drop(connection) {
+        connection?.abort(reconnectReason());
     }
 
     /**
@@ -464,9 +509,11 @@ class ResumableRequest {
         this.checking = true;
         this.nextCheckAt = now + QUIET_STREAM_MS;
         const connection = this.connection;
+        const quietSince = this.lastByteAt;
+        const hadResponse = this.hasResponse;
         const timeout = new AbortController();
-        const timer = setTimeout(() => timeout.abort(), STATUS_TIMEOUT_MS);
-        let behind;
+        const timer = setTimeout(() => timeout.abort(new DOMException('The reply status check timed out.', 'TimeoutError')), STATUS_TIMEOUT_MS);
+        let behind = false;
         try {
             const response = await fetch(STATUS_URL, {
                 method: 'POST',
@@ -476,20 +523,32 @@ class ResumableRequest {
                 signal: timeout.signal,
             });
             if (response.status === 404) {
-                this.untracked = true;
+                // Before its headers, the request may still be queued in the browser and not have
+                // reached the server yet, so only an answered request counts as untracked.
+                if (this.hasResponse) {
+                    this.untracked = true;
+                }
                 return;
             }
-            const status = response.ok ? await response.json() : null;
+            if (!response.ok) {
+                this.nextCheckAt = 0;
+                return;
+            }
+            const status = await response.json();
             behind = Boolean(status) && (Number(status.size) > this.received || (status.headersReady && !this.hasResponse) || status.done);
         } catch {
-            // The server cannot be reached either: let resume() retry it.
-            behind = true;
+            // Neconyan: no answer says nothing about the reply's own connection. Over plain HTTP/1.1
+            // this check usually waits in the browser's queue behind the replies it is checking on.
+            // Leave the connection alone and ask again on the next tick.
+            this.nextCheckAt = 0;
+            return;
         } finally {
             clearTimeout(timer);
             this.checking = false;
         }
-        if (behind && this.connection === connection && !this.finished) {
-            connection?.abort();
+        // Anything that arrived during the check means the connection is alive after all.
+        if (behind && this.connection === connection && this.lastByteAt === quietSince && this.hasResponse === hadResponse && !this.finished) {
+            this.drop(connection);
         }
     }
 }
