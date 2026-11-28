@@ -9,6 +9,7 @@ import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 import { digestMessageFingerprints, fingerprintMessages } from '../public/scripts/chat-patch-save.js';
+import { chatSaveNoticeKey, groupChatSaveNoticeKey } from '../public/scripts/save-failure-notices.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/extensions.js', 'scripts/group-chats.js', 'scripts/utils.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -58,6 +59,8 @@ function loadQueuedSaveRuntime(context, group = false) {
         getCurrentUserHandle: () => 'story-test', refreshCsrfToken: jest.fn(),
         getRequestHeaders: () => ({}), compressRequest: async request => request,
         fetchWithCsrfRetry: async (url, build) => context.fetch(url, await build()),
+        chatSaveNoticeKey, groupChatSaveNoticeKey, clearSaveFailureNotice: jest.fn(),
+        showSaveFailureNotice: (_key, message, title) => context.toastr.error(message, title),
     });
     load(context, 'script.js', ['roleplayRequestHeaders', 'requestRoleplayChat', 'saveRoleplayChatRequest']);
     load(context, group ? 'scripts/group-chats.js' : 'script.js', group ? ['saveGroupChat', 'saveGroupChatImmediately'] : ['saveChat', 'saveChatImmediately']);

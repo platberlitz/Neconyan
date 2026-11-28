@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { afterAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import {
     beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave,
     getRoleplaySourceId, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
+    setRoleplaySaveRetryDelays,
 } from '../public/scripts/roleplay-save-chain.js';
 
 const account = { accountId: '11111111-1111-4111-8111-111111111111', dataEpoch: 1 };
@@ -24,6 +25,11 @@ let run = 0;
 beforeEach(() => {
     owner = `save-chain-${++run}`;
     bindRoleplayAccount(owner, account);
+    // Three quick sends per save, so tests stay fast; the recovery tests set longer waits themselves.
+    setRoleplaySaveRetryDelays([0, 0]);
+});
+afterAll(() => {
+    setRoleplaySaveRetryDelays();
 });
 
 describe('protected browser save authority', () => {
@@ -161,10 +167,13 @@ describe('protected browser save authority', () => {
         expect(() => confirmRoleplayOverwrite(first, 'unsafe-force')).toThrow();
         finishRoleplaySave(first);
         expect(rememberRoleplayRead(locator, { account, source: { ...source, revision: 99 } })).toBe(false);
-        const send = jest.fn();
+        const send = jest.fn(async () => { throw new Error('still offline'); });
         await expect(sendRoleplaySave(second, payload(), send)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
         finishRoleplaySave(second);
-        expect(send).not.toHaveBeenCalled();
+        // The successor only asks again about the unconfirmed save, with its exact body and key. Its own edits never travel.
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(send.mock.calls[0][0]).toBe(failed.mock.calls[0][0]);
+        expect(rememberRoleplayRead(locator, { account, source: { ...source, revision: 99 } })).toBe(false);
     });
 
     test('explicit background read/edit work keeps that read even after another save', async () => {
@@ -320,4 +329,174 @@ describe('protected browser save authority', () => {
             expect(rememberRoleplayRead(locator, evidence)).toBe(false);
         });
     }
+});
+
+describe('unconfirmed save recovery', () => {
+    const hashFor = revision => String(revision % 10).repeat(64);
+    // A server that applies each save on top of the version it names, and replays a receipt for a key it already applied.
+    const ackNext = body => {
+        const request = JSON.parse(body);
+        const revision = request.roleplay.source.revision + 1;
+        return response(200, { ok: true, integrity: 'saved', roleplay: { account: request.roleplay.account,
+            operationKey: request.roleplay.operationKey, changed: true,
+            source: { instanceId: request.roleplay.source.instanceId, revision, rawHash: hashFor(revision) } } });
+    };
+    const keyOf = body => JSON.parse(body).roleplay.operationKey;
+    const offline = async () => { throw new Error('offline'); };
+
+    async function blockedChain(key = 'unconfirmed') {
+        rememberRoleplayRead(locator, evidence);
+        const first = beginRoleplaySave(locator, { operationKey: key });
+        const failed = jest.fn(offline);
+        await expect(sendRoleplaySave(first, payload(), failed)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
+        await finishRoleplaySave(first);
+        return { first, firstBody: failed.mock.calls[0][0] };
+    }
+
+    test('the default resend window rides out a server restart, and the waits are validated', () => {
+        setRoleplaySaveRetryDelays();
+        const defaults = setRoleplaySaveRetryDelays([0]);
+        expect(defaults.reduce((total, delay) => total + delay, 0)).toBeGreaterThanOrEqual(10_000);
+        expect(() => setRoleplaySaveRetryDelays([-1])).toThrow(TypeError);
+        expect(() => setRoleplaySaveRetryDelays([Number.NaN])).toThrow(TypeError);
+    });
+
+    test('an outage longer than 0.75 s still lands with the same body and operation key', async () => {
+        setRoleplaySaveRetryDelays([100, 200, 300, 400]);
+        rememberRoleplayRead(locator, evidence);
+        const token = beginRoleplaySave(locator, { operationKey: 'through-restart' });
+        const started = Date.now();
+        const send = jest.fn(async body => {
+            if (Date.now() - started < 800) {
+                if (send.mock.calls.length % 2) throw new Error('connection reset');
+                return response(503, { error: 'roleplay_recovery_required', code: 'ELOCKED' });
+            }
+            return ackNext(body);
+        });
+        await expect(sendRoleplaySave(token, payload(), send)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(token);
+        expect(Date.now() - started).toBeGreaterThanOrEqual(800);
+        expect(send.mock.calls.length).toBeGreaterThan(3);
+        expect(new Set(send.mock.calls.map(([body]) => body)).size).toBe(1);
+        expect(keyOf(send.mock.calls[0][0])).toBe('through-restart');
+        expect(rememberRoleplayRead(locator, evidence)).toBe(true);
+    });
+
+    test('a blocked chain unblocks when the server confirms the unconfirmed key', async () => {
+        const { firstBody } = await blockedChain('landed-before-the-drop');
+        const second = beginRoleplaySave(locator, { operationKey: 'after-confirmed' });
+        const load = jest.fn();
+        const send = jest.fn(async body => ackNext(body));
+        await expect(sendRoleplaySave(second, payload(), send, load)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(second);
+        expect(send.mock.calls.map(([body]) => keyOf(body))).toEqual(['landed-before-the-drop', 'after-confirmed']);
+        expect(send.mock.calls[0][0]).toBe(firstBody);
+        expect(JSON.parse(send.mock.calls[1][0]).roleplay.source).toEqual({ ...source, revision: 2, rawHash: hashFor(2) });
+        expect(load).not.toHaveBeenCalled();
+        expect(getRoleplaySourceId(locator)).toBe(source.instanceId);
+        expect(rememberRoleplayRead(locator, { account, source: { ...source, revision: 3, rawHash: hashFor(3) } })).toBe(true);
+    });
+
+    test('a queued successor waiting on the blocked save also recovers once', async () => {
+        rememberRoleplayRead(locator, evidence);
+        const first = beginRoleplaySave(locator, { operationKey: 'queued-unknown' });
+        const second = beginRoleplaySave(locator, { operationKey: 'queued-second' });
+        const third = beginRoleplaySave(locator, { operationKey: 'queued-third' });
+        await expect(sendRoleplaySave(first, payload(), offline)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
+        await finishRoleplaySave(first);
+        const send = jest.fn(async body => ackNext(body));
+        const waitingThird = sendRoleplaySave(third, payload(), send);
+        await expect(sendRoleplaySave(second, payload(), send)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(second);
+        await expect(waitingThird).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(third);
+        expect(send.mock.calls.map(([body]) => keyOf(body))).toEqual(['queued-unknown', 'queued-second', 'queued-third']);
+        expect(JSON.parse(send.mock.calls[2][0]).roleplay.source.revision).toBe(3);
+    });
+
+    test('a refused key unblocks only when the server still holds the exact pre-failure version', async () => {
+        await blockedChain('never-landed');
+        const second = beginRoleplaySave(locator, { operationKey: 'after-refusal' });
+        const load = jest.fn(async () => readResponse({ account, locator, source }));
+        const send = jest.fn(async body => keyOf(body) === 'never-landed'
+            ? response(409, { error: 'destructive', reason: 'shrink' })
+            : ackNext(body));
+        await expect(sendRoleplaySave(second, payload(), send, load)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(second);
+        expect(load).toHaveBeenCalledTimes(1);
+        expect(JSON.parse(send.mock.calls[1][0]).roleplay.source).toEqual(source);
+    });
+
+    test('a server that moved to another version keeps the chain blocked instead of rebasing', async () => {
+        await blockedChain('diverged');
+        const moved = { ...source, revision: 4, rawHash: 'd'.repeat(64) };
+        const load = jest.fn(async () => readResponse({ account, locator, source: moved }));
+        const send = jest.fn(async () => response(400, { error: 'integrity', roleplay: { account, source: moved } }));
+        for (const key of ['diverged-second', 'diverged-third']) {
+            const token = beginRoleplaySave(locator, { operationKey: key });
+            await expect(sendRoleplaySave(token, payload(), send, load)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
+            await finishRoleplaySave(token);
+        }
+        expect(send.mock.calls.map(([body]) => keyOf(body))).toEqual(['diverged', 'diverged']);
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(getRoleplaySourceId(locator)).toBeNull();
+        expect(rememberRoleplayRead(locator, { account, source: moved })).toBe(false);
+    });
+
+    test('an unreachable server or an unverifiable reply keeps the chain blocked until a real acknowledgement', async () => {
+        const { firstBody } = await blockedChain('unreachable');
+        const load = jest.fn(async () => readResponse({ account, locator, source }));
+        const replies = [
+            offline,
+            async () => response(503, { error: 'roleplay_recovery_required', code: 'ROLEPLAY_RECOVERY_REQUIRED' }),
+            async body => acknowledged(body, { source: { ...source, revision: 50 } }),
+        ];
+        for (const [index, reply] of replies.entries()) {
+            const token = beginRoleplaySave(locator, { operationKey: `still-blocked-${index}` });
+            const send = jest.fn(reply);
+            await expect(sendRoleplaySave(token, payload(), send, load)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
+            await finishRoleplaySave(token);
+            expect(send).toHaveBeenCalledTimes(1);
+            expect(send.mock.calls[0][0]).toBe(firstBody);
+        }
+        expect(load).not.toHaveBeenCalled();
+        const token = beginRoleplaySave(locator, { operationKey: 'finally-back' });
+        const send = jest.fn(async body => ackNext(body));
+        await expect(sendRoleplaySave(token, payload(), send, load)).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(token);
+        expect(send.mock.calls.map(([body]) => keyOf(body))).toEqual(['unreachable', 'finally-back']);
+        expect(JSON.parse(send.mock.calls[1][0]).roleplay.source.revision).toBe(2);
+    });
+
+    test('a refused key with no way to read the server stays blocked', async () => {
+        await blockedChain('no-reader');
+        const token = beginRoleplaySave(locator, { operationKey: 'no-reader-second' });
+        const send = jest.fn(async () => response(409, { error: 'destructive', reason: 'shrink' }));
+        await expect(sendRoleplaySave(token, payload(), send)).rejects.toMatchObject({ code: 'ROLEPLAY_SAVE_UNCERTAIN' });
+        await finishRoleplaySave(token);
+        expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    test('concurrent saves share one recovery check', async () => {
+        await blockedChain('shared-check');
+        const background = beginRoleplaySave(locator, { operationKey: 'background-check', evidence: { account, source: { ...source, revision: 2, rawHash: hashFor(2) } } });
+        const editor = beginRoleplaySave(locator, { operationKey: 'editor-check' });
+        const send = jest.fn(async body => ackNext(body));
+        const backgroundSave = sendRoleplaySave(background, payload(), send);
+        const editorSave = sendRoleplaySave(editor, payload(), send);
+        await expect(backgroundSave).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(background);
+        await expect(editorSave).resolves.toMatchObject({ ok: true });
+        await finishRoleplaySave(editor);
+        expect(send.mock.calls.filter(([body]) => keyOf(body) === 'shared-check')).toHaveLength(1);
+        expect(send.mock.calls.map(([body]) => keyOf(body))).toEqual(['shared-check', 'background-check', 'editor-check']);
+    });
+
+    test('an account change during recovery is reported, not hidden as an unconfirmed save', async () => {
+        await blockedChain('account-swap');
+        const token = beginRoleplaySave(locator, { operationKey: 'account-swap-second' });
+        const send = jest.fn(async () => response(409, { error: 'account_changed', code: 'ROLEPLAY_ACCOUNT_CHANGED' }));
+        await expect(sendRoleplaySave(token, payload(), send)).rejects.toMatchObject({ code: 'ROLEPLAY_ACCOUNT_CHANGED' });
+        await finishRoleplaySave(token);
+    });
 });

@@ -177,16 +177,44 @@ for (const group of [false, true]) {
             if (current.dev === before.dev && current.ino === before.ino) throw Object.assign(new Error('injected HTTP write failure'), { code: 'EIO' });
             return originalWrite(descriptor, ...args);
         });
+        t.mock.method(console, 'error', () => {});
+        t.mock.method(console, 'warn', () => {});
         const failed = await f.save(request);
         trap.mock.restore();
         assert.equal(failed.status, 503);
         const pending = readRoleplayAccount(f.scope).pending;
         assert.equal(pending.phase, 'prepared');
-        assert.equal((await f.load()).status, 503);
-        assert.equal((await f.save({ ...request, roleplay: { ...request.roleplay, operationKey: crypto.randomUUID() } })).status, 503);
         const saved = await f.save(request);
         assert.equal(saved.status, 200);
         assert.equal(readRoleplayAccount(f.scope).pending, null);
+        assert.deepEqual(await f.save(request), saved);
+    });
+
+    test(`${kind} HTTP reads finish a write left pending, and its identical retry returns that result`, async t => {
+        const f = await endpointFixture(t, group);
+        const loaded = await f.load();
+        const request = f.write(loaded.evidence, [...f.records, { mes: 'retry result' }]);
+        const before = fs.statSync(f.filename, { bigint: true });
+        const originalWrite = fs.writeSync;
+        const trap = t.mock.method(fs, 'writeSync', (descriptor, ...args) => {
+            const current = fs.fstatSync(descriptor, { bigint: true });
+            if (current.dev === before.dev && current.ino === before.ino) throw Object.assign(new Error('injected HTTP write failure'), { code: 'EIO' });
+            return originalWrite(descriptor, ...args);
+        });
+        t.mock.method(console, 'error', () => {});
+        t.mock.method(console, 'warn', () => {});
+        assert.equal((await f.save(request)).status, 503);
+        trap.mock.restore();
+        const read = await f.load();
+        assert.equal(read.status, 200);
+        assert.equal(read.evidence.source.revision, loaded.evidence.source.revision + 1);
+        assert.equal(readRoleplayAccount(f.scope).pending, null);
+        const stale = await f.save({ ...request, roleplay: { ...request.roleplay, operationKey: crypto.randomUUID() } });
+        assert.equal(stale.status, 400);
+        assert.equal(stale.body.error, 'integrity');
+        const saved = await f.save(request);
+        assert.equal(saved.status, 200);
+        assert.equal(saved.body.roleplay.source.revision, read.evidence.source.revision);
         assert.deepEqual(await f.save(request), saved);
     });
 

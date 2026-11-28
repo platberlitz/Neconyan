@@ -104,6 +104,7 @@ import {
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
 import { roleplaySaveNotice } from './roleplay-reply-notice.js';
+import { clearSaveFailureNotice, groupChatSaveNoticeKey, showSaveFailureNotice } from './save-failure-notices.js';
 import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
@@ -1882,7 +1883,8 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
         roleplaySave = beginRoleplaySave({ group: true, chat: String(chatIdSnapshot) }, { operationKey: uuidv4(), owner: account });
     } catch (error) {
         console.error(error);
-        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
+        showSaveFailureNotice(groupChatSaveNoticeKey(chatIdSnapshot),
+            t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
         return throwOnError ? Promise.reject(error) : Promise.resolve(false);
     }
     const saveTask = groupChatSaveQueue
@@ -1963,18 +1965,29 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         character_name: 'unused',
     };
     const chatMessages = Array.isArray(chatData) ? chatData : cloneGroupChatSavePayload(chat);
-    const response = await saveRoleplayChatRequest(roleplaySave, {
-        id: chatId, chat: [chatHeader, ...chatMessages], force: force,
-        deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink),
-        ...(mewmoryHidePolicy ? { mewmoryHidePolicy } : {}),
-    });
+    const saveNoticeKey = groupChatSaveNoticeKey(chatId);
+    const unsavedNotice = () => t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`;
+    let response;
+    try {
+        response = await saveRoleplayChatRequest(roleplaySave, {
+            id: chatId, chat: [chatHeader, ...chatMessages], force: force,
+            deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink),
+            ...(mewmoryHidePolicy ? { mewmoryHidePolicy } : {}),
+        });
+    } catch (error) {
+        // A dropped connection or an unconfirmed save throws here; the debounced caller only logs, so tell the person too.
+        console.error('Group chat could not be saved', error);
+        showSaveFailureNotice(saveNoticeKey, unsavedNotice(), t`Group Chat could not be saved`);
+        if (throwOnError) throw error;
+        return false;
+    }
 
     if (!response.ok) {
         const errorData = response.data;
         const isIntegrityError = errorData?.error === 'integrity' && !force
             && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
-            toastr.error(roleplaySaveNotice(errorData) || t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
+            showSaveFailureNotice(saveNoticeKey, roleplaySaveNotice(errorData) || unsavedNotice(), t`Group Chat could not be saved`);
             console.error('Group chat could not be saved', response);
             if (throwOnError) {
                 throw new Error('Group chat could not be saved');
@@ -2003,6 +2016,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     }
 
     const responseData = response.data;
+    clearSaveFailureNotice(saveNoticeKey);
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     rememberQueuedGroupChatIntegrity(chatId, responseData?.integrity);
     if (isActiveGroupChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
