@@ -116,7 +116,15 @@ export function decideNotebookProposalLocked(lease, source, body, actor) {
 /** A review approved or declined in Notes also updates its Scratchpad card. */
 export function projectNotebookProposalsLocked(lease, bucket) {
     if (!bucket.sessions.some(session => session.messages.some(message => Object.keys(message.notebookProposals ?? {}).length))) return bucket;
-    const proposals = new Map(assistant.listProposalsLocked(lease, { state: null }).map(item => [item.id, item]));
+    let summaries;
+    try {
+        summaries = assistant.listProposalsLocked(lease, { state: null });
+    } catch (error) {
+        // Saved history is usable without refreshing the cards' review status.
+        if (error?.code === 'NOTEBOOK_CONTROL_DAMAGED') return bucket;
+        throw error;
+    }
+    const proposals = new Map(summaries.map(item => [item.id, item]));
     for (const session of bucket.sessions) {
         for (const message of session.messages) {
             for (const [index, ref] of Object.entries(message.notebookProposals ?? {})) {
