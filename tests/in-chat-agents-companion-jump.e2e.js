@@ -1,6 +1,6 @@
 /* global document, requestAnimationFrame, window */
 import { expect, test } from '@playwright/test';
-import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves, openReadyChat } from './chat-scroll-regression-helpers.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.setTimeout(120000);
@@ -369,6 +369,123 @@ for (const width of [393, 1280]) {
                 }
                 await eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT);
             }, { secondNotes: notes('second', [9, 3, 10, 2, 8, 4]) });
+
+            await page.evaluate(async () => {
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+            });
+            const reopened = await targetTop();
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const painted = await targetTop();
+            await page.waitForTimeout(1500);
+            const settled = await targetTop();
+
+            expect(before).toBeGreaterThanOrEqual(28);
+            expect(before).toBeLessThanOrEqual(32);
+            expect(Math.abs(reopened - before)).toBeLessThanOrEqual(2);
+            expect(Math.abs(painted - before)).toBeLessThanOrEqual(2);
+            expect(Math.abs(settled - before)).toBeLessThanOrEqual(2);
+        } finally {
+            await page.evaluate(async prefix => {
+                const { getAgents, deleteAgent } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                for (const agent of getAgents().filter(agent => agent.id.startsWith(prefix))) await deleteAgent(agent.id);
+            }, prefix).catch(() => {});
+            await context.close();
+        }
+    });
+
+    test(`companion panel reopens where it was after a server reply finishes its Agents at ${width}px`, async ({ browser }) => {
+        const phone = width === 393;
+        const context = await browser.newContext({ viewport: { width, height: phone ? 852 : 900 }, hasTouch: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        const page = await context.newPage();
+        const prefix = `panel-reopen-server-${width}-`;
+        const cardCount = 16;
+        const targetId = `${prefix}06`;
+        const notes = (round, counts) => Object.fromEntries(Array.from({ length: cardCount }, (_, index) => {
+            const content = Array.from({ length: counts[index % counts.length] }, (_, line) => `Entry ${index + 1}.${line + 1}: ${round} note for this turn.`).join('\n\n');
+            return [`${prefix}${String(index).padStart(2, '0')}`, content];
+        }));
+        try {
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialHidden.v1': 'true' };
+            });
+            await openReadyChat(page);
+            await expect(page.locator('#ica--run-status')).not.toHaveText('Loading your agents...');
+            await page.evaluate(async ({ firstNotes }) => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const results = {};
+                for (const [index, [id, content]] of Object.entries(firstNotes).entries()) {
+                    const name = `Server ${String(index + 1).padStart(2, '0')}`;
+                    await store.saveAgent({ id, name, enabled: true, execution: 'companion', category: 'companion', injection: { order: 1000 + index * 10 }, companion: { displayMode: 'panel' } });
+                    results[id] = { status: 'done', agentName: name, content };
+                }
+                const ctx = window.SillyTavern.getContext();
+                const reply = { name: 'Miso', is_user: false, is_system: false, send_date: new Date().toISOString(), mes: 'First reply.', extra: { inChatAgentCompanionResults: results } };
+                ctx.chat.push(reply);
+                ctx.addOneMessage(reply, { scroll: false });
+                (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+            }, { firstNotes: notes('first', [2, 8, 4, 10, 3, 9]) });
+
+            const panel = page.locator('#ica--tracker-panel');
+            await expect.poll(() => panel.evaluate(element => [...element.querySelectorAll('.ica--tpanel-agent:not(.displayNone)')]
+                .every(card => card.classList.contains('is-hydrated')))).toBe(true);
+            const targetTop = () => panel.evaluate((element, id) => {
+                const card = element.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`);
+                return card.getBoundingClientRect().top - element.getBoundingClientRect().top;
+            }, targetId);
+
+            await panel.evaluate((element, id) => {
+                element.scrollTop = element.querySelector(`.ica--tpanel-agent[data-agent-id="${id}"]`).offsetTop - 30;
+            }, targetId);
+            await page.waitForTimeout(400);
+            const before = await targetTop();
+
+            // The next reply runs on the server: its notes show as pending while the panel is closed.
+            const savedTail = await page.evaluate(async ({ secondNotes }) => {
+                const panelModule = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                const { eventSource } = await import('/script.js');
+                const { COMPANION_RESULTS_UPDATED_EVENT } = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+                panelModule.closeCompanionPanel();
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const ctx = window.SillyTavern.getContext();
+                const names = Object.keys(secondNotes).map((_, index) => `Server ${String(index + 1).padStart(2, '0')}`);
+                const pending = Object.fromEntries(Object.keys(secondNotes).map((id, index) => [id, { status: 'pending', agentName: names[index], content: '' }]));
+                const turn = { name: ctx.name1, is_user: true, is_system: false, send_date: new Date().toISOString(), mes: 'Next turn.' };
+                const reply = { name: 'Miso', is_user: false, is_system: false, send_date: new Date().toISOString(), mes: 'Second reply.', extra: { inChatAgentCompanionResults: pending } };
+                for (const message of [turn, reply]) {
+                    ctx.chat.push(message);
+                    ctx.addOneMessage(message, { scroll: false });
+                }
+                await eventSource.emit(COMPANION_RESULTS_UPDATED_EVENT);
+                const tail = ctx.chat.map(message => structuredClone(message));
+                const done = Object.fromEntries(Object.entries(secondNotes)
+                    .map(([id, content], index) => [id, { status: 'done', agentName: names[index], content, timestamp: Date.now() }]));
+                const last = tail.at(-1);
+                last.extra.inChatAgentCompanionResults = done;
+                // Companion results are read from the active swipe first.
+                const swipe = last.swipe_info?.[last.swipe_id ?? 0];
+                if (swipe?.extra) {
+                    swipe.extra.inChatAgentCompanionResults = structuredClone(done);
+                }
+                return tail;
+            }, { secondNotes: notes('second', [9, 3, 10, 2, 8, 4]) });
+
+            // The server saves the finished reply and the page adopts it, which rebuilds the same chat.
+            await page.route('**/api/chats/get', async route => {
+                const body = JSON.parse(route.request().postData() || '{}');
+                const response = await route.fetch({ postData: JSON.stringify({ ...body, allow_create: true }) });
+                const records = await response.json().catch(() => []);
+                const header = Array.isArray(records) && records[0] && !('mes' in records[0]) ? records[0] : { chat_metadata: {} };
+                const headers = { ...response.headers() };
+                delete headers['content-length'];
+                delete headers['content-encoding'];
+                await route.fulfill({ status: 200, headers, body: JSON.stringify([header, ...savedTail]) });
+            });
+            await page.evaluate(async () => {
+                const { refreshCurrentChatFromSaved } = await import('/script.js');
+                await refreshCurrentChatFromSaved();
+            });
+            await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chat.at(-1)?.extra?.inChatAgentCompanionResults
+                && Object.values(window.SillyTavern.getContext().chat.at(-1).extra.inChatAgentCompanionResults).every(result => result.status === 'done'))).toBe(true);
 
             await page.evaluate(async () => {
                 (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();

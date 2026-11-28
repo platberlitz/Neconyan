@@ -1,0 +1,1 @@
+Reopening the **Companion Panel** after a server reply finishes its **Agents** now takes you back to the card you were reading instead of dropping you near the bottom, and opening it in a different chat starts at the top.
