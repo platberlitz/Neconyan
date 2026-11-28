@@ -129,6 +129,7 @@ import { TOOL_CALL_RECURSE_LIMIT_DEFAULT, normalizeToolCallRecurseLimit } from '
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, RUNTIME_AGENTS_IDENTIFIER, collectInChatAgentInspectionRecords, getInChatAgentContributionKind, isInChatAgentPromptIdentifier, trimOldestRetainedContribution } from './in-chat-agent-inspection.js';
 import { recordRequestFailure, requestText } from './text-backend-failures.js';
+import { providerFailureText } from './provider-failure-wording.js';
 
 export {
     openai_messages_count,
@@ -1979,14 +1980,17 @@ export function tryParseStreamingError(response, decoded, { quiet = false, event
     if (!generationErrorEnvelope(data, eventType)) return;
     const outcome = classifyGenerationOutcome(data);
     if (outcome) throw providerBlockedError(outcome);
-    const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
+    const providerMessage = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message;
+    const message = providerMessage || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
     if (failure) recordRequestFailure({ ...failure, status: Number(data.provider_status) || (response.ok ? 0 : response.status), message });
     console.warn('[Chat Completion API] The provider returned an error.', message, data.error ?? data);
     checkQuotaError(data, { quiet });
     checkModerationError(data, { quiet });
-    if (!quiet) toastr.error(message, 'Chat Completion API');
+    // Neconyan: say which connection failed when the provider's text only says 'Connection error.' or similar.
+    const shown = providerMessage ? providerFailureText(message, data.error) : message;
+    if (!quiet) toastr.error(shown, 'Chat Completion API');
     // Neconyan: failureShown tells Generate the toast is out, so held-reply recovery does not repeat it.
-    throw Object.assign(new Error(message || 'The AI service rejected the reply.'), { failureShown: !quiet });
+    throw Object.assign(new Error(shown || 'The AI service rejected the reply.'), { failureShown: !quiet });
 }
 
 /**
@@ -5610,8 +5614,9 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
             const message = data.error.message || response.statusText || t`Unknown error`;
             recordRequestFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
             console.warn('[Chat Completion API] The provider returned an error.', message, data.error);
-            if (!quiet) toastr.error(message, t`API returned an error`);
-            throw Object.assign(new Error(message), { failureShown: !quiet });
+            const shown = data.error.message ? providerFailureText(message, data.error) : message;
+            if (!quiet) toastr.error(shown, t`API returned an error`);
+            throw Object.assign(new Error(shown), { failureShown: !quiet });
         }
 
         if (type !== 'quiet') {

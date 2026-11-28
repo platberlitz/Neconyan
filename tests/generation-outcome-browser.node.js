@@ -12,7 +12,7 @@ const sandbox = { ...outcomes,
     ToolManager: { parseToolCalls: (calls, parsed) => calls.push(...(parsed.choices?.[0]?.delta?.tool_calls ?? [])) },
     getStreamingReply: (parsed, state) => { state.reasoning += parsed.choices?.[0]?.delta?.reasoning ?? ''; return parsed.choices?.[0]?.delta?.content ?? parsed.delta?.text ?? ''; },
     isGenerationLengthFinish: data => data.choices?.[0]?.finish_reason === 'length', parseChatCompletionLogprobs: () => null,
-    checkQuotaError: () => {}, checkModerationError: () => {}, toastr: { error() {} },
+    checkQuotaError: () => {}, checkModerationError: () => {}, providerFailureText: message => message, toastr: { error() {} },
     console: { warn: (...args) => sandbox.warnings.push(args) }, warnings: [],
 };
 vm.createContext(sandbox);

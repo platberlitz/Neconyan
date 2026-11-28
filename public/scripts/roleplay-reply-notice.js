@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { providerFailureText } from './provider-failure-wording.js';
 
 /**
  * Server-side Roleplay errors are written for the saved-data guards that raise
@@ -80,6 +81,8 @@ export function roleplayReplyNotice(error, state, { kept = false } = {}) {
     if (!message && STORAGE_TERMS.test(raw)) message = t`The reply could not be finished, and nothing in your chat was changed. Try again.`;
     // Logged whether the toast rewords the error or shows unmapped provider text as it is, so the console always has it.
     if (raw || code) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw });
+    // A TypeError here is the browser failing to reach Neconyan, not the AI provider.
+    if (!message && !(error instanceof TypeError)) message = providerFailureText(raw, error?.body?.error ?? error);
     return { title: stateTitle(state), message: message || raw };
 }
 
