@@ -1,9 +1,16 @@
 /* global document, getComputedStyle, window */
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { renderRegisteredDocsPage } from '../src/docs-reader.js';
+
+const serverDirectory = fileURLToPath(new URL('../', import.meta.url));
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {
     test.describe(`glossary at ${viewport.width}px`, () => {
-        test.use({ viewport, hasTouch: viewport.width < 768, isMobile: viewport.width < 768, reducedMotion: 'reduce', colorScheme: 'dark' });
+        test.use({ viewport, hasTouch: viewport.width < 768, isMobile: viewport.width < 768, contextOptions: { reducedMotion: 'reduce' }, colorScheme: 'dark' });
 
         test('read, search, navigate and remember the reading theme', async ({ page }) => {
             const errors = [];
@@ -88,5 +95,111 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             expect(await raw.text()).toContain('# In-Chat Agents Glossary');
             expect(errors).toEqual([]);
         });
+
+        // The phone header hides the wordmark, so the cat sits centred in the 44 px brand link.
+        const brandPlace = viewport.width < 768
+            ? { imgOffsetX: 9, imgOffsetY: 10, spanBoxes: 0, spanGap: 0 }
+            : { imgOffsetX: 0, imgOffsetY: 10, spanBoxes: 1, spanGap: 10 };
+
+        test('the header cat rests under reduced motion and keeps its place', async ({ page }) => {
+            const { cat, catFrames, layout } = headerCat(page);
+
+            await page.goto('/docs/in-chat-agents-glossary');
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            expect(new URL(await cat.evaluate(image => image.currentSrc)).pathname).toBe('/img/neconyan-pixel-cat-rest.webp');
+            expect((await page.request.get('/img/neconyan-pixel-cat-rest.webp')).status()).toBe(200);
+            expect(await catFrames(7)).toBe(1);
+
+            const still = await layout();
+            expect(still.picture).toBe('contents');
+            expect(still.sourceBoxes).toBe(0);
+            expect(still.img.width).toBe(26);
+            expect(still.img.height).toBe(24);
+            expect(still.brand.height).toBe(44);
+            expect(still).toMatchObject(brandPlace);
+
+            await page.emulateMedia({ reducedMotion: 'no-preference' });
+            await page.reload();
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            expect(new URL(await cat.evaluate(image => image.currentSrc)).pathname).toBe('/img/neconyan-pixel-cat.webp');
+            expect(await catFrames(7)).toBeGreaterThan(1);
+            expect(await layout()).toEqual(still);
+        });
+
+        // The shared test server's own settings stay untouched: the page comes from the real
+        // renderer reading a throwaway settings file, and everything else from the server.
+        test('the Reduced Motion setting keeps the reader still without a device preference', async ({ page }) => {
+            const { cat, catFrames, layout } = headerCat(page);
+            const userRoot = mkdtempSync(join(tmpdir(), 'neconyan-docs-motion-'));
+            let html;
+            try {
+                writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ power_user: { reduced_motion: true } }));
+                html = renderRegisteredDocsPage(serverDirectory, 'in-chat-agents-glossary', { userRoot });
+            } finally {
+                rmSync(userRoot, { recursive: true, force: true });
+            }
+            const movingRequests = [];
+            page.on('request', request => {
+                if (new URL(request.url()).pathname === '/img/neconyan-pixel-cat.webp') movingRequests.push(request.url());
+            });
+
+            await page.emulateMedia({ reducedMotion: 'no-preference' });
+            await page.goto('/docs/in-chat-agents-glossary');
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            const moving = await layout();
+            expect(movingRequests.length).toBeGreaterThan(0);
+            movingRequests.length = 0;
+
+            await page.route('**/docs/in-chat-agents-glossary', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
+            await page.reload();
+            await expect.poll(() => cat.evaluate(image => image.complete && image.naturalWidth)).toBeGreaterThan(0);
+            await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'true');
+            expect(new URL(await cat.evaluate(image => image.currentSrc)).pathname).toBe('/img/neconyan-pixel-cat-rest.webp');
+            expect(await catFrames(7)).toBe(1);
+
+            await page.locator('.hero.cat-panel').hover();
+            const motion = await page.evaluate(() => ({
+                scroll: getComputedStyle(document.documentElement).scrollBehavior,
+                ear: getComputedStyle(document.querySelector('.cat-panel'), '::before').animationName,
+                button: getComputedStyle(document.querySelector('.icon-button')).transitionDuration,
+            }));
+            expect(motion).toEqual({ scroll: 'auto', ear: 'none', button: '0s' });
+            expect(movingRequests).toEqual([]);
+
+            const still = await layout();
+            expect(still).toMatchObject(brandPlace);
+            expect({ brand: still.brand, img: still.img, span: still.span }).toEqual({ brand: moving.brand, img: moving.img, span: moving.span });
+        });
     });
+}
+
+function headerCat(page) {
+    const cat = page.locator('.topbar .brand img');
+    const frame = async () => (await cat.screenshot({ animations: 'allow' })).toString('base64');
+    const catFrames = async (count) => {
+        const frames = [await frame()];
+        for (let index = 1; index < count; index++) {
+            await page.evaluate(delay => new Promise(resolve => window.setTimeout(resolve, delay)), 4800 / (count - 1));
+            frames.push(await frame());
+        }
+        return new Set(frames).size;
+    };
+    const layout = () => page.locator('.topbar .brand').evaluate(brand => {
+        const box = element => element.getBoundingClientRect().toJSON();
+        const img = box(brand.querySelector('img'));
+        const span = brand.querySelector('span');
+        const picture = brand.querySelector('picture');
+        return {
+            brand: box(brand),
+            img,
+            span: box(span),
+            imgOffsetX: img.x - box(brand).x,
+            imgOffsetY: img.y - box(brand).y,
+            spanBoxes: span.getClientRects().length,
+            spanGap: Math.max(0, box(span).x - img.right),
+            picture: picture ? getComputedStyle(picture).display : null,
+            sourceBoxes: brand.querySelector('source')?.getClientRects().length ?? 0,
+        };
+    });
+    return { cat, catFrames, layout };
 }

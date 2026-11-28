@@ -188,7 +188,8 @@ export function renderDocsMarkdown(markdown) {
 /**
  * Build the full themed HTML reader page for a Markdown document.
  * @param {string} markdown
- * @param {{ rawHref?: string, kicker?: string, summary?: string, host?: { name: string, pose: string, greeting: string, emptyLine: string, gender: string, image: string, icon: string, asides?: Array<{ after: string, line: string, image: string }> } | null }} [options]
+ * reducedMotion (the user's own Reduced Motion setting) draws the resting cat and leaves out every transition and animation.
+ * @param {{ rawHref?: string, kicker?: string, summary?: string, reducedMotion?: boolean, host?: { name: string, pose: string, greeting: string, emptyLine: string, gender: string, image: string, icon: string, asides?: Array<{ after: string, line: string, image: string }> } | null }} [options]
  * @returns {string}
  */
 export function renderDocsPage(markdown, options = {}) {
@@ -217,9 +218,16 @@ export function renderDocsPage(markdown, options = {}) {
     const bodyHtml = asides.size
         ? doc.bodyHtml.replace(/<section class="doc-section" data-section="([^"]+)">[\s\S]*?<\/section>/g, (section, id) => section + (asides.get(id) || ''))
         : doc.bodyHtml;
+    const reducedMotion = Boolean(options.reducedMotion);
+    const brandCat = reducedMotion
+        ? '<img src="/img/neconyan-pixel-cat-rest.webp" alt="" width="26" height="24">'
+        : `<picture>
+                <source media="(prefers-reduced-motion: reduce)" srcset="/img/neconyan-pixel-cat-rest.webp">
+                <img src="/img/neconyan-pixel-cat.webp" alt="" width="26" height="24">
+            </picture>`;
 
     return `<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark"${reducedMotion ? ' data-reduced-motion="true"' : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -238,7 +246,7 @@ export function renderDocsPage(markdown, options = {}) {
 })();
 </script>
 <style>
-${DOCS_READER_CSS}
+${DOCS_READER_CSS}${reducedMotion ? '' : DOCS_READER_MOTION_CSS}
 </style>
 </head>
 <body>
@@ -246,7 +254,7 @@ ${DOCS_READER_CSS}
 <header class="topbar">
     <div class="topbar-inner">
         <a class="brand" href="/" aria-label="Open Neconyan">
-            <img src="/img/neconyan-pixel-cat.webp" alt="" width="26" height="24">
+            ${brandCat}
             <span>Neconyan</span>
         </a>
         <label class="search">
@@ -306,16 +314,36 @@ ${DOCS_READER_SCRIPT}
  * @returns {'male'|'female'|'neutral'}
  */
 export function readAssistantGender(userRoot, personality) {
+    return assistantGenderFrom(readUserSettings(userRoot), personality);
+}
+
+/**
+ * Read whether the user turned on Neconyan's own Reduced Motion setting.
+ * @param {string|undefined} userRoot User data directory holding settings.json
+ * @returns {boolean}
+ */
+export function readReducedMotion(userRoot) {
+    return reducedMotionFrom(readUserSettings(userRoot));
+}
+
+function readUserSettings(userRoot) {
     if (!userRoot) {
-        return 'neutral';
+        return null;
     }
     try {
-        const settings = JSON.parse(fs.readFileSync(path.join(userRoot, SETTINGS_FILE), 'utf8'));
-        const gender = settings?.accountStorage?.[`neconyanAssistantGender:${personality}`];
-        return ASSISTANT_GENDERS.includes(gender) ? gender : 'neutral';
+        return JSON.parse(fs.readFileSync(path.join(userRoot, SETTINGS_FILE), 'utf8'));
     } catch {
-        return 'neutral';
+        return null;
     }
+}
+
+function assistantGenderFrom(settings, personality) {
+    const gender = settings?.accountStorage?.[`neconyanAssistantGender:${personality}`];
+    return ASSISTANT_GENDERS.includes(gender) ? gender : 'neutral';
+}
+
+function reducedMotionFrom(settings) {
+    return Boolean(settings?.power_user?.reduced_motion);
 }
 
 function resolveDocsHost(host, gender) {
@@ -342,7 +370,7 @@ function resolveDocsHost(host, gender) {
  * Read a registered document from disk and render its reader page.
  * @param {string} serverDirectory
  * @param {string} slug
- * @param {{ userRoot?: string }} [options] userRoot picks the host artwork the user chose in the assistant picker
+ * @param {{ userRoot?: string }} [options] userRoot picks the host artwork the user chose in the assistant picker and their Reduced Motion setting
  * @returns {string|null}
  */
 export function renderRegisteredDocsPage(serverDirectory, slug, options = {}) {
@@ -351,12 +379,14 @@ export function renderRegisteredDocsPage(serverDirectory, slug, options = {}) {
         return null;
     }
     const markdown = fs.readFileSync(path.join(serverDirectory, page.file), 'utf8');
-    const gender = page.host ? readAssistantGender(options.userRoot, page.host.personality) : 'neutral';
+    const settings = readUserSettings(options.userRoot);
+    const gender = page.host ? assistantGenderFrom(settings, page.host.personality) : 'neutral';
     return renderDocsPage(markdown, {
         rawHref: `/docs/${slug}.md`,
         kicker: page.kicker,
         summary: page.summary,
         host: resolveDocsHost(page.host, gender),
+        reducedMotion: reducedMotionFrom(settings),
     });
 }
 
@@ -450,6 +480,8 @@ a { color: var(--accent); text-underline-offset: 3px; }
 }
 .topbar-inner { display: flex; align-items: center; gap: 14px; height: 100%; max-width: 1240px; margin: 0 auto; padding: 0 20px; }
 .brand { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; gap: 10px; color: var(--rail-ink); text-decoration: none; font-family: 'Fredoka One', 'Nunito', sans-serif; font-size: 20px; flex: none; }
+.brand picture { display: contents; }
+.brand source { display: none; }
 .brand img { image-rendering: pixelated; }
 .search { position: relative; display: flex; align-items: center; flex: 1; max-width: 480px; margin-left: auto; color: var(--rail-soft); }
 .search svg { position: absolute; left: 14px; pointer-events: none; }
@@ -813,6 +845,17 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
     38% { transform: translateY(-100%) skewX(13deg); }
     68% { transform: translateY(-100%) skewX(3deg); }
 }
+@media print {
+    .topbar, .toc, .back-to-top, .search-status, .hero-host, .host-aside, .cat-panel::before, .cat-panel::after { display: none !important; }
+    body::before { display: none; }
+    .layout { display: block; }
+    body { background: #fff; color: #000; }
+    .hero, .doc-intro, .doc-section { border: 0; background: none; padding: 0; }
+}
+`;
+
+// Left out of the page entirely when the user's own Reduced Motion setting is on.
+const DOCS_READER_MOTION_CSS = `
 @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
     .toc a, .icon-button, .heading-anchor { transition: background-color 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out, opacity 160ms ease-out; }
@@ -821,13 +864,6 @@ mark { padding: 0 2px; border-radius: 4px; background: var(--mark); color: inher
     @media (max-width: 768px) {
         .toc { transition: opacity 180ms ease-out, transform 180ms ease-out, visibility 180ms; }
     }
-}
-@media print {
-    .topbar, .toc, .back-to-top, .search-status, .hero-host, .host-aside, .cat-panel::before, .cat-panel::after { display: none !important; }
-    body::before { display: none; }
-    .layout { display: block; }
-    body { background: #fff; color: #000; }
-    .hero, .doc-intro, .doc-section { border: 0; background: none; padding: 0; }
 }
 `;
 

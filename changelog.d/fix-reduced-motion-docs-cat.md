@@ -1,0 +1,1 @@
+With reduced motion turned on, either in your device settings or with Neconyan's own **Reduced Motion** setting, the cat at the top of the **In-Chat Agents Glossary** now rests instead of backflipping and the page stays still, and the waving kitty on the loading screen stops as soon as your settings load.
