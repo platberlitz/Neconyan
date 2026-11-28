@@ -8,7 +8,7 @@
  * fixed without any change to the bundled template files. The stored catalogue revision then
  * stops matching once, so every account runs the startup migrations again.
  */
-export const STARTUP_MIGRATION_REVISION = 1;
+export const STARTUP_MIGRATION_REVISION = 2;
 
 /**
  * Combines the bundled catalogue revision with the startup migration revision.
