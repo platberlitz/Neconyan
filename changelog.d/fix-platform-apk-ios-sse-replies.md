@@ -1,1 +1,0 @@
-Replies and **Agents** keep going while the Android or iPhone app is in the background, the Android app no longer reloads your workspace after one missed check of its local server, quiet replies stay open behind a reverse proxy, and Android diagnostics now include a short, redacted record of page warnings and errors.
