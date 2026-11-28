@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle */
+/* global document, window, getComputedStyle, PointerEvent */
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { applyIOSOnlyCss, installIPhoneSafari } from './ios-safari-emulation.js';
@@ -453,4 +453,111 @@ for (const phone of [false, true]) {
             await page.unrouteAll({ behavior: 'ignoreErrors' });
         });
     });
+}
+
+// Presses the first Workspace grip and, when asked, drags it part-way down
+// without letting go, so the press can be interrupted in the middle.
+async function hold(page, phone, moving) {
+    const grip = page.locator('[data-neconyan-primary-nav] button .neconyan-rail-grip').first();
+    await grip.scrollIntoViewIfNeeded();
+    const source = await grip.boundingBox();
+    const target = await page.locator('[data-neconyan-primary-nav] > button').nth(2).boundingBox();
+    const x = source.x + source.width / 2;
+    const y = source.y + source.height / 2;
+    const end = target.y + target.height / 2;
+    if (phone) {
+        const session = await page.context().newCDPSession(page);
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        await new Promise(resolve => setTimeout(resolve, moving ? 850 : 300));
+        for (let step = 1; moving && step <= 6; step++) {
+            await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + (end - y) * step / 6 }] });
+        }
+        return {
+            cancel: () => session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] }),
+            release: () => session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+            detach: () => session.detach(),
+        };
+    }
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await new Promise(resolve => setTimeout(resolve, moving ? 120 : 20));
+    if (moving) await page.mouse.move(x, end, { steps: 6 });
+    return { release: () => page.mouse.up(), detach: async () => {} };
+}
+
+async function pressState(page) {
+    return page.evaluate(() => {
+        const instances = [...document.querySelectorAll('[data-neconyan-rail-group]')]
+            .map(host => window.jQuery(host).sortable('instance'))
+            .filter(Boolean);
+        return {
+            helpers: document.querySelectorAll('.ui-sortable-helper').length,
+            placeholders: document.querySelectorAll('.neconyan-rail-placeholder').length,
+            // jQuery UI can leave an empty style attribute behind; only real inline styles count.
+            styled: [...document.querySelectorAll('[data-neconyan-rail-group] > .neconyan-rail-button[style]')].map(button => button.getAttribute('style')).filter(Boolean),
+            overflowAnchor: document.querySelector('.neconyan-rail-scroll').style.overflowAnchor,
+            dragging: instances.filter(instance => instance.dragging || instance._mouseStarted).length,
+            // jQuery UI keeps its document mouseup listener only while it thinks a press is down.
+            pending: (window.jQuery._data(document, 'events')?.mouseup || []).filter(handler => handler.namespace === 'sortable').length,
+        };
+    });
+}
+
+const putBack = { helpers: 0, placeholders: 0, styled: [], overflowAnchor: '', dragging: 0, pending: 0 };
+
+for (const phone of [false, true]) {
+    for (const reducedMotion of ['reduce', 'no-preference']) {
+        test.describe(`${phone ? 'phone' : 'desktop'} interrupted sidebar drags, ${reducedMotion} motion`, () => {
+            test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion } });
+            test('touchcancel, pointercancel and blur put the row back', async ({ page }, info) => {
+                test.setTimeout(180000);
+                if (phone) await installIPhoneSafari(page.context(), { standalone: true });
+                const state = await storeOrder(page, { enabled: true });
+                const saved = state.stored;
+                await ready(page);
+                if (phone) await applyIOSOnlyCss(page, { inPlace: true });
+                await rail(page, phone);
+                const interruptions = [
+                    ...(phone ? [['touchcancel', true]] : []),
+                    ['pointercancel', false],
+                    ['pointercancel', true],
+                    ['blur', false],
+                    ['blur', true],
+                ];
+                for (const [kind, moving] of interruptions) {
+                    const label = `${kind} ${moving ? 'mid-drag' : 'during the hold'}`;
+                    const press = await hold(page, phone, moving);
+                    const held = await pressState(page);
+                    expect(held.overflowAnchor, label).toBe('none');
+                    if (moving) expect(held.helpers, label).toBe(1);
+                    if (moving && kind === 'touchcancel') await page.screenshot({ path: info.outputPath('touchcancel-mid-drag.png') });
+                    if (kind === 'touchcancel') {
+                        await press.cancel();
+                    } else {
+                        await page.evaluate(kind => {
+                            if (kind === 'blur') window.dispatchEvent(new Event('blur'));
+                            else document.querySelector('.neconyan-rail-grip').dispatchEvent(new PointerEvent('pointercancel', { bubbles: true }));
+                        }, kind);
+                    }
+                    expect(await pressState(page), label).toEqual(putBack);
+                    expect(await order(page, 'primary'), label).toEqual(groups.primary);
+                    // Lifting the finger or the mouse button afterwards must not drop the row anywhere.
+                    if (kind !== 'touchcancel') await press.release();
+                    await press.detach();
+                    expect(await pressState(page), `${label}, after letting go`).toEqual(putBack);
+                    expect(await order(page, 'primary'), `${label}, after letting go`).toEqual(groups.primary);
+                }
+                await page.screenshot({ path: info.outputPath('after-interruptions.png') });
+                // Saves are debounced, so give a stray one time to arrive.
+                await page.waitForTimeout(1500);
+                expect(state.stored).toBe(saved);
+
+                await drag(page, 'primary', phone);
+                await expect.poll(() => order(page, 'primary')).toEqual([groups.primary[1], groups.primary[0], ...groups.primary.slice(2)]);
+                await expect.poll(() => JSON.parse(state.stored).primary?.slice(0, 2)).toEqual([groups.primary[1], groups.primary[0]]);
+                expect(await pressState(page)).toEqual(putBack);
+                await page.unrouteAll({ behavior: 'ignoreErrors' });
+            });
+        });
+    }
 }

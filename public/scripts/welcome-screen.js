@@ -1790,6 +1790,7 @@ const neconyanRailGroups = {};
 const neconyanRailButtons = new Map();
 let neconyanRailRefreshId = 0;
 let neconyanRailRefreshTimer = 0;
+let cancelNeconyanRailPress = () => {};
 
 // Each saved list may hold buttons from other sections, so Persona can live in Workspace.
 // Buttons in a fixed section (the chat modes) never leave it, and nothing else joins it.
@@ -1826,6 +1827,9 @@ function saveNeconyanRailOrder() {
 }
 
 function applyNeconyanRailOrder() {
+    // Turning Edit off, Restore defaults and the X all lay the rows out again, so
+    // a row still held under a finger goes back first instead of floating on.
+    cancelNeconyanRailPress();
     const enabled = neconyanRailOrder.enabled;
     const defaults = Object.fromEntries(Object.entries(neconyanRailGroups).map(([name, group]) => [name, group.defaults]));
     const layout = normalizeNeconyanRailLayout(neconyanRailOrder, defaults);
@@ -1908,28 +1912,64 @@ function initializeNeconyanRailOrder(rail) {
     const idOf = button => button.dataset.neconyanRoute || button.dataset.neconyanChatMode;
     let suppressClickUntil = 0;
     let railSorting = false;
+    let cancellingDrag = false;
     let releaseScrollAnchor = null;
+    // The browser can take a press away part-way: a system gesture or an alert
+    // sends touchcancel or pointercancel, and switching apps blurs or hides the
+    // page without any touchend. Put the row back where it started and drop the
+    // press, so nothing is left floating and the next drag starts cleanly.
+    // jQuery UI's cancel() runs stop on the way, which must not save.
+    const cancelRailPress = () => {
+        for (const { host, sortableReady } of Object.values(neconyanRailGroups)) {
+            const sortable = sortableReady && $(host).sortable('instance');
+            if (!sortable) continue;
+            if (sortable.dragging) {
+                cancellingDrag = true;
+                try {
+                    sortable.cancel();
+                } finally {
+                    cancellingDrag = false;
+                }
+            } else {
+                // Still inside the hold delay: clear jQuery UI's timer and listeners.
+                sortable._mouseUp(new $.Event('mouseup', { target: null }));
+            }
+        }
+        railSorting = false;
+        releaseScrollAnchor?.();
+    };
+    cancelNeconyanRailPress = cancelRailPress;
     // jQuery UI inserts the placeholder and measures the rows before its start
     // callback runs, so scroll anchoring has to be off from the moment the grip
     // is pressed. Otherwise the browser can scroll the list by a row to keep its
     // place, sliding the rows under the finger. Without a drag it comes back on
-    // when the press ends; after a drag, in stop.
+    // when the press ends; after a drag, in stop; after an interruption, in
+    // cancelRailPress.
     const holdScrollAnchor = () => {
+        if (releaseScrollAnchor) return;
         const scroller = rail.querySelector('.neconyan-rail-scroll');
-        if (!scroller || releaseScrollAnchor) return;
-        scroller.style.overflowAnchor = 'none';
+        if (scroller) scroller.style.overflowAnchor = 'none';
         const controller = new AbortController();
+        const signal = controller.signal;
         releaseScrollAnchor = () => {
             controller.abort();
             releaseScrollAnchor = null;
-            scroller.style.overflowAnchor = '';
+            if (scroller) scroller.style.overflowAnchor = '';
         };
         const onPressEnd = () => {
             if (!railSorting) releaseScrollAnchor?.();
         };
-        for (const type of ['pointerup', 'mouseup', 'touchend', 'touchcancel']) {
-            document.addEventListener(type, onPressEnd, { capture: true, signal: controller.signal });
+        for (const type of ['pointerup', 'mouseup', 'touchend']) {
+            document.addEventListener(type, onPressEnd, { capture: true, signal });
         }
+        for (const type of ['pointercancel', 'touchcancel']) {
+            document.addEventListener(type, cancelRailPress, { capture: true, signal });
+        }
+        window.addEventListener('blur', cancelRailPress, { signal });
+        window.addEventListener('pagehide', cancelRailPress, { signal });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') cancelRailPress();
+        }, { signal });
     };
     const saveOrder = button => {
         for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
@@ -2047,7 +2087,7 @@ function initializeNeconyanRailOrder(rail) {
                         railSorting = false;
                         releaseScrollAnchor?.();
                         suppressClickUntil = Date.now() + 400;
-                        saveOrder(ui.item[0]);
+                        if (!cancellingDrag) saveOrder(ui.item[0]);
                     },
                 });
                 target.sortableReady = true;
