@@ -190,11 +190,12 @@ describe('Deep Swipe', () => {
     const deepSwipeSource = read('public/scripts/extensions/third-party/Neconyan-Deep-Swipe/deep-swipe.js');
     const submitRefused = async failure => {
         const toasts = [];
+        const warnings = [];
         const workflows = {
             isNativeRoleplayWorkflowReady: () => true, resolvePageText: text => text, capturePagePrompts: async () => ({ prompts: [] }),
             submitRoleplayWorkflow: async () => { throw failure; },
         };
-        const host = { console: { warn: () => {} }, toastr: { error: (...args) => toasts.push(args) }, isImageInputIssue };
+        const host = { console: { warn: (...args) => warnings.push(args) }, toastr: { error: (...args) => toasts.push(args) }, isImageInputIssue };
         const importModuleDynamically = async () => {
             const stand = new vm.SyntheticModule(Object.keys(workflows), function () { for (const [name, value] of Object.entries(workflows)) this.setExport(name, value); });
             await stand.link(() => {});
@@ -203,7 +204,7 @@ describe('Deep Swipe', () => {
         };
         const submit = vm.runInNewContext(`(${cutFunction(deepSwipeSource, 'submitDeepSwipeWorkflow')})`, host, { importModuleDynamically });
         const handled = await submit('Deep Swipe', { instruction: 'Write this.', messageId: 0 });
-        return { handled, toasts };
+        return { handled, toasts, warnings };
     };
 
     test('an image refusal shows no second generic toast, and any other failure keeps exactly one', async () => {
@@ -219,6 +220,13 @@ describe('Deep Swipe', () => {
             const { handled, toasts } = await submitRefused(failure);
             expect(handled).toBe(true);
             expect(toasts).toEqual([[expected[index][0], 'Deep Swipe']]);
+        }
+    });
+
+    test('every failed request is written to the console, whether or not a toast follows', async () => {
+        for (const failure of [...imageRefusals(), new Error('The provider is busy.'), 'plain failure']) {
+            const { warnings } = await submitRefused(failure);
+            expect(warnings).toEqual([['[DeepSwipe] Server workflow request failed:', failure]]);
         }
     });
 
