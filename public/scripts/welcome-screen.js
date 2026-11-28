@@ -1907,6 +1907,30 @@ function initializeNeconyanRailOrder(rail) {
     const isFixed = name => name === 'modes';
     const idOf = button => button.dataset.neconyanRoute || button.dataset.neconyanChatMode;
     let suppressClickUntil = 0;
+    let railSorting = false;
+    let releaseScrollAnchor = null;
+    // jQuery UI inserts the placeholder and measures the rows before its start
+    // callback runs, so scroll anchoring has to be off from the moment the grip
+    // is pressed. Otherwise the browser can scroll the list by a row to keep its
+    // place, sliding the rows under the finger. Without a drag it comes back on
+    // when the press ends; after a drag, in stop.
+    const holdScrollAnchor = () => {
+        const scroller = rail.querySelector('.neconyan-rail-scroll');
+        if (!scroller || releaseScrollAnchor) return;
+        scroller.style.overflowAnchor = 'none';
+        const controller = new AbortController();
+        releaseScrollAnchor = () => {
+            controller.abort();
+            releaseScrollAnchor = null;
+            scroller.style.overflowAnchor = '';
+        };
+        const onPressEnd = () => {
+            if (!railSorting) releaseScrollAnchor?.();
+        };
+        for (const type of ['pointerup', 'mouseup', 'touchend', 'touchcancel']) {
+            document.addEventListener(type, onPressEnd, { capture: true, signal: controller.signal });
+        }
+    };
     const saveOrder = button => {
         for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
             neconyanRailOrder[name] = [...host.children].map(idOf).filter(id => neconyanRailButtons.has(id));
@@ -2016,14 +2040,12 @@ function initializeNeconyanRailOrder(rail) {
                     start: (_event, ui) => {
                         ui.placeholder.outerHeight(ui.item.outerHeight());
                         suppressClickUntil = Infinity;
-                        // The placeholder moving above the visible rows would make the browser
-                        // scroll the list to keep its place, sliding the rows under the finger.
-                        const scroller = rail.querySelector('.neconyan-rail-scroll');
-                        if (scroller) scroller.style.overflowAnchor = 'none';
+                        railSorting = true;
+                        holdScrollAnchor();
                     },
                     stop: (_event, ui) => {
-                        const scroller = rail.querySelector('.neconyan-rail-scroll');
-                        if (scroller) scroller.style.overflowAnchor = '';
+                        railSorting = false;
+                        releaseScrollAnchor?.();
                         suppressClickUntil = Date.now() + 400;
                         saveOrder(ui.item[0]);
                     },
@@ -2035,7 +2057,8 @@ function initializeNeconyanRailOrder(rail) {
         // Capture runs before jQuery UI's own mousedown listener and before
         // Touch Punch's synthetic click, so the first drag is not lost.
         const ensureSortableFromGrip = event => {
-            if (event.target?.closest?.('.neconyan-rail-grip')) {
+            if (event.target?.closest?.('.neconyan-rail-grip') && neconyanRailOrder.enabled) {
+                holdScrollAnchor();
                 ensureSortable();
             }
         };
