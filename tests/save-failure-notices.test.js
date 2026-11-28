@@ -7,11 +7,14 @@ import {
     chatSaveNoticeKey,
     clearSaveFailureNotice,
     groupChatSaveNoticeKey,
+    lastSaveFailure,
+    noteSaveFailure,
     showSaveFailureNotice,
+    showUndoneChangeNotice,
     suppressedSaveFailureNotices,
 } from '../public/scripts/save-failure-notices.js';
 
-const MESSAGE = 'Check your connection to Neconyan, then reload the page to avoid losing changes.';
+const MESSAGE = 'Neconyan could not reach its server, so recent changes are not saved yet.';
 const TITLE = 'Chat could not be saved';
 
 describe('save failure notices', () => {
@@ -67,12 +70,51 @@ describe('save failure notices', () => {
         for (const key of [first, second, group]) clearSaveFailureNotice(key);
     });
 
+    test('notices of one family stand in for each other, while other notices still show', () => {
+        const key = chatSaveNoticeKey('Nova.png', 'Family');
+        const show = jest.fn();
+        const family = { family: 'not-saved-yet' };
+        expect(showSaveFailureNotice(key, MESSAGE, TITLE, show, 0, family)).toBe(true);
+        expect(showSaveFailureNotice(key, 'Neconyan\'s server could not finish saving.', TITLE, show, 1, family)).toBe(false);
+        expect(showSaveFailureNotice(key, 'Neconyan is still checking an earlier save.', TITLE, show, 2, family)).toBe(false);
+        expect(showSaveFailureNotice(key, 'The saved copy changed somewhere else.', TITLE, show, 3)).toBe(true);
+        expect(showSaveFailureNotice(key, MESSAGE, 'Group Chat could not be saved', show, 4, family)).toBe(true);
+        expect(show).toHaveBeenCalledTimes(3);
+        clearSaveFailureNotice(key);
+    });
+
     test('a toast that fails to open does not hide the next attempt', () => {
         const key = chatSaveNoticeKey('Nova.png', 'Broken toast');
         const broken = jest.fn(() => { throw new Error('toast unavailable'); });
         expect(() => showSaveFailureNotice(key, MESSAGE, TITLE, broken, 0)).toThrow('toast unavailable');
         const show = jest.fn();
         expect(showSaveFailureNotice(key, MESSAGE, TITLE, show, 1)).toBe(true);
+        clearSaveFailureNotice(key);
+    });
+
+    test('a chat remembers why its latest save failed until it saves again', () => {
+        const key = chatSaveNoticeKey('Nova.png', 'Remembered');
+        expect(lastSaveFailure(key)).toBeNull();
+        noteSaveFailure(key, 'unreachable');
+        expect(lastSaveFailure(key)).toBe('unreachable');
+        expect(lastSaveFailure(chatSaveNoticeKey('Nova.png', 'Other'))).toBeNull();
+        noteSaveFailure(key, 'verifying');
+        expect(lastSaveFailure(key)).toBe('verifying');
+        clearSaveFailureNotice(key);
+        expect(lastSaveFailure(key)).toBeNull();
+    });
+
+    test('a put-back change gets its own notice, repeated only once the previous one has gone', () => {
+        const key = chatSaveNoticeKey('Nova.png', 'Put back');
+        const show = jest.fn();
+        const message = 'Neconyan could not reach its server, so nothing was deleted.';
+        showSaveFailureNotice(key, MESSAGE, TITLE, show, 0);
+        expect(showUndoneChangeNotice(key, message, 'Message not deleted', show)).toBe(true);
+        expect(showUndoneChangeNotice(key, message, 'Message not deleted', show)).toBe(false);
+        expect(showUndoneChangeNotice(key, message, 'Messages not deleted', show)).toBe(true);
+        show.mock.calls[2][2].onHidden();
+        expect(showUndoneChangeNotice(key, message, 'Messages not deleted', show)).toBe(true);
+        expect(show).toHaveBeenCalledTimes(4);
         clearSaveFailureNotice(key);
     });
 
@@ -85,12 +127,12 @@ describe('save failure notices', () => {
         const groupSave = groups.slice(groups.indexOf('async function saveGroupChatImmediately'),
             groups.indexOf('export async function', groups.indexOf('async function saveGroupChatImmediately')));
         // A thrown save (a dropped connection) used to escape to the debounced caller, which only logged it.
-        expect(groupSave).toMatch(/try \{\n\s+response = await saveRoleplayChatRequest\(roleplaySave, \{[\s\S]+?\} catch \(error\) \{\n[^\n]*\n\s+console\.error\('Group chat could not be saved', error\);\n\s+showSaveFailureNotice\(saveNoticeKey, unsavedNotice\(\), t`Group Chat could not be saved`\);/);
+        expect(groupSave).toMatch(/try \{\n\s+response = await saveRoleplayChatRequest\(roleplaySave, \{[\s\S]+?\} catch \(error\) \{\n[^\n]*\n\s+console\.error\('Group chat could not be saved', error\);\n\s+const saveFailure = reportChatSaveFailure\(saveNoticeKey, t`Group Chat could not be saved`, \{ error, quiet: quietSaveFailure \}\);/);
         expect(groupSave).toContain('clearSaveFailureNotice(saveNoticeKey);');
         const chatSave = script.slice(script.indexOf('async function saveChatImmediately'),
             script.indexOf('async function read_avatar_load', script.indexOf('async function saveChatImmediately')));
         expect(chatSave).toContain('clearSaveFailureNotice(saveNoticeKey);');
-        expect(chatSave).toContain('console.error(error);\n        showSaveFailureNotice(saveNoticeKey,');
+        expect(chatSave).toContain('console.error(error);\n        if (!error?.saveFailureReported) {\n            markReportedSaveFailure(error, reportChatSaveFailure(saveNoticeKey,');
     });
 
     test('the default display uses the page toast library', () => {

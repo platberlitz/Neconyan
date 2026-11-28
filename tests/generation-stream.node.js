@@ -6,6 +6,7 @@ import './roleplay-transactions-fixture.js';
 import { assembleGenerationStream, createGenerationStream } from '../src/generation/stream-result.js';
 import { MAX_GENERATION_STREAM_BYTES, MAX_GENERATION_TEXT_BYTES } from '../src/generation/stream-limits.js';
 import { reasoningOnlyResult, separateConfiguredReasoning } from '../src/generation/reasoning-only-result.js';
+import { PROVIDER_UNREACHABLE_MESSAGES } from '../src/generation/provider-reach.js';
 const { runBackendRequest, createCapturingResponse } = await import('../src/endpoints/conversation-generation.js');
 const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
 const { forwardFetchResponse } = await import('../src/util.js');
@@ -74,12 +75,41 @@ test('a dropped model connection retains a readable reason without runtime detai
             throw Object.assign(new Error('The socket connection was closed unexpectedly. Pass verbose: true to fetch().'),
                 { code: 'ECONNRESET', path: 'https://private.invalid/secret' });
         } }), error => {
-        assert.equal(error.message, 'The connection to your model provider closed before a complete reply was received.');
+        assert.equal(error.message, PROVIDER_UNREACHABLE_MESSAGES.reset);
         assert.equal(error.status, 502);
         assert.equal(error.providerStatus, 502);
+        assert.equal(error.message.includes('private.invalid'), false);
         return true;
     });
     assert.equal(calls, 1);
+});
+
+test('a provider that cannot be reached gets a plain reason, while the server log keeps the details', async t => {
+    const logs = [];
+    t.mock.method(console, 'error', (...args) => logs.push(args.map(String).join(' ')));
+    const send = async error => {
+        let status = 0, body = null;
+        const response = { headersSent: false, writableEnded: false, status(value) { status = value; return this; },
+            send(value) { body = value; this.headersSent = true; return this; }, end() { this.writableEnded = true; },
+            setHeader() {}, on() {} };
+        await handleChatCompletionsGenerate({ headers: {}, socket: new EventEmitter(), anonymousCustom: true,
+            user: { directories: { root: '/tmp/opencode' } },
+            body: { chat_completion_source: 'custom', custom_url: 'http://provider.invalid/v1', model: 'fixture',
+                messages: [{ role: 'user', content: 'Hello' }], stream: false },
+            fetch: async () => { throw error; } }, response);
+        return { status, body };
+    };
+    const refused = await send(Object.assign(new Error('request to http://10.0.0.5:5001/v1 failed, reason: connect ECONNREFUSED 10.0.0.5:5001'),
+        { name: 'FetchError', type: 'system', code: 'ECONNREFUSED', errno: 'ECONNREFUSED' }));
+    assert.equal(refused.status, 502);
+    assert.deepEqual(refused.body, { error: { message: PROVIDER_UNREACHABLE_MESSAGES.refused, code: 'provider_unreachable', reason: 'refused' } });
+    assert.match(logs.join('\n'), /ECONNREFUSED 10\.0\.0\.5:5001/);
+    const timedOut = await send(Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('Connect Timeout Error'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) }));
+    assert.equal(timedOut.body.error.reason, 'timeout');
+    const refusedOnPurpose = await send(new Error('This provider is temporarily disabled.'));
+    assert.equal(refusedOnPurpose.status, 502);
+    assert.equal(refusedOnPurpose.body.error.message, 'This provider is temporarily disabled.');
+    assert.equal(refusedOnPurpose.body.error.code, undefined);
 });
 
 test('a provider rejection keeps its explanation and ignores non-text error details', async () => {

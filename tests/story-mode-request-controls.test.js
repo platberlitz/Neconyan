@@ -217,6 +217,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     context.watchTextBackend = watchTextBackend;
     context.recordRequestFailure = recordRequestFailure;
     context.requestText = requestText;
+    context.providerFailureText = message => message;
     context.activateSendButtons = jest.fn(() => { context.is_send_press = false; });
     context.textgenerationwebui_settings = context.textgen_settings;
     context.deactivateSendButtons = jest.fn(() => { context.is_send_press = true; });

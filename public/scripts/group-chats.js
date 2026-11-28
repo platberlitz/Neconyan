@@ -104,7 +104,8 @@ import {
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
 import { roleplaySaveNotice } from './roleplay-reply-notice.js';
-import { clearSaveFailureNotice, groupChatSaveNoticeKey, showSaveFailureNotice } from './save-failure-notices.js';
+import { clearSaveFailureNotice, groupChatSaveNoticeKey } from './save-failure-notices.js';
+import { deletionSaveFailureMessage, markReportedSaveFailure, reportChatSaveFailure, saveFailureKind, settingsSaveFailureMessage } from './save-failure-wording.js';
 import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
@@ -1883,9 +1884,9 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
         roleplaySave = beginRoleplaySave({ group: true, chat: String(chatIdSnapshot) }, { operationKey: uuidv4(), owner: account });
     } catch (error) {
         console.error(error);
-        showSaveFailureNotice(groupChatSaveNoticeKey(chatIdSnapshot),
-            t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
-        return throwOnError ? Promise.reject(error) : Promise.resolve(false);
+        const saveFailure = reportChatSaveFailure(groupChatSaveNoticeKey(chatIdSnapshot), t`Group Chat could not be saved`,
+            { error, quiet: options.quietSaveFailure === true });
+        return throwOnError ? Promise.reject(markReportedSaveFailure(error, saveFailure)) : Promise.resolve(false);
     }
     const saveTask = groupChatSaveQueue
         .catch(error => console.warn('Previous group chat save failed before queued save.', error))
@@ -1902,6 +1903,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
             allowShrink: Boolean(options.allowShrink),
             mewmoryHidePolicy: options.mewmoryHidePolicy,
             onMewmoryHideSaved: options.onMewmoryHideSaved,
+            quietSaveFailure: options.quietSaveFailure === true,
             scheduledGeneration: currentGeneration,
             account,
             roleplaySave,
@@ -1927,7 +1929,7 @@ export async function waitForQueuedGroupChatSaves() {
     }
 }
 
-async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved }) {
+async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure = false }) {
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     const group = groups.find(x => x.id == groupId);
     if (!group) {
@@ -1966,7 +1968,6 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     };
     const chatMessages = Array.isArray(chatData) ? chatData : cloneGroupChatSavePayload(chat);
     const saveNoticeKey = groupChatSaveNoticeKey(chatId);
-    const unsavedNotice = () => t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`;
     let response;
     try {
         response = await saveRoleplayChatRequest(roleplaySave, {
@@ -1977,8 +1978,8 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     } catch (error) {
         // A dropped connection or an unconfirmed save throws here; the debounced caller only logs, so tell the person too.
         console.error('Group chat could not be saved', error);
-        showSaveFailureNotice(saveNoticeKey, unsavedNotice(), t`Group Chat could not be saved`);
-        if (throwOnError) throw error;
+        const saveFailure = reportChatSaveFailure(saveNoticeKey, t`Group Chat could not be saved`, { error, quiet: quietSaveFailure });
+        if (throwOnError) throw markReportedSaveFailure(error, saveFailure);
         return false;
     }
 
@@ -1987,10 +1988,14 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         const isIntegrityError = errorData?.error === 'integrity' && !force
             && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
-            showSaveFailureNotice(saveNoticeKey, roleplaySaveNotice(errorData) || unsavedNotice(), t`Group Chat could not be saved`);
+            const notice = errorData?.error === 'destructive'
+                ? t`This save would have deleted messages, so the saved chat was left unchanged. Reload the page to bring it up to date.`
+                : roleplaySaveNotice(errorData);
+            const saveFailure = reportChatSaveFailure(saveNoticeKey, t`Group Chat could not be saved`, { response, notice, quiet: quietSaveFailure });
             console.error('Group chat could not be saved', response);
             if (throwOnError) {
-                throw new Error('Group chat could not be saved');
+                const storeNotice = roleplaySaveNotice(errorData);
+                throw markReportedSaveFailure(Object.assign(new Error('Group chat could not be saved'), storeNotice ? { saveNotice: storeNotice } : {}), saveFailure);
             }
             return false;
         }
@@ -2012,7 +2017,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });
+        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure });
     }
 
     const responseData = response.data;
@@ -4349,14 +4354,27 @@ export async function deleteGroupChatByName(groupId, chatName) {
         return false;
     }
 
-    group.chats.splice(group.chats.indexOf(chatName), 1);
+    const chatIndex = group.chats.indexOf(chatName);
+    group.chats.splice(chatIndex, 1);
+    const keepChat = (error, response) => {
+        if (!group.chats.includes(chatName)) {
+            group.chats.splice(Math.min(chatIndex, group.chats.length), 0, chatName);
+        }
+        toastr.error(deletionSaveFailureMessage(saveFailureKind(error, response)), t`Group chat could not be deleted`);
+        console.error('Group chat could not be deleted', error ?? response);
+    };
 
-    const response = await sendRoleplayLifecycle('/api/chats/group/delete', { id: chatName }, uuidv4(),
-        body => fetch('/api/chats/group/delete', { method: 'POST', headers: getRequestHeaders(), body }));
+    let response;
+    try {
+        response = await sendRoleplayLifecycle('/api/chats/group/delete', { id: chatName }, uuidv4(),
+            body => fetch('/api/chats/group/delete', { method: 'POST', headers: getRequestHeaders(), body }));
+    } catch (error) {
+        keepChat(error, null);
+        throw error;
+    }
 
     if (!response.ok) {
-        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group chat could not be deleted`);
-        console.error('Group chat could not be deleted');
+        keepChat(null, response);
         return false;
     }
 
@@ -4487,12 +4505,12 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
                 response = await saveRoleplayChatRequest(token, payload);
             }
         }
-        if (!response.ok) throw new Error('Group chat could not be saved');
+        if (!response.ok) throw Object.assign(new Error('Group chat could not be saved'), { status: response.status, data: response.data });
         if (!group.chats.includes(name)) group.chats.push(name);
         await editGroup(groupId, true, false, token.owner);
         return true;
     } catch (error) {
-        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group chat could not be saved`);
+        toastr.error(settingsSaveFailureMessage(saveFailureKind(error)), t`Group chat could not be saved`);
         console.error('Group chat could not be saved', error);
         if (throwOnError) {
             throw error;

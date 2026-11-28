@@ -64,7 +64,8 @@ import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
 import { installSessionExpiryNotifier } from './scripts/session-expiry.js';
 import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
-import { chatSaveNoticeKey, clearSaveFailureNotice, showSaveFailureNotice } from './scripts/save-failure-notices.js';
+import { chatSaveNoticeKey, clearSaveFailureNotice, groupChatSaveNoticeKey, lastSaveFailure, showUndoneChangeNotice } from './scripts/save-failure-notices.js';
+import { deletionSaveFailureMessage, markReportedSaveFailure, reportChatSaveFailure, saveFailureKind, settingsSaveFailureMessage } from './scripts/save-failure-wording.js';
 import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages, digestMessageFingerprints } from './scripts/chat-patch-save.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
@@ -1276,6 +1277,7 @@ const MESSAGE_UNDO_TIMEOUT = 8000;
 let activeUndoRecord = null;
 let pendingRangeDeleteSelection = null;
 let rangeDeleteOfferUndo = false;
+let messageDeletionSave = null;
 
 //settings
 export let settings;
@@ -4962,7 +4964,7 @@ function renderRestoredMessageRows(record, before) {
     restoreVisibleChatMessageAnchor(anchor);
 }
 
-function restoreMessageUndo(record) {
+function restoreMessageUndo(record, originals = null) {
     if (!messageUndoSeamIsIntact(record)) {
         return false;
     }
@@ -4977,7 +4979,7 @@ function restoreMessageUndo(record) {
     }
 
     const renderedBeforeRestore = getUndoRenderSnapshot();
-    chat.splice(insertionIndex, 0, ...record.messages.map(message => cloneUndoValue(message)));
+    chat.splice(insertionIndex, 0, ...(originals ?? record.messages.map(message => cloneUndoValue(message))));
     restoreItemizedPrompts(record.startIndex, record.promptEntries, record.messages.length);
 
     if (this_edit_mes_id !== undefined && this_edit_mes_id >= record.startIndex) {
@@ -5192,6 +5194,81 @@ function captureRangeDeleteSelection(startIndex, invokingControl = document.acti
     };
 }
 
+function getCurrentChatSaveNoticeKey() {
+    if (selected_group) {
+        return groupChatSaveNoticeKey(groups.find(group => group.id == selected_group)?.chat_id);
+    }
+    const character = characters[this_chid];
+    return chatSaveNoticeKey(character?.avatar, character?.chat);
+}
+
+/**
+ * Before deleting, waits for an earlier deletion to finish saving and retries a chat whose last save failed,
+ * so a deletion never sits on screen while the chat cannot save.
+ * @param {string} noticeKey The chat's save notice key
+ * @returns {Promise<any>} The save error when the chat still cannot save, otherwise null
+ */
+async function prepareChatForDeletion(noticeKey) {
+    if (messageDeletionSave) {
+        await messageDeletionSave;
+    }
+    if (!lastSaveFailure(noticeKey)) {
+        return null;
+    }
+    try {
+        await saveChatConditional({ throwOnError: true, quietSaveFailure: true });
+        return null;
+    } catch (error) {
+        return error ?? new Error('Chat was not saved');
+    }
+}
+
+function showDeletionNotSavedNotice(noticeKey, error, title) {
+    showUndoneChangeNotice(noticeKey, error?.saveNotice || deletionSaveFailureMessage(saveFailureKind(error)), title);
+}
+
+/**
+ * Saves a deletion that is already on screen. If the save fails, the deleted messages go back where they were,
+ * so the chat on screen matches the saved one.
+ * @param {object} record Restore record made before the deletion
+ * @param {ChatMessage[]} originals The deleted message objects
+ * @param {string} noticeKey The chat's save notice key, captured before the deletion
+ * @param {string} title Notice title for a deletion that was put back
+ * @returns {Promise<boolean>} Whether the deletion was saved
+ */
+function saveMessageDeletion(record, originals, noticeKey, title) {
+    const task = (async () => {
+        try {
+            // Neconyan: this shrink is the user's own deletion, not an accidental overwrite.
+            await saveChatConditional({ allowShrink: true, throwOnError: true, quietSaveFailure: true });
+            return true;
+        } catch (error) {
+            if (activeUndoRecord === record) {
+                clearUndoRecord();
+            }
+            const sameChat = isUndoScopeCurrent(record);
+            const restored = sameChat
+                && !isUndoRestoreBlocked()
+                && originals.every(message => !chat.includes(message))
+                && restoreMessageUndo(record, originals);
+            if (restored || !sameChat) {
+                showDeletionNotSavedNotice(noticeKey, error, title);
+            } else {
+                reportChatSaveFailure(noticeKey, selected_group ? t`Group Chat could not be saved` : t`Chat could not be saved`, { error, notice: error?.saveNotice });
+            }
+            return false;
+        }
+    })();
+    messageDeletionSave = task;
+    const settle = () => {
+        if (messageDeletionSave === task) {
+            messageDeletionSave = null;
+        }
+    };
+    task.then(settle, settle);
+    return task;
+}
+
 export async function deleteLastMessage() {
     if (chat.length === 0) {
         return;
@@ -5238,7 +5315,7 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
 
     const scope = captureUndoScope();
     const targetSnapshot = cloneUndoValue(targetMessage);
-    const minId = getFirstDisplayedMessageId();
+    let minId = getFirstDisplayedMessageId();
     const invokingControl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     let messageElement = chatElement.find(`.mes[mesid="${id}"]`);
     if (messageElement.length === 0) {
@@ -5279,7 +5356,26 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
         return;
     }
 
-    const record = offerUndo ? createMessageUndoRecord({
+    // Neconyan: never take a message off screen while its chat cannot save.
+    const noticeKey = getCurrentChatSaveNoticeKey();
+    if (messageDeletionSave || lastSaveFailure(noticeKey)) {
+        const saveError = await prepareChatForDeletion(noticeKey);
+        if (saveError) {
+            showDeletionNotSavedNotice(noticeKey, saveError, t`Message not deleted`);
+            return;
+        }
+        id = chat.indexOf(targetMessage);
+        messageElement = chatElement.find(`.mes[mesid="${id}"]`);
+        if (!isUndoScopeCurrent(scope) || id < 0 || messageElement.length === 0 || !lodash.isEqual(targetMessage, targetSnapshot)) {
+            if (askConfirmation) {
+                warnUndoConflict();
+            }
+            return;
+        }
+        minId = getFirstDisplayedMessageId();
+    }
+
+    const record = createMessageUndoRecord({
         startIndex: id,
         messages: [targetSnapshot],
         promptEntries: cloneUndoValue(itemizedPrompts.filter(prompt => Number(prompt?.mesId) === id)),
@@ -5288,15 +5384,12 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
         rightRef: chat[id + 1] ?? null,
         rendered: getUndoRenderSnapshot(),
         invokingControl,
-    }) : null;
+    });
 
     dismissUndo();
     chat.splice(id, 1);
     unobserveChatMessageResize(messageElement);
     messageElement.remove();
-    if (record && isUndoScopeCurrent(record)) {
-        showUndoRecord(record);
-    }
 
     chat_metadata.tainted = true;
 
@@ -5308,12 +5401,18 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
         this_edit_mes_id -= 1;
     }
     updateViewMessageIds(startIndex);
-    // Neconyan: this shrink is the user's own deletion, not an accidental overwrite.
-    saveChatDebounced({ allowShrink: true });
-
     refreshSwipeButtons();
 
-    await eventSource.emit(event_types.MESSAGE_DELETED, chat.length);
+    // Neconyan: finish the deletion event before an early Undo restores the message.
+    const deletionPromise = saveMessageDeletion(record, [targetMessage], noticeKey, t`Message not deleted`).then(async saved => {
+        if (saved && isUndoScopeCurrent(record)) await eventSource.emit(event_types.MESSAGE_DELETED, chat.length);
+        return saved;
+    });
+    record.deletionPromise = deletionPromise;
+    if (offerUndo && isUndoScopeCurrent(record)) {
+        showUndoRecord(record);
+    }
+    await deletionPromise;
 }
 
 
@@ -7814,7 +7913,7 @@ function checkGenerationSettingsSaved(saved) {
     if (settingsConflictReloadRequired) {
         throw Object.assign(new Error(t`Settings changed on another device or tab. Reload Neconyan before trying again.`), { code: 'settings_conflict' });
     }
-    throw Object.assign(new Error(t`Connection settings could not be saved. Check your connection to Neconyan, then try again.`), { code: 'settings_save_failed' });
+    throw Object.assign(new Error(t`Connection settings could not be saved, so nothing was sent to the AI provider. Try again in a moment.`), { code: 'settings_save_failed' });
 }
 
 /** Save the active controls and prove it, waiting out saves another caller queued meanwhile. */
@@ -14241,9 +14340,9 @@ export function saveChat(...saveChatArguments) {
                 });
             } catch (error) {
                 console.error(error);
-                showSaveFailureNotice(chatSaveNoticeKey(activeCharacter.avatar, fileName),
-                    t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
-                return options.throwOnError ? Promise.reject(error) : Promise.resolve(false);
+                const saveFailure = reportChatSaveFailure(chatSaveNoticeKey(activeCharacter.avatar, fileName), t`Chat could not be saved`,
+                    { error, quiet: options.quietSaveFailure === true });
+                return options.throwOnError ? Promise.reject(markReportedSaveFailure(error, saveFailure)) : Promise.resolve(false);
             }
         }
         queuedSaveArguments = [{
@@ -14309,6 +14408,7 @@ async function saveChatImmediately(...args) {
         roleplaySave,
         mewmoryHidePolicy = undefined,
         onMewmoryHideSaved = undefined,
+        quietSaveFailure = false,
     } = options;
 
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
@@ -14409,9 +14509,13 @@ async function saveChatImmediately(...args) {
 
         if (errorData?.error === 'destructive') {
             console.error(`Chat save refused as destructive (${errorData?.reason}). The file on disk was left unchanged.`);
-            toastr.error(t`This save would have deleted messages, so the saved chat was left unchanged. Reload the page to bring it up to date.`, t`Chat not saved`);
+            const saveFailure = reportChatSaveFailure(saveNoticeKey, t`Chat not saved`, {
+                response: result,
+                notice: t`This save would have deleted messages, so the saved chat was left unchanged. Reload the page to bring it up to date.`,
+                quiet: quietSaveFailure,
+            });
             if (throwOnError) {
-                throw new Error('destructive');
+                throw markReportedSaveFailure(new Error('destructive'), saveFailure);
             }
             return false;
         }
@@ -14421,7 +14525,7 @@ async function saveChatImmediately(...args) {
         if (!isIntegrityError) {
             const errorMessage = typeof errorData?.error === 'string' ? errorData.error : result.statusText;
             const notice = roleplaySaveNotice(errorData);
-            throw Object.assign(new Error(errorMessage || 'Chat save failed'), notice ? { saveNotice: notice } : {});
+            throw Object.assign(new Error(errorMessage || 'Chat save failed'), { status: result.status, data: errorData }, notice ? { saveNotice: notice } : {});
         }
 
         const popupResult = await Popup.show.input(
@@ -14442,10 +14546,13 @@ async function saveChatImmediately(...args) {
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });
+        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure });
     } catch (error) {
         console.error(error);
-        showSaveFailureNotice(saveNoticeKey, error?.saveNotice || t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
+        if (!error?.saveFailureReported) {
+            markReportedSaveFailure(error, reportChatSaveFailure(saveNoticeKey, t`Chat could not be saved`,
+                { error, notice: error?.saveNotice, quiet: quietSaveFailure }));
+        }
         if (throwOnError) {
             throw error;
         }
@@ -15783,17 +15890,18 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         }
 
         if (!result.ok) {
-            throw new Error(`Failed to save settings: ${result.statusText}`);
+            const data = await result.json().catch(() => null);
+            throw Object.assign(new Error(`Failed to save settings: ${result.statusText}`), { status: result.status, data });
         }
 
         const saveResult = await result.json().catch(() => ({}));
         if (account !== getCurrentUserHandle()) return false;
         if (!Number.isSafeInteger(saveResult?.settingsRevision) || saveResult.settingsRevision <= payload._settingsRevision) {
-            throw new Error('Settings save returned an invalid settings revision');
+            throw Object.assign(new Error('Settings save returned an invalid settings revision'), { saveFailure: 'server' });
         }
         const savedSettingsVersion = normalizeSettingsVersion(saveResult?.version);
         if (savedSettingsVersion <= payload._version) {
-            throw new Error('Settings save returned an invalid version token');
+            throw Object.assign(new Error('Settings save returned an invalid version token'), { saveFailure: 'server' });
         }
 
         lastServerSettingsVersion = savedSettingsVersion;
@@ -15812,7 +15920,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     } catch (error) {
         if (account !== getCurrentUserHandle()) return false;
         console.error('Error saving settings:', error);
-        toastr.error(t`Check your connection to Neconyan. Use Reload Neconyan under Troubleshooting if the problem continues.`, t`Settings could not be saved`);
+        toastr.error(settingsSaveFailureMessage(saveFailureKind(error)), t`Settings could not be saved`);
         return false;
     }
 }
@@ -19115,6 +19223,25 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1, {
         }
     }
 
+    // Neconyan: never take a swipe away while its chat cannot save.
+    const noticeKey = getCurrentChatSaveNoticeKey();
+    if (messageDeletionSave || lastSaveFailure(noticeKey)) {
+        const saveError = await prepareChatForDeletion(noticeKey);
+        if (saveError) {
+            showDeletionNotSavedNotice(noticeKey, saveError, t`Swipe not deleted`);
+            return;
+        }
+        if (!isDeletionScopeCurrent()
+            || message.swipes[swipeId] !== deletedText
+            || !lodash.isEqual(message.swipe_info[swipeId], targetInfo)
+            || clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1) !== currentSwipeId) {
+            if (askConfirmation) {
+                warnUndoConflict();
+            }
+            return;
+        }
+    }
+
     const survivingInfoRefs = message.swipe_info.filter((_, index) => index !== swipeId);
     const undoRecord = offerUndo ? {
         ...scope,
@@ -22167,18 +22294,34 @@ jQuery(async function () {
         if (!selection) return;
         const startIndex = this_del_mes;
         const offerUndo = rangeDeleteOfferUndo;
-        const selectionIsCurrent = selection.startIndex === startIndex
+        const selectionIsCurrent = () => selection.startIndex === startIndex
             && isUndoScopeCurrent(selection)
             && chat.length === startIndex + selection.messages.length
             && selection.prefixRefs.every((message, index) => chat[index] === message)
             && selection.messages.every((message, offset) => lodash.isEqual(chat[startIndex + offset], message));
+        const selectedMessages = chat.slice(startIndex);
         finishMessageDeleteMode();
-        if (!selectionIsCurrent || startIndex < 0) {
+        if (!selectionIsCurrent() || startIndex < 0) {
             toastr.warning(t`The chat changed. Select the messages again.`);
             return;
         }
 
-        const record = offerUndo ? createMessageUndoRecord({
+        // Neconyan: never take messages off screen while their chat cannot save.
+        const noticeKey = getCurrentChatSaveNoticeKey();
+        if (messageDeletionSave || lastSaveFailure(noticeKey)) {
+            const saveError = await prepareChatForDeletion(noticeKey);
+            if (saveError) {
+                showDeletionNotSavedNotice(noticeKey, saveError, t`Messages not deleted`);
+                return;
+            }
+            if (!selectionIsCurrent() || selectedMessages.some((message, offset) => chat[startIndex + offset] !== message)) {
+                toastr.warning(t`The chat changed. Select the messages again.`);
+                return;
+            }
+        }
+
+        const originals = chat.slice(startIndex);
+        const record = createMessageUndoRecord({
             kind: 'range',
             startIndex,
             messages: selection.messages,
@@ -22188,7 +22331,7 @@ jQuery(async function () {
             rightRef: null,
             rendered: getUndoRenderSnapshot(),
             invokingControl: selection.invokingControl,
-        }) : null;
+        });
         dismissUndo();
         for (let i = chat.length - 1; i >= startIndex; i--) deleteItemizedPromptForMessage(i);
         const removedElements = chatElement.find('.mes').filter(function () {
@@ -22204,11 +22347,12 @@ jQuery(async function () {
         refreshSwipeButtons();
         chatElement.scrollTop(chatElement[0].scrollHeight);
         // Neconyan: finish the original deletion event before an early Undo restores its content.
-        const deletionPromise = saveChatConditional({ allowShrink: true }).then(async () => {
-            if (isUndoScopeCurrent(selection)) await eventSource.emit(event_types.MESSAGE_DELETED, startIndex);
+        const deletionPromise = saveMessageDeletion(record, originals, noticeKey, t`Messages not deleted`).then(async saved => {
+            if (saved && isUndoScopeCurrent(selection)) await eventSource.emit(event_types.MESSAGE_DELETED, startIndex);
+            return saved;
         });
-        if (record) {
-            record.deletionPromise = deletionPromise;
+        record.deletionPromise = deletionPromise;
+        if (offerUndo) {
             showUndoRecord(record);
         }
         await deletionPromise;

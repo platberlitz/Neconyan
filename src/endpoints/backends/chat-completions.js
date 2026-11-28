@@ -1,5 +1,6 @@
 import { classifyGenerationOutcome } from '../../../public/scripts/generation-outcome.js';
 import { safeProviderErrorMessage } from '../../generation/provider-error.js';
+import { providerUnreachableReply } from '../../generation/provider-reach.js';
 /* eslint-disable dot-notation */
 import process from 'node:process';
 import { validateHeaderValue } from 'node:http';
@@ -3111,7 +3112,7 @@ async function sendOpenAIResponsesRequest(request, response) {
 
         console.error('Error communicating with OpenAI Responses API: ', error);
         if (!response.headersSent) {
-            response.status(502).send({ error: { message: error.message, ...error } });
+            response.status(502).send(providerUnreachableReply(error) ?? { error: { message: error.message, ...error } });
         } else if (!response.writableEnded) {
             response.end();
         }
@@ -3852,7 +3853,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             : error.message || 'Unknown error occurred';
 
         if (!response.headersSent) {
-            response.status(502).send({ error: { message, ...error } });
+            response.status(502).send(providerUnreachableReply(error) ?? { error: { message, ...error } });
         } else {
             response.end();
         }

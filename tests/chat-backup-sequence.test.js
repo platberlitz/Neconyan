@@ -13,6 +13,7 @@ import { getChatBackupSaveOptions, resetChatBackupSequence } from '../public/scr
 import { setConfigFilePath } from '../src/util.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 import { chatSaveNoticeKey, groupChatSaveNoticeKey } from '../public/scripts/save-failure-notices.js';
+import { loadSaveFailureWording } from './save-failure-wording-vm.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { trySaveChat, clearActiveDeferredChatPreWrites } = await import('../src/endpoints/chats.js');
@@ -96,6 +97,7 @@ function createClient(group) {
         chatSaveNoticeKey, groupChatSaveNoticeKey, clearSaveFailureNotice: jest.fn(),
         showSaveFailureNotice: (_key, message, title) => runtime.toastr.error(message, title),
     });
+    loadSaveFailureWording(runtime);
     for (const name of ['roleplayRequestHeaders', 'requestRoleplayChat', 'saveRoleplayChatRequest']) {
         const { source, ast } = sources['script.js'];
         const node = ast.body.map(node => node.declaration ?? node).find(node => node.id?.name === name);

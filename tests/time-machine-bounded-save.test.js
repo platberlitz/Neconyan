@@ -54,6 +54,8 @@ function runtime({ version = 8, revision = 4, wait = 1000 } = {}) {
         console: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
         toastr: { error: jest.fn() },
         t: strings => strings[0],
+        saveFailureKind: () => 'server',
+        settingsSaveFailureMessage: kind => `Settings save failed (${kind})`,
         eventSource: { emit: jest.fn(async () => {}) },
         event_types: { SETTINGS_UPDATED: 'settings_updated' },
         normalizeSettingsVersion: value => {

@@ -96,6 +96,8 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         secret_state: secretState,
         console: { warn: jest.fn(), error: jest.fn(), log: jest.fn() },
         t: strings => strings.join(''),
+        saveFailureKind: () => 'unreachable',
+        settingsSaveFailureMessage: kind => `Settings save failed (${kind})`,
         toastr: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
         refreshModelIdSearchControlsForSource: jest.fn(),
         document: { querySelector: jest.fn(() => null) },

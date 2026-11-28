@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
 import { chatSaveNoticeKey, groupChatSaveNoticeKey } from '../public/scripts/save-failure-notices.js';
+import { loadSaveFailureWording } from './save-failure-wording-vm.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -67,6 +68,7 @@ function createSaveRuntime(group = false) {
         window: { location: { reload: jest.fn() } },
         t: strings => strings.join(''),
     });
+    loadSaveFailureWording(runtime);
     for (const name of ['roleplayRequestHeaders', 'requestRoleplayChat', 'saveRoleplayChatRequest']) {
         const node = ast.body.map(node => node.declaration ?? node).find(node => node.id?.name === name);
         vm.runInContext(source.slice(node.start, node.end), runtime);

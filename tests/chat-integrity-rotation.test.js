@@ -1376,7 +1376,7 @@ describe('chat integrity rotation', () => {
         expect(scriptSource).toContain('rememberQueuedChatIntegrity(integrityKey, responseData?.integrity);');
         expect(scriptSource).toContain('deferBackup: Boolean(deferBackup)');
         expect(scriptSource).toContain('confirmRoleplayOverwrite(roleplaySave, uuidv4());');
-        expect(scriptSource).toContain('return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });');
+        expect(scriptSource).toContain('return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure });');
     });
 
     test('queued chat saves abort when generation or character changes while queued', async () => {
@@ -1442,7 +1442,7 @@ describe('chat integrity rotation', () => {
             groupChatSource.indexOf('export async function', groupChatSource.indexOf('async function saveGroupChatImmediately')));
         expect(queueAndSave).toContain('mewmoryHidePolicy: options.mewmoryHidePolicy,');
         expect(queueAndSave).toContain('onMewmoryHideSaved: options.onMewmoryHideSaved,');
-        expect(queueAndSave).toContain('async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved })');
+        expect(queueAndSave).toContain('async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure = false })');
         expect(queueAndSave).toContain('...(mewmoryHidePolicy ? { mewmoryHidePolicy } : {})');
         expect(queueAndSave).toContain('if (mewmoryHidePolicy) {');
         expect(queueAndSave).toContain('try {');
@@ -1452,7 +1452,7 @@ describe('chat integrity rotation', () => {
 
         expect(groupChatSource).toContain('confirmRoleplayOverwrite(roleplaySave, uuidv4());');
         expect(groupChatSource).toContain('.finally(() => finishRoleplaySave(roleplaySave));');
-        expect(groupChatSource).toContain('return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });');
+        expect(groupChatSource).toContain('return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved, quietSaveFailure });');
         expect(groupChatSource).toContain('const isActiveGroupChatSave = selected_group === groupId && group.chat_id === chatId;');
         expect(groupChatSource).toContain('if (isActiveGroupChatSave && typeof responseData?.integrity === \'string\' && responseData.integrity)');
     });

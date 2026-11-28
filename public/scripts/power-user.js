@@ -108,6 +108,7 @@ import {
 } from './low-memory-mode.js';
 import { createBackgroundKeepAlive, isBackgroundKeepAliveDevice } from './background-keep-alive.js';
 import { getBackgroundMemorySaver } from './background-memory-saver.js';
+import { saveFailureKind, settingsSaveFailureMessage } from './save-failure-wording.js';
 
 export const toastPositionClasses = [
     'toast-top-left',
@@ -4375,14 +4376,22 @@ async function saveTheme(name = undefined, theme = undefined) {
         theme = getThemeObject(name);
     }
 
-    const response = await fetch('/api/themes/save', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(theme),
-    });
+    let response;
+    try {
+        response = await fetch('/api/themes/save', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify(theme),
+        });
+    } catch (error) {
+        toastr.error(settingsSaveFailureMessage(saveFailureKind(error)), t`Theme could not be saved`);
+        console.error('Theme could not be saved', error);
+        throw error;
+    }
 
     if (!response.ok) {
-        toastr.error('Your changes were not saved. Check your connection to Neconyan, then reload before editing more.', 'Theme could not be saved');
+        const data = await response.json().catch(() => null);
+        toastr.error(settingsSaveFailureMessage(saveFailureKind(null, { status: response.status, data })), t`Theme could not be saved`);
         console.error(`Theme could not be saved: HTTP ${response.status} ${response.statusText}`.trim(), response);
         throw new Error('Theme could not be saved');
     }
@@ -4692,7 +4701,6 @@ async function doMesCut(_, text) {
     let cutText = '';
 
     for (let i = 0; i < totalMesToCut; i++) {
-        cutText += (chat[mesIDToCut]?.mes || '') + '\n';
         let mesToCut = $('#chat').find(`.mes[mesid=${mesIDToCut}]`);
 
         if (!mesToCut.length) {
@@ -4703,8 +4711,14 @@ async function doMesCut(_, text) {
             }
         }
 
+        const target = chat[mesIDToCut];
         setEditedMessageId(mesIDToCut);
         await deleteMessage(mesIDToCut, null, false);
+        // Neconyan: a deletion that could not be saved is put back, so stop cutting there.
+        if (target && chat.includes(target)) {
+            return cutText;
+        }
+        cutText += (target?.mes || '') + '\n';
     }
 
     await saveChatConditional();

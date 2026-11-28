@@ -1,7 +1,8 @@
 /* global window */
 // A Roleplay chat save that cannot reach the server keeps resending the same save: a short restart or dropped
 // connection costs nothing, a longer one shows one notice and unlocks once the server confirms that save, and a chat
-// whose saved copy changed elsewhere in the meantime stays locked rather than being overwritten.
+// whose saved copy changed elsewhere in the meantime stays locked rather than being overwritten. A deletion that cannot
+// be saved puts the message back, so the screen never shows a chat the server does not have.
 import { randomUUID } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { expect } from '@playwright/test';
@@ -10,6 +11,7 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 test.setTimeout(180000);
 
 const SAVE_ROUTE = /\/api\/chats\/(save|patch)$/;
+const UNREACHABLE_DELETE = 'Neconyan could not reach its server, so nothing was deleted. Check your internet connection, then try again.';
 
 function bodyOf(request) {
     const bytes = request.postDataBuffer();
@@ -30,15 +32,15 @@ async function openChat(account) {
 
 // Every chat save the page sends, and a switch that makes the server unreachable for them.
 async function watchSaves(page) {
-    const state = { down: false, saves: [] };
+    const state = { down: false, dropOnly: false, saves: [] };
     await page.route(SAVE_ROUTE, async route => {
         const request = route.request();
         const save = { key: bodyOf(request).roleplay?.operationKey, at: Date.now() };
         state.saves.push(save);
         if (state.down) {
             save.outcome = 'dropped';
-            // Alternate a dropped connection with the answer a restarting server gives.
-            if (state.saves.filter(entry => entry.outcome === 'dropped').length % 2) return route.abort('connectionreset');
+            // Alternate a dropped connection with the answer a restarting server gives, unless only connections drop.
+            if (state.dropOnly || state.saves.filter(entry => entry.outcome === 'dropped').length % 2) return route.abort('connectionreset');
             return route.fulfill({ status: 503, json: { error: 'roleplay_recovery_required', code: 'ELOCKED' } });
         }
         const response = await route.fetch();
@@ -56,14 +58,42 @@ async function watchNotices(page) {
     });
     await page.evaluate(() => {
         window.saveNotices = [];
+        window.errorToasts = [];
         const show = window.toastr.error;
         window.toastr.error = function (message, title, ...rest) {
+            window.errorToasts.push({ title: String(title ?? ''), message: String(message ?? '') });
             if (title === 'Chat could not be saved') window.saveNotices.push(String(message));
             return show.call(this, message, title, ...rest);
         };
     });
-    return { logged, notices: () => page.evaluate(() => window.saveNotices) };
+    return { logged, notices: () => page.evaluate(() => window.saveNotices), toasts: () => page.evaluate(() => window.errorToasts) };
 }
+
+// Deletes a message the way its menu does, without waiting for the deletion to be saved.
+async function deleteFromMenu(page, message) {
+    const button = message.locator('.mes_delete');
+    if (!await button.isVisible()) await message.locator('.extraMesButtonsHint').click();
+    await button.click();
+    await page.locator('dialog.popup:visible').getByRole('button', { name: 'Delete Message', exact: true }).click();
+}
+
+// Counts how often a message showing this text leaves the chat on screen.
+async function watchRemovals(page, text) {
+    await page.evaluate(text => {
+        window.removedMessages = 0;
+        new window.MutationObserver(records => {
+            for (const record of records) {
+                for (const node of record.removedNodes) {
+                    if (node.nodeType === 1 && node.matches('.mes') && node.querySelector('.mes_text')?.textContent.trim() === text) window.removedMessages++;
+                }
+            }
+        }).observe(window.document.getElementById('chat'), { childList: true });
+    }, text);
+    return () => page.evaluate(() => window.removedMessages);
+}
+
+const chatTexts = page => page.evaluate(async () => (await import('/script.js')).chat.map(message => message.mes));
+const lastMessage = page => page.locator('#chat .mes[mesid]').last();
 
 async function savedChat(account, file) {
     const response = await account.context.request.post('/api/chats/get', { headers: account.headers, data: { avatar_url: account.avatar, file_name: file } });
@@ -135,6 +165,8 @@ test('a save cut off past the retry window shows one notice, then unlocks once t
     saves.down = true;
     await editLastMessage(page, 'Local edit.');
     await expect.poll(() => notices.notices(), { timeout: 40000 }).toHaveLength(1);
+    // Whether the last try was dropped or answered by a restarting server, the notice says the change is not saved yet.
+    expect((await notices.notices())[0]).toContain('so recent changes are not saved yet');
     expect(await locked(page, account, file)).toBe(true);
     const blocker = saves.saves.find(entry => entry.outcome === 'dropped').key;
     for (let attempt = 0; attempt < 3; attempt++) expect(await save(page)).toBe(false);
@@ -154,7 +186,7 @@ test('a save cut off past the retry window shows one notice, then unlocks once t
     expect(await notices.notices()).toHaveLength(1);
 });
 
-test('a chat whose saved copy changed during an outage stays locked with one notice and keeps that change', async ({ app }) => {
+test('a chat whose saved copy changed during an outage stays locked, says so once and keeps that change', async ({ app }) => {
     const account = await app.account({ activeConnection: true });
     const { page, file, notices, saves } = await firstReply(app, account);
     saves.down = true;
@@ -170,7 +202,10 @@ test('a chat whose saved copy changed during an outage stays locked with one not
     for (let attempt = 0; attempt < 2; attempt++) expect(await save(page)).toBe(false);
     expect(saves.saves.filter(entry => entry.key === blocker && entry.outcome === 400)).toHaveLength(2);
     expect(await locked(page, account, file)).toBe(true);
-    expect(await notices.notices()).toHaveLength(1);
+    // Once the server answers, the outage notice gives way to one that names the real cause, shown once.
+    const shown = await notices.notices();
+    expect(shown).toHaveLength(2);
+    expect(shown[1]).toContain('The saved copy of this chat changed somewhere else');
 
     // A regenerate on the locked chat is refused before it reaches the model, and adds no notice of its own.
     const calls = app.provider.calls.length;
@@ -182,9 +217,49 @@ test('a chat whose saved copy changed during an outage stays locked with one not
     await expect.poll(() => page.evaluate(() => window.regenerated), { timeout: 30000 }).not.toBeNull();
     expect(app.provider.calls.length).toBe(calls);
     expect(await locked(page, account, file)).toBe(true);
-    expect(await notices.notices()).toHaveLength(1);
+    expect(await notices.notices()).toHaveLength(2);
     expect(notices.logged.length).toBeGreaterThanOrEqual(3);
     const messages = await savedMessages(account, file);
     expect(messages).toContain('Changed elsewhere.');
     expect(messages).not.toContain('Local edit.');
+});
+
+test('a deletion that cannot be saved puts the message back with one notice, and goes through once saves do', async ({ app }) => {
+    const account = await app.account({ activeConnection: true });
+    const { page, file, notices, saves } = await firstReply(app, account);
+    const before = await chatTexts(page);
+    const removals = await watchRemovals(page, 'First answer.');
+    saves.down = true;
+    saves.dropOnly = true;
+
+    // The first deletion leaves the screen while its save is retried, then comes back once the save gives up.
+    await deleteFromMenu(page, lastMessage(page));
+    await expect.poll(removals).toBe(1);
+    await expect(lastMessage(page).locator('.mes_text')).toHaveText('First answer.', { timeout: 40000 });
+    expect(await chatTexts(page)).toEqual(before);
+    expect(await notices.toasts()).toEqual([{ title: 'Message not deleted', message: UNREACHABLE_DELETE }]);
+    expect(await notices.notices()).toEqual([]);
+    expect(await savedMessages(account, file)).toContain('First answer.');
+
+    // With the failure known, the next deletion checks the save first and never takes the message away.
+    await expect(page.locator('#toast-container .toast-error')).toHaveCount(0, { timeout: 30000 });
+    await deleteFromMenu(page, lastMessage(page));
+    await expect.poll(() => notices.toasts(), { timeout: 20000 }).toHaveLength(2);
+    expect((await notices.toasts())[1]).toEqual({ title: 'Message not deleted', message: UNREACHABLE_DELETE });
+    expect(await removals()).toBe(1);
+    expect(await chatTexts(page)).toEqual(before);
+    expect(await notices.notices()).toEqual([]);
+
+    // Once saves work again, deleting works as normal and stays deleted after the chat is opened again.
+    saves.down = false;
+    await deleteFromMenu(page, lastMessage(page));
+    // The held-back save lands first, so the message leaves the screen only once the chat can save again.
+    await expect.poll(() => chatTexts(page), { timeout: 20000 }).toEqual(before.slice(0, -1));
+    await expect(lastMessage(page).locator('.mes_text')).toHaveText('Hello, Nova.');
+    await expect.poll(() => savedMessages(account, file), { timeout: 20000 }).toEqual(before.slice(0, -1));
+    expect(await notices.toasts()).toHaveLength(2);
+    await page.close();
+    const reopened = await openChat(account);
+    await expect(lastMessage(reopened.page).locator('.mes_text')).toHaveText('Hello, Nova.');
+    expect(await chatTexts(reopened.page)).toEqual(before.slice(0, -1));
 });
