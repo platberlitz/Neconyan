@@ -133,8 +133,10 @@ let panelInitialized = false;
 let livePreview = null;
 let previewResultsSignature = '';
 let panelOpen = false;
+let panelChatKey = null;
 let panelSavedScrollTop = 0;
 let panelSavedAnchor = null;
+let panelScrollResetPending = false;
 let panelHeightCacheWidth = 0;
 const panelCardHeightCache = new Map();
 const panelPendingMeasuredCards = new Set();
@@ -1452,6 +1454,13 @@ function clearCardIntrinsicBlockSize(section) {
     }
 }
 
+function isSamePanelChat(chatId) {
+    const chatKey = typeof chatId === 'string' || typeof chatId === 'number' ? String(chatId) : '';
+    const same = chatKey !== '' && chatKey === panelChatKey;
+    panelChatKey = chatKey;
+    return same;
+}
+
 function clearPanelCardHeightCache(panel = getCompanionPanelNode()) {
     panelCardHeightCache.clear();
     panelPendingMeasuredCards.clear();
@@ -2718,6 +2727,10 @@ export function openCompanionPanel() {
     }
     const restoreScrollTop = !wasOpen ? panelSavedScrollTop : 0;
     const restoreAnchor = !wasOpen ? panelSavedAnchor : null;
+    const resetScrollTop = !wasOpen && panelScrollResetPending;
+    if (!wasOpen) {
+        panelScrollResetPending = false;
+    }
     if (handleHidden && panelLauncher === 'handle') {
         setCompanionPanelHandleHidden(false);
     }
@@ -2759,9 +2772,15 @@ export function openCompanionPanel() {
             capturePanelScrollTrackAnchor(panelNode);
             syncPanelJumpButtons();
         }
-    } else if (needsManualOverflowAnchor()) {
+    } else {
         const panelNode = getCompanionPanelNode();
-        setPanelOverflowAnchorDisabled(panelNode, hasUnhydratedPanelCards(panelNode));
+        if (resetScrollTop && panelNode && panelNode.scrollTop > 0) {
+            panelNode.scrollTop = 0;
+            panelProgrammaticScrollTop = 0;
+        }
+        if (needsManualOverflowAnchor()) {
+            setPanelOverflowAnchorDisabled(panelNode, hasUnhydratedPanelCards(panelNode));
+        }
     }
     notifyDiceCompanionHostsChanged();
     // The panel only gains its height once it is shown, so measure again on the next frame.
@@ -3434,12 +3453,16 @@ export function initCompanionPanel() {
 
     const refreshEvents = [event_types.CHAT_CHANGED, event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED].filter(Boolean);
     for (const eventName of refreshEvents) {
-        eventSource.on(eventName, () => {
-            if (eventName === event_types.CHAT_CHANGED) {
+        eventSource.on(eventName, (chatId) => {
+            // Adopting a server reply rebuilds the open chat and announces it
+            // with the same id; only a different chat starts the panel afresh.
+            if (eventName === event_types.CHAT_CHANGED && !isSamePanelChat(chatId)) {
                 stopPanelHydration();
                 panelOpenHydrationEarliestAt = 0;
                 panelSavedScrollTop = 0;
                 panelSavedAnchor = null;
+                // A hidden panel keeps its scroll offset, so the next open starts at the top itself.
+                panelScrollResetPending = !panelOpen;
                 panelPointerActive = false;
                 panelUserScrollUntil = 0;
                 panelProgrammaticScrollTop = null;

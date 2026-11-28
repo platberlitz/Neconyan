@@ -3007,6 +3007,47 @@ describe('companion tracker panel', () => {
             }
         });
 
+        test('keeps the reopen place when CHAT_CHANGED rebuilds the same chat and starts a different chat at the top', async () => {
+            const cardSpecs = [
+                { id: 'c0', realHeight: 722 },
+                { id: 'c1', realHeight: 622 },
+                { id: 'c2', realHeight: 522 },
+                { id: 'c3', realHeight: 522 },
+            ];
+            agents = cardSpecs.map(spec => ({ id: spec.id, name: spec.id, execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }));
+            const sim = createScrollSimulation({ cardSpecs, viewportHeight: 400, chromeBlock: 22 });
+            try {
+                const panel = await importPanel();
+                panel.initCompanionPanel();
+                await eventSource.emit('chat_changed', 'chat-1');
+                panel.openCompanionPanel();
+                sim.drainAll();
+
+                sim.panelNode.scrollTop = 900;
+                const c2TopBefore = sim.getSection('c2').getBoundingClientRect().top;
+                panel.closeCompanionPanel();
+                // Chromium and WebKit keep a hidden panel's scroll offset.
+                sim.setScrollTop(900);
+
+                // Adopting a finished server reply rebuilds the open chat under the same id.
+                await eventSource.emit('chat_changed', 'chat-1');
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('auto 700px');
+                panel.openCompanionPanel();
+                expect(sim.getScrollTop()).toBeCloseTo(900, 1);
+                expect(sim.getSection('c2').getBoundingClientRect().top).toBeCloseTo(c2TopBefore, 1);
+
+                sim.drainAll();
+                panel.closeCompanionPanel();
+                sim.setScrollTop(900);
+                await eventSource.emit('chat_changed', 'chat-2');
+                expect(sim.getSection('c0').style.getPropertyValue('contain-intrinsic-block-size')).toBe('');
+                panel.openCompanionPanel();
+                expect(sim.getScrollTop()).toBe(0);
+            } finally {
+                sim.restore();
+            }
+        });
+
         test('pauses hydration during pointer presses and user scrolling, and compensates manual overflow-anchor on WebKit only', async () => {
             const cardSpecs = [
                 { id: 'c0', realHeight: 822 },
