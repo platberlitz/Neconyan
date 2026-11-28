@@ -52,6 +52,8 @@ async function openUndoFixture(page, { light = false, group = false } = {}) {
             Object.assign(settings.oai_settings, { prompts: [], prompt_order: [] });
             // Automatic filesystem snapshots are outside this mocked chat fixture.
             settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+            // A fresh account starts the first-run tour, whose card covers the message buttons.
+            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
             if (light) {
                 const { name, ...theme } = lightTheme;
                 Object.assign(settings.power_user, theme, { theme: name });
