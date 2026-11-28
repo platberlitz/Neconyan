@@ -217,3 +217,24 @@ test('the iOS lease policy is tied to the bootstrap, the Swift data path and the
     assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer(), iosAppServer })'));
     assert.ok(server.includes('process.env.NECONYAN_ANDROID_APP !== \'1\' && !iosAppServer'));
 });
+
+test('iOS simulator tests run with Spotlight indexing off and the simulator push service stopped', () => {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ios-build.yml'), 'utf8'));
+    const steps = workflow.jobs.build.steps;
+    const indexOf = name => steps.findIndex(step => step.name === name);
+    const spotlight = indexOf('Turn off Spotlight indexing');
+    assert.ok(spotlight >= 0);
+    assert.match(steps[spotlight].run, /sudo mdutil -a -i off/);
+    assert.ok(spotlight < indexOf('Start an iPhone and an iPad simulator'));
+    for (const name of ['Start an iPhone and an iPad simulator', 'Test startup and page features on an iPad']) {
+        const lines = steps[indexOf(name)].run.split('\n').map(line => line.trim());
+        const boots = lines.filter(line => line.startsWith('xcrun simctl bootstatus '));
+        assert.equal(boots.length, 1, name);
+        const device = boots[0].match(/^xcrun simctl bootstatus (.+) -b$/)[1];
+        assert.equal(lines[lines.indexOf(boots[0]) + 1], `bash ios/tools/quieten-simulator.sh ${device}`, name);
+    }
+    const script = fs.readFileSync(path.join(root, 'ios/tools/quieten-simulator.sh'), 'utf8');
+    assert.match(script, /launchctl bootout system\/com\.apple\.apsd/);
+    assert.match(script, /launchctl disable system\/com\.apple\.apsd/);
+    assert.match(script, /::warning::/);
+});

@@ -16,6 +16,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Turn off Spotlight indexing
+        # Indexing keeps running through the simulator tests and competes with
+        # the simulator for the runner's three cores.
+        run: |
+          sudo mdutil -a -i off > /dev/null || echo "::warning::Spotlight indexing could not be turned off"
+          mdutil -s /
       - name: Select the pinned Xcode
         run: |
           set -euo pipefail
@@ -124,6 +130,7 @@ jobs:
           test -n "$tablet"
           xcrun simctl boot "$phone"
           xcrun simctl bootstatus "$phone" -b
+          bash ios/tools/quieten-simulator.sh "$phone"
           echo "id=$phone" >> "$GITHUB_OUTPUT"
           echo "ipad=$tablet" >> "$GITHUB_OUTPUT"
       - name: Test standalone startup and relaunch on iOS
@@ -142,6 +149,7 @@ jobs:
           xcrun simctl shutdown '${{ steps.simulator.outputs.id }}' || true
           xcrun simctl boot '${{ steps.simulator.outputs.ipad }}'
           xcrun simctl bootstatus '${{ steps.simulator.outputs.ipad }}' -b
+          bash ios/tools/quieten-simulator.sh '${{ steps.simulator.outputs.ipad }}'
           node ios/tools/model-fixture.mjs > ios/model-fixture-ipad.log 2>&1 &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
