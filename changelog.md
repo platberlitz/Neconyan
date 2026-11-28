@@ -23,6 +23,7 @@
 - Several **Agents** and **Companions** running at once over a plain local address, as in the Android app, Termux or on your home network, now finish instead of being cut off partway, and a dropped connection or a timed-out request is reported as such rather than looking like you pressed **Stop**.
 - Agents, Companion and Mewmory screens in 17 languages now use each language's settled terms throughout, so help text names every button as it appears, and their untranslated text is now translated.
 - A chat save cut off by a brief server restart or dropped connection now keeps retrying, and the chat unlocks once the server confirms it, instead of refusing every later save, reply and **Mewmory** update until you reload. Repeated failures show one **Chat could not be saved** notice instead of one per attempt, **Group Chat** saves that lose the connection now say so, and a save a crash left half-done no longer locks the whole account until the server restarts.
+- With **After-reply agents** set to **Run together**, at most four **Agents** or **Companions** now send their requests at once, several Agents failing in one pass share a single toast that names them instead of one toast each, a provider error from a background Agent or Companion request no longer shows a second toast of its own, saying no to **Connecting To Proxy** shows its message once for every request that was waiting, and on a server reply the additions from Agents that finished are kept when another one running beside them fails.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -45,6 +46,7 @@
 - PR #1026 (2026-11-28) `fix(generation): stop the watchdog aborting healthy replies`
 - PR #1028 (2026-11-28) `fix(i18n): finish the Agents and Companion translations in 17 languages`
 - PR #1029 (2026-11-28) `fix(chat): recover unconfirmed saves instead of locking the chat`
+- PR #1030 (2026-11-28) `fix(agents): cap parallel Agents at four and share one failure toast`
 
 ## v1.6.0
 
