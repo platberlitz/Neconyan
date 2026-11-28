@@ -205,21 +205,37 @@ test('recoloring 1 message shows the full German save-failure warning when chat 
     expect(seedSaved).toBe(true);
     expect((await seedSavePromise).status()).toBe(200);
 
-    await page.evaluate(async extension => {
-        const core = await import('/script.js');
-        const { characterColors } = await import(`${extension}/state.js`);
-        const { scanAllMessages } = await import(`${extension}/color-blocks.js`);
-        await core.reloadCurrentChat();
-        await scanAllMessages();
-        const mira = Object.values(characterColors).find(entry => entry.name === 'Mira');
-        if (!mira) throw new Error('Mira missing from characterColors after scanAllMessages()');
-        Object.assign(mira, { color: '#ff5500', baseColor: '#ff5500' });
-        if (!window.NeconyanShell?.openIncludedTool?.('sillytavern-character-colors')) {
-            window.NeconyanExtensions.focusUnit('Dialogfarben');
-        }
+    await page.evaluate(extension => {
+        // Observe completion separately: Chromium reports 'Promise was collected'
+        // when DevTools awaits this chat reload and rescan directly.
+        const state = window.__dcRecolorSetup = { done: false, error: null };
+        (async () => {
+            const core = await import('/script.js');
+            const { characterColors } = await import(`${extension}/state.js`);
+            const { scanAllMessages } = await import(`${extension}/color-blocks.js`);
+            await core.reloadCurrentChat();
+            await scanAllMessages();
+            const mira = Object.values(characterColors).find(entry => entry.name === 'Mira');
+            if (!mira) throw new Error('Mira missing from characterColors after scanAllMessages()');
+            Object.assign(mira, { color: '#ff5500', baseColor: '#ff5500' });
+            if (!window.NeconyanShell?.openIncludedTool?.('sillytavern-character-colors')) {
+                window.NeconyanExtensions.focusUnit('Dialogfarben');
+            }
+        })().then(() => { state.done = true; }, error => {
+            state.error = error.stack || error.message || String(error);
+            state.done = true;
+        });
     }, extension);
+    await page.waitForFunction(() => window.__dcRecolorSetup.done);
+    expect(await page.evaluate(() => window.__dcRecolorSetup.error)).toBeNull();
 
     await openPage(page, 'process', locator => locator.click());
+    // An unconfirmed save is resent for about 12 seconds before the chat reports it; this test
+    // checks the wording of that report, so let the one refused attempt settle straight away.
+    await page.evaluate(async () => {
+        const { setRoleplaySaveRetryDelays } = await import('/scripts/roleplay-save-chain.js');
+        setRoleplaySaveRetryDelays([]);
+    });
     let interceptedHits = 0;
     await page.route(/\/api\/chats\/(save|patch)(?:\?|$)/, route => {
         interceptedHits += 1;
