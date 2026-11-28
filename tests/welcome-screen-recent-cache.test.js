@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const welcomeSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'welcome-screen.js'), 'utf8').replace(/\r\n/g, '\n');
 
@@ -510,5 +512,41 @@ describe('Home recent chat identifiers after template sanitisation', () => {
             ];
         }
         expect(calls).toEqual(expected);
+    });
+});
+
+describe('recent chat rail labels', () => {
+    const readLocale = file => JSON.parse(readFileSync(path.join(repoRoot, 'public', 'locales', file), 'utf8'));
+    const dictionary = assembleLocaleData({
+        base: readLocale('pt-pt.json'),
+        supplement: readLocale('neconyan/pt-pt.json'),
+        catalogue: readLocale('neconyan/en.json'),
+    }).dictionary;
+    const context = vm.createContext({ translate: text => dictionary[text] ?? text });
+    vm.runInContext(`${functionSource('getNeconyanRecentChatLabel')}\nthis.getNeconyanRecentChatLabel = getNeconyanRecentChatLabel;`, context);
+
+    test('a group entry whose member has no name translates both stand-ins', () => {
+        expect(context.getNeconyanRecentChatLabel({
+            is_group: true,
+            chat_name: 'Character · Conversation Mode',
+            conversation_branch_name: 'Conversation Mode',
+            conversation_label_named: false,
+        })).toBe('Personagem · Modo Conversa');
+    });
+
+    test('named labels stay as written', () => {
+        expect(context.getNeconyanRecentChatLabel({
+            is_group: true,
+            chat_name: 'Character · Conversation Mode',
+            conversation_branch_name: 'Conversation Mode',
+            conversation_label_named: true,
+        })).toBe('Character · Conversation Mode');
+        expect(context.getNeconyanRecentChatLabel({
+            is_group: true,
+            chat_name: 'Nova · Conversation Mode',
+            conversation_branch_name: 'Conversation Mode',
+            conversation_label_named: false,
+        })).toBe('Nova · Conversation Mode');
+        expect(context.getNeconyanRecentChatLabel({ chat_name: 'Chat' })).toBe('Chat');
     });
 });

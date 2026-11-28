@@ -2552,7 +2552,13 @@ function activateNeconyanRailRoute(route) {
 }
 
 function getNeconyanRecentChatLabel(recentChat) {
-    return String(recentChat?.chat_name || recentChat?.conversation_branch_name || 'Untitled chat').trim() || 'Untitled chat';
+    const label = String(recentChat?.chat_name || recentChat?.conversation_branch_name || 'Untitled chat').trim() || 'Untitled chat';
+    // A group entry whose member has no name joins two stand-ins, 'Character' and the branch; the localiser matches whole labels only, so each part is translated here.
+    const branch = String(recentChat?.conversation_branch_name || '').trim();
+    if (recentChat?.conversation_label_named === false && branch && label === `Character · ${branch}`) {
+        return `${translate('Character')} · ${translate(branch)}`;
+    }
+    return label;
 }
 
 /** Whether the label holds a name someone wrote. 'Untitled chat' and the 'Conversation Mode' stand-in are the app's own; a group entry's label is the member's name and the branch, so it counts when either is a name. A record without the origin field (every roleplay chat) counts as named. */

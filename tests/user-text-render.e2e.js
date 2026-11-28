@@ -336,8 +336,8 @@ test('the Recent entry shows chat, branch, character and group names as written,
     expect(by('n.png').owner).toBe('Personagem');
     expect(by('rp2.png')).toMatchObject({ label: 'Chat sem título', owner: 'Chat em grupo' });
     expect(by('rp3.png').owner).toBe('Chat');
-    // A group entry on the default branch whose member has no name stays unprotected, as it is today: the 'Character' part of the label translates, the stand-in's own text stays.
-    expect(by('gn.png')).toMatchObject({ buttonTranslate: null, label: 'Personagem · Conversation Mode', title: 'Personagem · Conversation Mode', aria: 'Personagem · Conversation Mode' });
+    // A group entry on the default branch whose member has no name stays unprotected: both stand-ins, 'Character' and 'Conversation Mode', translate.
+    expect(by('gn.png')).toMatchObject({ buttonTranslate: null, label: 'Personagem · Modo Conversa', title: 'Personagem · Modo Conversa', aria: 'Personagem · Modo Conversa' });
 });
 
 test('the lorebook pop-up shows the character name as written and Nameless in Portuguese', async ({ page }) => {
