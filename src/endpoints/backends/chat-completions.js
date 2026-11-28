@@ -45,6 +45,7 @@ import {
     summarizeLlmPayloadForLog,
 } from '../../util.js';
 import { getResumableGeneration } from '../../resumable-generations.js';
+import { isClientResponse, setEventStreamHeaders, startSseKeepAlive } from '../../sse-keep-alive.js';
 import {
     convertClaudeMessages,
     convertGooglePrompt,
@@ -2814,7 +2815,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     }
 
     expressResponse.setHeader('Content-Type', 'text/event-stream');
-    expressResponse.setHeader('Cache-Control', 'no-cache, no-transform');
+    setEventStreamHeaders(expressResponse);
     expressResponse.setHeader('Connection', 'keep-alive');
 
     let buffer = '';
@@ -2822,7 +2823,19 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     const decoder = new StringDecoder('utf8');
     let done = false;
     const resumableGeneration = getResumableGeneration(request);
+    resumableGeneration?.keepEventStreamAlive(expressResponse);
+    // A resumable reply keeps itself open; this covers a plain streamed request.
+    const keepAlive = !resumableGeneration && isClientResponse(expressResponse)
+        ? startSseKeepAlive({
+            write: comment => expressResponse.write(comment),
+            isOpen: () => !done && !expressResponse.writableEnded && !expressResponse.destroyed,
+        })
+        : null;
     const stopPolling = pollStreamingRequestConnection(request, expressResponse, closeStream);
+    const stopStreamTimers = () => {
+        stopPolling();
+        keepAlive?.stop();
+    };
 
     function closeStream() {
         if (done) {
@@ -2830,7 +2843,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
         }
 
         done = true;
-        stopPolling();
+        stopStreamTimers();
         try {
             onDisconnect?.();
         } catch (error) {
@@ -2847,7 +2860,7 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     function finishStream() {
         if (done) return;
         done = true;
-        stopPolling();
+        stopStreamTimers();
         if (!expressResponse.writableEnded) {
             expressResponse.write('data: [DONE]\n\n');
             expressResponse.end();
@@ -2883,7 +2896,9 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
                     }
                     const chatDelta = convertResponsesEventToChatDelta(event);
                     if (chatDelta) {
-                        expressResponse.write(`data: ${JSON.stringify(chatDelta)}\n\n`);
+                        const message = `data: ${JSON.stringify(chatDelta)}\n\n`;
+                        expressResponse.write(message);
+                        keepAlive?.touch(message);
                     }
                 } catch (error) {
                     if (expressResponse.reportStreamError) {
@@ -2904,13 +2919,13 @@ function forwardResponsesApiStream(fetchResponse, expressResponse, request, onDi
     fetchResponse.body.on('end', () => {
         if (done) return;
         done = true;
-        stopPolling();
+        stopStreamTimers();
         expressResponse.reportStreamError?.(new Error('The Responses API stream ended before completion.'));
         if (!expressResponse.writableEnded) expressResponse.end();
     });
 
     fetchResponse.body.on('error', (err) => {
-        stopPolling();
+        stopStreamTimers();
         if (done) return;
         done = true;
         if (resumableGeneration || !expressResponse.destroyed) {

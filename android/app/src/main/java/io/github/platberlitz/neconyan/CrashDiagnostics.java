@@ -347,7 +347,7 @@ final class CrashDiagnostics {
     }
 
     private static void appendRequests(Context context, StringBuilder text) {
-        for (String name : new String[] { "requests.txt", "requests.previous.txt", "native-startup.txt" }) {
+        for (String name : new String[] { "requests.txt", "requests.previous.txt", "native-startup.txt", PageConsoleLog.FILE }) {
             File file = new File(context.getCacheDir(), name);
             if (!file.isFile()) continue;
             try (RandomAccessFile input = new RandomAccessFile(file, "r")) {

@@ -58,6 +58,9 @@ public final class MainActivity extends Activity {
     private String exportName;
     private final java.util.concurrent.atomic.AtomicBoolean connecting = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.atomic.AtomicBoolean readingCrashes = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean checkingServer = new java.util.concurrent.atomic.AtomicBoolean();
+    private final LocalServerWatch serverWatch = new LocalServerWatch();
+    private PageConsoleLog pageConsole;
     // A server that stays up this long has started properly; a later stop is not a startup failure.
     private static final long HEALTHY_MS = 120000;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -269,6 +272,7 @@ public final class MainActivity extends Activity {
         settings.setSupportMultipleWindows(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
+        pageConsole = new PageConsoleLog(getCacheDir());
         web.addJavascriptInterface(this, "NeconyanExport");
         web.addJavascriptInterface(diagnosticsBridge, "NeconyanDiagnostics");
         apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())), bridgeGate);
@@ -378,6 +382,11 @@ public final class MainActivity extends Activity {
             }
             @Override public boolean onCreateWindow(WebView view, boolean dialog, boolean gesture, Message message) {
                 return gesture && showPopup(view, message);
+            }
+            @Override public boolean onConsoleMessage(ConsoleMessage message) {
+                recordPageConsole(message);
+                // Release builds log the redacted line instead of the page's own text; debug builds keep both.
+                return !BuildConfig.DEBUG;
             }
         });
         web.setDownloadListener((url, userAgent, disposition, mime, length) -> {
@@ -1035,7 +1044,7 @@ public final class MainActivity extends Activity {
                         .append(CrashDiagnostics.reasonName(exit.getReason())).append(" status ").append(exit.getStatus())
                         .append(" PSS KiB ").append(exit.getPss()).append(" RSS KiB ").append(exit.getRss());
             } catch (Throwable ignored) { text.append("\nRecent exits unavailable."); }
-            for (String name : new String[] { "native-startup.txt", "native-crash.txt", "requests.txt", "requests.previous.txt", "server.log", "server.previous.log" }) {
+            for (String name : new String[] { "native-startup.txt", "native-crash.txt", "requests.txt", "requests.previous.txt", PageConsoleLog.FILE, PageConsoleLog.PREVIOUS, "server.log", "server.previous.log" }) {
                 String excerpt = tail(new File(getCacheDir(), name), name.equals("native-startup.txt") ? 4 : 40);
                 text.append("\n\n").append(name).append(":\n").append(excerpt.substring(0, Math.min(excerpt.length(), 5000)));
             }
@@ -1108,13 +1117,38 @@ public final class MainActivity extends Activity {
         @Override public void run() {
             if (!resumed || closed) return;
             if (!failed && ServerService.userStopMarker(MainActivity.this).isFile() && !connecting.get() && !stoppedByUser) showStopped();
-            else if (web != null && web.getVisibility() == View.VISIBLE && !failed && !connecting.get())
-                executeIfOpen(worker, () -> { if (!connecting.get() && !failed && !serverProcessRunning()) runOnUiThread(MainActivity.this::reconnect); });
+            else if (web != null && web.getVisibility() == View.VISIBLE && !failed && !connecting.get() && checkingServer.compareAndSet(false, true)
+                && !executeIfOpen(worker, MainActivity.this::checkLocalServer)) checkingServer.set(false);
             main.postDelayed(this, 5000);
         }
     };
+    // Reloading the workspace discards replies and Agents still running in the page, so a single
+    // missed check is not enough: the server must be gone and silent for several checks in a row.
+    private void checkLocalServer() {
+        try {
+            if (connecting.get() || failed) return;
+            boolean reachable = serverProcessRunning() || localServerAnswers();
+            if (!reachable) logStartup("Local server missed check " + (serverWatch.misses() + 1) + " of " + LocalServerWatch.MISSES_BEFORE_RECONNECT);
+            if (serverWatch.record(reachable) && !connecting.get() && !failed) runOnUiThread(MainActivity.this::reconnect);
+        } finally { checkingServer.set(false); }
+    }
+    /** Any HTTP answer from the ready server counts, including a sign-in challenge. No cookies are sent. */
+    private boolean localServerAnswers() {
+        HttpURLConnection connection = null;
+        try {
+            requireServerReady();
+            connection = (HttpURLConnection) new URL(origin + "/version").openConnection();
+            connection.setConnectTimeout(1500); connection.setReadTimeout(2500);
+            connection.setInstanceFollowRedirects(false);
+            connection.setUseCaches(false);
+            return connection.getResponseCode() > 0;
+        } catch (Exception gone) {
+            return false;
+        } finally { if (connection != null) connection.disconnect(); }
+    }
     private void reconnect() {
         if (closed || failed || web == null || web.getVisibility() != View.VISIBLE) return;
+        serverWatch.reset();
         workspaceRequested = false;
         web.setVisibility(View.GONE);
         setStatusText("Reconnecting to your workspace…");
@@ -1126,6 +1160,8 @@ public final class MainActivity extends Activity {
         super.onResume();
         ActivityBreadcrumbs.foreground(true);
         resumed = true;
+        serverWatch.reset();
+        notifyAppLifecycle("resumed");
         notifyMemoryLifecycle("foreground");
         presentPendingReport();
         if (serverSafe && !safeNoticeShown) showSafeNotice();
@@ -1142,9 +1178,11 @@ public final class MainActivity extends Activity {
         resumed = false;
         if (apkUpdater != null) apkUpdater.onPause();
         main.removeCallbacks(watchdog);
+        notifyAppLifecycle("paused");
         super.onPause();
     }
     @Override public void onStop() {
+        notifyAppLifecycle("stopped");
         notifyMemoryLifecycle("background");
         super.onStop();
     }
@@ -1159,9 +1197,31 @@ public final class MainActivity extends Activity {
         notifyMemoryLifecycle("pressure");
     }
     private void notifyMemoryLifecycle(String state) {
+        dispatchPageEvent("neconyan:memory-lifecycle", state);
+    }
+    /** Tells the page the app was paused, stopped (left the screen) or resumed, so replies wait out a freeze. */
+    private void notifyAppLifecycle(String state) {
+        dispatchPageEvent("neconyan:app-lifecycle", state);
+    }
+    private void dispatchPageEvent(String name, String state) {
         if (web == null || failed || web.getUrl() == null || !local(Uri.parse(web.getUrl()))) return;
-        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('neconyan:memory-lifecycle',{detail:{state:"
+        web.evaluateJavascript("window.dispatchEvent(new CustomEvent(" + JSONObject.quote(name) + ",{detail:{state:"
             + JSONObject.quote(state) + "}}))", null);
+    }
+    private void recordPageConsole(ConsoleMessage message) {
+        if (message == null || pageConsole == null) return;
+        ConsoleMessage.MessageLevel level = message.messageLevel();
+        String name = level == ConsoleMessage.MessageLevel.ERROR ? "error" : level == ConsoleMessage.MessageLevel.WARNING ? "warning" : null;
+        String line = PageConsoleLog.format(name, message.message(), message.sourceId(), message.lineNumber());
+        final String entry = pageConsole.admit(System.currentTimeMillis(), line);
+        if (entry == null) return;
+        if ("error".equals(name)) android.util.Log.e(PageConsoleLog.LOG_TAG, line);
+        else android.util.Log.w(PageConsoleLog.LOG_TAG, line);
+        final PageConsoleLog log = pageConsole;
+        ActivityBreadcrumbs.execute(() -> {
+            try { log.append(entry); }
+            catch (IOException unwritable) { android.util.Log.w(PageConsoleLog.LOG_TAG, "Page messages could not be saved"); }
+        });
     }
     private void addAction(String label, View.OnClickListener listener) {
         addAction(actions, label, listener);

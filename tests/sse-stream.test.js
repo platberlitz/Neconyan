@@ -39,3 +39,14 @@ test('smooth streaming forwards tool, probability and completion data only once'
     expect(events.map(event => event.choices[0].finish_reason).filter(Boolean)).toEqual(['tool_calls']);
     expect(events.map(event => event.usage).filter(Boolean)).toEqual([usage]);
 });
+
+test('server keep-alive comments between and before events never reach a reply', async () => {
+    const keepAlive = ': keep-alive\n\n';
+    const first = JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hi' } }] });
+    const chunks = [keepAlive, `data: ${first}\n\n`, keepAlive, keepAlive, ': keep-', 'alive\n\ndata: [DONE]\n\n'];
+    const plain = await readEvents(chunks);
+    expect(plain.map(event => event.data)).toEqual([first, '[DONE]']);
+    const smooth = await readEvents(chunks, SmoothEventSourceStream);
+    expect(smooth.map(event => event.data).filter(data => data !== '[DONE]').map(data => JSON.parse(data).choices[0].delta.content).join('')).toBe('Hi');
+    expect(smooth.at(-1).data).toBe('[DONE]');
+});

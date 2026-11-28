@@ -1,5 +1,7 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { readFileSync } from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
 import vm from 'node:vm';
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
@@ -281,6 +283,7 @@ describe('Android IPv4 readiness', () => {
     function startupFixture({ host = 'android', hasIPv4 = true, failIPv4 = false } = {}) {
         const source = readFileSync(SERVER_STARTUP_SOURCE, 'utf8');
         const bound = [];
+        const watched = [];
         const bindError = Object.assign(new Error('occupied fixture IPv4 port'), { code: 'EADDRINUSE' });
         const http = {
             createServer() {
@@ -304,6 +307,7 @@ describe('Android IPv4 readiness', () => {
             getHasIP: async () => ({ hasIPv4Any: hasIPv4, hasIPv6Any: true }),
             urlHostnameToIPv6: value => value.replace(/^\[|\]$/g, ''),
             trackListeningServer() {}, retryOnAddressInUse: attempt => attempt(),
+            keepAppListenerOpen: (server, options) => { watched.push(options); },
             isAddressInUseError: error => error?.code === 'EADDRINUSE', reportPortHolders: async () => {},
             writeStartupNote() {}, APP_NAME: 'Neconyan',
         });
@@ -312,7 +316,7 @@ describe('Android IPv4 readiness', () => {
             getIPv4ListenUrl: () => new URL('http://127.0.0.1:28193'),
             getIPv6ListenUrl: () => new URL('http://[::1]:28193'),
         });
-        return { startup, bound, bindError };
+        return { startup, bound, bindError, watched };
     }
 
     test('auto with detected IPv4 binds before readiness can be published', async () => {
@@ -344,10 +348,230 @@ describe('Android IPv4 readiness', () => {
         expect(ready).toBe(false);
     });
 
+    test.each(['android', 'ios'])('the %s app keeps watching every listener with the address it bound', async host => {
+        const { startup, watched } = startupFixture({ host });
+        await startup.start();
+        expect(watched).toEqual(expect.arrayContaining([
+            expect.objectContaining({ host: '127.0.0.1', port: 28193 }),
+            expect.objectContaining({ host: '::1', port: 28193 }),
+        ]));
+    });
+
+    test('a desktop server leaves its listeners alone', async () => {
+        const { startup, watched } = startupFixture({ host: 'desktop' });
+        await startup.start();
+        expect(watched).toEqual([]);
+    });
+
     test.each(['desktop', 'ios'])('%s keeps successful IPv6 partial-stack behaviour', async host => {
         const { startup } = startupFixture({ host, failIPv4: true });
         const result = await startup.start();
         expect(result.v4Failed).toBe(true);
         expect(result.v6Failed).toBe(false);
+    });
+});
+
+describe('phone app listener recovery', () => {
+    /** @type {import('../src/server-listen.js')} */
+    let listen;
+    const servers = [];
+    const watches = [];
+
+    beforeEach(async () => {
+        listen = await loadListenModule();
+    });
+
+    afterEach(async () => {
+        for (const watch of watches.splice(0)) watch?.stop();
+        await Promise.all(servers.splice(0).map(server => new Promise((resolve) => {
+            server.closeAllConnections?.();
+            if (server.listening) server.close(() => resolve());
+            else resolve();
+        })));
+    });
+
+    async function startServer(handler = (request, response) => response.end('ok')) {
+        const server = http.createServer(handler);
+        servers.push(server);
+        server.listen({ host: '127.0.0.1', port: 0 });
+        await once(server, 'listening');
+        return server;
+    }
+
+    function get(port, path = '/') {
+        return new Promise((resolve, reject) => {
+            http.get({ host: '127.0.0.1', port, path, agent: false }, (response) => {
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', chunk => { body += chunk; });
+                response.on('end', () => resolve(body));
+            }).on('error', reject);
+        });
+    }
+
+    function fakeClock() {
+        const clock = { time: 1_000_000, wakes: [] };
+        clock.now = () => clock.time;
+        clock.setTimer = (callback) => {
+            const timer = { callback, unref() { return timer; } };
+            clock.wakes.push(timer);
+            return timer;
+        };
+        clock.clearTimer = jest.fn((timer) => {
+            clock.wakes = clock.wakes.filter(entry => entry !== timer);
+        });
+        clock.advance = (ms) => {
+            clock.time += ms;
+            const due = clock.wakes.splice(0);
+            for (const timer of due) timer.callback();
+        };
+        return clock;
+    }
+
+    const quietLog = () => ({ warn: jest.fn(), info: jest.fn() });
+    // Unlike events.once, this keeps waiting through the 'error' that starts a recovery.
+    const listensAgain = server => new Promise(resolve => server.once('listening', resolve));
+
+    function watch(server, options) {
+        const handle = listen.keepAppListenerOpen(server, { host: '127.0.0.1', port: server.address().port }, options);
+        watches.push(handle);
+        return handle;
+    }
+
+    test('a listening server accepts its own probe; a closed one or someone else\'s port does not', async () => {
+        const server = await startServer();
+        const ownListeners = server.listenerCount('connection');
+        await expect(listen.listenerAccepts(server)).resolves.toBe(true);
+        expect(server.listenerCount('connection')).toBe(ownListeners);
+
+        const elsewhere = net.createServer(socket => socket.destroy());
+        elsewhere.listen({ host: '127.0.0.1', port: 0 });
+        await once(elsewhere, 'listening');
+        const lost = Object.assign(new EventEmitter(), { listening: true, address: () => elsewhere.address() });
+        await expect(listen.listenerAccepts(lost, { timeoutMs: 50 })).resolves.toBe(false);
+        expect(lost.listenerCount('connection')).toBe(0);
+        await new Promise(resolve => elsewhere.close(resolve));
+
+        await new Promise(resolve => server.close(resolve));
+        await expect(listen.listenerAccepts(server)).resolves.toBe(false);
+    });
+
+    test('ordinary wakes never probe; a wake long after it was due checks the listener and leaves a healthy one alone', async () => {
+        const server = await startServer();
+        const clock = fakeClock();
+        const accepts = jest.fn(async () => true);
+        const close = jest.spyOn(server, 'close');
+        watch(server, { accepts, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer, log: quietLog() });
+
+        for (let wake = 0; wake < 10; wake++) clock.advance(listen.APP_LISTENER_CHECK_MS + 1_000);
+        expect(accepts).not.toHaveBeenCalled();
+
+        clock.advance(10 * 60_000);
+        await new Promise(resolve => setImmediate(resolve));
+        expect(accepts).toHaveBeenCalledTimes(1);
+        expect(close).not.toHaveBeenCalled();
+        expect(clock.wakes).toHaveLength(1);
+    });
+
+    test('a listener that stopped accepting listens again on the same port while an open reply keeps streaming', async () => {
+        let streaming = null;
+        const server = await startServer((request, response) => {
+            if (request.url === '/stream') {
+                streaming = response;
+                response.write('first ');
+                return;
+            }
+            response.end('ok');
+        });
+        listen.trackListeningServer(server);
+        server.on('listening', () => listen.trackListeningServer(server));
+        const port = server.address().port;
+        const log = quietLog();
+        const { check } = watch(server, { accepts: async () => false, log });
+
+        const reply = new Promise((resolve, reject) => {
+            http.get({ host: '127.0.0.1', port, path: '/stream', agent: false }, (response) => {
+                let body = '';
+                response.setEncoding('utf8');
+                response.on('data', chunk => {
+                    body += chunk;
+                    if (body === 'first ') resolve({ response, more: new Promise(done => response.on('end', () => done(body))) });
+                });
+            }).on('error', reject);
+        });
+        const { more } = await reply;
+
+        await expect(check('test')).resolves.toBe(true);
+        expect(server.listening).toBe(true);
+        expect(server.address().port).toBe(port);
+        await expect(get(port)).resolves.toBe('ok');
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('listening again'));
+
+        streaming.end('second');
+        await expect(more).resolves.toBe('first second');
+
+        // Shutdown still finds the reopened server.
+        await listen.closeListeningServers();
+        expect(server.listening).toBe(false);
+    });
+
+    test('an error from a listener that still answers changes nothing; one that does not answer is reopened', async () => {
+        const server = await startServer();
+        const accepts = jest.fn(async () => true);
+        const close = jest.spyOn(server, 'close');
+        const log = quietLog();
+        watch(server, { accepts, log });
+
+        server.emit('error', Object.assign(new Error('accept ECONNABORTED'), { code: 'ECONNABORTED' }));
+        await new Promise(resolve => setImmediate(resolve));
+        expect(accepts).toHaveBeenCalledTimes(1);
+        expect(close).not.toHaveBeenCalled();
+
+        accepts.mockResolvedValue(false);
+        const reopened = listensAgain(server);
+        server.emit('error', Object.assign(new Error('accept EBADF'), { code: 'EBADF' }));
+        await reopened;
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('EBADF'));
+        await expect(get(server.address().port)).resolves.toBe('ok');
+    });
+
+    test('a port that cannot be taken back is tried again on every later wake until it frees up', async () => {
+        const server = await startServer();
+        const holder = await startServer();
+        const port = holder.address().port;
+        const clock = fakeClock();
+        const accepts = jest.fn(async () => false);
+        const log = quietLog();
+        const handle = listen.keepAppListenerOpen(server, { host: '127.0.0.1', port }, {
+            accepts, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer,
+            relistenAttempts: 2, relistenDelayMs: 1, log,
+        });
+        watches.push(handle);
+
+        await expect(handle.check('test')).resolves.toBe(false);
+        expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('attempt 2 of 2'));
+
+        await new Promise(resolve => holder.close(resolve));
+        const reopened = listensAgain(server);
+        clock.advance(listen.APP_LISTENER_CHECK_MS);
+        await reopened;
+        expect(server.address().port).toBe(port);
+        expect(accepts).toHaveBeenCalledTimes(1);
+        await new Promise(resolve => setImmediate(resolve));
+        expect(log.info).toHaveBeenCalledWith('The local server is accepting connections again.');
+    });
+
+    test('shutting the server down ends the watch, and a server is only ever watched once', async () => {
+        const server = await startServer();
+        const clock = fakeClock();
+        const handle = watch(server, { now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer, log: quietLog() });
+        expect(listen.keepAppListenerOpen(server, {})).toBeNull();
+
+        await new Promise(resolve => server.close(resolve));
+        expect(clock.clearTimer).toHaveBeenCalled();
+        expect(clock.wakes).toHaveLength(0);
+        expect(server.listenerCount('error')).toBe(0);
+        await expect(handle.check('after shutdown')).resolves.toBe(false);
     });
 });

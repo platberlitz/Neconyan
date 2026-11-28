@@ -24,6 +24,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private let actions = UIStackView()
     private var downloads: [ObjectIdentifier: URL] = [:]
     private var connecting = false
+    private var checkingServer = false
     private var recoveryRequired = false
     // WebKit reports these through separate callbacks, so the controller keeps its own record
     // instead of reading the accessibility identifier the UI tests look for.
@@ -195,6 +196,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             actions.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
         NotificationCenter.default.addObserver(self, selector: #selector(resume), name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(pause), name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
         connect()
     }
@@ -292,12 +294,47 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc private func resume() {
+        notifyAppLifecycle("resumed")
         notifyMemoryLifecycle("foreground")
         guard !connecting, !recoveryRequired, !loadingWorkspace, let url = web.url else { return }
-        if url.path == "/login" || web.isHidden { connect() }
+        if url.path == "/login" || web.isHidden { connect() } else { checkLocalServer() }
     }
 
-    @objc private func background() { notifyMemoryLifecycle("background") }
+    @objc private func pause() { notifyAppLifecycle("paused") }
+
+    @objc private func background() {
+        notifyAppLifecycle("stopped")
+        notifyMemoryLifecycle("background")
+    }
+
+    // iOS can take back a suspended app's listening socket. Node checks and reopens its own listener
+    // within a few seconds of waking, so this records what happened and steps in only when Node has
+    // stopped. It never reloads a working page, which would lose a reply that is still being written.
+    private func checkLocalServer() {
+        guard !checkingServer, let server, server.started else { return }
+        checkingServer = true
+        Task {
+            defer { checkingServer = false }
+            for attempt in 1...4 {
+                if await server.answers() {
+                    if attempt > 1 { diagnostics.record("local-server-answering", detail: "attempt=\(attempt)") }
+                    return
+                }
+                if let message = server.nodeExitMessage {
+                    if !recoveryRequired, !connecting { showRecovery(message, reason: "local-server-stopped") }
+                    return
+                }
+                diagnostics.record("local-server-not-answering", detail: "attempt=\(attempt)")
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    /// Tells the page the app was paused, sent to the background or brought back, so a reply waits out a freeze.
+    private func notifyAppLifecycle(_ state: String) {
+        guard !recoveryRequired, let web, let url = web.url, isLocal(url), ["paused", "stopped", "resumed"].contains(state) else { return }
+        web.evaluateJavaScript("window.dispatchEvent(new CustomEvent('neconyan:app-lifecycle',{detail:{state:'\(state)'}}))", completionHandler: nil)
+    }
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()

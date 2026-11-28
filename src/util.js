@@ -22,6 +22,7 @@ import { pollSocketConnection } from './connection-state-checker.js';
 import { isRequestCancellationError, observeRequestCancellation } from './request-cancellation.js';
 import { getResumableGeneration } from './resumable-generations.js';
 import { isBunRuntime } from './runtime.js';
+import { isClientResponse, isEventStreamContentType, setEventStreamHeaders, startSseKeepAlive } from './sse-keep-alive.js';
 
 const DEFAULT_STREAMING_CONNECTION_POLLING_INTERVAL_MS = 150;
 
@@ -1462,14 +1463,35 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
         return;
     }
 
+    const providerContentType = from.headers?.get?.('content-type');
+    const eventStream = isEventStreamContentType(providerContentType);
+    if (eventStream) {
+        // Set before the first write so a resumable reply records and replays it as an event stream.
+        setEventStreamHeaders(to, String(providerContentType).trim());
+    }
+
     const resumableGeneration = getResumableGeneration(request);
     if (from.body && resumableGeneration) {
+        if (eventStream) {
+            resumableGeneration.keepEventStreamAlive(to);
+        }
         forwardResumableFetchBody(from, to, resumableGeneration, onDisconnect);
         return;
     }
 
     if (from.body && to.socket) {
+        // A resumable reply keeps itself open; this covers a plain streamed request.
+        const keepAlive = request && eventStream && isClientResponse(to)
+            ? startSseKeepAlive({
+                write: comment => to.write(comment),
+                isOpen: () => !to.writableEnded && !to.destroyed,
+            })
+            : null;
+        const stopKeepAlive = () => keepAlive?.stop();
+        to.once?.('finish', stopKeepAlive);
+
         const stopPolling = pollStreamingRequestConnection(request, to, () => {
+            stopKeepAlive();
             try {
                 const disconnectResult = onDisconnect?.();
                 if (disconnectResult && typeof disconnectResult.catch === 'function') {
@@ -1491,12 +1513,16 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
         });
 
         const finishReason = createFinishReasonScan(from);
-        from.body.on('data', chunk => finishReason.push(chunk));
+        from.body.on('data', chunk => {
+            finishReason.push(chunk);
+            keepAlive?.touch(chunk);
+        });
 
         from.body.pipe(to);
 
         to.on('close', function () {
             stopPolling();
+            stopKeepAlive();
 
             if (to.writableEnded) {
                 return;
@@ -1513,12 +1539,14 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
 
         from.body.on('end', function () {
             stopPolling();
+            stopKeepAlive();
             logStreamFinished(finishReason.flush());
             to.end();
         });
 
         from.body.on('error', function (error) {
             stopPolling();
+            stopKeepAlive();
             to.reportStreamError?.(error);
             if (isRequestCancellationError(error) || to.destroyed || to.writableEnded) {
                 if (!to.destroyed && !to.writableEnded) {
