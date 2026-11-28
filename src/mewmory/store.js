@@ -279,10 +279,11 @@ export function readJsonShared(filename, fallback) {
         compactArchiveVectors(data, { inPlace: true });
     }
     sharedJsonHooks.onParse?.(data, key);
+    const maxBytes = sharedJsonCacheMaxBytes();
+    if (stat.size * PARSED_SIZE_FACTOR > maxBytes) return data;
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, data };
     sharedJsonCache.set(key, entry);
     sharedJsonCacheBytes += entry.bytes;
-    const maxBytes = sharedJsonCacheMaxBytes();
     while (sharedJsonCacheBytes > maxBytes && sharedJsonCache.size > 1) {
         removeCachedJson(sharedJsonCache.keys().next().value);
     }
@@ -333,10 +334,11 @@ export function readChatShared(directories, locator) {
     removeCachedChat(key);
     const result = readChatJsonlStrict(key, { recover: false });
     const source = chatSourceFromResult(result, filename);
+    const maxBytes = chatReadCacheMaxBytes();
+    if (stat.size * PARSED_SIZE_FACTOR > maxBytes) return source;
     const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size * PARSED_SIZE_FACTOR, source };
     chatReadCache.set(key, entry);
     chatReadCacheBytes += entry.bytes;
-    const maxBytes = chatReadCacheMaxBytes();
     while (chatReadCacheBytes > maxBytes && chatReadCache.size > 1) {
         removeCachedChat(chatReadCache.keys().next().value);
     }
