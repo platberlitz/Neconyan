@@ -133,8 +133,8 @@ test('bulk deletion keeps the chosen name in Portuguese checkbox captions', asyn
     await expect(second).toHaveAccessibleName('Ativar card: Default');
     const bulk = block.locator('#character_purrks_bulk_delete_btn');
     await bulk.click();
-    await expect(first).toHaveAccessibleName('Selecionar Default for deletion');
-    await expect(second).toHaveAccessibleName('Selecionar card: Default for deletion');
+    await expect(first).toHaveAccessibleName('Selecionar Default para exclusão');
+    await expect(second).toHaveAccessibleName('Selecionar card: Default para exclusão');
     await second.check();
     await expect(second).toBeChecked();
     await block.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -142,7 +142,7 @@ test('bulk deletion keeps the chosen name in Portuguese checkbox captions', asyn
     await expect(second).toHaveAccessibleName('Ativar card: Default');
     await bulk.click();
     await expect(second).not.toBeChecked();
-    await expect(second).toHaveAccessibleName('Selecionar card: Default for deletion');
+    await expect(second).toHaveAccessibleName('Selecionar card: Default para exclusão');
     await page.close();
 
     // Exercise an exact translation that moves and repeats the slot before interpolating the chosen name.

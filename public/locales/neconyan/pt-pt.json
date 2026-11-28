@@ -22084,5 +22084,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Pesquise no Chub, no JannyAI e em outros sites de cards e adicione com um toque.",
   "Import a character": "Importar um personagem",
   "From a file or a link. JanitorAI has no search here, but its links work.": "De um arquivo ou link. O JanitorAI não tem busca aqui, mas os links dele funcionam.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Os cards vêm de sites de terceiros. O Modo simples adiciona este e abre o chat dele na hora, sem um relatório de conteúdo."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Os cards vêm de sites de terceiros. O Modo simples adiciona este e abre o chat dele na hora, sem um relatório de conteúdo.",
+  "Select ${0} for deletion": "Selecionar ${0} para exclusão"
 }

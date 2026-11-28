@@ -47,8 +47,8 @@ const TOKEN_LIST = Object.values(TOKENS);
  */
 export const ACCEPTED_R = [
     { path: '#expression_owner > option[3] > text[1]', attr: '', token: 'NmPersonaQ', source: 'public/scripts/extensions/expressions/index.js:155', reason: 'row 6: built with t after initLocales' },
-    { path: '#ica--agentList > div[4] > div[1] > div[1] > div[1] > button[1]', attr: 'aria-label', token: 'NmAgentQ', source: 'public/scripts/extensions/in-chat-agents/index.js:3700', reason: 'row 7: built with t after initLocales' },
-    { path: '#ica--agentList > div[4] > div[1] > div[1] > div[3] > div[1] > div[1] > button[2]', attr: 'aria-label', token: 'NmAgentQ', source: 'public/scripts/extensions/in-chat-agents/index.js:3731', reason: 'row 7: built with t after initLocales' },
+    { path: '#ica--agentList > div[5] > div[1] > div[1] > div[1] > button[1]', attr: 'aria-label', token: 'NmAgentQ', source: 'public/scripts/extensions/in-chat-agents/index.js:3872', reason: 'row 7: built with t after initLocales' },
+    { path: '#ica--agentList > div[5] > div[1] > div[1] > div[3] > div[1] > div[1] > button[2]', attr: 'aria-label', token: 'NmAgentQ', source: 'public/scripts/extensions/in-chat-agents/index.js:3903', reason: 'row 7: built with t after initLocales' },
     { path: '#neconyan-lorebook-library > div[4] > article[1] > button[1]', attr: 'aria-label', token: 'NmLorebookQ', source: 'public/scripts/neconyan-native-workspaces.js:564', reason: 'row 11: built with t after initLocales' },
     { path: '#sb_character_chat_import_target > text[1]', attr: '', token: 'NmCharacterQ', source: 'public/scripts/neconyan-tabs.js:10206', reason: 'row 18: built with t after initLocales' },
     { path: '#sb-bottom-chat-picker-button', attr: 'title', token: 'NmCharacterQ', source: 'public/scripts/neconyan-tabs.js:20814', reason: 'row 19: built with t after initLocales' },

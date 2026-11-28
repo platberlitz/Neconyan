@@ -21957,5 +21957,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Durchsuche Chub, JannyAI und andere Kartenseiten und füge dann eine Karte mit einem Fingertipp hinzu.",
   "Import a character": "Charakter importieren",
   "From a file or a link. JanitorAI has no search here, but its links work.": "Aus einer Datei oder per Link. Für JanitorAI gibt es hier keine Suche, aber die Links funktionieren.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Karten stammen von Drittanbieter-Seiten. Der Einfache Modus fügt diese Karte hinzu und öffnet sofort ihren Chat – ohne Inhaltsübersicht."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Karten stammen von Drittanbieter-Seiten. Der Einfache Modus fügt diese Karte hinzu und öffnet sofort ihren Chat – ohne Inhaltsübersicht.",
+  "Select ${0} for deletion": "${0} zum Löschen auswählen"
 }

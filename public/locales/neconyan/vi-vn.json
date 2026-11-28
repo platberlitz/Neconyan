@@ -21174,5 +21174,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Tìm trên Chub, JannyAI và các trang thẻ khác, rồi thêm chỉ với một chạm.",
   "Import a character": "Nhập nhân vật",
   "From a file or a link. JanitorAI has no search here, but its links work.": "Từ tệp hoặc liên kết. JanitorAI không hỗ trợ tìm kiếm ở đây, nhưng liên kết vẫn dùng được.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Thẻ đến từ các trang web bên thứ ba. Chế độ đơn giản sẽ thêm thẻ này và mở ngay đoạn chat của nó mà không có báo cáo nội dung bên trong."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Thẻ đến từ các trang web bên thứ ba. Chế độ đơn giản sẽ thêm thẻ này và mở ngay đoạn chat của nó mà không có báo cáo nội dung bên trong.",
+  "Select ${0} for deletion": "Chọn ${0} để xóa"
 }

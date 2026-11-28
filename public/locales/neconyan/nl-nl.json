@@ -21143,5 +21143,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Doorzoek Chub, JannyAI en andere kaartensites, en voeg met één tik een kaart toe.",
   "Import a character": "Een personage importeren",
   "From a file or a link. JanitorAI has no search here, but its links work.": "Uit een bestand of via een link. JanitorAI heeft hier geen zoekfunctie, maar de links werken wel.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Kaarten zijn afkomstig van externe sites. Eenvoudige modus voegt deze kaart toe en opent direct de chat, zonder overzicht van de inhoud."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Kaarten zijn afkomstig van externe sites. Eenvoudige modus voegt deze kaart toe en opent direct de chat, zonder overzicht van de inhoud.",
+  "Select ${0} for deletion": "Selecteer ${0} om te verwijderen"
 }

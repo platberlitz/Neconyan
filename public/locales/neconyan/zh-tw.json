@@ -19940,5 +19940,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "搜尋 Chub、JannyAI 與其他角色卡網站，點一下即可加入。",
   "Import a character": "匯入角色",
   "From a file or a link. JanitorAI has no search here, but its links work.": "從檔案或連結匯入。這裡無法搜尋 JanitorAI，但支援它的連結。",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "角色卡來自第三方網站。簡易模式會加入這張角色卡並立即開啟聊天，不會顯示內容報告。"
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "角色卡來自第三方網站。簡易模式會加入這張角色卡並立即開啟聊天，不會顯示內容報告。",
+  "Select ${0} for deletion": "選取 ${0} 以刪除"
 }

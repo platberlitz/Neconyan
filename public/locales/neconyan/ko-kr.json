@@ -20937,5 +20937,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Chub, JannyAI 등 카드 사이트에서 검색하고 탭 한 번으로 추가해요.",
   "Import a character": "캐릭터 가져오기",
   "From a file or a link. JanitorAI has no search here, but its links work.": "파일이나 링크로 가져와요. JanitorAI는 여기서 검색할 수 없지만 링크는 작동해요.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "카드는 타사 사이트에서 가져와요. 단순 모드에서는 내용 보고서 없이 이 카드를 추가하고 바로 채팅을 열어요."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "카드는 타사 사이트에서 가져와요. 단순 모드에서는 내용 보고서 없이 이 카드를 추가하고 바로 채팅을 열어요.",
+  "Select ${0} for deletion": "삭제할 ${0} 선택"
 }

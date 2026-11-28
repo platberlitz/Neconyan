@@ -1,0 +1,1 @@
+In other languages, the **Purrks** bulk-delete checkboxes now read fully translated, and a group chat in **Recent** whose member has no name no longer shows 'Character · Conversation Mode' in English.

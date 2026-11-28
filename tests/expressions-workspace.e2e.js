@@ -13,6 +13,9 @@ const theme = JSON.parse(readFileSync(new URL('../default/content/themes/Neconya
 const requestJson = request => JSON.parse((request.headers()['content-encoding'] === 'gzip'
     ? gunzipSync(request.postDataBuffer()) : request.postDataBuffer()).toString());
 
+// A settings read sent just before a test ends is still being fetched when the context closes.
+test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'wait' }));
+
 async function fixture(page, palette = theme) {
     let settings;
     const envelope = Promise.withResolvers();

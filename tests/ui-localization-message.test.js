@@ -172,6 +172,21 @@ describe('localizeString', () => {
             .toBe(dictionary[key].replace('${0}', label));
     });
 
+    test.each(SHIPPED_LANGUAGES)('every shipped language shows the whole Purrks bulk-delete checkbox caption: %s', language => {
+        const name = 'card: Default';
+        const baseFile = `${language}.json`;
+        const { dictionary } = assembleLocaleData({
+            base: fs.existsSync(localePath(baseFile)) ? readLocale(baseFile) : {},
+            supplement: readLocale(`neconyan/${language}.json`),
+            catalogue: readLocale('neconyan/en.json'),
+        });
+        const key = 'Select ${0} for deletion';
+
+        expect(typeof dictionary[key]).toBe('string');
+        expect(dictionary[key]).not.toBe(key);
+        expect(localizeString(`Select ${name} for deletion`, dictionary)).toBe(dictionary[key].replace('${0}', name));
+    });
+
     test('keys with the same amount of fixed text keep the order the dictionary lists them in', () => {
         const first = ['Alpha ${0}beta', 'first [${0}]'];
         const second = ['Alpha${0} beta', 'second [${0}]'];

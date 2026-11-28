@@ -21193,5 +21193,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Leitaðu á Chub, JannyAI og öðrum spjaldasíðum og bættu svo við spjaldi með einum smelli.",
   "Import a character": "Flytja inn persónu",
   "From a file or a link. JanitorAI has no search here, but its links work.": "Úr skrá eða með tengli. JanitorAI er ekki með leit hér, en tenglar þaðan virka.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Spjöld koma frá vefsvæðum þriðju aðila. Einfaldur háttur bætir þessu við og opnar spjall þess strax, án skýrslu um innihaldið."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Spjöld koma frá vefsvæðum þriðju aðila. Einfaldur háttur bætir þessu við og opnar spjall þess strax, án skýrslu um innihaldið.",
+  "Select ${0} for deletion": "Velja ${0} til eyðingar"
 }
