@@ -26,6 +26,7 @@
 - With **After-reply agents** set to **Run together**, at most four **Agents** or **Companions** now send their requests at once, several Agents failing in one pass share a single toast that names them instead of one toast each, a provider error from a background Agent or Companion request no longer shows a second toast of its own, saying no to **Connecting To Proxy** shows its message once for every request that was waiting, and on a server reply the additions from Agents that finished are kept when another one running beside them fails.
 - With Reduce Motion on in your iPhone settings or **Reduced Motion** on in Neconyan, Safari and iPhone no longer download the 347 KB moving pixel cat when **Home** opens.
 - A burst of the same error no longer stacks a pile of identical notices on screen: you see one, at most four error and warning notices show at a time and the rest wait their turn, and every error and warning notice is now also written to the browser console so there's something to go on when reporting a problem.
+- Untranslated interface labels such as **Import a character** on **Home** now stay in plain English instead of appearing half-translated in other languages.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -51,6 +52,8 @@
 - PR #1029 (2026-11-28) `fix(chat): recover unconfirmed saves instead of locking the chat`
 - PR #1030 (2026-11-28) `fix(agents): cap parallel Agents at four and share one failure toast`
 - PR #1031 (2026-11-28) `fix(toasts): merge repeated alert toasts and log every one`
+- PR #1033 (2026-11-28) `fix(i18n): exclude non-visible keys from locale builder and refresh English catalogue`
+- PR #1034 (2026-11-28) `fix(l10n): keep untranslated prose out of single-word fallback patterns`
 
 ## v1.6.0
 
