@@ -34,8 +34,8 @@ const imageRefusals = () => [
 
 const realFile = name => JSON.parse(fs.readFileSync(new URL(`../public/locales/${name}.json`, import.meta.url), 'utf8'));
 const portuguese = assembleLocaleData({ base: realFile('pt-pt'), supplement: realFile('neconyan/pt-pt'), catalogue: realFile('neconyan/en') }).dictionary;
-// The old wording of GEN-C01 starts with a pattern verb, so the dictionary captures it when nothing protects it.
-const captured = 'Reload the page, then try again.';
+// A multi-word non-broad Portuguese pattern captures this wording when nothing protects it.
+const captured = 'Could not open the page, then try again.';
 
 describe('the group route', () => {
     const marks = [];
@@ -54,8 +54,8 @@ describe('the group route', () => {
         report = vm.runInNewContext(`(${cutFunction(groupSource, 'reportGroupReplyFailure')})`, host);
     });
 
-    test('the dictionary the checks use does hold the pattern that captures a leading verb', () => {
-        expect(portuguese['Reload ${0}']).toBeTruthy();
+    test('the dictionary the checks use does hold the non-broad pattern that captures the control text', () => {
+        expect(portuguese['Could not open ${0}.']).toBeTruthy();
         expect(localizeString(captured, portuguese)).not.toBe(captured);
     });
 

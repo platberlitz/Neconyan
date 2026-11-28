@@ -178,6 +178,21 @@ for (const [layout, viewport, hasTouch] of [
             await expect(modeButton('meower')).toHaveAttribute('title', phrase('Use ${0}', 'Meower'));
             await expect(page.locator('#neconyan-workspace-rail [data-neconyan-chat-mode="meower"] > span:not([aria-hidden="true"])')).toHaveText(german.Meower);
             await expect(modeButton('story')).toHaveAttribute('title', phrase('Use ${0}', 'Story Mode'));
+            const mobileWorkspaceItems = page.locator('#sb-mobile-nav .neconyan-mobile-workspace > .sb-nav-item');
+            await expect(mobileWorkspaceItems).toHaveCount(8);
+            for (const [iconClass, name] of [
+                ['fa-address-card', 'Characters'],
+                ['fa-cat', 'Agents'],
+                ['fa-brain', 'Mewmory'],
+                ['fa-book-atlas', 'Lorebooks'],
+                ['fa-gear', 'Settings'],
+            ]) {
+                expect(german[name], `missing German entry for ${name}`).toBeTruthy();
+                const button = mobileWorkspaceItems.filter({ has: page.locator(`i.${iconClass}`) });
+                await expect(button).toHaveCount(1);
+                await expect(button).toHaveAttribute('title', phrase('Open ${0}', name));
+                await expect(button).toHaveAttribute('aria-label', phrase('Open ${0}', name));
+            }
             await page.evaluate(() => {
                 const tool = window.NeconyanNativeTools?.getTools?.()?.find(item => item.id === 'third-party/Neconyan-Terminal-UI');
                 if (tool) window.NeconyanNativeTools.openSettings(tool);

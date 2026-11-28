@@ -188,7 +188,7 @@ test('mechanism (preservation): a caption built with t inside a marked element i
         </div>`;
         const element = id => document.getElementById(id);
         // The German caption a builder makes with t: the name comes first, so the localiser would match 'Draft' as a word if it looked at the text.
-        const caption = scope.t`Open ${'Draft'}`;
+        const caption = scope.t`${'Draft'} messages`;
         for (const id of ['marked', 'control']) {
             element(id).setAttribute('title', caption);
             element(id).setAttribute('aria-label', caption);
@@ -199,7 +199,7 @@ test('mechanism (preservation): a caption built with t inside a marked element i
         // The observer's text-node path (i18n.js:93-95): a rewrite of an existing span adds a text node, and the localiser looks at its parent.
         result.written = [];
         result.writtenControl = [];
-        for (const text of [scope.t`Open ${'Draft'}`, scope.t`Edit ${'Draft'}`]) {
+        for (const text of [scope.t`${'Draft'} messages`, scope.t`${'Character'} could not be analysed; nothing was changed.`]) {
             for (const [id, into] of [['written', result.written], ['written-control', result.writtenControl]]) {
                 element(id).textContent = text;
                 applyAddedText(element(id).firstChild);
@@ -209,12 +209,12 @@ test('mechanism (preservation): a caption built with t inside a marked element i
         return result;
     });
     const readings = [
-        reading(PRESERVATION, 'mechanism', 'title and aria-label of a marked button holding a German t caption stay as built', result.marked, ['Draft öffnen', 'Draft öffnen']),
+        reading(PRESERVATION, 'mechanism', 'title and aria-label of a marked button holding a German t caption stay as built', result.marked, ['Draft Nachrichten', 'Draft Nachrichten']),
         reading(PRESERVATION, 'mechanism', 'a data-i18n span inside the marked button is translated by translateElement', result.label, wording[language].openChatLabel),
         reading(PRESERVATION, 'mechanism', 'an unmarked sibling control is still translated by the localiser', result.sibling, 'Überschreibung zurücksetzen'),
-        reading(PRESERVATION, 'mechanism', 'control: the same caption on an unmarked button is changed by the localiser (so the test can see the defect)', result.control, ['Entwurf öffnen', 'Entwurf öffnen']),
-        reading(PRESERVATION, 'mechanism', 'observer text-node path: a marked span rewritten with German t captions stays as written', result.written, ['Draft öffnen', 'Draft bearbeiten']),
-        reading(PRESERVATION, 'mechanism', 'control: the same rewrites of an unmarked span are changed by the localiser', result.writtenControl, ['Entwurf öffnen', 'Entwurf bearbeiten']),
+        reading(PRESERVATION, 'mechanism', 'control: the same caption on an unmarked button is changed by the localiser (so the test can see the defect)', result.control, ['Entwurf Nachrichten', 'Entwurf Nachrichten']),
+        reading(PRESERVATION, 'mechanism', 'observer text-node path: a marked span rewritten with German t captions stays as written', result.written, ['Draft Nachrichten', 'Character: Analyse fehlgeschlagen, es wurde nichts geändert.']),
+        reading(PRESERVATION, 'mechanism', 'control: the same rewrites of an unmarked span are changed by the localiser', result.writtenControl, ['Entwurf Nachrichten', 'Charakter: Analyse fehlgeschlagen, es wurde nichts geändert.']),
     ];
     await attachReadings(page, testInfo, language, readings);
     for (const r of readings) expect.soft(r.received, `${r.kind}: ${r.site} (${language}): ${r.what}`).toEqual(r.expected);

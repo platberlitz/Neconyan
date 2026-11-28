@@ -104,14 +104,16 @@ describe('localizeString', () => {
         expect(localizeString(0, dictionary)).toBe('0');
     });
 
-    test('characterisation: given a whole composed text the shorter key captures it, which is why the frames use t', () => {
+    test('broad 1-word patterns reject prose holes while still matching single capitalized names and numbers', () => {
         const dictionary = { 'Conversation ${0}': 'Conversa ${0}' };
 
-        expect(localizeString('Conversation selfie failed: X', dictionary)).toBe('Conversa selfie failed: X');
+        expect(localizeString('Conversation selfie failed: X', dictionary)).toBe('Conversation selfie failed: X');
+        expect(localizeString('Conversation Alice', dictionary)).toBe('Conversa Alice');
+        expect(localizeString('Conversation 3', dictionary)).toBe('Conversa 3');
     });
 
     test('the frame\'s own Scan key beats the shorter Scan key even when an optional hole is empty', () => {
-        const short = ['Scan ${0}', 'Varredura ${0}'];
+        const short = ['Scan failed.${0}', 'Falha curta.${0}'];
         const frame = ['Scan failed.${0} Technical details: ${1}', 'Falha na varredura.${0} Detalhes técnicos: ${1}'];
 
         for (const pairs of [[short, frame], [frame, short]]) {
@@ -180,24 +182,24 @@ describe('localizeString', () => {
     });
 
     test('a key with more fixed text beats a longer key whose length is mostly placeholders', () => {
-        // 'Move ${0} ${1}' is the longer key (14 characters against 12) but has less fixed text (6 against 8).
-        const holes = ['Move ${0} ${1}', 'Mover ${0} ${1}'];
-        const own = ['Move ${0} up', 'Subir ${0}'];
+        // 'Move item ${0} ${1} ${2}' is the longer key (22 characters against 17) but has less fixed text (12 against 13).
+        const holes = ['Move item ${0} ${1} ${2}', 'Mover ${0} ${1} ${2}'];
+        const own = ['Move item ${0} up', 'Subir ${0}'];
 
         for (const pairs of [[holes, own], [own, holes]]) {
-            expect(localizeString('Move card up', Object.fromEntries(pairs))).toBe('Subir card');
+            expect(localizeString('Move item alpha beta up', Object.fromEntries(pairs))).toBe('Subir alpha beta');
         }
     });
 
     test('keys that start with a hole are ordered by fixed text too', () => {
-        const short = ['${0} and ${1}', 'S ${0} ${1}'];
-        const long = ['${0} and ${1} too', 'L ${0} ${1}'];
+        const short = ['${0} and also ${1}', 'S ${0} ${1}'];
+        const long = ['${0} and also ${1} too', 'L ${0} ${1}'];
 
         for (const pairs of [[short, long], [long, short]]) {
             const dictionary = Object.fromEntries(pairs);
 
-            expect(localizeString('cats and dogs too', dictionary)).toBe('L cats dogs');
-            expect(localizeString('cats and dogs', dictionary)).toBe('S cats dogs');
+            expect(localizeString('cats and also dogs too', dictionary)).toBe('L cats dogs');
+            expect(localizeString('cats and also dogs', dictionary)).toBe('S cats dogs');
         }
     });
 
@@ -212,6 +214,115 @@ describe('localizeString', () => {
         expect(localizeString('Foo bars (x)', dictionary)).toBe('Baz s');
         expect(localizeString('Alpha 12', dictionary)).toBe('Alpha [1 | 2]');
         expect(localizeString('Alpha x', dictionary)).toBe('Alpha x');
+    });
+
+    test('broad 1-word patterns leave untranslated English prose unchanged across shipped dictionaries', () => {
+        const loadDictionary = language => {
+            const baseFile = `${language}.json`;
+            return assembleLocaleData({
+                base: fs.existsSync(localePath(baseFile)) ? readLocale(baseFile) : {},
+                supplement: readLocale(`neconyan/${language}.json`),
+                catalogue: readLocale('neconyan/en.json'),
+            }).dictionary;
+        };
+
+        for (const language of ['vi-vn', 'de-de', 'fr-fr', 'pt-pt', 'ja-jp']) {
+            const dictionary = loadDictionary(language);
+            expect(localizeString('Import a character', dictionary)).toBe('Import a character');
+        }
+
+        const turkish = loadDictionary('tr-tr');
+        for (const caption of [
+            'Add a lorebook',
+            'Copy previous text',
+            'Edit queued follow-up',
+            'Turn on only',
+            'Show the cats in Termeownal UI',
+        ]) {
+            expect(localizeString(caption, turkish)).toBe(caption);
+        }
+    });
+
+    test('broad 1-word patterns reject empty, whitespace, and padded holes', () => {
+        const dictionary = {
+            'Open ${0}': 'Öffnen ${0}',
+            '${0} copy': '${0} Kopie',
+            'Edit ${0}': '${0} bearbeiten',
+        };
+        const trailingPunctDictionary = {
+            'Open ${0}!': 'Öffnen ${0}!',
+        };
+
+        expect(localizeString('Open ', dictionary)).toBe('Open ');
+        expect(localizeString(' copy', dictionary)).toBe(' copy');
+        expect(localizeString('Edit  Alice', dictionary)).toBe('Edit  Alice');
+        expect(localizeString('Alice  copy', dictionary)).toBe('Alice  copy');
+        expect(localizeString('Open !', trailingPunctDictionary)).toBe('Open !');
+        expect(localizeString('Open   !', trailingPunctDictionary)).toBe('Open   !');
+    });
+
+    test('broad 1-word patterns still match non-ASCII capitalized names and non-Latin script names', () => {
+        const dictionary = {
+            'Edit ${0}': 'Editar ${0}',
+            'Apply ${0}': 'Aplicar ${0}',
+        };
+
+        expect(localizeString('Edit Élodie', dictionary)).toBe('Editar Élodie');
+        expect(localizeString('Edit Ömer', dictionary)).toBe('Editar Ömer');
+        expect(localizeString('Apply Über', dictionary)).toBe('Aplicar Über');
+        expect(localizeString('Edit Ángel', dictionary)).toBe('Editar Ángel');
+        expect(localizeString('Edit Алиса', dictionary)).toBe('Editar Алиса');
+        expect(localizeString('Edit さくら', dictionary)).toBe('Editar さくら');
+    });
+
+    test('structurally anchored 1-word patterns still match prose and lower-case tokens', () => {
+        const dictionary = {
+            'History (${0})': 'Verlauf (${0})',
+            'Books: ${0}': 'Bücher: ${0}',
+            'Accepts: ${0}': 'Akzeptiert: ${0}',
+            'Delete "${0}"?': '„${0}“ löschen?',
+            'Calling ${0}...': 'Rufe ${0} auf...',
+            'Distilled - ${0}': 'Destilliert - ${0}',
+        };
+
+        expect(localizeString('History (3)', dictionary)).toBe('Verlauf (3)');
+        expect(localizeString('Books: 4', dictionary)).toBe('Bücher: 4');
+        expect(localizeString('Accepts: string', dictionary)).toBe('Akzeptiert: string');
+        expect(localizeString('Delete "Alice"?', dictionary)).toBe('„Alice“ löschen?');
+        expect(localizeString('Calling Plot Compass...', dictionary)).toBe('Rufe Plot Compass auf...');
+        expect(localizeString('Distilled - My Book', dictionary)).toBe('Destilliert - My Book');
+    });
+
+    test('broad 1-word patterns still match exact dictionary keys (including identity keys), numbers, and single proper nouns', () => {
+        const dictionary = {
+            'Open ${0}': '${0} öffnen',
+            'Turn ${0}': 'Zug ${0}',
+            'depth ${0}': 'Tiefe ${0}',
+            'Order ${0}': 'Reihenfolge ${0}',
+            '${0} messages': '${0} Nachrichten',
+            'Use ${0}': '${0} verwenden',
+            'Edit ${0}': '${0} bearbeiten',
+            Lorebooks: 'Lorebooks',
+            'Quick Image Gen': 'Quick Image Gen',
+        };
+
+        expect(localizeString('Open Lorebooks', dictionary)).toBe('Lorebooks öffnen');
+        expect(localizeString('Open Quick Image Gen', dictionary)).toBe('Quick Image Gen öffnen');
+        expect(localizeString('Turn 3', dictionary)).toBe('Zug 3');
+        expect(localizeString('depth 4', dictionary)).toBe('Tiefe 4');
+        expect(localizeString('Order 100', dictionary)).toBe('Reihenfolge 100');
+        expect(localizeString('12 messages', dictionary)).toBe('12 Nachrichten');
+        expect(localizeString('Use Claude', dictionary)).toBe('Claude verwenden');
+        expect(localizeString('Edit Alice', dictionary)).toBe('Alice bearbeiten');
+    });
+
+    test('a rejected broad 1-word pattern falls through to a later matching non-broad pattern in the same prefix bucket', () => {
+        const dictionary = {
+            'Settings ${0}': 'Einstellungen ${0}',
+            'Set${0} up': 'Einrichten ${0}',
+        };
+
+        expect(localizeString('Settings page up', dictionary)).toBe('Einrichten tings page');
     });
 });
 

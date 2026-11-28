@@ -239,8 +239,8 @@ describe('Conversation core generated reply regressions', () => {
         const toastr = { warning: jest.fn(() => toast), error: jest.fn(() => toast) };
         const realFiles = name => JSON.parse(readFileSync(new URL(`../public/locales/${name}.json`, import.meta.url), 'utf8'));
         const portuguese = assembleLocaleData({ base: realFiles('pt-pt'), supplement: realFiles('neconyan/pt-pt'), catalogue: realFiles('neconyan/en') }).dictionary;
-        // The old wording of GEN-C01 starts with a pattern verb, so it is the case the dictionary would capture.
-        const captured = 'Reload the page, then try again.';
+        // A multi-word non-broad Portuguese pattern captures this wording when nothing protects it.
+        const captured = 'Could not open the page, then try again.';
         let dispatched;
         let warn;
         let error;
@@ -267,8 +267,8 @@ describe('Conversation core generated reply regressions', () => {
 
         const events = () => dispatched.mock.calls.map(([event]) => event).filter(event => event.type === 'neconyan:image-input-refused');
 
-        test('the real Portuguese dictionary does hold the pattern that captures a leading verb', () => {
-            expect(portuguese['Reload ${0}']).toBeTruthy();
+        test('the real Portuguese dictionary does hold the non-broad pattern that captures the control text', () => {
+            expect(portuguese['Could not open ${0}.']).toBeTruthy();
             expect(localizeString(captured, portuguese)).not.toBe(captured);
         });
 
@@ -311,7 +311,7 @@ describe('Conversation core generated reply regressions', () => {
         });
 
         test('a localized error is shown exactly as given, whole, and its toast is marked; an ordinary error still goes through the lookup', () => {
-            // The same words as an ordinary error are captured by 'Reload ${0}'.
+            // The same words as an ordinary error are captured by 'Could not open ${0}.'.
             reportConversationGenerationError('regenerate', new Error(captured), { level: 'warning' });
             const ordinary = toastr.warning.mock.calls.at(-1)[0];
             expect(ordinary).toBe(`Conversation regenerate failed: ${localizeString(captured, portuguese)}`);
