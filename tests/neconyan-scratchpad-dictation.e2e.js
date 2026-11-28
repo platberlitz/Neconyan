@@ -3,7 +3,7 @@
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
-import { showContextSection, openContextDrawer } from './neconyan-scratchpad-context-helpers.js';
+import { showContextSection, openContextDrawer, showVoiceButtons } from './neconyan-scratchpad-context-helpers.js';
 
 // A test browser has no microphone, so the recorder and the audio decoder are stand-ins.
 function installMicrophone() {
@@ -56,6 +56,10 @@ for (const phone of [false, true]) {
         const composer = page.locator('.scratchpad-composer');
         const dictate = page.locator('.scratchpad-dictate');
         const send = page.locator('.scratchpad-send');
+        await expect(composer).toBeEnabled();
+        // The voice buttons are opt-in: hidden until turned on, and each one on its own.
+        await expect(dictate).toBeHidden();
+        await showVoiceButtons(page, { dictate: true, talk: false });
         await expect(composer).toBeEnabled();
         await expect(dictate).toHaveAttribute('aria-label', 'Dictate');
         await expect(dictate).toHaveAttribute('aria-pressed', 'false');
@@ -151,5 +155,14 @@ for (const phone of [false, true]) {
         await expect(service).toHaveValue('groq');
         await open('chat');
         await expect(dictate).toHaveAttribute('aria-label', 'Dictate');
+        await expect(dictate).toBeVisible();
+        await expect(page.locator('.scratchpad-talk-toggle')).toBeHidden();
+
+        // Turning Dictate off while it records lets go of the microphone and hides the button.
+        await dictate.click();
+        await expect(dictate).toHaveAttribute('aria-pressed', 'true');
+        await showVoiceButtons(page, { dictate: false, talk: false });
+        expect(await microphone()).toEqual({ started: 1, released: 1 });
+        expect(groq).toBe(1);
     });
 }

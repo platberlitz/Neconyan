@@ -1,0 +1,1 @@
+Scratchpad's **Dictate** and **Talk mode** buttons are now off until you turn them on with **Show Dictate beside Send** and **Show Talk mode beside Send** under **Context → Setup → Dictation and voice**.
