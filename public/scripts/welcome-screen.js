@@ -1920,23 +1920,29 @@ function initializeNeconyanRailOrder(rail) {
     // press, so nothing is left floating and the next drag starts cleanly.
     // jQuery UI's cancel() runs stop on the way, which must not save.
     const cancelRailPress = () => {
-        for (const { host, sortableReady } of Object.values(neconyanRailGroups)) {
-            const sortable = sortableReady && $(host).sortable('instance');
-            if (!sortable) continue;
-            if (sortable.dragging) {
-                cancellingDrag = true;
-                try {
-                    sortable.cancel();
-                } finally {
-                    cancellingDrag = false;
+        try {
+            for (const { host, sortableReady } of Object.values(neconyanRailGroups)) {
+                const sortable = sortableReady && $(host).sortable('instance');
+                if (!sortable) continue;
+                if (sortable.dragging) {
+                    cancellingDrag = true;
+                    try {
+                        sortable.cancel();
+                    } finally {
+                        cancellingDrag = false;
+                    }
+                } else if (sortable._mouseMoveDelegate) {
+                    // Still inside the hold delay: clear jQuery UI's timer and
+                    // listeners. A list that was never pressed has no listeners
+                    // of its own, and _mouseUp would then take every sortable's
+                    // document listeners off with it.
+                    sortable._mouseUp(new $.Event('mouseup', { target: null }));
                 }
-            } else {
-                // Still inside the hold delay: clear jQuery UI's timer and listeners.
-                sortable._mouseUp(new $.Event('mouseup', { target: null }));
             }
+        } finally {
+            railSorting = false;
+            releaseScrollAnchor?.();
         }
-        railSorting = false;
-        releaseScrollAnchor?.();
     };
     cancelNeconyanRailPress = cancelRailPress;
     // jQuery UI inserts the placeholder and measures the rows before its start

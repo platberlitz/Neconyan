@@ -19,15 +19,16 @@ function sliceBlock(source, start) {
     throw new Error(`Unclosed ${start}`);
 }
 
-describe('Touch Punch touchcancel', () => {
+describe('Touch Punch interrupted touches', () => {
     function loadTouchPunch() {
         const dispatched = [];
+        const captures = [];
         const handlers = {};
         const target = { dispatchEvent: event => dispatched.push(event.type) };
         const mouseProto = {
             _mouseInit() {},
             _mouseDestroy() {},
-            _mouseCapture: () => true,
+            _mouseCapture: () => captures.push('capture') > 0,
         };
         const $ = () => ({ is: () => false });
         $.ui = { mouse: function Mouse() {} };
@@ -41,17 +42,20 @@ describe('Touch Punch touchcancel', () => {
         const window = { navigator: { maxTouchPoints: 5 }, document };
         const context = vm.createContext({ window, document, navigator: window.navigator, jQuery: $ });
         vm.runInContext(readSource('public', 'lib', 'jquery.ui.touch-punch.min.js'), context);
-        const widget = Object.create(mouseProto);
-        widget.element = { 0: { style: {} }, on: map => Object.assign(handlers, map), off() {} };
-        widget._mouseInit();
-        const touch = (timeStamp, touches = []) => ({
-            target,
-            timeStamp,
-            cancelable: true,
-            preventDefault() {},
-            originalEvent: { touches, changedTouches: [{ pageX: 10, pageY: 10, screenX: 10, screenY: 10, clientX: 10, clientY: 10 }] },
-        });
-        return { dispatched, handlers, touch };
+        const widget = () => {
+            const own = {};
+            const instance = Object.create(mouseProto);
+            instance.element = { 0: { style: {} }, on: map => Object.assign(own, map), off() {} };
+            instance._mouseInit();
+            return own;
+        };
+        Object.assign(handlers, widget());
+        const originalTouch = (touches = []) => ({ touches, changedTouches: [{ pageX: 10, pageY: 10, screenX: 10, screenY: 10, clientX: 10, clientY: 10 }] });
+        // jQuery wraps the browser's event afresh for every element it reaches,
+        // so a bubbling touch gives each widget its own wrapper around one originalEvent.
+        const wrap = (timeStamp, originalEvent) => ({ target, timeStamp, cancelable: true, preventDefault() {}, originalEvent });
+        const touch = (timeStamp, touches = []) => wrap(timeStamp, originalTouch(touches));
+        return { dispatched, captures, handlers, touch, widget, wrap, originalTouch };
     }
 
     test('a cancelled touch ends the press without a click and frees the next touch', () => {
@@ -74,6 +78,54 @@ describe('Touch Punch touchcancel', () => {
         handlers.touchcancel?.(touch(0));
         expect(dispatched).toEqual([]);
         expect(typeof handlers.touchcancel).toBe('function');
+    });
+
+    test('a touch that never got its touchend does not eat the next one-finger drag', () => {
+        const { dispatched, handlers, touch } = loadTouchPunch();
+        handlers.touchstart(touch(0, [{}]));
+        handlers.touchmove(touch(900, [{}]));
+
+        // The page lost focus and the finger's touchend never arrived.
+        dispatched.length = 0;
+        handlers.touchstart(touch(2000, [{}]));
+        expect(dispatched).toEqual(['mouseover', 'mousemove', 'mousedown']);
+
+        dispatched.length = 0;
+        handlers.touchmove(touch(2900, [{}]));
+        handlers.touchend(touch(3000));
+        expect(dispatched).toEqual(['mousemove', 'mouseup', 'mouseout']);
+    });
+
+    test('the same touchstart bubbling to an outer widget still starts only one press', () => {
+        const { dispatched, handlers, widget, wrap, originalTouch } = loadTouchPunch();
+        const outer = widget();
+        const start = originalTouch([{}]);
+        handlers.touchstart(wrap(0, start));
+        outer.touchstart(wrap(0, start));
+        expect(dispatched).toEqual(['mouseover', 'mousemove', 'mousedown']);
+
+        // Even after an earlier press was left hanging.
+        dispatched.length = 0;
+        const next = originalTouch([{}]);
+        handlers.touchstart(wrap(5000, next));
+        outer.touchstart(wrap(5000, next));
+        expect(dispatched).toEqual(['mouseover', 'mousemove', 'mousedown']);
+    });
+
+    test('a second finger landing during a press is still ignored', () => {
+        const { dispatched, captures, handlers, widget, touch } = loadTouchPunch();
+        const other = widget();
+        handlers.touchstart(touch(0, [{}]));
+        dispatched.length = 0;
+        captures.length = 0;
+        other.touchstart(touch(300, [{}, {}]));
+        handlers.touchstart(touch(300, [{}, {}]));
+        expect(dispatched).toEqual([]);
+        // No widget gets the chance to take the second finger for itself.
+        expect(captures).toEqual([]);
+
+        handlers.touchmove(touch(900, [{}]));
+        expect(dispatched).toEqual(['mousemove']);
     });
 });
 
@@ -139,7 +191,16 @@ describe('Edit sidebar drag interruptions', () => {
 
     function pendingSortable() {
         const calls = [];
-        return { calls, instance: { dragging: false, cancel() { calls.push('cancel'); }, _mouseUp(event) { calls.push(`mouseUp:${event.type}`); } } };
+        return {
+            calls,
+            instance: {
+                dragging: false,
+                // jQuery UI sets this on mousedown; a list that was never pressed has none.
+                _mouseMoveDelegate() {},
+                cancel() { calls.push('cancel'); },
+                _mouseUp(event) { calls.push(`mouseUp:${event.type}`); },
+            },
+        };
     }
 
     const interruptions = {
@@ -209,6 +270,60 @@ describe('Edit sidebar drag interruptions', () => {
         rig.document.dispatchEvent(new Event('visibilitychange'));
         expect(calls).toEqual([]);
         expect(rig.scroller.style.overflowAnchor).toBe('none');
+    });
+
+    test('a drag after a cancelled one saves again', () => {
+        const rig = loadRailPress();
+        const { instance, calls } = draggingSortable(rig.api);
+        rig.addGroup('primary', instance);
+        rig.api.holdScrollAnchor();
+        rig.api.startDrag();
+        interruptions.pointercancel(rig);
+        expect(calls).toEqual(['cancel']);
+        expect(rig.saved).toEqual([]);
+
+        rig.api.holdScrollAnchor();
+        rig.api.startDrag();
+        rig.api.stop({}, { item: ['characters'] });
+        expect(rig.saved).toEqual(['characters']);
+    });
+
+    test('a list that is not set up yet does not stop a later list being put back', () => {
+        const rig = loadRailPress();
+        const { instance, calls } = draggingSortable(rig.api);
+        rig.addGroup('primary', null);
+        rig.addGroup('advanced', instance);
+        rig.api.holdScrollAnchor();
+        rig.api.startDrag();
+        interruptions.blur(rig);
+        expect(calls).toEqual(['cancel']);
+        expect(rig.saved).toEqual([]);
+    });
+
+    test('a list that was never pressed is left alone', () => {
+        const rig = loadRailPress();
+        const { instance, calls } = pendingSortable();
+        delete instance._mouseMoveDelegate;
+        rig.addGroup('primary', instance);
+        rig.api.holdScrollAnchor();
+        interruptions.pointercancel(rig);
+        expect(calls).toEqual([]);
+        expect(rig.scroller.style.overflowAnchor).toBe('');
+    });
+
+    test('scroll anchoring and saving come back even if putting the row back throws', () => {
+        const rig = loadRailPress();
+        const { instance } = draggingSortable(rig.api);
+        instance.cancel = () => { throw new Error('cancel failed'); };
+        rig.addGroup('primary', instance);
+        rig.api.holdScrollAnchor();
+        rig.api.startDrag();
+        expect(() => rig.api.applyCancel()).toThrow('cancel failed');
+        expect(rig.scroller.style.overflowAnchor).toBe('');
+        expect(rig.api.state()).toMatchObject({ railSorting: false, held: false });
+
+        rig.api.stop({}, { item: ['home'] });
+        expect(rig.saved).toEqual(['home']);
     });
 
     test('a finished drag still saves the new order', () => {
