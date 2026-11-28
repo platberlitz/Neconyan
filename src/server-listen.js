@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import net from 'node:net';
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -15,8 +16,22 @@ export const LISTEN_CLOSE_TIMEOUT_MS = 2000;
 export const PORT_HOLDER_LOOKUP_TIMEOUT_MS = 3000;
 export const BUN_SOCKET_INHERIT_ISSUE_URL = 'https://github.com/oven-sh/bun/issues/36936';
 
+// The phone apps' server can be frozen with the app. iOS may reclaim a
+// suspended app's listening socket, after which nothing on the phone can reach
+// the server although Node is still running, so the apps check the listener
+// whenever the process wakes from a freeze.
+export const APP_LISTENER_CHECK_MS = 5_000;
+export const APP_LISTENER_SUSPENDED_MS = 15_000;
+export const APP_LISTENER_PROBE_TIMEOUT_MS = 2_000;
+export const APP_RELISTEN_ATTEMPTS = 5;
+export const APP_RELISTEN_DELAY_MS = 1_000;
+
 /** @type {Set<{ server: import('node:net').Server, sockets: Set<import('node:net').Socket> }>} */
 const trackedListeners = new Set();
+/** @type {WeakMap<import('node:net').Server, { server: import('node:net').Server, sockets: Set<import('node:net').Socket> }>} */
+const trackedEntries = new WeakMap();
+/** @type {WeakSet<import('node:net').Server>} */
+const watchedListeners = new WeakSet();
 
 /**
  * Checks if an error was caused by an occupied port.
@@ -29,23 +44,32 @@ export function isAddressInUseError(error) {
 
 /**
  * Tracks a listening server and its client sockets so shutdown can release the
- * port instead of leaving it to process teardown.
+ * port instead of leaving it to process teardown. Calling it again after the
+ * server listens again keeps the one entry.
  * @param {import('node:net').Server} server A server that is already listening
  * @returns {void}
  */
 export function trackListeningServer(server) {
-    /** @type {Set<import('node:net').Socket>} */
-    const sockets = new Set();
-    const entry = { server, sockets };
+    let entry = trackedEntries.get(server);
+    if (!entry) {
+        /** @type {Set<import('node:net').Socket>} */
+        const sockets = new Set();
+        const created = { server, sockets };
+        entry = created;
+        trackedEntries.set(server, created);
 
-    // tls.Server extends net.Server, so 'connection' covers the raw socket for
-    // HTTPS too and destroying it tears down the TLS session with it.
-    server.on('connection', (socket) => {
-        sockets.add(socket);
-        socket.once('close', () => sockets.delete(socket));
-    });
+        // tls.Server extends net.Server, so 'connection' covers the raw socket for
+        // HTTPS too and destroying it tears down the TLS session with it.
+        server.on('connection', (socket) => {
+            sockets.add(socket);
+            socket.once('close', () => sockets.delete(socket));
+        });
 
-    server.once('close', () => trackedListeners.delete(entry));
+        // A late 'close' from the listener a reopened server replaced is not a shutdown.
+        server.on('close', () => {
+            if (!server.listening) trackedListeners.delete(created);
+        });
+    }
     trackedListeners.add(entry);
 }
 
@@ -127,6 +151,203 @@ export async function retryOnAddressInUse(attemptFn, {
             await delay(delayMs);
         }
     }
+}
+
+/**
+ * Connects to a listening server from inside the process and reports whether
+ * the server itself accepted that connection.
+ * @param {import('node:net').Server} server The server to check
+ * @param {object} [options] Probe options
+ * @param {number} [options.timeoutMs] How long to wait for the connection
+ * @param {typeof net.connect} [options.connect] Opens the probe connection
+ * @returns {Promise<boolean>} True when the server accepted the probe
+ */
+export function listenerAccepts(server, {
+    timeoutMs = APP_LISTENER_PROBE_TIMEOUT_MS,
+    connect = net.connect,
+} = {}) {
+    const address = server?.listening ? server.address() : null;
+    if (!address || typeof address !== 'object') {
+        return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+        /** @type {Set<number|undefined>} */
+        const accepted = new Set();
+        /** @type {import('node:net').Socket|null} */
+        let probe = null;
+        let settled = false;
+
+        const finish = (/** @type {boolean} */ result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            server.off('connection', onConnection);
+            probe?.destroy();
+            resolve(result);
+        };
+        const seen = () => probe?.localPort !== undefined && accepted.has(probe.localPort);
+        const onConnection = (/** @type {import('node:net').Socket} */ socket) => {
+            accepted.add(socket.remotePort);
+            if (seen()) finish(true);
+        };
+
+        // The connection may be waiting behind the timer after a long freeze,
+        // so give the event loop one more turn before calling the probe lost.
+        const timer = setTimeout(() => setImmediate(() => finish(false)), timeoutMs);
+        timer.unref?.();
+        server.on('connection', onConnection);
+        try {
+            probe = connect({ host: address.address, port: address.port });
+        } catch {
+            finish(false);
+            return;
+        }
+        probe.once('connect', () => {
+            if (seen()) finish(true);
+        });
+        probe.once('error', () => finish(false));
+    });
+}
+
+/**
+ * Keeps a phone app's server reachable. After the process wakes from a freeze,
+ * or when the listener reports an error, the server checks that it still
+ * accepts connections and listens again on the same address if it does not.
+ * Open connections, such as a reply still streaming, are left alone.
+ * @param {import('node:net').Server} server A server that is already listening
+ * @param {import('node:net').ListenOptions} listenOptions The options it listened with
+ * @param {object} [options] Watch options
+ * @param {number} [options.checkMs] How often the watch wakes
+ * @param {number} [options.suspendedMs] A wake this much later than due means the app was frozen
+ * @param {() => Promise<boolean>} [options.accepts] Checks the listener
+ * @param {() => number} [options.now] Wall clock
+ * @param {typeof setTimeout} [options.setTimer] Schedules the next wake
+ * @param {typeof clearTimeout} [options.clearTimer] Cancels the next wake
+ * @param {number} [options.relistenAttempts] Attempts to listen again per check
+ * @param {number} [options.relistenDelayMs] Delay between those attempts
+ * @param {Pick<Console, 'warn'|'info'>} [options.log] Where recovery is reported
+ * @returns {{ check: (reason?: string) => Promise<boolean>, stop: () => void }|null} Null when the server is already watched
+ */
+export function keepAppListenerOpen(server, listenOptions, {
+    checkMs = APP_LISTENER_CHECK_MS,
+    suspendedMs = APP_LISTENER_SUSPENDED_MS,
+    accepts = () => listenerAccepts(server),
+    now = Date.now,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+    relistenAttempts = APP_RELISTEN_ATTEMPTS,
+    relistenDelayMs = APP_RELISTEN_DELAY_MS,
+    log = console,
+} = {}) {
+    if (watchedListeners.has(server)) {
+        return null;
+    }
+    watchedListeners.add(server);
+
+    let stopped = false;
+    let relistening = false;
+    let broken = false;
+    /** @type {Promise<boolean>|null} */
+    let checking = null;
+    /** @type {ReturnType<typeof setTimeout>|null} */
+    let timer = null;
+    let lastWake = now();
+
+    const listenAgain = () => new Promise((resolve, reject) => {
+        const onListening = () => {
+            server.off('error', onFailed);
+            resolve(undefined);
+        };
+        const onFailed = (/** @type {Error} */ error) => {
+            server.off('listening', onListening);
+            reject(error);
+        };
+        server.once('listening', onListening);
+        server.once('error', onFailed);
+        server.listen(listenOptions);
+    });
+
+    async function relisten(/** @type {string} */ reason) {
+        relistening = true;
+        try {
+            log.warn(`The local server stopped accepting connections (${reason}); listening again.`);
+            for (let attempt = 1; attempt <= relistenAttempts && !stopped; attempt++) {
+                try {
+                    // Not waiting for the close callback: it waits for open replies to finish.
+                    if (server.listening) server.close();
+                    await listenAgain();
+                    broken = false;
+                    log.info('The local server is accepting connections again.');
+                    return true;
+                } catch (error) {
+                    log.warn(`Listening again failed (attempt ${attempt} of ${relistenAttempts}): ${error instanceof Error ? error.message : error}`);
+                    if (attempt < relistenAttempts) await delay(relistenDelayMs, undefined, { ref: false });
+                }
+            }
+            broken = !stopped;
+            return false;
+        } finally {
+            relistening = false;
+        }
+    }
+
+    function check(reason = 'check') {
+        if (stopped) return Promise.resolve(false);
+        checking ??= (async () => {
+            try {
+                if (!broken && await accepts()) return true;
+                if (stopped) return false;
+                return await relisten(reason);
+            } catch {
+                return false;
+            } finally {
+                checking = null;
+            }
+        })();
+        return checking;
+    }
+
+    const onError = (/** @type {NodeJS.ErrnoException} */ error) => {
+        if (!stopped && !relistening) void check(`${error?.code || error?.message || 'listener error'}`);
+    };
+    const onClose = () => {
+        if (!relistening && !server.listening) stop();
+    };
+
+    function wake() {
+        timer = null;
+        if (stopped) return;
+        const at = now();
+        const late = at - lastWake;
+        lastWake = at;
+        if (broken) {
+            void check('still not listening');
+        } else if (late >= checkMs + suspendedMs) {
+            void check(`the app was frozen for ${Math.round(late / 1000)} s`);
+        }
+        arm();
+    }
+
+    function arm() {
+        timer = setTimer(wake, checkMs);
+        timer?.unref?.();
+    }
+
+    function stop() {
+        if (stopped) return;
+        stopped = true;
+        clearTimer(timer ?? undefined);
+        timer = null;
+        server.off('error', onError);
+        server.off('close', onClose);
+        watchedListeners.delete(server);
+    }
+
+    server.on('error', onError);
+    server.on('close', onClose);
+    arm();
+    return { check, stop };
 }
 
 /**

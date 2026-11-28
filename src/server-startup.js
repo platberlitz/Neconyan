@@ -2,7 +2,7 @@ import https from 'node:https';
 import http from 'node:http';
 import fs from 'node:fs';
 import { APP_NAME } from './runtime.js';
-import { BUN_SOCKET_INHERIT_ISSUE_URL, isAddressInUseError, reportPortHolders, retryOnAddressInUse, trackListeningServer } from './server-listen.js';
+import { BUN_SOCKET_INHERIT_ISSUE_URL, isAddressInUseError, keepAppListenerOpen, reportPortHolders, retryOnAddressInUse, trackListeningServer } from './server-listen.js';
 import { color, urlHostnameToIPv6, getHasIP } from './util.js';
 import { writeStartupNote } from './startup-note.js';
 
@@ -260,6 +260,14 @@ export class ServerStartup {
     }
 
     /**
+     * Whether this server runs inside the Android or iPhone app.
+     * @returns {boolean} True for the phone apps
+     */
+    #isPhoneApp() {
+        return process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
+    }
+
+    /**
      * Creates an HTTPS server.
      * @param {URL} url The URL to listen on
      * @param {number} ipVersion the ip version to use
@@ -284,19 +292,20 @@ export class ServerStartup {
                 }
                 reject(error);
             });
-            server.on('listening', () => {
-                trackListeningServer(server);
-                resolve();
-            });
-
             let host = url.hostname;
             if (ipVersion === 6) host = urlHostnameToIPv6(url.hostname);
-            server.listen({
+            const listenOptions = {
                 host: host,
                 port: Number(url.port || 443),
                 // see https://nodejs.org/api/net.html#serverlisten for why ipv6Only is used
                 ipv6Only: true,
+            };
+            server.on('listening', () => {
+                trackListeningServer(server);
+                if (this.#isPhoneApp()) keepAppListenerOpen(server, listenOptions);
+                resolve();
             });
+            server.listen(listenOptions);
         });
     }
 
@@ -318,19 +327,20 @@ export class ServerStartup {
                 }
                 reject(error);
             });
-            server.on('listening', () => {
-                trackListeningServer(server);
-                resolve();
-            });
-
             let host = url.hostname;
             if (ipVersion === 6) host = urlHostnameToIPv6(url.hostname);
-            server.listen({
+            const listenOptions = {
                 host: host,
                 port: Number(url.port || 80),
                 // see https://nodejs.org/api/net.html#serverlisten for why ipv6Only is used
                 ipv6Only: true,
+            };
+            server.on('listening', () => {
+                trackListeningServer(server);
+                if (this.#isPhoneApp()) keepAppListenerOpen(server, listenOptions);
+                resolve();
             });
+            server.listen(listenOptions);
         });
     }
 
@@ -347,7 +357,7 @@ export class ServerStartup {
         let v4Error;
 
         const createFunc = this.cliArgs.ssl ? this.#createHttpsServer.bind(this) : this.#createHttpServer.bind(this);
-        const inApp = process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1';
+        const inApp = this.#isPhoneApp();
 
         // A restart can outrun the previous process releasing the port, so wait
         // it out briefly instead of aborting the relaunch on the first failure.

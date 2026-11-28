@@ -160,6 +160,20 @@ final class LocalServer {
         return "The local server stopped (code \(NodeRunner.exitCode)). Your saved data has been kept. Close Neconyan from the app switcher and open it again, or share the startup log."
     }
 
+    /// Whether the server answers at all. Any HTTP reply counts, including a sign-in challenge.
+    func answers() async -> Bool {
+        var request = URLRequest(url: origin.appendingPathComponent("version"))
+        request.timeoutInterval = 2
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpShouldHandleCookies = false
+        do {
+            let (_, response) = try await session.data(for: request)
+            return response is HTTPURLResponse
+        } catch {
+            return false
+        }
+    }
+
     func signIn() async throws -> [HTTPCookie] {
         StartupDiagnostics.shared.stage("wait-server-ready")
         let deadline = Date().addingTimeInterval(180)
