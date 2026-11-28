@@ -20,6 +20,7 @@
 - With reduced motion turned on in your device settings, the cat on the **Session expired** page now stands still instead of backflipping, just like the one on **Not found**.
 - With reduced motion turned on, either in your device settings or with Neconyan's own **Reduced Motion** setting, the cat at the top of the **In-Chat Agents Glossary** now rests instead of backflipping and the page stays still, and the waving kitty on the loading screen stops as soon as your settings load.
 - Reopening the **Companion Panel** after a server reply finishes its **Agents** now takes you back to the card you were reading instead of dropping you near the bottom, and opening it in a different chat starts at the top.
+- Several **Agents** and **Companions** running at once over a plain local address, as in the Android app, Termux or on your home network, now finish instead of being cut off partway, and a dropped connection or a timed-out request is reported as such rather than looking like you pressed **Stop**.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -39,6 +40,7 @@
 - PR #1023 (2026-11-27) `fix(pages): keep the session and sign-in cats still under reduced motion`
 - PR #1024 (2026-11-28) `fix(docs): keep the docs reader cat still under reduced motion`
 - PR #1025 (2026-11-28) `fix(companions): keep the panel's place when a server reply finishes`
+- PR #1026 (2026-11-28) `fix(generation): stop the watchdog aborting healthy replies`
 
 ## v1.6.0
 

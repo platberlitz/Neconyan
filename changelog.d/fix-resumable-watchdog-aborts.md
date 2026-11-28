@@ -1,1 +1,0 @@
-Several **Agents** and **Companions** running at once over a plain local address, as in the Android app, Termux or on your home network, now finish instead of being cut off partway, and a dropped connection or a timed-out request is reported as such rather than looking like you pressed **Stop**.
