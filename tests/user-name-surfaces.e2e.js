@@ -1235,7 +1235,8 @@ test('changed select options the sweep does not reach keep a chosen name and sti
 
     const page = await openPlain(account, 'pt-pt');
     // Three companion agents: the chatroom companion whose editor is read, a chosen name, and one with its bundled template's name.
-    await page.evaluate(async () => {
+    const companionOrder = 37;
+    await page.evaluate(async order => {
         const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
         const make = (fields, settings = {}) => {
             const agent = Object.assign(store.createDefaultAgent(), { category: 'companion', execution: 'companion' }, fields);
@@ -1244,10 +1245,12 @@ test('changed select options the sweep does not reach keep a chosen name and sti
         };
         await store.saveAgent(make({ id: 'nm-agent-summary', name: 'Summary', sourceTemplateId: 'tpl-chatroom-companion' },
             { chatroomStyle: 'custom', chatroomCustomStyles: 'Notes: Keep it short.', chatroomCustomStyleName: 'Notes' }));
-        await store.saveAgent(make({ id: 'nm-agent-default', name: 'Default' }));
+        const chosen = make({ id: 'nm-agent-default', name: 'Default' });
+        chosen.injection.order = order;
+        await store.saveAgent(chosen);
         await store.saveAgent(make({ id: 'nm-agent-bundled', name: 'Chat Only', sourceTemplateId: 'tpl-chat-only-companion' }));
         await (await import('/script.js')).saveSettings();
-    });
+    }, companionOrder);
     const reload = async () => {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
@@ -1365,10 +1368,16 @@ test('changed select options the sweep does not reach keep a chosen name and sti
     expect.soft(await options(page, `#ica--editor-chatroom-extra-character-avatars option[value="${characterAvatar}"]`), 'chatroom extra character options: the character named Summary').toEqual([
         { value: characterAvatar, text: `Summary (${characterAvatar})`, marked: true },
     ]);
+    const orderLabelKey = '${0} (Order ${1})';
+    const orderLabel = pt[orderLabelKey];
+    expect(orderLabel, 'the order label is translated').not.toBe(orderLabelKey);
+    expect(orderLabel).toContain('${0}');
+    expect(orderLabel).toContain('${1}');
+    const chosenLabel = orderLabel.replace('${0}', 'Default').replace('${1}', String(companionOrder));
     for (const id of ['ica--editor-companion-dependencies', 'ica--editor-companion-contextRecipientAgentIds', 'ica--editor-pp-companionTargets']) {
         const list = await options(page, `#${id} option`);
         const chosen = list.find(option => option.value === 'nm-agent-default');
-        expect.soft(chosen && { text: chosen.text.replace(/\d+/g, '#'), marked: chosen.marked }, `${id}: the agent named Default`).toEqual({ text: 'Default (Order #)', marked: true });
+        expect.soft(chosen, `${id}: the agent named Default`).toEqual({ value: 'nm-agent-default', text: chosenLabel, marked: true });
         expect.soft(list.find(option => option.value === 'nm-agent-bundled')?.marked, `${id}: the agent with its bundled name`).toBe(false);
     }
     // With the styles cleared, the style list shows its built-in option.
