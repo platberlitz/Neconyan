@@ -108,7 +108,25 @@ const codeOnlyCalls = new Set(['querySelector', 'querySelectorAll', 'closest', '
     'fetch', 'includes', 'startsWith', 'endsWith', 'indexOf', 'split', 'replace', 'replaceAll', 'match', 'test', 'require', 'import', 'postMessage', 'Error', 'TypeError', 'RangeError', 'SyntaxError', 'CustomEvent', 'Event', 'RegExp', 'Symbol', 'getContext']);
 const codeOnlyKeys = new Set(['id', 'key', 'type', 'name', 'value', 'class', 'className', 'icon', 'selector', 'event', 'role', 'mode', 'source', 'tag', 'url', 'path', 'method', 'kind', 'action', 'shellKey', 'tabId', 'prompt', 'content', 'template', 'system', 'instruction']);
 // Reference text written for the model, not for the page.
-const modelOnlyFiles = /neconyan-assistant-knowledge[\\/]/;
+const modelOnlyFiles = /neconyan-assistant-knowledge(?:[\\/]|\.js$)/;
+// DOM KeyboardEvent.key names used in key-filter lists (Set or array) are code tokens, not UI captions.
+const keyboardKeyNames = new Set([
+    'Escape', 'Enter', 'Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', ' ', 'Shift', 'Control', 'Alt', 'Meta',
+    'CapsLock', 'NumLock', 'ScrollLock', 'Pause', 'PrintScreen', 'ContextMenu', 'Help', 'Clear',
+    'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+]);
+const unambiguousKeyboardKeys = new Set([
+    'Escape', 'Backspace', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'CapsLock', 'NumLock', 'ScrollLock', 'PrintScreen', 'ContextMenu',
+]);
+const isKeyboardKeyList = node => node.type === 'ArrayExpression'
+    && node.elements.length >= 2
+    && node.elements.every(element => element?.type === 'Literal' && typeof element.value === 'string' && keyboardKeyNames.has(element.value))
+    && node.elements.some(element => unambiguousKeyboardKeys.has(element.value));
+// Single-token lowercase BEM (`--`) or multi-hyphen (>=2 hyphens) CSS class names, leaving two-word hyphenated words ('e-mail', 'read-only') alone.
+const isCssClassToken = value => typeof value === 'string'
+    && /^[a-z][a-z0-9]*(?:(?:-[a-z0-9]+)*--[a-z0-9]+(?:-[a-z0-9]+)*|(?:-[a-z0-9]+){2,})$/.test(value.trim());
 const calleeName = callee => callee?.property?.name || callee?.name || callee?.property?.value;
 // Multi-line strings are prompt text and single CamelCase words are identifiers; neither is a caption.
 const sentenceText = value => typeof value === 'string' && value.length <= 240 && /^[A-Z]/.test(value.trim()) && /[a-z]{2,}/.test(value)
@@ -128,7 +146,7 @@ function collectUiText(node) {
 const isScopedTranslate = node => node.type === 'CallExpression' && node.callee.name === 'translate' && node.arguments[0]?.type === 'Literal'
     && node.arguments[1]?.type === 'Literal' && typeof node.arguments[1].value === 'string' && node.arguments[1].value.startsWith(scopedPrefix);
 
-function walkAst(node, quiet = false) {
+function walkAst(node, quiet = false, parent = null, grand = null) {
     if (!node || typeof node !== 'object') return;
     collectUiText(node);
     if (!quiet && node.type === 'Literal' && sentenceText(node.value)) addCaption(node.value);
@@ -144,7 +162,15 @@ function walkAst(node, quiet = false) {
     } else if (node.type === 'Literal' && typeof node.value === 'string') {
         collectHtmlString(node.value);
     }
-    if (node.type === 'Property' && captionProperties.includes(node.key.name || node.key.value)) addCaption(literalText(node.value));
+    if (node.type === 'Property' && captionProperties.includes(node.key.name || node.key.value)) {
+        const propertyName = node.key.name || node.key.value;
+        const value = literalText(node.value);
+        const isSortablePlaceholder = propertyName === 'placeholder'
+            && parent?.type === 'ObjectExpression'
+            && grand?.type === 'CallExpression'
+            && calleeName(grand.callee) === 'sortable';
+        if (!isSortablePlaceholder && !(propertyName === 'placeholder' && isCssClassToken(value))) addCaption(value);
+    }
     if (node.type === 'Property' && /^(body|\w+Body)$/.test(node.key.name || node.key.value)) literalText(node.value)?.split('\n').forEach(line => addCaption(line, { allowMacros: true }));
     if (node.type === 'AssignmentExpression' && [...captionProperties, 'ariaLabel'].includes(node.left.property?.name)) addCaption(literalText(node.right));
     if (node.type === 'CallExpression' && ['translate'].includes(node.callee.name) && node.arguments[0]?.type === 'Literal') add(node.arguments[1]?.value || node.arguments[0].value, node.arguments[0].value);
@@ -158,15 +184,16 @@ function walkAst(node, quiet = false) {
         || (node.type === 'CallExpression' && /^headers$/i.test(node.callee.object?.property?.name ?? node.callee.object?.name ?? ''))
         || (node.type === 'CallExpression' && node.callee.object?.name === 'console')
         || (node.type === 'BinaryExpression' && ['===', '!==', '==', '!=', 'in', 'instanceof'].includes(node.operator))
-        || ['ImportDeclaration', 'ExportAllDeclaration', 'ImportExpression', 'ThrowStatement'].includes(node.type);
+        || ['ImportDeclaration', 'ExportAllDeclaration', 'ImportExpression', 'ThrowStatement'].includes(node.type)
+        || isKeyboardKeyList(node);
     for (const [field, value] of Object.entries(node)) {
         const childQuiet = quiet || codeOnly
             || (node.type === 'ExportNamedDeclaration' && field !== 'declaration')
             || (node.type === 'SwitchCase' && field === 'test')
             || (node.type === 'Property' && (field === 'key' || codeOnlyKeys.has(node.key?.name || node.key?.value)))
             || (node.type === 'MemberExpression' && field === 'property');
-        if (Array.isArray(value)) value.forEach((child, index) => walkAst(child, childQuiet || (field === 'arguments' && index === 0 && isScopedTranslate(node))));
-        else if (value && typeof value === 'object') walkAst(value, childQuiet);
+        if (Array.isArray(value)) value.forEach((child, index) => walkAst(child, childQuiet || (field === 'arguments' && index === 0 && isScopedTranslate(node)), node, parent));
+        else if (value && typeof value === 'object') walkAst(value, childQuiet, node, parent);
     }
 }
 
@@ -176,9 +203,10 @@ function visit(directory) {
         const filename = path.join(directory, entry.name);
         if (entry.isDirectory()) { visit(filename); continue; }
         if (!/\.(html|js)$/.test(filename) || filename.endsWith('.min.js')) continue;
+        if (modelOnlyFiles.test(filename)) continue;
         const text = fs.readFileSync(filename, 'utf8');
         if (filename.endsWith('.js')) {
-            try { walkAst(parse(text, { ecmaVersion: 'latest', sourceType: 'module' }), modelOnlyFiles.test(filename)); } catch { /* Vendor scripts may not be modules. */ }
+            try { walkAst(parse(text, { ecmaVersion: 'latest', sourceType: 'module' })); } catch { /* Vendor scripts may not be modules. */ }
             continue;
         }
         collectHtml(load(text));
