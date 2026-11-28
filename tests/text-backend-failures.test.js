@@ -120,6 +120,41 @@ describe('stopped requests', () => {
         watch.fail(new Error('late'));
         expect(getProviderFailures()).toEqual([]);
     });
+
+    test('a request that ran out of time is a failure, even when WebKit reports an AbortError', () => {
+        // WebKit rejects a fetch whose AbortSignal.timeout() fired with a plain AbortError, while
+        // the signal itself holds the TimeoutError.
+        const timedOut = new AbortController();
+        timedOut.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+        expect(isStoppedRequest(new DOMException('The operation was aborted.', 'AbortError'), timedOut.signal)).toBe(false);
+        expect(isStoppedRequest(timedOut.signal.reason, timedOut.signal)).toBe(false);
+        expect(isStoppedRequest(new DOMException('The operation timed out.', 'TimeoutError'), null)).toBe(false);
+        expect(isStoppedRequest(new DOMException('The operation timed out.', 'TimeoutError'), new AbortController().signal)).toBe(false);
+    });
+
+    test('a lost connection is a failure, not a stop', () => {
+        const lost = Object.assign(new Error('The connection to the server was lost before the reply finished.', { cause: new DOMException('The operation was aborted.', 'AbortError') }), { code: 'GENERATION_CONNECTION_LOST' });
+        expect(isStoppedRequest(lost, new AbortController().signal)).toBe(false);
+        expect(isStoppedRequest(lost, null)).toBe(false);
+    });
+
+    test('a person\'s Stop still counts as a stop, whatever reason the signal carries', () => {
+        const stopped = new AbortController();
+        stopped.abort();
+        expect(isStoppedRequest(new DOMException('The operation was aborted.', 'AbortError'), stopped.signal)).toBe(true);
+        const withReason = new AbortController();
+        withReason.abort(new Error('Generation stopped'));
+        expect(isStoppedRequest(withReason.signal.reason, withReason.signal)).toBe(true);
+    });
+
+    test('a timed-out request is recorded, though the browser called it an AbortError', async () => {
+        const timedOut = new AbortController();
+        const watch = watchTextBackend({ kind: 'kobold', signal: timedOut.signal });
+        timedOut.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+        await expect(watch.run(async () => { throw new DOMException('The operation was aborted.', 'AbortError'); })).rejects.toThrow();
+        expect(getProviderFailures()).toHaveLength(1);
+        expect(getProviderFailures()[0]).toMatchObject({ provider: 'koboldai' });
+    });
 });
 
 describe('what an entry holds', () => {
