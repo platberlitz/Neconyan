@@ -3,6 +3,7 @@ import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 
 const key = 'roleplay-agent-stop';
+const partialFailureKey = 'roleplay-agent-failures';
 /** Stops Neconyan makes on its own, as opposed to the owner's Stop. */
 const AUTOMATIC_ROLEPLAY_AGENT_STOP_REASONS = Object.freeze(['failed', 'refused']);
 const controllers = new Map();
@@ -21,7 +22,21 @@ export function roleplayAgentsStopped({ directories, job }) {
 
 /** Only an automatic failure needs a warning on the completed reply receipt. */
 export function roleplayAgentsFailed({ directories, job }) {
-    return roleplayAgentsStopped({ directories, job }) && readArtifact(directories, job.id, key)?.reason === 'failed';
+    if (roleplayAgentsStopped({ directories, job }) && readArtifact(directories, job.id, key)?.reason === 'failed') return true;
+    return readArtifact(directories, job.id, partialFailureKey)?.intentHash === roleplayHash(job.intent);
+}
+
+/**
+ * Some parallel Agents failed while the rest finished. Their edits were kept and the
+ * pass went on, so this warns on the receipt without stopping the remaining work.
+ */
+export function markRoleplayAgentsPartlyFailed({ directories, owner, job }) {
+    const account = job.intent?.roleplay;
+    return withRoleplayAccount({ owner, directories }, account, () => {
+        if (readArtifact(directories, job.id, partialFailureKey)?.intentHash === roleplayHash(job.intent)) return false;
+        writeArtifact(directories, job.id, partialFailureKey, { intentHash: roleplayHash(job.intent) });
+        return true;
+    });
 }
 
 /**

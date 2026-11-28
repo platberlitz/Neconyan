@@ -18,9 +18,9 @@ const { loadCurrentStateSync } = await import('../src/mewmory/sources.js');
 const { mutateState } = await import('../src/mewmory/store.js');
 const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
 const { getJob, releaseJob, requestCancellation, updateJob } = await import('../src/jobs/store.js');
-const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { providerRefused, providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
-const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { requestRoleplayAgentStop, roleplayAgentsFailed, roleplayAgentsStopped } = await import('../src/generation/roleplay-agent-stop.js');
 const { createFreshnessGate } = await import('../src/generation/roleplay-freshness-gate.js');
 const { subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
@@ -797,6 +797,31 @@ test('an acknowledged parallel Agent survives a lost sibling without committing 
     const saved = f.saved();
     assert.equal(saved.length, 4, 'the paid reply is still added');
     assert.match(saved.at(-1).mes, /^Base/);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('a parallel append Agent the provider refuses keeps its finished siblings and reports only that Agent', async t => {
+    const f = prepared(t, ['one', 'two', 'three'].map((id, offset) => ({ id, phase: 'post', prompt: id.toUpperCase(), injection: { order: offset + 1 },
+        postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'append', promptTransformMaxTokens: 64 } })));
+    const warn = t.mock.method(console, 'warn', () => {});
+    const calls = [];
+    await f.run({ generate: paid('main', () => 'Base'), generateAgent: paid('parallel', ({ messages }) => {
+        const name = ['ONE', 'TWO', 'THREE'].find(prefix => messages[0].content.startsWith(prefix));
+        calls.push(name);
+        if (name === 'TWO') throw providerRefused(Object.assign(new Error('Rate limit reached.'), { status: 429 }));
+        return `${name} block`;
+    }) });
+    assert.deepEqual([...calls].sort(), ['ONE', 'THREE', 'TWO'], 'each Agent is asked once, with no whole-pass retry');
+    const saved = f.saved();
+    const reply = saved.at(-1);
+    assert.equal(reply.mes, 'Base\n\nONE block\n\nTHREE block', 'the finished siblings still add their blocks');
+    assert.deepEqual(reply.extra.inChatAgentPromptRuns.map(run => [run.agentId, run.status]), [['one', 'done'], ['two', 'error'], ['three', 'done']]);
+    assert.match(reply.extra.inChatAgentPromptRuns[1].error, /Rate limit reached/);
+    const job = getJob(f.directories, f.jobId);
+    assert.equal(roleplayAgentsStopped({ directories: f.directories, job }), false, 'a partial failure does not stop the remaining work');
+    assert.equal(roleplayAgentsFailed({ directories: f.directories, job }), true, 'the receipt still warns that an Agent did not finish');
+    assert.ok(warn.mock.calls.some(call => String(call.arguments[0]).includes('two failed')), 'the failed Agent is logged');
     await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
     assert.deepEqual(f.saved(), saved);
 });
