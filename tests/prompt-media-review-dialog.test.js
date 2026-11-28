@@ -241,9 +241,9 @@ describe('failures shown in the status line', () => {
 
     test('server text goes through the exact lookup only and is shown final: with the real pt-pt dictionary an untranslated message is unchanged', async () => {
         env.use('pt-pt');
-        const message = 'Select the image again.';
-        // The control: left to the run-time localiser, the pattern 'Select ${0}' would translate half of it.
-        expect(localizeString(message, env.dictionary)).toContain('Selecionar');
+        const message = 'Could not open the image again.';
+        // The control: left to the run-time localiser, the pattern 'Could not open ${0}.' would translate half of it.
+        expect(localizeString(message, env.dictionary)).toContain('Não foi possível abrir');
         env.routes.scan = () => scanResult([scanIssue()], target);
         env.routes.apply = () => ({ failure: { status: 409, body: { error: message } } });
         const { content, status } = await env.open(target);

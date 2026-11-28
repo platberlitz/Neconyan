@@ -1852,3 +1852,86 @@ test('hotkeys.html (is-is), help.html (fr-fr) and Contrastive_search_txt [title]
     }, contrastiveMatch[0]);
     expect(deTitle).toContain('Ein Sampler, der Vielfalt fördert');
 });
+
+test('broad 1-word fallback keeps untranslated static captions in English while translating dynamic and anchored captions', async ({ page }) => {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    const readJson = async file => JSON.parse(await readFile(new URL(file, import.meta.url), 'utf8'));
+    const enAliases = await readJson('../public/locales/neconyan/en-aliases.json');
+    const loadDictionary = async language => assembleLocaleData({
+        base: await readJson(`../public/locales/${language}.json`),
+        supplement: await readJson(`../public/locales/neconyan/${language}.json`),
+        catalogue: enAliases,
+    }).dictionary;
+
+    const [viDictionary, deDictionary] = await Promise.all([loadDictionary('vi-vn'), loadDictionary('de-de')]);
+    const staticCaptions = [
+        'Import a character',
+        'Use chat retrieval in replies',
+        'Open a chat to use Story Mode',
+        'Settings recovery failed.',
+        'No TTS provider is selected.',
+        'Save tagged copy',
+    ];
+    // Simulate a newly added/untranslated static caption by stripping any exact entry while keeping all shipped ${0} patterns.
+    const withoutExact = (dictionary, keys) => Object.fromEntries(Object.entries(dictionary).filter(([key]) => !keys.includes(key)));
+    const viUntranslated = withoutExact(viDictionary, staticCaptions);
+    const deUntranslated = {
+        ...withoutExact(deDictionary, staticCaptions),
+        // Ensure broad 1-word patterns exist in the inline+shipped dictionary for every static probe.
+        'Import ${0}': deDictionary['Import ${0}'] || 'Importieren ${0}',
+        'Use ${0}': deDictionary['Use ${0}'] || '${0} verwenden',
+        'Open ${0}': deDictionary['Open ${0}'] || '${0} öffnen',
+        'Settings ${0}': deDictionary['Settings ${0}'] || 'Einstellungen ${0}',
+        '${0} selected.': deDictionary['${0} selected.'] || '${0} ausgewählt.',
+        '${0} copy': deDictionary['${0} copy'] || '${0} Kopie',
+    };
+    const dynamicCaptions = [
+        ['Open Characters', 'Charaktere öffnen'],
+        ['Open Lorebooks', 'Lorebooks öffnen'],
+        ['Open Quick Image Gen', 'Quick Image Gen öffnen'],
+        ['History (3)', 'Verlauf (3)'],
+        ['Books: 4', 'Bücher: 4'],
+        ['Turn 3', 'Zug 3'],
+        ['Use Claude', 'Claude verwenden'],
+        ['Edit Élodie', 'Élodie bearbeiten'],
+        ['Distilled - My Book', 'Destilliert – My Book'],
+        ['Scroll Settings sections left', 'Bereiche in „Einstellungen“ nach links scrollen'],
+    ];
+
+    await page.setContent(`
+        <main>
+            <section id="vi-root">
+                ${staticCaptions.map((caption, i) => `<button id="vi-static-${i}" type="button" title="${caption}" aria-label="${caption}">${caption}</button>`).join('')}
+            </section>
+            <section id="de-root">
+                ${staticCaptions.map((caption, i) => `<button id="de-static-${i}" type="button" title="${caption}" aria-label="${caption}">${caption}</button>`).join('')}
+                ${dynamicCaptions.map(([caption], i) => `<button id="de-dynamic-${i}" type="button" title="${caption}" aria-label="${caption}">${caption}</button>`).join('')}
+            </section>
+        </main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+
+    const viResult = await page.evaluate(([dictionary, count]) => {
+        window.localizeControls(document.getElementById('vi-root'), dictionary);
+        return Array.from({ length: count }, (_, i) => {
+            const el = document.getElementById(`vi-static-${i}`);
+            return [el.textContent, el.getAttribute('title'), el.getAttribute('aria-label')];
+        });
+    }, [viUntranslated, staticCaptions.length]);
+    expect(viResult).toEqual(staticCaptions.map(caption => [caption, caption, caption]));
+
+    const deResult = await page.evaluate(([dictionary, staticCount, dynamicCount]) => {
+        window.localizeControls(document.getElementById('de-root'), dictionary);
+        const readRow = prefix => index => {
+            const el = document.getElementById(`${prefix}-${index}`);
+            return [el.textContent, el.getAttribute('title'), el.getAttribute('aria-label')];
+        };
+        return {
+            staticRows: Array.from({ length: staticCount }, (_, i) => readRow('de-static')(i)),
+            dynamicRows: Array.from({ length: dynamicCount }, (_, i) => readRow('de-dynamic')(i)),
+        };
+    }, [deUntranslated, staticCaptions.length, dynamicCaptions.length]);
+
+    expect(deResult.staticRows).toEqual(staticCaptions.map(caption => [caption, caption, caption]));
+    expect(deResult.dynamicRows).toEqual(dynamicCaptions.map(([, expected]) => [expected, expected, expected]));
+});

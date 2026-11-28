@@ -23,6 +23,14 @@ function translatesOwnText(element) {
 
 const templateIndexes = new WeakMap();
 const placeholder = /\$\{(\d+)\}/g;
+const structuralAnchor = /[:()[\]"'\u201c\u201d·—–/%]|\.\.\.|\s-\s/;
+
+function isAllowedBroadHole(raw, dictionary) {
+    if (!raw || raw !== raw.trim()) return false;
+    if (!/[A-Za-z]/.test(raw)) return true;
+    if (Object.hasOwn(dictionary, raw)) return true;
+    return !/\s/.test(raw) && /^\p{Lu}/u.test(raw);
+}
 
 // Captions built with t`` before the locale loaded arrive filled in but untranslated, so match them against their ${n} keys.
 function templateIndex(dictionary) {
@@ -34,6 +42,8 @@ function templateIndex(dictionary) {
         if (!key.includes('${') || value === key || typeof value !== 'string') continue;
         const parts = key.split(placeholder);
         if (parts.length < 3 || parts.filter((_, i) => i % 2 === 0).join('').replace(/\s/g, '').length < 3) continue;
+        const fixedJoined = parts.filter((_, i) => i % 2 === 0).join(' ');
+        const isBroad = (fixedJoined.match(/[A-Za-z]+/g) || []).length < 2 && !structuralAnchor.test(fixedJoined);
         const order = parts.filter((_, i) => i % 2 === 1);
         const isSeparatedRight = idx => idx + 2 < parts.length && parts[idx + 1] === '' && !value.includes(`\${${parts[idx]}}\${${parts[idx + 2]}}`);
         const isSeparatedLeft = idx => idx >= 2 && parts[idx - 1] === '' && !value.includes(`\${${parts[idx - 2]}}\${${parts[idx]}}`);
@@ -43,7 +53,7 @@ function templateIndex(dictionary) {
             if (isSeparatedLeft(i) && !/[a-zA-Z]$/.test(parts[i - 3])) return '(.+?)';
             return '(.*?)';
         }).join('');
-        const template = { expression: new RegExp(`^${pattern}$`, 's'), order, value, fixed: parts.filter((_, i) => i % 2 === 0).join('').length };
+        const template = { expression: new RegExp(`^${pattern}$`, 's'), order, value, fixed: parts.filter((_, i) => i % 2 === 0).join('').length, isBroad };
         const prefix = parts[0].slice(0, 2);
         if (prefix.length < 2) index.leading.push(template);
         else index.byPrefix.set(prefix, [...(index.byPrefix.get(prefix) || []), template]);
@@ -66,6 +76,7 @@ function lookup(key, dictionary, { translateHoles = true } = {}) {
     for (const template of [...(index.byPrefix.get(key.slice(0, 2)) || []), ...index.leading]) {
         const match = template.expression.exec(key);
         if (!match) continue;
+        if (template.isBroad && template.order.some((_, i) => !isAllowedBroadHole(match[i + 1], dictionary))) continue;
         const values = Object.fromEntries(template.order.map((slot, i) => [slot, translateHoles && Object.hasOwn(dictionary, match[i + 1]) ? dictionary[match[i + 1]] : match[i + 1]]));
         return template.value.replace(placeholder, (whole, slot) => values[slot] ?? whole);
     }
