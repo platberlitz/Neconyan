@@ -78,6 +78,7 @@
 - PR #1044 (2026-11-28) `fix(chat): keep deletions that cannot be saved and say why saves fail`
 - PR #1045 (2026-11-28) `test(undo): skip first-run setup in the message Undo fixture`
 - PR #1046 (2026-11-28) `fix(rail): stop long-press menus cancelling edit sidebar grip drags`
+- PR #1047 (2026-11-28) `test(ios): retry page taps the simulator cancels`
 
 ## v1.6.0
 
