@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { load } from 'cheerio';
-import { DOCS_READER_PAGES, readAssistantGender, renderDocsMarkdown, renderDocsPage, renderRegisteredDocsPage } from '../src/docs-reader.js';
+import { DOCS_READER_PAGES, readAssistantGender, readReducedMotion, renderDocsMarkdown, renderDocsPage, renderRegisteredDocsPage } from '../src/docs-reader.js';
 
 const serverDirectory = fileURLToPath(new URL('../', import.meta.url));
 const glossary = readFileSync(new URL('../docs/in-chat-agents-glossary.md', import.meta.url), 'utf8');
@@ -144,15 +144,111 @@ test('the header cat rests under reduced motion without shifting the brand link'
     }
 });
 
+test('the Reduced Motion setting keeps the whole reader still', () => {
+    const motionCss = /@media \(prefers-reduced-motion: no-preference\) \{\s*html \{ scroll-behavior: smooth; \}[\s\S]*transition:[\s\S]*animation: docs-ear-twitch-left/;
+    const userRoot = mkdtempSync(join(tmpdir(), 'docs-reader-motion-'));
+    try {
+        assert.equal(readReducedMotion(undefined), false);
+        assert.equal(readReducedMotion(userRoot), false, 'no settings.json yet');
+        writeFileSync(join(userRoot, 'settings.json'), '{ broken');
+        assert.equal(readReducedMotion(userRoot), false);
+        writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ power_user: {} }));
+        assert.equal(readReducedMotion(userRoot), false);
+        writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({ power_user: { reduced_motion: false } }));
+        assert.equal(readReducedMotion(userRoot), false);
+        const moving = renderRegisteredDocsPage(serverDirectory, 'in-chat-agents-glossary', { userRoot });
+        assert.doesNotMatch(moving, /data-reduced-motion/);
+        assert.deepEqual(load(moving)('.topbar .brand').children().toArray().map(node => node.tagName), ['picture', 'span']);
+        assert.match(load(moving)('style').text(), motionCss);
+
+        writeFileSync(join(userRoot, 'settings.json'), JSON.stringify({
+            power_user: { reduced_motion: true },
+            accountStorage: { 'neconyanAssistantGender:taro': 'female' },
+        }));
+        assert.equal(readReducedMotion(userRoot), true);
+        const still = renderRegisteredDocsPage(serverDirectory, 'in-chat-agents-glossary', { userRoot });
+        assert.match(still, /tour-05-taro-agents-female\.webp/, 'one settings read picks the art and the motion');
+        for (const html of [still, renderDocsPage('# Plain\n\n## Part\n\nText.', { reducedMotion: true })]) {
+            const $ = load(html);
+            assert.equal($('html').attr('data-reduced-motion'), 'true');
+            const brand = $('.topbar .brand');
+            assert.deepEqual(brand.children().toArray().map(node => node.tagName), ['img', 'span']);
+            assert.equal(brand.children('img').attr('src'), '/img/neconyan-pixel-cat-rest.webp');
+            assert.equal(brand.children('img').attr('width'), '26');
+            assert.equal(brand.children('img').attr('height'), '24');
+            assert.doesNotMatch(html, /neconyan-pixel-cat\.webp|<picture/, 'the moving cat is never referenced');
+            assert.doesNotMatch($('style').text(), /transition|animation:|(?<!over)scroll-behavior/);
+        }
+    } finally {
+        rmSync(userRoot, { recursive: true, force: true });
+    }
+});
+
+function gifFrameCount(bytes) {
+    const tableSize = flags => (flags & 0x80 ? 3 * 2 ** ((flags & 7) + 1) : 0);
+    let frames = 0;
+    let offset = 13 + tableSize(bytes[10]);
+    while (offset < bytes.length && bytes[offset] !== 0x3b) {
+        if (bytes[offset] === 0x2c) {
+            frames += 1;
+            offset += 11 + tableSize(bytes[offset + 9]);
+        } else if (bytes[offset] === 0x21) {
+            offset += 2;
+        } else {
+            break;
+        }
+        while (offset < bytes.length && bytes[offset] !== 0) {
+            offset += bytes[offset] + 1;
+        }
+        offset += 1;
+    }
+    return frames;
+}
+
 function isAnimatedImage(bytes) {
     if (bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') {
         return bytes.includes('ANIM', 12, 'latin1') || bytes.includes('ANMF', 12, 'latin1');
     }
     if (bytes.toString('latin1', 0, 4) === 'GIF8') {
-        return bytes.includes('NETSCAPE2.0', 0, 'latin1');
+        return gifFrameCount(bytes) > 1;
+    }
+    if (bytes.toString('latin1', 1, 4) === 'PNG') {
+        // APNG declares its frames in an acTL chunk before the first IDAT.
+        for (let offset = 8; offset + 8 <= bytes.length; offset += 12 + bytes.readUInt32BE(offset)) {
+            const type = bytes.toString('latin1', offset + 4, offset + 8);
+            if (type === 'acTL' || type === 'IDAT') {
+                return type === 'acTL';
+            }
+        }
     }
     return false;
 }
+
+test('the animated image check knows WebP, GIF and APNG frames', () => {
+    const chunk = (type, data) => Buffer.concat([Buffer.alloc(4), Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+    const png = (...chunks) => {
+        const body = chunks.map(([type, data]) => {
+            const bytes = chunk(type, data);
+            bytes.writeUInt32BE(data.length, 0);
+            return bytes;
+        });
+        return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), ...body]);
+    };
+    const ihdr = ['IHDR', Buffer.alloc(13)];
+    assert.equal(isAnimatedImage(png(ihdr, ['acTL', Buffer.alloc(8)], ['IDAT', Buffer.alloc(2)], ['IEND', Buffer.alloc(0)])), true);
+    assert.equal(isAnimatedImage(png(ihdr, ['IDAT', Buffer.alloc(2)], ['IEND', Buffer.alloc(0)])), false);
+
+    // 1x1 GIF89a with a two-colour table; each frame is a descriptor plus one LZW sub-block.
+    const frame = [0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0x02, 0x02, 0x44, 0x01, 0x00];
+    const gif = (...frames) => Buffer.from([...Buffer.from('GIF89a', 'latin1'), 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 255, 255, 255, ...frames.flat(), 0x3b]);
+    const graphicControl = [0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00];
+    assert.equal(isAnimatedImage(gif(frame)), false);
+    assert.equal(isAnimatedImage(gif(graphicControl, frame, graphicControl, frame)), true, 'two frames animate once even without a NETSCAPE2.0 loop');
+
+    for (const [file, animated] of [['neconyan-pixel-cat.webp', true], ['neconyan-pixel-cat-rest.webp', false]]) {
+        assert.equal(isAnimatedImage(readFileSync(join(serverDirectory, 'public/img', file))), animated, file);
+    }
+});
 
 // Shipped references to an animated image that a <picture> reduced-motion source doesn't guard.
 // Each one is still covered, by the code named here, and the counts are exact so a new one fails.
