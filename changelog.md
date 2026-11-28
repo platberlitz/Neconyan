@@ -60,6 +60,7 @@
 - PR #1034 (2026-11-28) `fix(l10n): keep untranslated prose out of single-word fallback patterns`
 - PR #1035 (2026-11-28) `test(e2e): pass reducedMotion through contextOptions`
 - PR #1036 (2026-11-28) `fix: stop repeat notices and chat-change churn after replies finish`
+- PR #1037 (2026-11-28) `fix(i18n): translate Home and Simple Mode character-finding strings`
 
 ## v1.6.0
 
