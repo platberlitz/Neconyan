@@ -3000,7 +3000,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261214-notebook-folder-heading';
+        style.href = 'css/mewmory.css?v=20261215-rail-grip-longpress';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {

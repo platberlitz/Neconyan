@@ -1894,6 +1894,12 @@ function setNeconyanRailButtonRemoved(id, removed) {
     saveNeconyanRailOrder();
 }
 
+// A long press on a grip opens the phone's text menu or selection, which
+// cancels the touch before the 750 ms drag delay ends.
+function preventNeconyanRailGripMenu(event) {
+    if (neconyanRailOrder?.enabled && event.target?.closest?.('.neconyan-rail-grip')) event.preventDefault();
+}
+
 function initializeNeconyanRailOrder(rail) {
     try {
         neconyanRailOrder = JSON.parse(accountStorage.getItem(NECONYAN_RAIL_ORDER_KEY));
@@ -2111,6 +2117,8 @@ function initializeNeconyanRailOrder(rail) {
         host.addEventListener('pointerdown', ensureSortableFromGrip, true);
         host.addEventListener('mousedown', ensureSortableFromGrip, true);
         host.addEventListener('touchstart', ensureSortableFromGrip, { capture: true, passive: true });
+        host.addEventListener('contextmenu', preventNeconyanRailGripMenu);
+        host.addEventListener('selectstart', preventNeconyanRailGripMenu);
     }
     initializeNeconyanRailReorderControls(rail);
     applyNeconyanRailOrder();

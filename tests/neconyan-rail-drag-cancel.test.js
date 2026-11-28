@@ -350,3 +350,74 @@ describe('Edit sidebar drag interruptions', () => {
         expect(apply).toMatch(/^function applyNeconyanRailOrder\(\) \{\n(?:\s*\/\/.*\n)*\s*cancelNeconyanRailPress\(\);/);
     });
 });
+
+describe('Edit sidebar grip long press', () => {
+    const source = readSource('public', 'scripts', 'welcome-screen.js');
+    const sheets = ['neconyan.css', 'neconyan-mobile-shell.css', 'neconyan-rail-reorder.css']
+        .map(name => readSource('public', 'css', name).replace(/\/\*[\s\S]*?\*\//g, ''));
+    // Innermost rules only, so rules inside @media blocks are listed too.
+    const rules = sheets.flatMap(css => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .map(([, selector, body]) => ({ selector: selector.trim(), body })));
+    const declares = (body, property, value) => new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*${value}\\s*(?:;|$)`).test(body);
+
+    function loadGuard(enabled) {
+        const context = vm.createContext({});
+        vm.runInContext(`
+            let neconyanRailOrder = ${enabled === undefined ? 'undefined' : JSON.stringify({ enabled })};
+            ${sliceBlock(source, 'function preventNeconyanRailGripMenu(event) {')}
+            globalThis.guard = preventNeconyanRailGripMenu;
+        `, context);
+        return context.guard;
+    }
+
+    function press(guard, onGrip, type = 'contextmenu') {
+        const event = {
+            type,
+            defaultPrevented: false,
+            target: { closest: selector => (selector === '.neconyan-rail-grip' && onGrip ? {} : null) },
+            preventDefault() { this.defaultPrevented = true; },
+        };
+        guard(event);
+        return event.defaultPrevented;
+    }
+
+    test('the Edit mode grip cannot be selected or called out and keeps touch-action none', () => {
+        const grip = rules.filter(rule => /\.neconyan-rail-reordering \.neconyan-rail-grip$/.test(rule.selector));
+        expect(grip).toHaveLength(1);
+        for (const [property, value] of [['touch-action', 'none'], ['user-select', 'none'], ['-webkit-user-select', 'none'], ['-webkit-touch-callout', 'none']]) {
+            expect(declares(grip[0].body, property, value)).toBe(true);
+        }
+        expect(grip[0].body).not.toContain('!important');
+    });
+
+    test('the rail scroller and its rows still scroll and select as before', () => {
+        const others = rules.filter(rule => /\.neconyan-rail-(?:scroll|button)\b|#neconyan-workspace-rail/.test(rule.selector));
+        expect(others.some(rule => rule.selector.includes('.neconyan-rail-scroll'))).toBe(true);
+        expect(others.some(rule => rule.selector.includes('.neconyan-rail-button'))).toBe(true);
+        const blocking = others.filter(rule => declares(rule.body, 'touch-action', 'none')
+            || declares(rule.body, '(?:-webkit-)?user-select', 'none')
+            || declares(rule.body, '-webkit-touch-callout', 'none'));
+        expect(blocking.map(rule => rule.selector)).toEqual([]);
+    });
+
+    test('a long press on a grip in Edit mode opens no menu or selection', () => {
+        const guard = loadGuard(true);
+        expect(press(guard, true)).toBe(true);
+        expect(press(guard, true, 'selectstart')).toBe(true);
+    });
+
+    test('menus and selection elsewhere and outside Edit mode are left alone', () => {
+        expect(press(loadGuard(true), false)).toBe(false);
+        expect(press(loadGuard(true), false, 'selectstart')).toBe(false);
+        expect(press(loadGuard(false), true)).toBe(false);
+        expect(press(loadGuard(false), true, 'selectstart')).toBe(false);
+        expect(press(loadGuard(undefined), true)).toBe(false);
+    });
+
+    test('every reorderable group listens for the grip menu and selection', () => {
+        const init = sliceBlock(source, 'function initializeNeconyanRailOrder(rail) {');
+        expect(init).toContain('host.addEventListener(\'contextmenu\', preventNeconyanRailGripMenu);');
+        expect(init).toContain('host.addEventListener(\'selectstart\', preventNeconyanRailGripMenu);');
+        expect(init).not.toMatch(/addEventListener\('(?:contextmenu|selectstart)', preventNeconyanRailGripMenu, \{[^}]*passive: true/);
+    });
+});
