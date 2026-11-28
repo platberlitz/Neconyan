@@ -278,6 +278,126 @@ async function endpoint(t, a) {
     };
 }
 
+function savedNoteProposal(t) {
+    const a = prepared(t);
+    const noteId = a.create('Field notes');
+    a.policy({ assistant: 'edit' });
+    const session = a.session();
+    const suggest = markdown => a.reply(session.id, 'Here is the saved notebook discussion.\n\n' + fence('append-note',
+        { notebookId: a.notebookId, noteId, expectedRevision: a.read(noteId).hash, markdown }));
+    const message = suggest('Bring a lantern.');
+    const body = { source: SOURCE, sessionId: session.id, messageId: message.id, index: 0 };
+    const review = a.proposal(session.id, message.id);
+    assert.equal(review.state, 'waiting');
+    const ref = review.bucket.sessions[0].messages[0].notebookProposals;
+    assert.equal(ref[0].id, review.proposalId);
+    scratchpad.mutateBucket(a.base, SOURCE, bucket => scratchpad.markProposal(bucket, session.id, message.id, 0, 'undone'));
+    const root = a.base.directories.root;
+    const registry = path.join(root, 'notebook-control', '_proposals.json');
+    const filename = scratchpad.scratchpadFile(root, SOURCE);
+    return { a, noteId, session, message, body, review, ref, registry, filename, suggest };
+}
+
+const TRUNCATED_REGISTRY = Buffer.from('{"schema":');
+
+function responseStatus({ http, body }) {
+    return { http, code: body.code };
+}
+
+test('damaged notebook registry leaves a linked Scratchpad bucket readable', async t => {
+    const { a, message, ref, registry, filename } = savedNoteProposal(t);
+    const post = await endpoint(t, a);
+    const before = fs.readFileSync(filename);
+    fs.writeFileSync(registry, TRUNCATED_REGISTRY);
+    const loaded = await post('/scratchpad/bucket', { source: SOURCE });
+    assert.deepEqual(responseStatus(loaded), { http: 200, code: undefined });
+    const [saved] = loaded.body.bucket.sessions[0].messages;
+    assert.equal(saved.id, message.id);
+    assert.equal(saved.text, message.text);
+    assert.deepEqual(saved.notebookProposals, ref);
+    assert.deepEqual(saved.proposals, { 0: 'undone' });
+    assert.deepEqual(fs.readFileSync(filename), before);
+    assert.deepEqual(fs.readFileSync(registry), TRUNCATED_REGISTRY);
+});
+
+test('damaged notebook registry leaves an ordinary swipe to a linked reply usable', async t => {
+    const { a, noteId, session, message, ref, registry, filename } = savedNoteProposal(t);
+    const post = await endpoint(t, a);
+    const plain = a.reply(session.id, 'An earlier reply.');
+    scratchpad.mutateBucket(a.base, SOURCE, bucket => {
+        const current = scratchpad.findSession(bucket, session.id);
+        const [linked, unlinked] = current.messages;
+        current.messages = [{ ...unlinked, swipeIndex: 0, swipes: [null, linked] }];
+    });
+    const before = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    const [{ swipeIndex, swipes, ...originalReply }] = before.sessions[0].messages;
+    assert.equal(swipeIndex, 0);
+    assert.deepEqual(swipes[1].notebookProposals, ref);
+    fs.writeFileSync(registry, TRUNCATED_REGISTRY);
+    const switched = await post('/scratchpad/message/swipe', { source: SOURCE, sessionId: session.id, messageId: plain.id, index: 1 });
+    assert.deepEqual(responseStatus(switched), { http: 200, code: undefined });
+    const [selected] = switched.body.bucket.sessions[0].messages;
+    assert.equal(selected.id, message.id);
+    assert.equal(selected.text, message.text);
+    assert.deepEqual(selected.notebookProposals, ref);
+    assert.deepEqual(selected.proposals, { 0: 'undone' });
+    assert.equal(selected.swipeIndex, 1);
+    assert.deepEqual(selected.swipes, [originalReply, null]);
+    const persisted = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    assert.deepEqual(persisted, { ...before, sessions: [{ ...before.sessions[0], updated: persisted.sessions[0].updated, messages: [selected] }] });
+    assert.equal(a.read(noteId).text, TEXT);
+    assert.deepEqual(fs.readFileSync(registry), TRUNCATED_REGISTRY);
+});
+
+test('damaged notebook registry still blocks review and decision and recovers after restoration', async t => {
+    const { a, noteId, body, review, ref, registry, filename, suggest } = savedNoteProposal(t);
+    const post = await endpoint(t, a);
+    const healthy = fs.readFileSync(registry);
+    const before = fs.readFileSync(filename);
+    fs.writeFileSync(registry, TRUNCATED_REGISTRY);
+    const reviewBody = { ...body, proposalHash: review.proposalHash };
+    for (const [route, data] of [['proposal', reviewBody], ['decide', { ...reviewBody, decision: 'allow' }]]) {
+        const result = await post('/scratchpad/notes/' + route, data);
+        assert.deepEqual(responseStatus(result), { http: 500, code: 'NOTEBOOK_CONTROL_DAMAGED' }, route);
+        assert.equal(a.read(noteId).text, TEXT);
+        assert.deepEqual(fs.readFileSync(registry), TRUNCATED_REGISTRY);
+        assert.deepEqual(fs.readFileSync(filename), before);
+    }
+    fs.writeFileSync(registry, healthy);
+    const recovered = await post('/scratchpad/notes/proposal', body);
+    assert.equal(recovered.http, 200);
+    assert.equal(recovered.body.proposalId, review.proposalId);
+    assert.equal(recovered.body.proposalHash, review.proposalHash);
+    assert.equal(recovered.body.state, 'waiting');
+    assert.deepEqual(recovered.body.bucket.sessions[0].messages[0].notebookProposals, ref);
+    const other = a.proposal(body.sessionId, suggest('Pack a map.').id);
+    for (const [item, decision] of [[review, 'deny'], [other, 'allow']]) {
+        assert.equal((await post('/notebooks/assistant/decide', { proposalId: item.proposalId, proposalHash: item.proposalHash, decision })).http, 200);
+    }
+    const beforeProjection = fs.readFileSync(filename);
+    const projected = await post('/scratchpad/bucket', { source: SOURCE });
+    assert.equal(projected.http, 200);
+    assert.deepEqual(projected.body.bucket.sessions[0].messages.map(item => item.proposals), [{ 0: 'rejected' }, { 0: 'applied' }]);
+    assert.deepEqual(fs.readFileSync(filename), beforeProjection);
+});
+
+test('damaged notebook registry protection still surfaces unrelated file errors', async t => {
+    const { a, registry, filename } = savedNoteProposal(t);
+    const post = await endpoint(t, a);
+    const before = fs.readFileSync(filename);
+    fs.renameSync(registry, registry + '.fixture-original');
+    fs.mkdirSync(registry);
+    const loaded = await post('/scratchpad/bucket', { source: SOURCE });
+    assert.deepEqual(responseStatus(loaded), { http: 409, code: 'ROLEPLAY_STORE_DAMAGED' });
+    assert.deepEqual(fs.readFileSync(filename), before);
+    const source = { kind: 'general', key: 'general' };
+    const imported = await post('/scratchpad/session/import', { source, session: { messages: [{ role: 'assistant', text: 'An unlinked discussion.' }] } });
+    assert.equal(imported.http, 200);
+    const unlinked = await post('/scratchpad/bucket', { source });
+    assert.equal(unlinked.http, 200);
+    assert.equal(unlinked.body.bucket.sessions[0].messages[0].text, 'An unlinked discussion.');
+});
+
 test('note context endpoints ignore forged browser note text, isolate accounts and strip imported sharing and approvals', async t => {
     const a = prepared(t, 'scratch-owner');
     const b = prepared(t, 'scratch-other');

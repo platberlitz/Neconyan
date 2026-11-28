@@ -1,5 +1,7 @@
 /* global document */
 /* eslint-disable playwright/no-standalone-expect -- Helpers assert their own fixture setup. */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
@@ -36,6 +38,45 @@ async function finishReply(page, account, app, text, reply) {
     app.provider.mode.finishStream();
     await account.settled((await response.json()).job.id);
     await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
+}
+
+for (const phone of [true, false]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} opens saved General Scratchpad history with a damaged notebook registry`, async ({ app }, info) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, seedConversation: false });
+        const { notebookId, chosen } = await notes(account);
+        const source = { kind: 'general', key: 'general' };
+        const savedText = 'The ferry leaves at dawn. Bring a lantern for the crossing.';
+        const change = { type: 'notebook', action: 'append-note', args: { notebookId, noteId: chosen.noteId,
+            expectedRevision: chosen.revision, markdown: 'Bring a lantern.' } };
+        const result = await account.post('/api/scratchpad/session/import', { source, session: { assistant: 'miso', name: 'Field notes', messages: [
+            { role: 'user', text: 'What should we remember about the ferry?' },
+            { role: 'assistant', text: `${savedText}\n\n\`\`\`scratchpad-change\n${JSON.stringify(change)}\n\`\`\`` },
+        ] } });
+        const session = result.bucket.sessions.find(item => item.id === result.bucket.activeSessionId);
+        const review = await account.post('/api/scratchpad/notes/proposal', { source, sessionId: session.id, messageId: session.messages[1].id, index: 0 });
+        expect(review.state).toBe('waiting');
+        expect(review.bucket.sessions[0].messages[1].notebookProposals[0].id).toBe(review.proposalId);
+        await fs.writeFile(path.join(app.dataRoot, 'default-user', 'notebook-control', '_proposals.json'), '{"schema":');
+
+        const page = await account.open({ workspace: false });
+        await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
+        if (phone) await page.locator('#sb-hamburger').click();
+        const response = page.waitForResponse('**/api/scratchpad/bucket');
+        await page.locator('#neconyan-workspace-rail [data-neconyan-route="scratchpad"]').click();
+        const loaded = await response;
+        expect(loaded.request().postDataJSON().source.kind).toBe('general');
+        const panel = page.locator('#neconyan-scratchpad');
+        await expect(panel).toBeVisible();
+        const history = panel.locator('.scratchpad-messages').getByText(savedText, { exact: true });
+        const error = page.locator('.toast-error').filter({ hasText: 'Scratchpad could not finish that request.' });
+        await expect(history.or(error)).toBeVisible();
+        await page.screenshot({ path: info.outputPath(`scratchpad-${viewport}.png`) });
+        expect({ http: loaded.status(), code: (await loaded.json()).code }).toEqual({ http: 200, code: undefined });
+        await expect(history).toBeVisible();
+        await expect(panel.locator('.scratchpad-composer')).toBeEnabled();
+    });
 }
 
 for (const phone of [false, true]) {
