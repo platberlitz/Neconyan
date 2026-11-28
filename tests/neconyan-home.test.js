@@ -657,3 +657,183 @@ describe('assistant shortcuts without shipped characters', () => {
         expect(selected).toBe(false);
     });
 });
+
+describe('Home template parsing and the moving cat', () => {
+    const MOVING = 'img/neconyan-pixel-cat.webp?v=20260913g';
+    const RESTING = 'img/neconyan-pixel-cat-rest.webp?v=20260913g';
+    const source = read('scripts/welcome-screen.js');
+    const sendWelcomePanelSource = source.match(/^async function sendWelcomePanel\([\s\S]*?^}/m)[0];
+
+    // Browsers start fetching an image as soon as it has a src in the live document, even
+    // before it is inserted, but not while it sits in an inert <template>'s contents.
+    function createHome({ osReduced = false, appReduced = false } = {}) {
+        const live = { name: 'live document' };
+        const inert = { name: 'template contents owner' };
+        const requests = [];
+        const calls = [];
+        const errors = [];
+        const documentListeners = {};
+        const panels = [];
+        class Element {
+            constructor(selectors = [], attributes = {}, dataset = {}, children = []) {
+                Object.assign(this, { selectors, attributes, dataset, children, listeners: {}, hidden: false, textContent: '', parentNode: null });
+                this.classList = { contains: () => false, add() {}, remove() {} };
+                children.forEach(child => { child.parentNode = this; });
+            }
+            get descendants() { return this.children.flatMap(child => [child, ...child.descendants]); }
+            matches(selector) { return this.selectors.includes(selector); }
+            querySelectorAll(selector) { return this.descendants.filter(node => node.matches(selector)); }
+            querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
+            closest(selector) {
+                for (let node = this; node; node = node.parentNode) if (node.matches(selector)) return node;
+                return null;
+            }
+            getAttribute(name) { return this.attributes[name] ?? null; }
+            setAttribute(name, value) { this.attributes[name] = String(value); }
+            addEventListener(type, handler) { (this.listeners[type] ??= []).push(handler); }
+            adopt(ownerDocument) {
+                for (const node of [this, ...this.descendants]) {
+                    if (node.ownerDocument === ownerDocument) continue;
+                    node.ownerDocument = ownerDocument;
+                    node.load?.();
+                }
+            }
+            insert(node) {
+                node.parentNode = this;
+                node.adopt(this.ownerDocument);
+                return node;
+            }
+            replaceChildren(...nodes) { this.children = nodes.map(node => this.insert(node)); }
+            replaceWith(node) {
+                const parent = this.parentNode;
+                parent.children = parent.children.map(child => child === this ? parent.insert(node) : child);
+                this.parentNode = null;
+            }
+            async click() {
+                const event = { type: 'click', target: this, preventDefault() {}, stopPropagation() {} };
+                const pending = [];
+                for (let node = this; node; node = node.parentNode) pending.push(...(node.listeners.click ?? []).map(handler => handler(event)));
+                if (this.ownerDocument === live) pending.push(...(documentListeners.click ?? []).map(handler => handler(event)));
+                await Promise.all(pending);
+            }
+        }
+        class Button extends Element {}
+        class ImageElement extends Element {
+            get src() { return this.source; }
+            set src(value) {
+                this.source = value;
+                this.load();
+            }
+            load() {
+                if (this.ownerDocument !== live || !this.source || this.source === this.requested) return;
+                this.requested = this.source;
+                requests.push(this.source);
+            }
+        }
+        const parse = (html, ownerDocument) => {
+            const templateCat = html.match(/<img src="([^"]+)"[^>]*\bdata-neconyan-cat>/);
+            expect(templateCat?.[1]).toBe(MOVING);
+            const cat = new ImageElement(['[data-neconyan-cat]']);
+            const toggle = new Button(['[data-neconyan-cat-toggle]']);
+            const mode = new Button(['[data-welcome-panel-mode-target]'], { 'data-welcome-panel-mode-target': 'compact' });
+            const filter = new Button(['[data-recent-chat-filter]'], { 'data-recent-chat-filter': 'group' });
+            const search = new Button(['.welcomeActionButton'], {}, { action: 'open-global-search' });
+            const open = new Button(['.recentChatOpen']);
+            const chat = new Element(['.recentChat'], {}, {}, [open]);
+            const panel = new Element(['.welcomePanel', '.neconyan-home'], {}, {}, [
+                new Element(['.neconyan-home-cat'], {}, {}, [cat, toggle]), mode, filter, search, chat,
+            ]);
+            const fragment = new Element([], {}, {}, [panel]);
+            fragment.adopt(ownerDocument);
+            cat.src = templateCat[1];
+            panels.push({ panel, cat, toggle, mode, filter, search, open });
+            return fragment;
+        };
+        const host = new Element(['#neconyan-home-host']);
+        host.ownerDocument = live;
+        const document = {
+            body: { classList: { contains: name => name === 'reduced-motion' && appReduced, add() {} } },
+            addEventListener(type, handler) { (documentListeners[type] ??= []).push(handler); },
+            querySelectorAll: () => [],
+            getElementById: id => (id === 'chat' ? new Element(['#chat']) : null),
+            createElement(tagName) {
+                expect(tagName).toBe('template');
+                return { set innerHTML(html) { this.content = parse(html, inert); } };
+            },
+            createRange: () => ({ createContextualFragment: html => parse(html, live) }),
+        };
+        const record = name => (...args) => { calls.push([name, ...args]); };
+        const context = vm.createContext({
+            console: { error: (...args) => errors.push(args), warn() {}, log() {} },
+            document, Element, HTMLElement: Element, HTMLButtonElement: Button, HTMLImageElement: ImageElement,
+            window: { matchMedia: () => ({ matches: osReduced, addEventListener() {} }), requestAnimationFrame() {} },
+            setTimeout: () => 0, clearTimeout() {},
+            welcomeRequestId: 1, WELCOME_PANEL_MODES: { full: 'full' },
+            buildWelcomeTemplateData: () => ({ empty: true, welcomePanelMode: 'full' }),
+            renderTemplateAsync: async (path, data) => {
+                expect(path).toMatch(/^\/scripts\/templates\/welcomePanelOnboarding\.html\?v=/);
+                return Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'))(data);
+            },
+            getWelcomeHost: () => host, initializeAssistantPicker() {}, getWelcomePanelMode: () => 'full',
+            setWelcomePanelMode: (root, mode) => calls.push(['mode', panels.findIndex(item => item.panel === root), mode]),
+            setRecentChatFilter: (root, filter) => calls.push(['filter', filter]),
+            handleWelcomeAction: async button => calls.push(['action', button.dataset.action, button.dataset.sbUniversalSearchTrigger]),
+            openNeconyanRecentChat: record('open'), scheduleWhatsNewDot() {}, updateRecentChatFilterView() {},
+            renderPanelLookNotice() {}, revealUi() {}, t: strings => strings.join(''), groups: [],
+            toastr: { error: record('toast') }, PinnedChatsManager: { isPinned: () => false, toggle() {} },
+        });
+        vm.runInContext(read('scripts/neconyan-home.js').replace(/^export /gm, '') + '\n' + sendWelcomePanelSource, context);
+        const render = () => context.sendWelcomePanel([{ avatar: 'Nova.png', chat_name: 'Chat' }], false, 1);
+        return { calls, errors, host, live, panels, render, requests };
+    }
+
+    test.each([
+        ['the system Reduce Motion setting', { osReduced: true }],
+        ['the app Reduced Motion setting', { appReduced: true }],
+    ])('under %s Home never fetches the moving cat, and its listeners still work once inserted', async (_label, options) => {
+        const home = createHome(options);
+        await home.render();
+        const [{ panel, cat, toggle, mode, filter, search, open }] = home.panels;
+        expect(home.requests).toEqual([RESTING]);
+        expect(home.host.children).toHaveLength(1);
+        expect(home.host.children[0]).toBe(panel);
+        expect(cat.ownerDocument).toBe(home.live);
+        expect(cat.src).toBe(RESTING);
+        expect(toggle.hidden).toBe(true);
+        expect(toggle.dataset.paused).toBe('true');
+        await mode.click();
+        await filter.click();
+        await search.click();
+        await open.click();
+        expect(home.calls).toEqual([
+            ['mode', 0, 'full'],
+            ['mode', 0, 'compact'],
+            ['filter', 'group'],
+            ['action', 'open-global-search', 'true'],
+            ['open', { avatar: 'Nova.png', chat_name: 'Chat' }],
+        ]);
+        expect(home.errors).toEqual([]);
+    });
+
+    test('with motion allowed the moving cat loads once, and a paused cat is not fetched again when Home redraws', async () => {
+        const home = createHome();
+        await home.render();
+        const [first] = home.panels;
+        expect(home.requests).toEqual([MOVING]);
+        expect(first.toggle.hidden).toBe(false);
+        await first.toggle.click();
+        expect(first.toggle.dataset.paused).toBe('true');
+        expect(first.toggle.textContent).toBe('Play cat animation');
+        expect(home.requests).toEqual([MOVING, RESTING]);
+        await home.render();
+        const second = home.panels[1];
+        expect(home.host.children).toHaveLength(1);
+        expect(home.host.children[0]).toBe(second.panel);
+        expect(second.cat.src).toBe(RESTING);
+        expect(home.requests).toEqual([MOVING, RESTING, RESTING]);
+        await second.toggle.click();
+        expect(second.toggle.textContent).toBe('Pause cat animation');
+        expect(home.requests).toEqual([MOVING, RESTING, RESTING, MOVING]);
+        expect(home.errors).toEqual([]);
+    });
+});
