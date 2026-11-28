@@ -1,1 +1,0 @@
-Pura's randomisers, including **Chaos Mode**, **Genre Randomiser** and **Combined Director's Cut**, now come already installed in **Agents**, switched off, so you can turn one on without adding it from the library first.
