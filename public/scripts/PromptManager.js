@@ -1625,7 +1625,7 @@ class PromptManager {
 
         // Check whether the referenced prompts are present.
         this.serviceSettings.prompts.length === 0
-            ? this.setPrompts(chatCompletionDefaultPrompts.prompts)
+            ? this.setPrompts(structuredClone(chatCompletionDefaultPrompts.prompts))
             : this.checkForMissingPrompts(this.serviceSettings.prompts);
 
         // Add identifiers if there are none assigned to a prompt
@@ -1659,7 +1659,7 @@ class PromptManager {
         missingIdentifiers.forEach(identifier => {
             const defaultPrompt = chatCompletionDefaultPrompts.prompts.find(prompt => prompt?.identifier === identifier);
             if (defaultPrompt) {
-                prompts.push(defaultPrompt);
+                prompts.push(structuredClone(defaultPrompt));
                 this.log(`Missing system prompt: ${defaultPrompt.identifier}. Added default.`);
             }
         });
@@ -3191,9 +3191,7 @@ const chatCompletionDefaultPrompts = {
 };
 
 /**
- * The default prompts' names by identifier, copied when this module loads. An account whose saved settings hold no prompts uses
- * chatCompletionDefaultPrompts.prompts itself as its prompt list, so a prompt added or renamed there changes that array.
- * isBuiltInPromptName reads this copy, never the live array.
+ * The default prompts' names by identifier, used by isBuiltInPromptName to recognise names the app wrote.
  */
 const DEFAULT_PROMPT_NAMES = Object.freeze(Object.fromEntries(chatCompletionDefaultPrompts.prompts.map(prompt => [prompt.identifier, prompt.name])));
 

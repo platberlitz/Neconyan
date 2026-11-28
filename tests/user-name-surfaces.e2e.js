@@ -1115,9 +1115,8 @@ test('AC 17: a reset Nsfw and Jailbreak prompt keep their translated names in th
     });
 });
 
-// Rule D (M71-A7). An account whose saved settings hold no prompts uses the default prompt list itself as its prompt list (the app's
-// sanitizeServiceSettings sets it with setPrompts), so a prompt added there, or a default prompt renamed there, also changes that
-// list. isBuiltInPromptName reads a copy taken at load, so such names stay as written and the untouched defaults still translate.
+// Rule D (M71-A7). An account whose saved settings hold no prompts gets its own copy of the defaults.
+// Names chosen in that copy stay as written and untouched default names still translate.
 test('rule D: a prompt a person adds or renames keeps its name when the account uses the default prompt list', async ({ app }, info) => {
     info.setTimeout(10 * 60 * 1000);
     const account = await app.account({});
@@ -1132,16 +1131,18 @@ test('rule D: a prompt a person adds or renames keeps its name when the account 
     await shell(page, 'left', 'presets');
     await page.evaluate(() => document.getElementById('openai-tab-btn-prompts')?.click());
     await page.waitForSelector('#completion_prompt_manager_list li[data-pm-identifier="nsfw"]', { state: 'attached' });
-    // The app's own path for an empty prompt list: sanitizeServiceSettings calls setPrompts(chatCompletionDefaultPrompts.prompts).
-    const shared = await page.evaluate(async () => {
+    // Exercise the app's fallback for an empty prompt list.
+    const ownership = await page.evaluate(async () => {
         const { promptManager } = await import('/scripts/openai.js');
         const { chatCompletionDefaultPrompts } = await import('/scripts/PromptManager.js');
         promptManager.serviceSettings.prompts = [];
         promptManager.sanitizeServiceSettings();
         await promptManager.render(false);
-        return promptManager.serviceSettings.prompts === chatCompletionDefaultPrompts.prompts;
+        const prompts = promptManager.serviceSettings.prompts;
+        const defaults = chatCompletionDefaultPrompts.prompts;
+        return { sharedList: prompts === defaults, sharedEntries: prompts.some(prompt => defaults.includes(prompt)) };
     });
-    expect(shared, 'the account uses the default prompt list itself').toBe(true);
+    expect(ownership, 'the account owns its fallback list and entries').toEqual({ sharedList: false, sharedEntries: false });
     await page.waitForFunction(() => { const list = document.querySelector('#completion_prompt_manager_list'); if (!list?.querySelector('li[data-pm-identifier="nsfw"] .prompt-manager-edit-action')) return false; if (window.a7SettledList !== list) { window.a7SettledList = list; window.a7SettledSince = Date.now(); return false; } return Date.now() - window.a7SettledSince >= 3000; }, undefined, { polling: 250, timeout: 30000 });
     // A new prompt named Draft, made in the prompt editor.
     await page.evaluate(() => document.querySelector('#completion_prompt_manager_new, #completion_prompt_manager_prompt_manager_new').click());
@@ -1234,7 +1235,8 @@ test('changed select options the sweep does not reach keep a chosen name and sti
 
     const page = await openPlain(account, 'pt-pt');
     // Three companion agents: the chatroom companion whose editor is read, a chosen name, and one with its bundled template's name.
-    await page.evaluate(async () => {
+    const companionOrder = 37;
+    await page.evaluate(async order => {
         const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
         const make = (fields, settings = {}) => {
             const agent = Object.assign(store.createDefaultAgent(), { category: 'companion', execution: 'companion' }, fields);
@@ -1243,10 +1245,12 @@ test('changed select options the sweep does not reach keep a chosen name and sti
         };
         await store.saveAgent(make({ id: 'nm-agent-summary', name: 'Summary', sourceTemplateId: 'tpl-chatroom-companion' },
             { chatroomStyle: 'custom', chatroomCustomStyles: 'Notes: Keep it short.', chatroomCustomStyleName: 'Notes' }));
-        await store.saveAgent(make({ id: 'nm-agent-default', name: 'Default' }));
+        const chosen = make({ id: 'nm-agent-default', name: 'Default' });
+        chosen.injection.order = order;
+        await store.saveAgent(chosen);
         await store.saveAgent(make({ id: 'nm-agent-bundled', name: 'Chat Only', sourceTemplateId: 'tpl-chat-only-companion' }));
         await (await import('/script.js')).saveSettings();
-    });
+    }, companionOrder);
     const reload = async () => {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 60000 });
@@ -1364,10 +1368,16 @@ test('changed select options the sweep does not reach keep a chosen name and sti
     expect.soft(await options(page, `#ica--editor-chatroom-extra-character-avatars option[value="${characterAvatar}"]`), 'chatroom extra character options: the character named Summary').toEqual([
         { value: characterAvatar, text: `Summary (${characterAvatar})`, marked: true },
     ]);
+    const orderLabelKey = '${0} (Order ${1})';
+    const orderLabel = pt[orderLabelKey];
+    expect(orderLabel, 'the order label is translated').not.toBe(orderLabelKey);
+    expect(orderLabel).toContain('${0}');
+    expect(orderLabel).toContain('${1}');
+    const chosenLabel = orderLabel.replace('${0}', 'Default').replace('${1}', String(companionOrder));
     for (const id of ['ica--editor-companion-dependencies', 'ica--editor-companion-contextRecipientAgentIds', 'ica--editor-pp-companionTargets']) {
         const list = await options(page, `#${id} option`);
         const chosen = list.find(option => option.value === 'nm-agent-default');
-        expect.soft(chosen && { text: chosen.text.replace(/\d+/g, '#'), marked: chosen.marked }, `${id}: the agent named Default`).toEqual({ text: 'Default (Order #)', marked: true });
+        expect.soft(chosen, `${id}: the agent named Default`).toEqual({ value: 'nm-agent-default', text: chosenLabel, marked: true });
         expect.soft(list.find(option => option.value === 'nm-agent-bundled')?.marked, `${id}: the agent with its bundled name`).toBe(false);
     }
     // With the styles cleared, the style list shows its built-in option.

@@ -18954,5 +18954,12 @@
   "This Agent change has no new text.": "此智能体更改没有新的文本。",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "共享消息上已完成的伴随备注（追踪器、剧情罗盘、记忆碎片）",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan 的按钮真的很多，多得不得了。**简易模式**只保留聊天、你的角色和人设、查找角色、精简的连接页面、记忆、预设、世界书、智能体、笔记本和 Scratchpad，其余的都收起来。",
-  "Agents are still loading. Try again in a moment.": "智能体仍在加载。请稍后再试。"
+  "Agents are still loading. Try again in a moment.": "智能体仍在加载。请稍后再试。",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "寻找你的喵趣伙伴～！选择你已有的角色，在线查找新角色，或开启临时聊天吧！",
+  "Find characters": "查找角色",
+  "Find characters online": "在线查找角色",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "在 Chub、JannyAI 等角色卡站点搜索，轻点即可添加。",
+  "Import a character": "导入角色",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "从文件或链接导入。这里不提供 JanitorAI 搜索，但支持链接导入。",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "角色卡来自第三方站点。简易模式会直接添加此角色卡并立即打开聊天，不会显示其内容报告。"
 }
