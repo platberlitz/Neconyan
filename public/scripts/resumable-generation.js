@@ -8,6 +8,7 @@
  */
 import { createReplyKeepAlive } from './background-keep-alive.js';
 import { GENERATION_CONNECTION_LOST } from './generation-outcome.js';
+import { getNativeAppLifecycle, isNativeAppBackgrounded, onNativeAppLifecycle } from './native-app-lifecycle.js';
 
 const GENERATION_ID_HEADER = 'X-Generation-Id';
 const GENERATION_CONTEXT_HEADER = 'X-Generation-Context';
@@ -19,6 +20,8 @@ const STATUS_URL = '/api/resumable-generations/status';
 const RESUME_RETRY_DELAYS_MS = Object.freeze([0, 1000, 2000, 5000]);
 /** About a minute and a half of failed attempts; then the reply stops and says the connection was lost. */
 const MAX_RESUME_ATTEMPTS = 20;
+/** An hour of attempts at the longest delay, as long as the server keeps a reply, even with the app off the screen. */
+const MAX_BACKGROUND_RESUME_ATTEMPTS = 720;
 /** A stream with no bytes for this long when the page becomes visible again gets reconnected. */
 const STALE_STREAM_MS = 5000;
 /** On a visible page, a connection with no bytes for this long is checked with the server. */
@@ -347,7 +350,10 @@ class ResumableRequest {
      * @returns {Promise<{ status: number, statusText: string, headers: Headers, body: ReadableStream<Uint8Array> }>}
      */
     async resume(cause) {
-        for (let attempt = 0; attempt < MAX_RESUME_ATTEMPTS; attempt++) {
+        // Neconyan: while the Android or iPhone app is off the screen the system can hold the page
+        // or the local server frozen, so attempts that fail then do not use up the limit.
+        let failures = 0;
+        for (let attempt = 0; failures < MAX_RESUME_ATTEMPTS && attempt < MAX_BACKGROUND_RESUME_ATTEMPTS; attempt++) {
             const delay = RESUME_RETRY_DELAYS_MS[Math.min(attempt, RESUME_RETRY_DELAYS_MS.length - 1)];
             if (delay) {
                 await sleep(delay, this.outerSignal);
@@ -357,6 +363,12 @@ class ResumableRequest {
                 throw abortError(this.outerSignal);
             }
 
+            const backgrounded = isNativeAppBackgrounded();
+            const countFailure = () => {
+                if (!backgrounded && !isNativeAppBackgrounded()) {
+                    failures++;
+                }
+            };
             let response;
             try {
                 response = await this.connect(RESUME_URL, {
@@ -370,6 +382,7 @@ class ResumableRequest {
                     this.finish();
                     throw abortError(this.outerSignal);
                 }
+                countFailure();
                 continue;
             }
 
@@ -384,6 +397,7 @@ class ResumableRequest {
             }
             // 429: the server still counts older connections for this reply that it has not seen close yet.
             if (response.status >= 500 || response.status === 429) {
+                countFailure();
                 continue;
             }
             this.finish();
@@ -570,7 +584,7 @@ export function reconnectStaleGenerations(now = Date.now()) {
  * @param {number} [now] Current time
  */
 function checkQuietGenerations(now = Date.now()) {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    if ((typeof document !== 'undefined' && document.visibilityState === 'hidden') || isNativeAppBackgrounded()) {
         return;
     }
     for (const request of [...activeRequests.values()]) {
@@ -706,9 +720,18 @@ if (typeof document !== 'undefined') {
         createReplyKeepAlive({
             subscribe: onGenerationActivity,
             notifyNative: busy => nativeBackground.postMessage({ busy }),
+            watchSendLock: true,
+            lifecycle: getNativeAppLifecycle(),
         });
     }
 }
+
+// The phone app can freeze the page without a visibility change; catch up as soon as it is back.
+onNativeAppLifecycle(({ state, previous }) => {
+    if (state === 'resumed' && previous === 'stopped') {
+        reconnectStaleGenerations();
+    }
+});
 
 // Deliberately no beforeunload/pagehide cancel: a reply keeps running server-side when the page
 // is reloaded, closed or killed, and recoverGenerations() in script.js applies it on the next

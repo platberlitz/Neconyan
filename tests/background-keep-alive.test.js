@@ -11,6 +11,7 @@ import {
     readBackgroundKeepAliveEnabled,
     writeBackgroundKeepAliveEnabled,
 } from '../public/scripts/background-keep-alive.js';
+import { createNativeAppLifecycle, NATIVE_APP_LIFECYCLE_EVENT } from '../public/scripts/native-app-lifecycle.js';
 
 const ANDROID_CHROME = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 const DESKTOP_CHROME = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -564,8 +565,8 @@ describe('background keep-alive status text', () => {
 });
 
 describe('iPhone app reply keep-alive', () => {
-    function setupReply() {
-        const documentRef = createDocument();
+    function setupReply(options = {}) {
+        const documentRef = options.documentRef ?? createDocument();
         const audio = createAudioStub();
         const mediaSession = createMediaSession();
         const native = [];
@@ -581,6 +582,7 @@ describe('iPhone app reply keep-alive', () => {
             createObjectUrl: () => 'blob:quiet-tone',
             setTimer: (fn, ms) => { const id = nextTimer++; timers.set(id, { fn, ms }); return id; },
             clearTimer: id => timers.delete(id),
+            ...options,
         });
         const fire = (ms) => {
             for (const [id, timer] of [...timers]) {
@@ -674,5 +676,88 @@ describe('iPhone app reply keep-alive', () => {
         controller.destroy();
         expect(native).toEqual([true, false]);
         expect(documentRef.listenerCount()).toBe(0);
+    });
+
+    function createSendLock(generating = '') {
+        const observers = new Set();
+        const body = { dataset: generating ? { generating } : {} };
+        class FakeObserver {
+            constructor(callback) { this.callback = callback; }
+            observe(target, options) {
+                this.target = target;
+                this.options = options;
+                observers.add(this);
+            }
+            disconnect() { observers.delete(this); }
+        }
+        const set = (value) => {
+            if (value) body.dataset.generating = value;
+            else delete body.dataset.generating;
+            for (const observer of [...observers]) observer.callback([]);
+        };
+        return { body, FakeObserver, observers, set };
+    }
+
+    test('the Send lock keeps it going while Agents finish between their own requests', () => {
+        const lock = createSendLock();
+        const documentRef = Object.assign(createDocument(), { body: lock.body });
+        const { controller, audio, native, timers, fire, activity } = setupReply({
+            documentRef,
+            watchSendLock: true,
+            MutationObserverRef: lock.FakeObserver,
+        });
+        expect([...lock.observers][0].options).toEqual({ attributes: true, attributeFilter: ['data-generating'] });
+
+        lock.set('true');
+        activity(true);
+        documentRef.setVisibility('hidden');
+        activity(false);
+        expect([...timers.values()].map(timer => timer.ms)).toEqual([65 * 60_000]);
+        expect(controller.isPlaying()).toBe(true);
+
+        lock.set('');
+        expect([...timers.values()].map(timer => timer.ms).sort((a, b) => a - b)).toEqual([15_000, 65 * 60_000]);
+        fire(15_000);
+        expect(controller.isHolding()).toBe(false);
+        expect(audio.pause).toHaveBeenCalledTimes(1);
+        expect(native).toEqual([true, false]);
+    });
+
+    test('a Send lock already held when the page loads holds at once, and destroy stops watching it', () => {
+        const lock = createSendLock('true');
+        const documentRef = Object.assign(createDocument(), { body: lock.body });
+        const { controller, native } = setupReply({ documentRef, watchSendLock: true, MutationObserverRef: lock.FakeObserver });
+        expect(controller.isHolding()).toBe(true);
+        expect(native).toEqual([true]);
+        controller.destroy();
+        expect(lock.observers.size).toBe(0);
+        expect(native).toEqual([true, false]);
+    });
+
+    test('without watchSendLock the Send lock is left alone', () => {
+        const lock = createSendLock('true');
+        const documentRef = Object.assign(createDocument(), { body: lock.body });
+        const { controller } = setupReply({ documentRef, MutationObserverRef: lock.FakeObserver });
+        expect(controller.isHolding()).toBe(false);
+        expect(lock.observers.size).toBe(0);
+    });
+
+    test('the app leaving the screen counts as hidden even before the page hears about it', () => {
+        const host = new EventTarget();
+        const lifecycle = createNativeAppLifecycle({ host });
+        const send = state => host.dispatchEvent(new CustomEvent(NATIVE_APP_LIFECYCLE_EVENT, { detail: { state } }));
+        const { controller, audio, activity } = setupReply({ lifecycle });
+        activity(true);
+        send('paused');
+        expect(controller.isPlaying()).toBe(false);
+        send('stopped');
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        expect(controller.isPlaying()).toBe(true);
+        send('resumed');
+        expect(controller.isPlaying()).toBe(false);
+        controller.destroy();
+        send('stopped');
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        lifecycle.dispose();
     });
 });

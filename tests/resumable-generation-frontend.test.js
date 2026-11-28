@@ -611,6 +611,9 @@ test('the iPhone app is told while a reply is being written', () => {
     expect(source).toContain('globalThis.webkit?.messageHandlers?.neconyanBackground');
     expect(source).toContain('subscribe: onGenerationActivity');
     expect(source).toContain('nativeBackground.postMessage({ busy })');
+    // Agents that finish after a reply still hold the Send lock, and the app can leave the screen before the page is told.
+    expect(source).toContain('watchSendLock: true');
+    expect(source).toContain('lifecycle: getNativeAppLifecycle()');
 });
 
 test('leaving the page keeps the reply running on the server', () => {

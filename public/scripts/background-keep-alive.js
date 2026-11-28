@@ -340,25 +340,34 @@ const REPLY_HOLD_LIMIT_MS = 65 * 60_000;
  * The iPhone app freezes a hidden page within seconds, which would stop a reply being written,
  * saved and handed to Agents until the app was opened again. A page that is playing sound keeps
  * running, so this plays the quiet tone while the page is hidden and a reply is still going.
+ *
+ * With `watchSendLock`, the Send lock (`body[data-generating]`) also counts as busy, so Agents
+ * that finish after a reply keep the page running between their own requests.
  * @param {object} options
  * @param {(listener: (busy: boolean) => void) => (() => void)} options.subscribe
  * @param {(busy: boolean) => void} [options.notifyNative]
+ * @param {boolean} [options.watchSendLock]
+ * @param {{ isBackgrounded: () => boolean, subscribe: (listener: () => void) => (() => void) }} [options.lifecycle]
  * @param {Document} [options.documentRef]
  * @param {Navigator} [options.navigatorRef]
  * @param {() => HTMLAudioElement} [options.createAudio]
  * @param {(blob: Blob) => string} [options.createObjectUrl]
  * @param {typeof setTimeout} [options.setTimer]
  * @param {typeof clearTimeout} [options.clearTimer]
+ * @param {typeof MutationObserver} [options.MutationObserverRef]
  */
 export function createReplyKeepAlive({
     subscribe,
     notifyNative = () => {},
+    watchSendLock = false,
+    lifecycle = null,
     documentRef = globalThis.document,
     navigatorRef = globalThis.navigator,
     createAudio = () => new globalThis.Audio(),
     createObjectUrl = blob => globalThis.URL.createObjectURL(blob),
     setTimer = globalThis.setTimeout.bind(globalThis),
     clearTimer = globalThis.clearTimeout.bind(globalThis),
+    MutationObserverRef = globalThis.MutationObserver,
 } = {}) {
     let holding = false;
     let playing = false;
@@ -366,8 +375,10 @@ export function createReplyKeepAlive({
     let audio = null;
     let graceTimer = null;
     let limitTimer = null;
+    let requestsBusy = false;
+    let sendLocked = false;
 
-    const hidden = () => documentRef?.visibilityState === 'hidden';
+    const hidden = () => documentRef?.visibilityState === 'hidden' || Boolean(lifecycle?.isBackgrounded?.());
     const tell = busy => {
         try { notifyNative(busy); } catch { /* The app may be closing. */ }
     };
@@ -457,14 +468,35 @@ export function createReplyKeepAlive({
         }
     }
 
+    const update = () => handleActivity(requestsBusy || sendLocked);
+    const readSendLock = () => Boolean(documentRef?.body?.dataset?.generating);
+    let sendLockObserver = null;
+    if (watchSendLock && documentRef?.body && typeof MutationObserverRef === 'function') {
+        sendLocked = readSendLock();
+        sendLockObserver = new MutationObserverRef(() => {
+            const locked = readSendLock();
+            if (locked === sendLocked) return;
+            sendLocked = locked;
+            update();
+        });
+        sendLockObserver.observe(documentRef.body, { attributes: true, attributeFilter: ['data-generating'] });
+    }
+
     documentRef?.addEventListener?.('visibilitychange', handleVisibilityChange);
-    const unsubscribe = subscribe(handleActivity);
+    const unsubscribeLifecycle = lifecycle?.subscribe?.(handleVisibilityChange);
+    const unsubscribe = subscribe(busy => {
+        requestsBusy = Boolean(busy);
+        update();
+    });
+    if (sendLocked) update();
 
     return {
         isHolding: () => holding,
         isPlaying: () => playing,
         destroy() {
             unsubscribe?.();
+            unsubscribeLifecycle?.();
+            sendLockObserver?.disconnect();
             documentRef?.removeEventListener?.('visibilitychange', handleVisibilityChange);
             release();
         },
