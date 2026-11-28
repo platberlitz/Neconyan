@@ -34,6 +34,7 @@
 - Saved **Scratchpad** discussions remain readable if notebook proposal data is damaged.
 - Edits made in **Prompts** now stay with the intended preset.
 - Pura's randomisers, including **Chaos Mode**, **Genre Randomiser** and **Combined Director's Cut**, now come already installed in **Agents**, switched off, so you can turn one on without adding it from the library first.
+- Scratchpad's **Dictate** and **Talk mode** buttons are now off until you turn them on with **Show Dictate beside Send** and **Show Talk mode beside Send** under **Context → Setup → Dictation and voice**.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -68,6 +69,7 @@
 - PR #1038 (2026-11-28) `fix(mewmory): keep oversized reads out of the cache`
 - PR #1039 (2026-11-28) `fix(prompts): keep prompt edits in their own preset`
 - PR #1040 (2026-11-28) `fix(scratchpad): keep saved discussions readable after proposal damage`
+- PR #1042 (2026-11-28) `feat(scratchpad): make the voice buttons opt in`
 - PR #1043 (2026-11-28) `feat(agents): seed Pura's randomisers by default`
 
 ## v1.6.0
