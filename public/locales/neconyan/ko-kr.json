@@ -20930,5 +20930,12 @@
   "This Agent change has no new text.": "이 에이전트 변경에는 새 텍스트가 없어요.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "공유된 메시지의 완료된 컴패니언 메모 (트래커, 플롯 나침반, 기억 파편)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan에는 버튼이 정말 많아요. 정말로요. **단순 모드**는 채팅, 캐릭터와 페르소나, 캐릭터 찾기, 짧은 연결 페이지, 기억, 프리셋, 로어북, 에이전트, 노트북, Scratchpad만 남기고 나머지는 치워 줘요.",
-  "Agents are still loading. Try again in a moment.": "에이전트를 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요."
+  "Agents are still loading. Try again in a moment.": "에이전트를 아직 불러오는 중이에요. 잠시 후 다시 시도해 주세요.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "나만의 냥벽한 채팅 친구를 찾아보세요~! 이미 있는 캐릭터를 고르거나, 온라인에서 새 캐릭터를 찾거나, 임시 채팅을 시작할 수 있어요!",
+  "Find characters": "캐릭터 찾기",
+  "Find characters online": "온라인에서 캐릭터 찾기",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Chub, JannyAI 등 카드 사이트에서 검색하고 탭 한 번으로 추가해요.",
+  "Import a character": "캐릭터 가져오기",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "파일이나 링크로 가져와요. JanitorAI는 여기서 검색할 수 없지만 링크는 작동해요.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "카드는 타사 사이트에서 가져와요. 단순 모드에서는 내용 보고서 없이 이 카드를 추가하고 바로 채팅을 열어요."
 }

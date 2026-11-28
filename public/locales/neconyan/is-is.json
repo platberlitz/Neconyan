@@ -21186,5 +21186,12 @@
   "This Agent change has no new text.": "Þessi breyting á erindreka hefur engan nýjan texta.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "Fullgerðar förunautaglósur við sameiginleg skilaboð (vaktarar, Söguáttaviti, Minnisbrot)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan er með fullt af hnöppum. Alveg fullt. **Einfaldur háttur** sýnir spjallið, persónurnar þínar og Persónugervi, Finna persónur, stutta Tengingasíðu, Minni, forstillingar, fræðibækur, Erindreka, minnisbækur og Scratchpad, og felur restina.",
-  "Agents are still loading. Try again in a moment.": "Erindrekar eru enn að hlaðast. Reyndu aftur eftir augnablik."
+  "Agents are still loading. Try again in a moment.": "Erindrekar eru enn að hlaðast. Reyndu aftur eftir augnablik.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "Finndu hinn malfullkomna spjallfélaga~! Veldu persónu sem þú ert þegar með, finndu nýja á netinu eða byrjaðu tímabundið spjall!",
+  "Find characters": "Finna persónur",
+  "Find characters online": "Finna persónur á netinu",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Leitaðu á Chub, JannyAI og öðrum spjaldasíðum og bættu svo við spjaldi með einum smelli.",
+  "Import a character": "Flytja inn persónu",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "Úr skrá eða með tengli. JanitorAI er ekki með leit hér, en tenglar þaðan virka.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Spjöld koma frá vefsvæðum þriðju aðila. Einfaldur háttur bætir þessu við og opnar spjall þess strax, án skýrslu um innihaldið."
 }

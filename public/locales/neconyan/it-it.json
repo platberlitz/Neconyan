@@ -21973,5 +21973,12 @@
   "This Agent change has no new text.": "Questa modifica all'agente non ha nuovo testo.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "Note companion completate sui messaggi condivisi (tracker, Bussola della trama, Frammenti di memoria)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan ha un sacco di pulsanti. Davvero un sacco. La **Modalità semplice** mantiene la chat, i tuoi personaggi e la persona, Trova personaggi, una breve pagina Connessioni, Memoria, i preset, i lorebook, gli agenti, i Taccuini e lo Scratchpad, e mette via il resto.",
-  "Agents are still loading. Try again in a moment.": "Gli agenti si stanno ancora caricando. Riprova tra un momento."
+  "Agents are still loading. Try again in a moment.": "Gli agenti si stanno ancora caricando. Riprova tra un momento.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "Trova la compagnia giusta per fare due chiacchiere e le fusa~! Scegli uno dei tuoi personaggi, scoprine uno nuovo online o avvia una chat temporanea!",
+  "Find characters": "Trova personaggi",
+  "Find characters online": "Trova personaggi online",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Cerca su Chub, JannyAI e altri siti di schede, poi aggiungine una con un tocco.",
+  "Import a character": "Importa un personaggio",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "Da un file o un link. Qui non puoi cercare su JanitorAI, ma i suoi link funzionano.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Le schede provengono da siti di terze parti. La Modalità semplice aggiunge questa scheda e ne apre subito la chat, senza un riepilogo del contenuto."
 }
