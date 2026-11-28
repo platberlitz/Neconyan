@@ -1985,7 +1985,8 @@ export function tryParseStreamingError(response, decoded, { quiet = false, event
     checkQuotaError(data, { quiet });
     checkModerationError(data, { quiet });
     if (!quiet) toastr.error(message, 'Chat Completion API');
-    throw new Error(message || 'The AI service rejected the reply.');
+    // Neconyan: failureShown tells Generate the toast is out, so held-reply recovery does not repeat it.
+    throw Object.assign(new Error(message || 'The AI service rejected the reply.'), { failureShown: !quiet });
 }
 
 /**
@@ -5610,7 +5611,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
             recordRequestFailure({ ...failureSource, status: Number(data.provider_status) || 0, message });
             console.warn('[Chat Completion API] The provider returned an error.', message, data.error);
             if (!quiet) toastr.error(message, t`API returned an error`);
-            throw new Error(message);
+            throw Object.assign(new Error(message), { failureShown: !quiet });
         }
 
         if (type !== 'quiet') {

@@ -3545,6 +3545,10 @@ export function initCompanionRunner() {
     if (event_types.MESSAGE_SWIPED) {
         eventSource.on(event_types.MESSAGE_SWIPED, onCompanionMessageSwiped);
     }
-    eventSource.on(event_types.CHAT_CHANGED, recoverInterruptedCompanionRuns);
+    // Neconyan: a chat brought up to date with its saved copy was not left behind. A pending card in it
+    // belongs to the job that saved it, so it is not marked interrupted (and saved) under that job.
+    eventSource.on(event_types.CHAT_CHANGED, (_chatId, change) => {
+        if (change?.sameChat !== true) recoverInterruptedCompanionRuns();
+    });
     recoverInterruptedCompanionRuns();
 }

@@ -337,6 +337,19 @@ describe('initial connection failure feedback', () => {
         expect(host.context.toastr.error).toHaveBeenCalledWith('Provider unavailable', 'Text generation error', expect.any(Object));
     });
 
+    test.each([
+        ['a provider JSON error', () => ({ error: { message: 'Provider unavailable' } }), true],
+        ['an error its backend reader already showed', () => Object.assign(new Error('Rate limited'), { failureShown: true }), true],
+        ['a quiet backend error', () => Object.assign(new Error('Rate limited'), { failureShown: false }), false],
+        ['a lost connection', () => connectionLost(), false],
+    ])('tells held-reply recovery whether %s already had its notice', async (_name, makeFailure, shown) => {
+        const host = connectionFailureHost();
+        const failure = makeFailure();
+        host.request.mockRejectedValueOnce(failure);
+        await expect(host.generate('normal', { suppressUserMessage: false })).rejects.toBe(failure);
+        expect(host.context.releaseGenerationContext).toHaveBeenCalledWith(expect.anything(), { failureShown: shown });
+    });
+
     test('preserves earlier chat and a fresh draft during a non-streaming failure', async () => {
         const host = connectionFailureHost();
         const started = deferred();

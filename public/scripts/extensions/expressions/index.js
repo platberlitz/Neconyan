@@ -1,7 +1,7 @@
 import { Fuse } from '../../../lib.js';
 import { MacrosParser } from '../../macros.js';
 
-import { characters, eventSource, event_types, generateQuietPrompt, generateRaw, getRequestHeaders, online_status, saveSettingsDebounced, substituteParams, substituteParamsExtended, system_message_types, this_chid, captureExpressionTarget, isExpressionTargetCurrent, recordMessageExpression, getSavedMessageExpression, getMessageExpressionAvatar, getChatGeneration, getCurrentChatId } from '../../../script.js';
+import { characters, eventSource, event_types, generateQuietPrompt, generateRaw, getRequestHeaders, online_status, saveSettingsDebounced, substituteParams, substituteParamsExtended, system_message_types, this_chid, captureExpressionTarget, isExpressionTargetCurrent, recordMessageExpression, getSavedMessageExpression, getMessageExpressionAvatar, getChatGeneration, getCurrentChatId, is_send_press } from '../../../script.js';
 import { dragElement, isMobile } from '../../RossAscends-mods.js';
 import { getContext, extension_settings, ModuleWorkerWrapper, renderExtensionTemplateAsync } from '../../extensions.js';
 import { loadMovingUIState, performFuzzySearch, power_user } from '../../power-user.js';
@@ -26,6 +26,7 @@ import { getExpressionSpriteBackground, getExpressionSpriteSheetGrid, TRANSPAREN
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
 import { personaExpressionFolder, personaExpressionSelection } from './persona-expressions.js';
+import { isAgentWorkPending } from '../in-chat-agents/agent-work-state.js';
 import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
@@ -689,6 +690,13 @@ async function moduleWorker({ newChat = false } = {}) {
         return;
     }
 
+    // Neconyan: a classifier request during a reply, a server Roleplay job or Agents saves the chat and
+    // settings under them. The message stays unprocessed, so the next poll classifies it once they finish.
+    if (!usingAgent && (is_send_press || isAgentWorkPending())) {
+        console.debug('Expressions wait for the reply and Agents to finish');
+        return;
+    }
+
     let shouldUpdateLastMessage = false;
 
     try {
@@ -735,7 +743,8 @@ async function moduleWorker({ newChat = false } = {}) {
             });
         }
     } catch (error) {
-        console.log(error);
+        if (isExpressionGenerationAbortError(error)) console.debug('Expression classification was stopped', error);
+        else console.warn('Expressions: could not show the expression for this message', error);
     } finally {
         inApiCall = false;
         if (shouldUpdateLastMessage && isExpressionTargetCurrent(target)) {
@@ -888,7 +897,14 @@ async function classifyCallback(/** @type {{api: string?, filter: string?, promp
         return '';
     }
 
-    const label = await getExpressionLabel(text, expressionApi, { filterAvailable: filterAvailable, customPrompt: prompt });
+    let label;
+    try {
+        label = await getExpressionLabel(text, expressionApi, { filterAvailable: filterAvailable, customPrompt: prompt });
+    } catch (error) {
+        if (!isExpressionGenerationAbortError(error)) throw error;
+        console.debug('Classification was stopped', error);
+        return '';
+    }
     console.debug(`Classification result for "${text}": ${label}`);
     return label;
 }
@@ -2040,6 +2056,8 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
             }
         }
     } catch (error) {
+        // Neconyan: a stopped classification is not a classifier problem, and its fallback would be a wrong guess.
+        if (isExpressionGenerationAbortError(error)) throw error;
         toastr.error(t`Could not work out the expression for this message. Check your classifier settings, then try again.`);
         console.error(error);
         return extension_settings.expressions.fallback_expression;

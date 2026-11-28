@@ -304,3 +304,160 @@ describe('Expressions Agent lifecycle', () => {
         expect(runtime.fetchImagesNoCache).not.toHaveBeenCalled();
     });
 });
+
+describe('Expressions while the chat is still being written', () => {
+    function classifierSetup() {
+        const state = setup();
+        const { runtime, settings } = state;
+        settings.expressions.api = 1;
+        settings.expressions.fallback_expression = 'neutral';
+        settings.expressions.promptType = 'raw';
+        Object.assign(runtime, {
+            EXPRESSION_API: { agent: 4, none: 99, llm: 1 },
+            is_send_press: false,
+            isAgentWorkPending: jest.fn(() => false),
+            getExpressionLabel: jest.fn(async () => 'joy'),
+        });
+        return state;
+    }
+
+    test.each(['a reply or Roleplay job', 'Agents'])('a classifier waits while %s may still save the chat', async busy => {
+        const { runtime, add } = classifierSetup();
+        const message = add('done');
+        if (busy === 'Agents') runtime.isAgentWorkPending.mockReturnValue(true);
+        else runtime.is_send_press = true;
+        await runtime.moduleWorker();
+        expect(runtime.getExpressionLabel).not.toHaveBeenCalled();
+        expect(runtime.needsExpression(message)).toBeTruthy();
+
+        runtime.is_send_press = false;
+        runtime.isAgentWorkPending.mockReturnValue(false);
+        await runtime.moduleWorker();
+        expect(runtime.getExpressionLabel).toHaveBeenCalledTimes(1);
+        expect(runtime.sendExpressionCall).toHaveBeenCalledWith('Cat', 'joy', expect.objectContaining({ target: expect.objectContaining({ message }) }));
+        expect(runtime.needsExpression(message)).toBeFalsy();
+    });
+
+    test('a stopped classification is quiet and leaves the message for the next poll', async () => {
+        const { runtime, add } = classifierSetup();
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const message = add('done');
+            runtime.getExpressionLabel.mockRejectedValueOnce(new DOMException('Stopped', 'AbortError'));
+            await runtime.moduleWorker();
+            expect(runtime.sendExpressionCall).not.toHaveBeenCalled();
+            expect(warn).not.toHaveBeenCalled();
+            expect(runtime.needsExpression(message)).toBeTruthy();
+        } finally {
+            debug.mockRestore();
+            warn.mockRestore();
+        }
+    });
+
+    function labelSetup(request) {
+        const { runtime, settings } = classifierSetup();
+        const listeners = new Set();
+        Object.assign(runtime, {
+            toastr: { error: jest.fn(), warning: jest.fn() }, t: strings => strings[0],
+            sampleClassifyText: text => text, waitUntilCondition: async () => true, online_status: 'connected',
+            getExpressionsList: async () => ['joy', 'neutral'], getCustomLlmPrompt: () => 'Pick one.', getLlmPrompt: async () => 'Pick one.',
+            eventSource: { on: (_, listener) => listeners.add(listener), removeListener: (_, listener) => listeners.delete(listener) },
+            event_types: { TEXT_COMPLETION_SETTINGS_READY: 'ready' }, onTextGenSettingsReady: () => {},
+            PROMPT_TYPE: { raw: 'raw', full: 'full' }, generateRaw: jest.fn(request), parseLlmResponse: response => response,
+            isFalseBoolean: value => value === 'false',
+        });
+        load(runtime, index, ['getExpressionLabel', 'classifyCallback']);
+        return { runtime, settings };
+    }
+
+    test('a stopped LLM classification shows no error and gives no fallback guess', async () => {
+        const { runtime } = labelSetup(async () => { throw new DOMException('Stopped', 'AbortError'); });
+        const debug = jest.spyOn(console, 'debug').mockImplementation(() => {});
+        try {
+            await expect(runtime.getExpressionLabel('I am thrilled!', 1)).rejects.toMatchObject({ name: 'AbortError' });
+            await expect(runtime.classifyCallback({ api: 'llm' }, 'I am thrilled!')).resolves.toBe('');
+            expect(runtime.toastr.error).not.toHaveBeenCalled();
+        } finally {
+            debug.mockRestore();
+        }
+    });
+
+    test('a classifier that fails still reports it and falls back', async () => {
+        const { runtime } = labelSetup(async () => { throw new Error('Provider rejected the request'); });
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            await expect(runtime.getExpressionLabel('I am thrilled!', 1)).resolves.toBe('neutral');
+            expect(runtime.toastr.error).toHaveBeenCalledTimes(1);
+        } finally {
+            error.mockRestore();
+        }
+    });
+
+    function recordSetup() {
+        const chat = [];
+        const timers = [];
+        const runtime = vm.createContext({
+            console, chat, generation: 1, is_send_press: false,
+            getChatGeneration: () => runtime.generation, getCurrentChatId: () => 'chat',
+            getMessageExpressionAvatar: message => message?.original_avatar ?? null,
+            ensureSwipes: () => {}, renderMessageExpression: () => {}, document: { querySelector: () => null },
+            writeMessageExpression: (message, avatar, src) => {
+                message.extra.neconyanExpression = { avatar, src };
+                return true;
+            },
+            isAgentWorkPending: jest.fn(() => false),
+            saveChatConditional: jest.fn(async () => true),
+            toastr: { error: jest.fn() },
+            setTimeout: (callback, delay) => timers.push({ callback, delay }),
+            clearTimeout: () => {},
+        });
+        vm.runInContext('const expressionRequests = new WeakMap(); const unsavedExpressions = new WeakSet(); const deferredExpressionSaves = new Set(); let deferredExpressionSaveTimer = null; const DEFERRED_EXPRESSION_SAVE_MS = 1000;', runtime);
+        load(runtime, core, ['captureExpressionTarget', 'isExpressionTargetCurrent', 'saveDeferredExpressions', 'recordMessageExpression']);
+        const add = () => {
+            const message = { name: 'Cat', original_avatar: 'Cat.png', mes: `Reply ${chat.length}`, extra: {} };
+            chat.push(message);
+            return runtime.captureExpressionTarget(message);
+        };
+        const runTimer = async () => {
+            const timer = timers.shift();
+            await timer.callback();
+            return timer.delay;
+        };
+        return { runtime, timers, add, runTimer };
+    }
+
+    test('an expression shown during a reply or Agents is saved once they finish, not under them', async () => {
+        const { runtime, timers, add, runTimer } = recordSetup();
+        runtime.is_send_press = true;
+        await expect(runtime.recordMessageExpression(add(), '/characters/Cat/joy.png')).resolves.toBe(true);
+        await runtime.recordMessageExpression(add(), '/characters/Cat/anger.png');
+        expect(runtime.saveChatConditional).not.toHaveBeenCalled();
+        expect(timers).toHaveLength(2);
+        timers.shift();
+
+        runtime.is_send_press = false;
+        runtime.isAgentWorkPending.mockReturnValue(true);
+        expect(await runTimer()).toBe(1000);
+        expect(runtime.saveChatConditional).not.toHaveBeenCalled();
+
+        runtime.isAgentWorkPending.mockReturnValue(false);
+        await runTimer();
+        expect(runtime.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(timers).toHaveLength(0);
+    });
+
+    test('a held-back expression is dropped when the chat changes, and an idle chat saves at once', async () => {
+        const { runtime, timers, add, runTimer } = recordSetup();
+        runtime.is_send_press = true;
+        await runtime.recordMessageExpression(add(), '/characters/Cat/joy.png');
+        runtime.is_send_press = false;
+        runtime.generation++;
+        await runTimer();
+        expect(runtime.saveChatConditional).not.toHaveBeenCalled();
+
+        await runtime.recordMessageExpression(add(), '/characters/Cat/joy.png');
+        expect(runtime.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(timers).toHaveLength(0);
+    });
+});

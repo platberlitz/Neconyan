@@ -27,6 +27,7 @@ import { combineRoleplayTextPrompt } from '../public/scripts/roleplay-text-forma
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
+import { collectGenerationStream } from '../public/scripts/generation-stream-result.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/stream-completion.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -77,7 +78,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         // lane, so the Stage 9 funnel reports that it has no named workflow.
         nativeRoleplayWorkflowFor: async () => null,
         nativeOperationsReady: () => false,
-        AbortController, AbortSignal, Event, MessageEvent, TextDecoderStream, TransformStream, structuredClone,
+        AbortController, AbortSignal, DOMException, Event, MessageEvent, TextDecoderStream, TransformStream, structuredClone,
         console: { log: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), trace: jest.fn() },
         main_api: api,
         name1: 'User', name2: 'Story', this_chid: 0,
@@ -265,8 +266,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     });
     if (stream) {
         // Mock only the provider transport; execute the actual stream processor and finalisation.
-        const transport = jest.fn(async (data, signal) => {
-            requests.push({ body: data, signal });
+        const transport = jest.fn(async (data, signal, options) => {
+            requests.push({ body: data, signal, options });
             return async function* () {
                 for (const chunk of context.chunks) {
                     if (signal.aborted) throw signal.reason;
@@ -309,6 +310,40 @@ describe('request-local output controls', () => {
         expect(settingsEvents.every(event => event.isAuxiliaryGeneration && event.type === 'quiet')).toBe(true);
         expect(requests[0].body).not.toHaveProperty('generationContext');
         expect(requests[0].body).not.toHaveProperty('isAuxiliaryGeneration');
+    });
+
+    test.each(['textgenerationwebui', 'kobold', 'novel'])('quiet %s streams keep their errors out of toasts, ordinary ones do not', async api => {
+        const { context, requests, StreamingProcessor } = makeRuntime({ api, stream: true });
+        context.streamingProcessor = new StreamingProcessor('quiet', false, new Date(), '', {}, {});
+        await context.sendStreamingRequest('quiet', { prompt: 'Only this task' });
+        context.streamingProcessor = new StreamingProcessor('normal', false, new Date(), '', {}, {});
+        await context.sendStreamingRequest('normal', { prompt: 'Only this task' });
+        expect(requests.map(request => request.options)).toEqual([{ quiet: true }, { quiet: false }]);
+    });
+
+    test('a raw helper that streams text completion is quiet', async () => {
+        const { context, requests } = makeRuntime({ api: 'textgenerationwebui', stream: true });
+        load(context, 'script.js', ['createRawPrompt']);
+        context.collectGenerationStream = collectGenerationStream;
+        context.chunks = [{ text: 'Short answer' }];
+        await context.generateRawData({ prompt: 'Only this task', responseLength: 64, onChunk: () => {} });
+        expect(requests[0].options).toEqual({ quiet: true });
+    });
+
+    test.each([
+        ['an aborted signal', () => { const controller = new AbortController(); controller.abort(); return { signal: controller.signal }; }],
+        ['a stop event', context => { context.fetchResumable = jest.fn(async (url, init) => new Promise((resolve, reject) => {
+            init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+            context.eventSource.emit(context.event_types.GENERATION_STOPPED);
+        })); return {}; }],
+    ])('a raw helper cancelled by %s rejects as an AbortError', async (_name, arrange) => {
+        const { context, eventSource } = makeRuntime({ api: 'textgenerationwebui' });
+        load(context, 'script.js', ['createRawPrompt']);
+        context.eventSource = eventSource;
+        context.event_types = event_types;
+        const options = arrange(context);
+        const error = await context.generateRawData({ prompt: 'Only this task', responseLength: 64, ...options }).catch(caught => caught);
+        expect(error?.name).toBe('AbortError');
     });
 
     test.each([undefined, 0, -1, NaN, Infinity, '160'])('leaves presets alone for an inactive limit: %s', maxOutputTokens => {

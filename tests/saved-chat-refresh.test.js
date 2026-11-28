@@ -7,7 +7,8 @@ import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/ch
 
 const source = fs.readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const functions = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body
-    .map(row => row.declaration ?? row).filter(row => ['refreshCurrentChatFromSaved', 'adoptSavedChatTail'].includes(row.id?.name))
+    .map(row => row.declaration ?? row)
+    .filter(row => ['refreshCurrentChatFromSaved', 'adoptSavedChatTail', 'SAME_CHAT_REFRESH'].includes(row.id?.name ?? row.declarations?.[0]?.id?.name))
     .map(row => source.slice(row.start, row.end)).join('\n');
 
 function fixture() {
@@ -34,11 +35,20 @@ function fixture() {
         syncChatHistoryWindowControls: no, refreshSwipeButtons: no, scrollLoadedChatToBottomThroughLifecycle: no,
         holdChatReloadReadingAnchor: no, stopChatReloadReadingAnchorHold: no,
         transferRoleplayReplacementReserve: no, syncRoleplayReplacementReserve: no,
-        event_types: {}, eventSource: { emit: async () => {} },
+        event_types: { CHAT_CHANGED: 'chat_id_changed', CHAT_LOADED: 'chatLoaded' }, eventSource: { emit: jest.fn(async () => {}) },
     });
     vm.runInContext(functions, runtime);
     return { runtime, read, reload, redraw, remove, chat };
 }
+
+test('a saved refresh tells chat listeners it is the same chat, not another one', async () => {
+    const { runtime } = fixture();
+    await runtime.refreshCurrentChatFromSaved();
+    expect(runtime.eventSource.emit.mock.calls).toEqual([
+        ['chat_id_changed', 'chat', { sameChat: true }],
+        ['chatLoaded', { detail: { id: 0, character: { avatar: 'nova.png' }, sameChat: true } }],
+    ]);
+});
 
 test('a failed saved read leaves the messages and styles on screen and propagates the failure', async () => {
     const { runtime, read, reload, redraw, remove, chat } = fixture();

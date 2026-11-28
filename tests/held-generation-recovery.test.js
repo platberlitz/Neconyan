@@ -193,6 +193,84 @@ describe('recovery and save acknowledgement', () => {
         expect(host.saveReply).not.toHaveBeenCalled();
     });
 
+    test('a failed reply whose failure the page already showed is dropped without another notice', async () => {
+        const { host, job } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        job.status = 'failed';
+        job.failureShown = true;
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.openHeldGeneration).not.toHaveBeenCalled();
+        expect(host.toastr.error).not.toHaveBeenCalled();
+        expect(host.console.warn).toHaveBeenCalled();
+    });
+
+    test('a failed reply the page never reported still gets its one notice', async () => {
+        const { host, job } = recoveryHost();
+        job.status = 'failed';
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('a provider error in a held reply that already had its notice is dropped quietly', async () => {
+        const { host, job } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        job.failureShown = true;
+        host.openHeldGeneration.mockResolvedValue(Response.json({ error: { message: 'Rate limited' } }));
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.saveReply).not.toHaveBeenCalled();
+        expect(host.toastr.error).not.toHaveBeenCalled();
+        expect(host.toastr.warning).not.toHaveBeenCalled();
+    });
+
+    test('a provider error read from a held stream is dropped on the first pass with no generic notice', async () => {
+        const { host, job } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        job.context.streaming = true;
+        const readOptions = [];
+        host.readChatCompletionStream = (response, options) => {
+            readOptions.push(options);
+            return async function* () {
+                throw Object.assign(new Error('Rate limited'), { failureShown: !options?.quiet });
+            };
+        };
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.toastr.error).not.toHaveBeenCalled();
+        expect(readOptions[0]).toEqual(expect.objectContaining({ quiet: false }));
+
+        job.failureShown = true;
+        await host.recoverHeldGenerations();
+        expect(readOptions[1]).toEqual(expect.objectContaining({ quiet: true }));
+        expect(host.discardGeneration).toHaveBeenCalledTimes(2);
+        expect(host.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('an unreadable held reply that already had its notice is let go without a second one', async () => {
+        const { host, job } = recoveryHost();
+        host.console = { warn: jest.fn() };
+        job.context.streaming = true;
+        job.failureShown = true;
+        host.readChatCompletionStream = () => async function* () {
+            throw new Error('Stream ended without a finish signal');
+        };
+        await expect(host.recoverHeldGenerations()).rejects.toThrow('finish signal');
+        await expect(host.recoverHeldGenerations()).rejects.toThrow('finish signal');
+        await host.recoverHeldGenerations();
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+        expect(host.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a reply that finished on the server after a reported failure is still restored', async () => {
+        const { host, job } = recoveryHost();
+        job.failureShown = true;
+        await host.recoverHeldGenerations();
+        expect(host.saveReply).toHaveBeenCalledWith(expect.objectContaining({ getMessage: 'Final reply' }));
+        expect(host.discardGeneration).toHaveBeenCalledWith(job.id, {});
+    });
+
     test('a lookup that keeps failing is retried less and less often, and promptly again after a success or a wake-up', async () => {
         const { host, runTimer } = recoveryHost();
         host.console = { warn: jest.fn() };

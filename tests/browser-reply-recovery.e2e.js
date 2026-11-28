@@ -192,6 +192,40 @@ for (const status of [507, 503]) {
     });
 }
 
+test('an empty reply that already had its notice is not announced again by held-reply recovery', async ({ app }) => {
+    test.setTimeout(120000);
+    app.provider.mode.reply = { choices: [{ message: { content: '' }, finish_reason: 'stop' }] };
+    const account = await app.account({ activeConnection: true });
+    const page = await openChat(account);
+    try {
+        await page.evaluate(() => {
+            window.fixtureToasts = [];
+            new window.MutationObserver(records => {
+                for (const node of records.flatMap(record => [...record.addedNodes])) {
+                    if (node.classList?.contains('toast')) window.fixtureToasts.push(node.textContent);
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+        });
+        const discards = [];
+        await page.route('**/api/resumable-generations/discard', route => {
+            discards.push(route.request().postDataJSON().id);
+            // The reply's own clean-up is lost, so the server still holds the attempt for recovery.
+            if (discards.length === 1) return route.fulfill({ status: 503, json: { error: 'Temporary failure' } });
+            return route.continue();
+        });
+        const id = await startBrowserReply(page);
+        await page.evaluate(() => window.fixtureGeneration);
+        await expect.poll(() => discards, { timeout: 30000 }).toEqual([id, id]);
+        await expect.poll(async () => (await heldReplies(account)).some(job => job.id === id)).toBe(false);
+        const toasts = await page.evaluate(() => window.fixtureToasts);
+        expect(toasts.length).toBeGreaterThan(0);
+        expect(new Set(toasts).size).toBe(toasts.length);
+        expect(toasts.filter(text => text.includes('in the background'))).toEqual([]);
+    } finally {
+        await page.close();
+    }
+});
+
 test('text-completion streaming recovers without another provider call', async ({ app }) => {
     test.setTimeout(180000);
     app.provider.mode.hold = 'text-writer';

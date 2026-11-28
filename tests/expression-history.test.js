@@ -178,7 +178,7 @@ describe('expression asset snapshots', () => {
             generateRaw, isJsonSchemaSupported: () => true, parseLlmResponse: response => response,
             toastr: { error: jest.fn() }, console: { error: jest.fn() }, t: (strings, ...values) => String.raw({ raw: strings }, ...values),
         });
-        vm.runInContext(`let inApiCall = false;\n${['getJsonSchema', 'onTextGenSettingsReady', 'formatLlmLabels', 'getCustomLlmPrompt', 'getLlmPrompt', 'getExpressionLabel'].map(name => extract(expressions, name)).join('\n')}`, runtime);
+        vm.runInContext(`let inApiCall = false;\n${['getJsonSchema', 'onTextGenSettingsReady', 'formatLlmLabels', 'getCustomLlmPrompt', 'getLlmPrompt', 'isExpressionGenerationAbortError', 'getExpressionLabel'].map(name => extract(expressions, name)).join('\n')}`, runtime);
         expect(await runtime.getExpressionLabel('Hello')).toBe('neutral');
         expect(eventSource.events.ready).toHaveLength(0);
         const args = {};

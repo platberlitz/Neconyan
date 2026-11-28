@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
     escapeRegex: value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
@@ -10,6 +11,7 @@ const {
     createChatAutoNamer,
     extractGeneratedChatLabel,
     getChatAutoNameProgress,
+    isChatLabelRequestFailure,
     isChatReadyForAutoName,
     normalizeChatAutoNameThreshold,
     normalizeGeneratedChatLabel,
@@ -399,6 +401,31 @@ describe('automatic chat naming scheduler', () => {
         expect(failing.errors).toHaveLength(1);
     });
 
+    test('a request that never reached the model is logged without a notice and tried again after the next reply', async () => {
+        const requestFailures = [];
+        let attempts = 0;
+        const harness = createHarness({
+            rename: async () => {
+                attempts++;
+                throw new TypeError('Failed to fetch');
+            },
+            onRequestFailure: error => requestFailures.push(error),
+        });
+        harness.state.messages = [...harness.state.messages, said('Five.')];
+        harness.namer.schedule();
+        await harness.flush();
+        expect(harness.errors).toEqual([]);
+        expect(requestFailures.map(error => error.message)).toEqual(['Failed to fetch']);
+        expect(harness.namer.isFinished('rowan-chat')).toBe(false);
+        // Nothing asks again on its own; the next reply does.
+        await harness.flush();
+        expect(attempts).toBe(1);
+        harness.namer.schedule();
+        await harness.flush();
+        expect(attempts).toBe(2);
+        expect(harness.errors).toEqual([]);
+    });
+
     test('schedules collapse into one look and never run twice at once', async () => {
         const harness = createHarness();
         const { namer, state, calls, flush } = harness;
@@ -425,5 +452,64 @@ describe('automatic chat naming requests', () => {
         const code = body(name);
         expect(code).toContain('responseLength: 256');
         expect(code).toContain('preserveReasoningBudget: true');
+    });
+
+    const labelHost = (structuredError) => {
+        const abortStart = source.indexOf('function isChatHistoryToolAbort(');
+        const host = {
+            main_api: 'openai',
+            buildChatLabelTranscript: () => 'Rowan: Hello.',
+            isChatLabelRequestFailure,
+            generateChatAutoLabelResponse: jest.fn(async () => { throw structuredError; }),
+            generatePlainChatAutoLabelResponse: jest.fn(async () => 'Moonlit Escape'),
+            console: { debug: jest.fn() },
+        };
+        vm.createContext(host);
+        vm.runInContext(`${source.slice(abortStart, source.indexOf('\n}\n', abortStart) + 2)}\n${body('generateChatAutoLabel')}\n}\nthis.generateChatAutoLabel = generateChatAutoLabel;`, host);
+        return host;
+    };
+
+    test.each([
+        ['no connection', new TypeError('Failed to fetch')],
+        ['a lost connection', Object.assign(new Error('The connection to the server was lost.'), { code: 'GENERATION_CONNECTION_LOST' })],
+        ['an unreachable provider', new Error('Got response status 502')],
+        ['a rate limit', new Error('Rate limit reached for requests')],
+        ['a refused key', new Error('Incorrect API key provided')],
+        ['a cancelled request', new DOMException('Cancelled by stop event', 'AbortError')],
+    ])('a structured label request that failed with %s is not asked again without the format', async (_, error) => {
+        const host = labelHost(error);
+        await expect(host.generateChatAutoLabel('Rowan - 2026-10-02', [], 'Rowan')).rejects.toBe(error);
+        expect(host.generatePlainChatAutoLabelResponse).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['an unsupported format', new Error('response_format json_schema is not supported by this model')],
+        ['a rejected request', new Error('Got response status 400')],
+        ['invalid JSON', new SyntaxError('Unexpected token < in JSON at position 0')],
+    ])('a model that turned down the label format (%s) is asked again in plain text', async (_, error) => {
+        const host = labelHost(error);
+        await expect(host.generateChatAutoLabel('Rowan - 2026-10-02', [], 'Rowan')).resolves.toBe('Moonlit Escape');
+        expect(host.generatePlainChatAutoLabelResponse).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('chat label request failures', () => {
+    test.each([
+        ['no connection', new TypeError('Failed to fetch'), true],
+        ['a Firefox network error', new TypeError('NetworkError when attempting to fetch resource.'), true],
+        ['a timeout', new DOMException('The operation timed out.', 'TimeoutError'), true],
+        ['a cancelled request', new DOMException('Cancelled', 'AbortError'), true],
+        ['a rate limit status', Object.assign(new Error('Too Many Requests'), { status: 429 }), true],
+        ['a refused key status', Object.assign(new Error('Unauthorized'), { status: 401 }), true],
+        ['an unavailable service', new Error('Got response status 503'), true],
+        ['a quota error', new Error('{"error":{"quota_error":true}}'), true],
+        ['an overloaded provider', new Error('The AI service is overloaded. Try again later.'), true],
+        ['a rejected request', new Error('Got response status 400'), false],
+        ['an unsupported format', new Error('response_format is not supported'), false],
+        ['an unusable answer', new Error('The model did not return a usable chat label.'), false],
+        ['invalid JSON', new SyntaxError('Unexpected end of JSON input'), false],
+        ['nothing', null, false],
+    ])('%s is told apart', (_, error, expected) => {
+        expect(isChatLabelRequestFailure(error)).toBe(expected);
     });
 });

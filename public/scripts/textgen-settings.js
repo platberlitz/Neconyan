@@ -1474,7 +1474,7 @@ function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
     if (message) {
         console.warn('[Text Completion API] The backend returned an error.', message);
         if (!quiet) toastr.error(message, 'Text Completion API');
-        throw new Error(message);
+        throw Object.assign(new Error(message), { failureShown: !quiet });
     }
 }
 

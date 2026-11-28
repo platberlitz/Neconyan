@@ -3114,13 +3114,18 @@ const COMFY_SCHEDULERS = ["normal", "karras", "exponential", "sgm_uniform", "sim
 const logs = new PrivacyLogBuffer();
 let debugLoggingEnabled = false;
 
-function writeLog(msg, options) {
+function writeLog(msg, options, level = "log") {
     const result = logs.append(msg, options);
-    if (result) console.log("[QIG]", result.message);
+    if (result) console[level]("[QIG]", result.message);
 }
 
 function log(msg) {
     writeLog(msg);
+}
+
+// Neconyan: a failure reaches the browser console as a warning, not as another progress line.
+function warnLog(msg) {
+    writeLog(msg, undefined, "warn");
 }
 
 function debugLog(msg) {
@@ -7289,8 +7294,12 @@ async function generateSceneDescription(s, sceneText, signal, options = {}) {
         return cleaned;
     } catch (e) {
         if (e.name === "AbortError") throw e;
-        log(`Scene description failed: ${e.message}`);
-        qigToast.warning(`Scene description failed: ${e.message}`, "Image Gen", { timeOut: 5000, escapeHtml: true });
+        warnLog(`Scene description failed: ${e.message}`);
+        qigToast.warning(`Scene description failed: ${e.message}`, "Image Gen", {
+            timeOut: 5000,
+            escapeHtml: true,
+            throttleKey: `scene-description-failed:${e.message}`,
+        });
         return "";
     }
 }
@@ -7449,8 +7458,12 @@ async function generateLLMPrompt(s, basePrompt, signal, options = {}) {
         return cleaned || basePrompt;
     } catch (e) {
         if (e.name === "AbortError") throw e;
-        log(`LLM prompt failed: ${e.message}`);
-        qigToast.warning(`LLM prompt failed: ${e.message}`, "Image Gen", { timeOut: 5000, escapeHtml: true });
+        warnLog(`LLM prompt failed: ${e.message}`);
+        qigToast.warning(`LLM prompt failed: ${e.message}`, "Image Gen", {
+            timeOut: 5000,
+            escapeHtml: true,
+            throttleKey: `llm-prompt-failed:${e.message}`,
+        });
         return basePrompt;
     }
 }
@@ -7476,7 +7489,7 @@ async function generateLiteralFallback(originalInstruction) {
         debugLog(`Literal fallback extracted: ${extracted.substring(0, 100)}...`);
         return extracted;
     } catch (e) {
-        log(`Literal fallback failed: ${e.message}`);
+        warnLog(`Literal fallback failed: ${e.message}`);
         return originalInstruction;
     }
 }
@@ -10144,8 +10157,12 @@ async function maybeAutoSetBackground(results, settings = getSettings(), run = n
         });
     } catch (e) {
         if (e.name === "AbortError") throw e;
-        log(`Auto background failed: ${e.message}`);
-        qigToast.warning(`Auto background failed: ${e.message}`, "Image Gen", { timeOut: 5000, escapeHtml: true });
+        warnLog(`Auto background failed: ${e.message}`);
+        qigToast.warning(`Auto background failed: ${e.message}`, "Image Gen", {
+            timeOut: 5000,
+            escapeHtml: true,
+            throttleKey: `auto-background-failed:${e.message}`,
+        });
     }
 }
 
@@ -21497,7 +21514,7 @@ function bindMessageGenerateActionClicks() {
         try {
             await generateImage();
         } catch (e) {
-            log(`Message action: Generation failed for message ${messageIndex}: ${e.message}`);
+            warnLog(`Message action: Generation failed for message ${messageIndex}: ${e.message}`);
             qigToast.error("Failed to generate from that message: " + e.message, "", { escapeHtml: true });
         } finally {
             clearTransientGenerationTarget(transientTarget);
@@ -22227,8 +22244,14 @@ async function generateImage() {
             qigToast.info("Generation cancelled");
             return { status: "cancelled", generated: 0, failed: 0 };
         } else {
-            log(`Error: ${e.message}`);
-            qigToast.error("Generation failed: " + e.message, "", { timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: true });
+            warnLog(`Error: ${e.message}`);
+            qigToast.error("Generation failed: " + e.message, "", {
+                timeOut: 0,
+                extendedTimeOut: 0,
+                closeButton: true,
+                escapeHtml: true,
+                throttleKey: `generation-failed:${e.message}`,
+            });
             return attachResultFailures({ status: "failed", generated: 0, failed: e.failedCount || 1, message: e.message }, getResultFailures(e));
         }
     } finally {
@@ -22813,7 +22836,7 @@ async function processInjectMessage(messageText, messageIndex, job = null) {
                     break; // Exit the entire match loop on cancel
                 } else {
                     injectFailedCount += e.failedCount || 1;
-                    log(`Inject: Generation error: ${e.message}`);
+                    warnLog(`Inject: Generation error: ${e.message}`);
                     // One sticky toast for the whole message, not one per tag.
                     qigToast.notifyOnce("inject-generation-failed", "error", "Inject generation failed: " + e.message, "", {
                         timeOut: 0,
@@ -23172,7 +23195,13 @@ function handleHostMessageReceived(messageIndex) {
     }, delayMs);
 }
 
-function handleHostChatChanged() {
+function handleHostChatChanged(_chatId, change) {
+    // Neconyan: a chat that only caught up with its saved copy was not left, so its image work carries on.
+    if (change?.sameChat === true) {
+        scheduleRefreshMessageGenerateActions();
+        renderContextMediaSummary();
+        return;
+    }
     if (isGenerating) requestGenerationCancel("Chat changed during generation", { force: true });
     closePalettePresetMenu();
     scheduleRefreshMessageGenerateActions();

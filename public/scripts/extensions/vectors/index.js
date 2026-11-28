@@ -31,6 +31,7 @@ import { WebLlmVectorProvider } from './webllm.js';
 import { applyLegacyVectorEnabledSetting, bindVectorEnabledSettingsStore, getPersistableVectorSettings, getVectorEnabledState, normalizeVectorEnabledOptions, normalizeVectorSources, stripLegacyVectorEnabledSetting } from './settings-utils.js';
 import { oai_settings } from '../../openai.js';
 import { runVectorWork } from './native.js';
+import { isAgentWorkPending } from '../in-chat-agents/agent-work-state.js';
 import { t } from '../../i18n.js';
 import { renderTemplateAsync } from '../../templates.js';
 import { mountVectorWorkspace } from './workspace.js';
@@ -177,14 +178,52 @@ function getFileCollectionId(fileUrl) {
 }
 
 let syncBlocked = false;
+/** Neconyan: the chat whose sync waits for a reply, a server Roleplay job or Agents to finish. */
+let deferredSyncChat = null;
+const SYNC_BUSY_POLL_MS = 1000;
+
+// A sync saves the chat first, so it must not run while something else is still writing it:
+// the save would change the source a server Roleplay job or the Agents work from.
+function isChatBusy() {
+    return is_send_press || isAgentWorkPending();
+}
+
+function deferChatSync(chatId) {
+    if (deferredSyncChat === chatId) return;
+    deferredSyncChat = chatId;
+    const check = () => {
+        if (deferredSyncChat !== chatId) return;
+        if (getCurrentChatId() !== chatId) {
+            deferredSyncChat = null;
+            return;
+        }
+        if (isChatBusy()) {
+            setTimeout(check, SYNC_BUSY_POLL_MS);
+            return;
+        }
+        deferredSyncChat = null;
+        onChatEvent();
+    };
+    setTimeout(check, SYNC_BUSY_POLL_MS);
+}
 
 async function synchronizeChat() {
-    if (!settings.enabled_chats || !getCurrentChatId() || syncBlocked || is_send_press) return -1;
+    const chatId = getCurrentChatId();
+    if (!settings.enabled_chats || !chatId || syncBlocked) return -1;
+    if (isChatBusy()) {
+        deferChatSync(chatId);
+        return -1;
+    }
     try {
         syncBlocked = true;
-        const result = await runVectorWork('sync-chat', {}, { automatic: true });
+        const result = await runVectorWork('sync-chat', {}, { automatic: true, isBusy: isChatBusy });
         return result.remaining;
     } catch (error) {
+        if (error?.deferred) {
+            deferChatSync(chatId);
+            return -1;
+        }
+        console.warn('Vector chat sync failed; the search index was kept:', error);
         toastr.error(error.message, 'Search index kept', { preventDuplicates: true });
         return null;
     } finally {
