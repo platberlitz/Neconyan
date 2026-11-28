@@ -75,6 +75,7 @@
 - PR #1042 (2026-11-28) `feat(scratchpad): make the voice buttons opt in`
 - PR #1043 (2026-11-28) `feat(agents): seed Pura's randomisers by default`
 - PR #1044 (2026-11-28) `fix(chat): keep deletions that cannot be saved and say why saves fail`
+- PR #1045 (2026-11-28) `test(undo): skip first-run setup in the message Undo fixture`
 
 ## v1.6.0
 
