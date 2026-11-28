@@ -21267,5 +21267,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "ค้นหาจาก Chub, JannyAI และเว็บไซต์การ์ดอื่น ๆ แล้วเพิ่มได้ในแตะเดียว",
   "Import a character": "นำเข้าตัวละคร",
   "From a file or a link. JanitorAI has no search here, but its links work.": "จากไฟล์หรือลิงก์ ค้นหาจาก JanitorAI ที่นี่ไม่ได้ แต่ใช้ลิงก์ได้",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "การ์ดมาจากเว็บไซต์ภายนอก โหมดแบบง่ายจะเพิ่มการ์ดนี้และเปิดแชททันที โดยไม่มีรายงานเนื้อหาข้างใน"
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "การ์ดมาจากเว็บไซต์ภายนอก โหมดแบบง่ายจะเพิ่มการ์ดนี้และเปิดแชททันที โดยไม่มีรายงานเนื้อหาข้างใน",
+  "Select ${0} for deletion": "เลือก ${0} เพื่อลบ"
 }

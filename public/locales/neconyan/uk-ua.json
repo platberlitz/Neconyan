@@ -21128,5 +21128,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "Шукайте на Chub, JannyAI та інших сайтах із картками й додавайте в один дотик.",
   "Import a character": "Імпортувати персонажа",
   "From a file or a link. JanitorAI has no search here, but its links work.": "З файлу або за посиланням. Пошуку на JanitorAI тут немає, але посилання звідти працюють.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Картки завантажуються зі сторонніх сайтів. Простий режим додає цю картку й одразу відкриває чат, без звіту про її вміст."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Картки завантажуються зі сторонніх сайтів. Простий режим додає цю картку й одразу відкриває чат, без звіту про її вміст.",
+  "Select ${0} for deletion": "Вибрати ${0} для видалення"
 }

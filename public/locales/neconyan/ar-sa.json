@@ -21148,5 +21148,6 @@
   "Search Chub, JannyAI and other card sites, then add one in a tap.": "ابحث في Chub وJannyAI ومواقع البطاقات الأخرى، ثم أضف بطاقة بنقرة واحدة.",
   "Import a character": "استيراد شخصية",
   "From a file or a link. JanitorAI has no search here, but its links work.": "من ملف أو رابط. لا يتوفر البحث في JanitorAI هنا، لكن روابطه تعمل.",
-  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "تأتي البطاقات من مواقع خارجية. يضيف الوضع البسيط هذه البطاقة ويفتح دردشتها مباشرة، دون تقرير عن محتوياتها."
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "تأتي البطاقات من مواقع خارجية. يضيف الوضع البسيط هذه البطاقة ويفتح دردشتها مباشرة، دون تقرير عن محتوياتها.",
+  "Select ${0} for deletion": "تحديد ${0} للحذف"
 }
