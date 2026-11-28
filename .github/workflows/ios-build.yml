@@ -130,7 +130,6 @@ jobs:
           test -n "$tablet"
           xcrun simctl boot "$phone"
           xcrun simctl bootstatus "$phone" -b
-          bash ios/tools/quieten-simulator.sh "$phone"
           echo "id=$phone" >> "$GITHUB_OUTPUT"
           echo "ipad=$tablet" >> "$GITHUB_OUTPUT"
       - name: Test standalone startup and relaunch on iOS
@@ -149,7 +148,6 @@ jobs:
           xcrun simctl shutdown '${{ steps.simulator.outputs.id }}' || true
           xcrun simctl boot '${{ steps.simulator.outputs.ipad }}'
           xcrun simctl bootstatus '${{ steps.simulator.outputs.ipad }}' -b
-          bash ios/tools/quieten-simulator.sh '${{ steps.simulator.outputs.ipad }}'
           node ios/tools/model-fixture.mjs > ios/model-fixture-ipad.log 2>&1 &
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
