@@ -11,6 +11,10 @@ const failure = (code, message) => Object.assign(new Error(message), { code });
 const changedAccount = () => failure('ROLEPLAY_ACCOUNT_CHANGED', 'The account changed. Reload before saving.');
 const missingRead = () => failure('ROLEPLAY_READ_REQUIRED', 'Reload the chat before saving; its saved version is unavailable.');
 const uncertainSave = () => failure('ROLEPLAY_SAVE_UNCERTAIN', 'The save could not be confirmed. Keep a copy of your edits before reloading.');
+// Waits between resends of one unconfirmed save, long enough to ride out a server restart or a dropped connection.
+const DEFAULT_RETRY_DELAYS = Object.freeze([250, 500, 1000, 2000, 3000, 5000]);
+let retryDelays = DEFAULT_RETRY_DELAYS;
+const wait = delay => new Promise(resolve => setTimeout(resolve, delay));
 
 function validAccount(value) {
     return object(value) && typeof value.accountId === 'string' && UUID.test(value.accountId)
@@ -75,7 +79,7 @@ export function parseRoleplayRead(response, locator, stamp = roleplayAccountStam
 function chainFor(locator) {
     roleplayAccountStamp();
     const key = locatorKey(locator);
-    if (!binding.chains.has(key)) binding.chains.set(key, { head: null, tail: null, editorTail: null, lineage: null, blocked: false });
+    if (!binding.chains.has(key)) binding.chains.set(key, { head: null, tail: null, editorTail: null, lineage: null, blocked: false, unsettled: [], recovering: null });
     return binding.chains.get(key);
 }
 
@@ -196,38 +200,26 @@ function patchRefused(response, data) {
     return response.status === 404 || response.status === 405 || (response.status === 409 && data?.error === 'patch_base_mismatch');
 }
 
-/** Each attempt serialises once. Retry transport may refresh CSRF/compression, never the JSON or key. */
-export async function sendRoleplaySave(token, payload, send, loadVacancy) {
-    const record = records.get(token);
-    if (!record || record.complete) throw uncertainSave();
-    assertCurrent(record);
-    if (record.status === 'ok') return record.result;
-    if (record.entry.blocked) throw uncertainSave();
-    if (!record.attempt) {
-        try {
-            record.source = record.source || await sourceFor(record);
-            assertCurrent(record);
-            if (!record.source && record.create && typeof loadVacancy === 'function') {
-                const response = await loadVacancy(record.locator, record.binding.stamp);
-                record.source = parseRoleplayRead(response, record.locator, record.binding.stamp);
-            }
-            if (!record.source) throw missingRead();
-            if (record.create && record.source.source && !record.forced) return refuse(record, 400, { error: 'integrity', roleplay: record.source });
-            const matchingTarget = record.locator.kind === 'group' ? String(payload.id) === record.locator.groupId
-                : record.locator.group ? String(payload.id) === record.locator.chat
-                    : payload.file_name === record.locator.chat && payload.avatar_url === record.locator.avatar;
-            if (!matchingTarget) throw missingRead();
-            const composed = composeAttempt(record, payload);
-            record.attempt = composed.body;
-            record.attemptKind = composed.kind;
-            record.attemptSaved = composed.saved;
-            record.attemptWhole = composed.whole ?? null;
-        } catch (error) {
-            record.status = error.code === 'ROLEPLAY_SAVE_UNCERTAIN' ? 'unknown' : 'refused';
-            throw error;
-        }
-    }
-    for (let attempt = 0; attempt < 3; attempt++) {
+function definitiveRefusal(response, data) {
+    return object(data) && typeof data.error === 'string'
+        && ((response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status))
+            || (response.status === 507 && data.error === 'roleplay_store_full'));
+}
+
+/** Sets the waits between resends of one save, for tests. Returns the previous waits. */
+export function setRoleplaySaveRetryDelays(delays = DEFAULT_RETRY_DELAYS) {
+    if (!Array.isArray(delays) || delays.some(delay => !Number.isFinite(delay) || delay < 0)) throw new TypeError('Retry delays must be non-negative numbers.');
+    const previous = retryDelays;
+    retryDelays = Object.freeze([...delays]);
+    return previous;
+}
+
+/**
+ * Sends the record's one serialised attempt, then resends exactly the same body and key after each wait.
+ * True means acknowledged, an object is a definitive refusal, and null means the outcome is still unknown.
+ */
+async function deliver(record, send, delays) {
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
         assertCurrent(record);
         try {
             const response = await send(record.attempt, record.binding.stamp, record.attemptKind);
@@ -263,16 +255,122 @@ export async function sendRoleplaySave(token, payload, send, loadVacancy) {
                 }
                 record.attemptSaved = record.attemptWhole = null;
                 record.result = { ok: true, status: response.status, data };
-                return record.result;
+                return true;
             }
-            if (object(data) && typeof data.error === 'string'
-                && ((response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status))
-                    || (response.status === 507 && data.error === 'roleplay_store_full'))) return refuse(record, response.status, data);
+            if (definitiveRefusal(response, data)) return { status: response.status, data };
         } catch (error) {
             if (error.code === 'ROLEPLAY_ACCOUNT_CHANGED') throw error;
         }
-        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        if (attempt < delays.length) await wait(delays[attempt]);
     }
+    return null;
+}
+
+function sameEvidence(a, b) {
+    if (!a || !b) return false;
+    if (a.source || b.source) {
+        return Boolean(a.source && b.source) && a.source.instanceId === b.source.instanceId
+            && a.source.revision === b.source.revision && a.source.rawHash === b.source.rawHash;
+    }
+    return a.vacancy === b.vacancy;
+}
+
+/** True only when the server still holds exactly the version this chain last knew. */
+async function serverStillHolds(record, expected, loadVacancy) {
+    if (!expected || typeof loadVacancy !== 'function') return false;
+    assertCurrent(record);
+    const response = await loadVacancy(record.locator, record.binding.stamp);
+    return sameEvidence(parseRoleplayRead(response, record.locator, record.binding.stamp), expected);
+}
+
+function settleRecovered(record, status, source) {
+    record.status = status;
+    record.source = source;
+    record.attempt = record.attemptKind = record.attemptSaved = record.attemptWhole = record.conflict = null;
+    if (!record.background && !record.create && record.lineage === record.entry.lineage && source) record.entry.head = source;
+}
+
+/**
+ * A blocked chain unblocks only on proof: the server acknowledges the unconfirmed save's own key,
+ * or it refuses that key and still holds exactly the version the save was based on. Anything else stays blocked,
+ * so a later save never lands on a version this editor has not seen.
+ */
+async function recoverChain(caller, send, loadVacancy) {
+    const entry = caller.entry;
+    const unsettled = entry.unsettled;
+    const pending = unsettled.filter(record => record.attempt);
+    let verified = null;
+    if (!pending.length) {
+        if (!await serverStillHolds(caller, entry.head, loadVacancy)) return false;
+        verified = entry.head;
+    }
+    for (const record of pending) {
+        const outcome = await deliver(record, send, []);
+        if (outcome === true) {
+            settleRecovered(record, 'ok', record.source);
+        } else if (outcome && await serverStillHolds(record, record.source, loadVacancy)) {
+            settleRecovered(record, 'refused', record.source);
+        } else {
+            return false;
+        }
+        verified = record.source;
+    }
+    for (const record of unsettled) {
+        if (record.status !== 'unknown') continue;
+        record.status = 'refused';
+        record.source = verified;
+    }
+    entry.unsettled = [];
+    entry.blocked = false;
+    return true;
+}
+
+async function recoverRoleplayChain(record, send, loadVacancy) {
+    const entry = record.entry;
+    if (!entry.recovering) {
+        entry.recovering = recoverChain(record, send, loadVacancy).catch(error => {
+            if (error.code === 'ROLEPLAY_ACCOUNT_CHANGED') throw error;
+            return false;
+        }).finally(() => { entry.recovering = null; });
+    }
+    return entry.recovering;
+}
+
+/** Each attempt serialises once. Retry transport may refresh CSRF/compression, never the JSON or key. */
+export async function sendRoleplaySave(token, payload, send, loadVacancy) {
+    const record = records.get(token);
+    if (!record || record.complete) throw uncertainSave();
+    assertCurrent(record);
+    if (record.status === 'ok') return record.result;
+    if (record.entry.blocked && !await recoverRoleplayChain(record, send, loadVacancy)) throw uncertainSave();
+    assertCurrent(record);
+    if (!record.attempt) {
+        try {
+            record.source = record.source || await sourceFor(record);
+            assertCurrent(record);
+            if (!record.source && record.create && typeof loadVacancy === 'function') {
+                const response = await loadVacancy(record.locator, record.binding.stamp);
+                record.source = parseRoleplayRead(response, record.locator, record.binding.stamp);
+            }
+            if (!record.source) throw missingRead();
+            if (record.create && record.source.source && !record.forced) return refuse(record, 400, { error: 'integrity', roleplay: record.source });
+            const matchingTarget = record.locator.kind === 'group' ? String(payload.id) === record.locator.groupId
+                : record.locator.group ? String(payload.id) === record.locator.chat
+                    : payload.file_name === record.locator.chat && payload.avatar_url === record.locator.avatar;
+            if (!matchingTarget) throw missingRead();
+            const composed = composeAttempt(record, payload);
+            record.attempt = composed.body;
+            record.attemptKind = composed.kind;
+            record.attemptSaved = composed.saved;
+            record.attemptWhole = composed.whole ?? null;
+        } catch (error) {
+            record.status = error.code === 'ROLEPLAY_SAVE_UNCERTAIN' ? 'unknown' : 'refused';
+            throw error;
+        }
+    }
+    const outcome = await deliver(record, send, retryDelays);
+    if (outcome === true) return record.result;
+    if (outcome) return refuse(record, outcome.status, outcome.data);
     record.status = 'unknown';
     throw uncertainSave();
 }
@@ -300,8 +398,10 @@ export async function finishRoleplaySave(token) {
         }
     }
     record.complete = true;
-    if (record.status === 'unknown') record.entry.blocked = true;
-    else if (!record.background && !record.create && record.lineage === record.entry.lineage && record.source) record.entry.head = record.source;
+    if (record.status === 'unknown') {
+        record.entry.blocked = true;
+        record.entry.unsettled.push(record);
+    } else if (!record.background && !record.create && record.lineage === record.entry.lineage && record.source) record.entry.head = record.source;
     record.predecessor = record.editorPredecessor = record.authorityPredecessor = record.initial = record.explicit = record.conflict = null;
     if (record.status !== 'unknown') record.attempt = record.attemptSaved = record.attemptWhole = null;
     record.resolve(record);

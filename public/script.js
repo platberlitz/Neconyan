@@ -64,6 +64,7 @@ import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
 import { installSessionExpiryNotifier } from './scripts/session-expiry.js';
 import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
+import { chatSaveNoticeKey, clearSaveFailureNotice, showSaveFailureNotice } from './scripts/save-failure-notices.js';
 import { fingerprintMessages, rememberChatPatchBase, snapshotChatMessages, digestMessageFingerprints } from './scripts/chat-patch-save.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
@@ -14210,7 +14211,8 @@ export function saveChat(...saveChatArguments) {
                 });
             } catch (error) {
                 console.error(error);
-                toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
+                showSaveFailureNotice(chatSaveNoticeKey(activeCharacter.avatar, fileName),
+                    t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
                 return options.throwOnError ? Promise.reject(error) : Promise.resolve(false);
             }
         }
@@ -14311,6 +14313,7 @@ async function saveChatImmediately(...args) {
     const resolvedCharacterName = characterName || fallbackCharacter.name;
     const resolvedAvatarUrl = avatarUrl || fallbackCharacter.avatar;
     const integrityKey = getQueuedChatIntegrityKey(resolvedAvatarUrl, fileName);
+    const saveNoticeKey = chatSaveNoticeKey(resolvedAvatarUrl, fileName);
 
     if (!fileName && name2 === neutralCharacterName) {
         // TODO: Do something for a temporary chat with no character.
@@ -14356,6 +14359,7 @@ async function saveChatImmediately(...args) {
 
         if (result.ok) {
             const responseData = result.data;
+            clearSaveFailureNotice(saveNoticeKey);
             if (account !== undefined && account !== getCurrentUserHandle()) return false;
             rememberQueuedChatIntegrity(integrityKey, responseData?.integrity);
             if (isActiveChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
@@ -14411,7 +14415,7 @@ async function saveChatImmediately(...args) {
         return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });
     } catch (error) {
         console.error(error);
-        toastr.error(error?.saveNotice || t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
+        showSaveFailureNotice(saveNoticeKey, error?.saveNotice || t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
         if (throwOnError) {
             throw error;
         }

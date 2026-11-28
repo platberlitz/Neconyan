@@ -25,7 +25,7 @@ import { confirmRoleplayAccount, inspectRoleplayFile, inspectRoleplayFileStat, r
 import { registerMemoryReclaimer } from '../memory-pressure.js';
 import { createUtf8Validator, invalidUtf8Error } from '../utf8-validation.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
-import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
+import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance, settleRoleplayPendingLocked } from '../roleplay-lifecycle.js';
 import {
     chatJsonlEqualsRecords,
     clearChatRecoveryState,
@@ -1661,6 +1661,8 @@ function loadProtectedChat(request, group) {
     return withRoleplayAccount(base, account, (lease, currentAccount) => {
         confirmRoleplayAccount(lease);
         const { state } = roleplayLease(lease);
+        // Work a crash left unfinished is finished here, as startup would, instead of refusing every read until a restart.
+        settleRoleplayPendingLocked(lease, roleplayNativeHost);
         if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier chat write must settle first.');
         cleanupRoleplayReceiptsLocked(lease);
         const target = createChatRecoveryTarget(request, group, locator.chat + '.jsonl');
@@ -1710,6 +1712,11 @@ async function saveProtectedChat(request, group, patched = false) {
     return withRoleplayAccount(base, account, (lease, currentAccount) => {
         const { state } = roleplayLease(lease);
         try {
+            if (state.pending) {
+                // Another write a crash left unfinished is finished first, as startup would; this save's own retry finishes itself.
+                confirmRoleplayAccount(lease);
+                settleRoleplayPendingLocked(lease, roleplayNativeHost, { operationKey: block.operationKey });
+            }
             const host = hideRequested ? { ...roleplayBrowserHost, prepare(records, options) {
                 let proposed = records;
                 try {
@@ -1746,27 +1753,61 @@ async function saveProtectedChat(request, group, patched = false) {
     });
 }
 
-function sendRoleplayError(response, error) {
+function roleplayErrorReply(error) {
     const code = error.code;
     const uncertain = error.roleplayWritePending || error.chatCommitted || error.chatWriteUncertain;
-    if (!uncertain && (code === 'ROLEPLAY_STORE_FULL' || code === 'ROLEPLAY_MEMORY_FULL')) return response.status(507).send({ error: 'roleplay_store_full', code });
+    if (!uncertain && (code === 'ROLEPLAY_STORE_FULL' || code === 'ROLEPLAY_MEMORY_FULL')) return [507, { error: 'roleplay_store_full', code }];
     if (uncertain || code === 'ELOCKED'
         || code === 'ROLEPLAY_RECOVERY_REQUIRED' || code?.startsWith('ROLEPLAY_STORE_') || code === 'ROLEPLAY_ACCOUNT_UNAVAILABLE') {
-        return response.status(503).send({ error: 'roleplay_recovery_required', code: code || 'ROLEPLAY_WRITE_UNCERTAIN' });
+        return [503, { error: 'roleplay_recovery_required', code: code || 'ROLEPLAY_WRITE_UNCERTAIN' }];
     }
-    if (code === PATCH_BASE_ERROR) return response.status(409).send({ error: 'patch_base_mismatch', reason: error.reason });
-    if (code === 'ROLEPLAY_ACCOUNT_CHANGED') return response.status(409).send({ error: 'account_changed', code });
-    if (code === 'ROLEPLAY_SOURCE_MISSING') return response.status(404).send({ error: 'missing', code });
-    if (code === 'ROLEPLAY_SOURCE_DAMAGED') return response.status(422).send({ error: 'corrupt', code });
-    if (code === 'ROLEPLAY_SOURCE_CHANGED' && error.roleplay) return response.status(400).send({ error: 'integrity', code, roleplay: error.roleplay });
-    if (code === 'ROLEPLAY_INVALID' || code === 'ROLEPLAY_REQUIRED') return response.status(400).send({ error: code.toLowerCase(), code });
-    if (error instanceof DestructiveChatSaveError) return response.status(409).send({ error: 'destructive', reason: error.reason });
-    if (error instanceof InvalidChatDataError) return response.status(400).send({ error: error.message });
-    if (code?.startsWith('ROLEPLAY_')) return response.status(409).send({ error: code.slice(9).toLowerCase(), code });
+    if (code === PATCH_BASE_ERROR) return [409, { error: 'patch_base_mismatch', reason: error.reason }];
+    if (code === 'ROLEPLAY_ACCOUNT_CHANGED') return [409, { error: 'account_changed', code }];
+    if (code === 'ROLEPLAY_SOURCE_MISSING') return [404, { error: 'missing', code }];
+    if (code === 'ROLEPLAY_SOURCE_DAMAGED') return [422, { error: 'corrupt', code }];
+    if (code === 'ROLEPLAY_SOURCE_CHANGED' && error.roleplay) return [400, { error: 'integrity', code, roleplay: error.roleplay }];
+    if (code === 'ROLEPLAY_INVALID' || code === 'ROLEPLAY_REQUIRED') return [400, { error: code.toLowerCase(), code }];
+    if (error instanceof DestructiveChatSaveError) return [409, { error: 'destructive', reason: error.reason }];
+    if (error instanceof InvalidChatDataError) return [400, { error: error.message }];
+    if (code?.startsWith('ROLEPLAY_')) return [409, { error: code.slice(9).toLowerCase(), code }];
     console.error('Protected chat request failed:', error);
     // A damaged Scratchpad file refuses a chat move before anything is written. Its message names no path, so the browser may show it.
-    if (code === 'SCRATCHPAD_DAMAGED') return response.status(422).send({ error: 'scratchpad_damaged', code, message: error.message });
-    return response.status(503).send({ error: 'roleplay_recovery_required', code: 'ROLEPLAY_IO_ERROR' });
+    if (code === 'SCRATCHPAD_DAMAGED') return [422, { error: 'scratchpad_damaged', code, message: error.message }];
+    return [503, { error: 'roleplay_recovery_required', code: 'ROLEPLAY_IO_ERROR' }];
+}
+
+const loggedText = value => typeof value === 'string' && value ? value.slice(0, 200) : undefined;
+
+/**
+ * What the server log needs to find a refused chat request: the route, account, chat and save version, and why.
+ * Never the chat's messages.
+ */
+export function roleplayErrorLogEntry(request, error, status, reply) {
+    const body = isPlainObject(request?.body) ? request.body : {};
+    const block = isPlainObject(body.roleplay) ? body.roleplay : {};
+    const source = isPlainObject(block.source) ? block.source : null;
+    const entry = {
+        status, error: reply.error, code: loggedText(error?.code) ?? reply.code, reason: loggedText(error?.reason ?? reply.reason),
+        route: request ? `${request.method} ${request.originalUrl ?? request.url ?? ''}` : undefined,
+        user: loggedText(request?.user?.profile?.handle),
+        accountId: loggedText(block.account?.accountId),
+        chat: loggedText(Number.isSafeInteger(body.id) ? String(body.id) : body.id ?? body.file_name),
+        character: loggedText(body.avatar_url),
+        operationKey: loggedText(block.operationKey),
+        expected: source ? { instanceId: loggedText(source.instanceId), revision: source.revision } : Number.isSafeInteger(block.vacancy) ? { vacancy: block.vacancy } : undefined,
+        writeUncertain: Boolean(error?.roleplayWritePending || error?.chatCommitted || error?.chatWriteUncertain) || undefined,
+        // Coded refusals carry fixed explanations; anything else is already logged in full above.
+        detail: error?.code ? loggedText(error.message) : undefined,
+    };
+    return Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined));
+}
+
+function sendRoleplayError(response, error) {
+    const [status, reply] = roleplayErrorReply(error);
+    const entry = roleplayErrorLogEntry(response.req, error, status, reply);
+    if (status >= 500) console.error('Protected chat request could not finish:', entry);
+    else console.warn('Protected chat request refused:', entry);
+    return response.status(status).send(reply);
 }
 
 function sendProtectedChatLoad(request, response, group) {

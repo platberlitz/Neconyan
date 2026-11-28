@@ -12,7 +12,7 @@ import { commitSingleGroupUpdate, commitSingleChatImport } from '../src/roleplay
 import { convertImportedChatFile, roleplayNativeHost } from '../src/endpoints/chats.js';
 import { readRoleplayAccount, readRoleplayFile } from '../src/roleplay-store.js';
 import { router as groupRouter } from '../src/endpoints/groups.js';
-import { beginRoleplaySave, bindRoleplayAccount, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
+import { beginRoleplaySave, bindRoleplayAccount, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave, setRoleplaySaveRetryDelays } from '../public/scripts/roleplay-save-chain.js';
 import { fetchWithCsrfRetry } from '../public/scripts/csrf-token-refresh.js';
 import { renameGroupMemberFields, renameGroupSceneRecords } from '../public/scripts/group-member-rename.js';
 
@@ -385,10 +385,14 @@ for (const uncertain of [false, true]) {
     test(`${uncertain ? 'unknown' : 'refused'} foreground work cannot authorise a following background debounce`, async t => {
         const { runtime, filename } = await groupHttpRuntime(t, `group-debounce-${uncertain ? 'unknown' : 'refused'}`);
         runtime.debounce_timeout.relaxed = 30;
+        const previousDelays = setRoleplaySaveRetryDelays([0, 0]);
+        t.after(() => setRoleplaySaveRetryDelays(previousDelays));
         let attempts = 0;
+        const bodies = new Set();
         runtime.fetch = async (url, options) => {
             if (url.endsWith('/edit')) {
                 attempts++;
+                bodies.add(options.body);
                 if (uncertain) throw new Error('offline');
                 return Response.json({ error: 'roleplay_source_changed' }, { status: 409 });
             }
@@ -399,7 +403,10 @@ for (const uncertain of [false, true]) {
         runtime.groups[0].conversation_settings = { reply_max_tokens: 128 };
         await assert.rejects(runtime.editGroup('group', true, false, undefined, { background: true,
             backgroundChanges: { conversation_settings: { reply_max_tokens: 128 } } }));
-        assert.equal(attempts, uncertain ? 3 : 1);
+        // An unconfirmed foreground save is sent three times, then the background save first resends that same body once to
+        // check whether it landed. It never sends its own snapshot on top of an unconfirmed one.
+        assert.equal(attempts, uncertain ? 4 : 1);
+        assert.equal(bodies.size, 1);
         const saved = JSON.parse(fs.readFileSync(filename, 'utf8'));
         assert.equal(saved.name, undefined);
         assert.equal(saved.conversation_settings, undefined);

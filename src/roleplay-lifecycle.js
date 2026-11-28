@@ -1449,16 +1449,46 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
     } catch (error) { throw Object.assign(error, { roleplayWritePending: true }); }
 }
 
+function applyPendingWork(lease, host) {
+    const pending = roleplayLease(lease).state.pending;
+    return pending.kind === 'group-update' ? applyPendingGroupUpdate(lease)
+        : pending.kind === 'chat-import' ? applyPendingChatImport(lease, host)
+            : pending.kind === 'lifecycle' ? applyPendingLifecycle(lease, host) : applyPending(lease, host);
+}
+
 export function reconcilePendingChatWrite(scope, host) {
     return withRoleplayAccountLock(scope, lease => {
         confirmRoleplayAccount(lease);
-        const pending = roleplayLease(lease).state.pending;
-        const result = pending ? pending.kind === 'group-update' ? applyPendingGroupUpdate(lease)
-            : pending.kind === 'chat-import' ? applyPendingChatImport(lease, host)
-                : pending.kind === 'lifecycle' ? applyPendingLifecycle(lease, host) : applyPending(lease, host) : null;
+        const result = roleplayLease(lease).state.pending ? applyPendingWork(lease, host) : null;
         cleanupRoleplayReceiptsLocked(lease);
         return result;
     });
+}
+
+const SETTLEABLE_PENDING_KINDS = new Set(['chat-write', 'group-update', 'chat-import', 'lifecycle']);
+
+/**
+ * Finish earlier work that a crash or a failed publish left recorded but unfinished, with the same check startup
+ * runs, under the account lock the caller already holds. Without this one stuck record refuses every later chat
+ * read and save for the account until the server restarts. Work owned by `operationKey` is left for that request
+ * to finish itself, and an interrupted account reset is left to startup. Returns whether anything was finished;
+ * work that cannot be finished safely still refuses, as before.
+ */
+export function settleRoleplayPendingLocked(lease, host, { operationKey = null } = {}) {
+    const { state } = roleplayLease(lease);
+    const pending = state.pending;
+    if (!pending || !SETTLEABLE_PENDING_KINDS.has(pending.kind)) return false;
+    if (operationKey && pending.kind === 'chat-write' && pending.operationKeyHash === key(state, operationKey)) return false;
+    const detail = { kind: pending.kind, accountId: state.accountId };
+    try {
+        applyPendingWork(lease, host);
+    } catch (error) {
+        console.error('Earlier Roleplay work could not be finished, so its account keeps refusing chat changes:',
+            { ...detail, code: error?.code || error?.name || 'unknown' });
+        throw Object.assign(roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.'), { cause: error });
+    }
+    console.warn('Finished earlier Roleplay work that had been left unfinished:', detail);
+    return true;
 }
 
 /** Explicit startup/account-creation work, never invoked by a missing-store lookup. */

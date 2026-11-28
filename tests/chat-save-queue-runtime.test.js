@@ -8,6 +8,7 @@ import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 import { fingerprintMessages, rememberChatPatchBase } from '../public/scripts/chat-patch-save.js';
+import { chatSaveNoticeKey, groupChatSaveNoticeKey } from '../public/scripts/save-failure-notices.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -60,6 +61,8 @@ function createSaveRuntime(group = false) {
         refreshCsrfToken: jest.fn(),
         fetchWithCsrfRetry: async (url, build) => runtime.fetch(url, await build()),
         toastr: { error: jest.fn() },
+        chatSaveNoticeKey, groupChatSaveNoticeKey, clearSaveFailureNotice: jest.fn(),
+        showSaveFailureNotice: (_key, message, title) => runtime.toastr.error(message, title),
         Popup: { show: { input: jest.fn(async () => 'OVERWRITE') } },
         window: { location: { reload: jest.fn() } },
         t: strings => strings.join(''),
