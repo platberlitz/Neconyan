@@ -16,6 +16,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Turn off Spotlight indexing
+        # Indexing keeps running through the simulator tests and competes with
+        # the simulator for the runner's three cores.
+        run: |
+          sudo mdutil -a -i off > /dev/null || echo "::warning::Spotlight indexing could not be turned off"
+          mdutil -s /
       - name: Select the pinned Xcode
         run: |
           set -euo pipefail

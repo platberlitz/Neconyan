@@ -52,6 +52,27 @@ final class StandaloneTests: XCTestCase {
         return false
     }
 
+    /// The iOS 26 simulator sometimes loses the lift of a synthesised tap: backboardd
+    /// skips it ('didn't see a previous touch down') and later cancels the touch, so
+    /// the page gets touchcancel and no click. Only a tap the page saw cancelled is
+    /// tried again, so a tap that reaches the app and does nothing still fails.
+    @MainActor
+    private func tapPageButton(_ element: XCUIElement, in app: XCUIApplication, until done: () -> Bool) -> Bool {
+        let cancelled = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Cancelled touches: ")).firstMatch
+        for attempt in 1...3 {
+            let before = cancelled.label
+            element.tap()
+            if done() {
+                return true
+            }
+            guard attempt < 3, cancelled.label != before else {
+                return false
+            }
+            XCTContext.runActivity(named: "The simulator cancelled the tap, so tap again") { _ in }
+        }
+        return false
+    }
+
     @MainActor
     func testStartupRecoveryWaitsForExplicitRetry() throws {
         for failure in ["setup", "termination", "navigation"] {
@@ -130,6 +151,14 @@ final class StandaloneTests: XCTestCase {
             frame.srcdoc = '<p>Sandboxed frame loaded</p>';
             frame.style.cssText = 'height:60px;border:0';
             box.append(frame);
+            const status = document.createElement('p');
+            let cancelled = 0;
+            status.textContent = 'Cancelled touches: 0';
+            window.addEventListener('touchcancel', () => {
+                cancelled += 1;
+                status.textContent = `Cancelled touches: ${cancelled}`;
+            }, { capture: true, passive: true });
+            box.append(status);
             document.body.append(box);
         })();
         """#
@@ -137,25 +166,20 @@ final class StandaloneTests: XCTestCase {
         XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 240))
         XCTAssertTrue(app.staticTexts["Sandboxed frame loaded"].waitForExistence(timeout: 30), "Sandboxed srcdoc frames must load.")
 
-        // A fresh profile opens the interactive tour over Home. Its focus guard
-        // deliberately swallows taps outside the tour, even on the fixture buttons.
+        // A fresh profile opens the interactive tour over Home, so skip it first.
         let skipTour = app.webViews["workspace-ready"].buttons["Skip"].firstMatch
         if skipTour.exists && skipTour.isHittable {
-            skipTour.tap()
-            XCTAssertTrue(skipTour.waitForNonExistence(timeout: 10))
+            XCTAssertTrue(tapPageButton(skipTour, in: app) { skipTour.waitForNonExistence(timeout: 10) }, "Skip must close the tour.")
         }
-        app.buttons["Test alert"].tap()
         let alert = app.alerts["Neconyan"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 10), "alert() must show a native dialog.")
+        XCTAssertTrue(tapPageButton(app.buttons["Test alert"], in: app) { alert.waitForExistence(timeout: 10) }, "alert() must show a native dialog.")
         XCTAssertTrue(alert.staticTexts["Native dialog works"].exists)
         alert.buttons["OK"].tap()
 
-        app.buttons["Test download"].tap()
-        XCTAssertTrue(dismissShareSheet(in: app, timeout: 20), "A blob download must open the share sheet.")
+        XCTAssertTrue(tapPageButton(app.buttons["Test download"], in: app) { dismissShareSheet(in: app, timeout: 20) }, "A blob download must open the share sheet.")
 
-        app.buttons["Test popup"].tap()
         let done = app.navigationBars.buttons["Done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 20), "window.open must show a closable page.")
+        XCTAssertTrue(tapPageButton(app.buttons["Test popup"], in: app) { done.waitForExistence(timeout: 20) }, "window.open must show a closable page.")
         XCTAssertTrue(app.staticTexts["Popup print view"].waitForExistence(timeout: 10))
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "popup-print-view"

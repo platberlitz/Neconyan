@@ -217,3 +217,26 @@ test('the iOS lease policy is tied to the bootstrap, the Swift data path and the
     assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer(), iosAppServer })'));
     assert.ok(server.includes('process.env.NECONYAN_ANDROID_APP !== \'1\' && !iosAppServer'));
 });
+
+test('iOS simulator tests run with Spotlight indexing off', () => {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ios-build.yml'), 'utf8'));
+    const steps = workflow.jobs.build.steps;
+    const indexOf = name => steps.findIndex(step => step.name === name);
+    const spotlight = indexOf('Turn off Spotlight indexing');
+    assert.ok(spotlight >= 0);
+    assert.match(steps[spotlight].run, /sudo mdutil -a -i off/);
+    assert.ok(spotlight < indexOf('Start an iPhone and an iPad simulator'));
+});
+
+test('iOS page feature taps are retried only after the page saw the touch cancelled', () => {
+    const swift = fs.readFileSync(path.join(root, 'ios/Tests/StandaloneTests.swift'), 'utf8');
+    assert.ok(swift.includes('window.addEventListener(\'touchcancel\''));
+    assert.ok(swift.includes('status.textContent = `Cancelled touches: ${cancelled}`;'));
+    assert.match(swift, /guard attempt < 3, cancelled\.label != before else \{\s*return false\s*\}/);
+    assert.match(swift, /tapPageButton\(skipTour, in: app\) \{ skipTour\.waitForNonExistence\(timeout: 10\) \}/);
+    for (const label of ['Test alert', 'Test download', 'Test popup']) {
+        assert.ok(swift.includes(`tapPageButton(app.buttons["${label}"], in: app)`), label);
+        assert.ok(!swift.includes(`app.buttons["${label}"].tap()`), label);
+    }
+    assert.ok(!swift.includes('skipTour.tap()'));
+});
