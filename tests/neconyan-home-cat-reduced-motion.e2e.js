@@ -2,10 +2,11 @@
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { expect, test } from '@playwright/test';
 
-// Home's template names the 348 KB moving cat. WebKit used to start downloading it while
+// Home's template names the 347 KB moving cat. WebKit used to start downloading it while
 // the template was parsed, before Home could swap in the resting cat for reduced motion.
 const MOVING_CAT = /(?:^|\/)img\/neconyan-pixel-cat\.webp(?:\?|$)/;
 const RESTING_CAT = /(?:^|\/)img\/neconyan-pixel-cat-rest\.webp(?:\?|$)/;
+const ASSISTANT_INSTALL = /\/api\/characters\/assistants\/install(?:\?|$)/;
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(150000);
@@ -16,10 +17,11 @@ test.afterEach(async ({ page }) => {
 const webkitTest = test.extend({ browserName: 'webkit' });
 
 async function openHome(page, { appReducedMotion }) {
-    const network = { moving: [], resting: [] };
+    const network = { moving: [], resting: [], assistantInstalls: [] };
     const pageErrors = [];
     page.on('request', request => {
         if (MOVING_CAT.test(request.url())) network.moving.push(request.url());
+        if (ASSISTANT_INSTALL.test(request.url())) network.assistantInstalls.push(request.url());
     });
     page.on('response', response => {
         if (RESTING_CAT.test(response.url())) network.resting.push(response.status());
@@ -27,7 +29,7 @@ async function openHome(page, { appReducedMotion }) {
     });
     page.on('pageerror', error => pageErrors.push(error.message));
     await isolateSettingsSaves(page, settings => {
-        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanAssistantSeed.v1': 'done' };
         settings.power_user = { ...settings.power_user, reduced_motion: appReducedMotion };
     });
     await page.addInitScript(() => {
@@ -95,6 +97,8 @@ async function expectMotionThenPausedRedraw(page, { network, pageErrors }) {
     await expect(cat).toHaveAttribute('src', RESTING_CAT);
     await nextPaint(page);
     expect(network.moving).toHaveLength(1);
+    // A fresh profile would install the bundled assistants and redraw Home part way through.
+    expect(network.assistantInstalls).toEqual([]);
     expect(pageErrors).toEqual([]);
 }
 
@@ -112,7 +116,7 @@ for (const [runner, engine] of [[test, 'chromium'], [webkitTest, 'webkit']]) {
         });
     });
 
-    runner.describe(`desktop with the app Reduced motion setting (${engine})`, () => {
+    runner.describe(`desktop with the app Reduced Motion setting (${engine})`, () => {
         runner.use({ viewport: { width: 1280, height: 900 }, contextOptions: { reducedMotion: 'no-preference' } });
 
         runner('Home never requests the moving cat', async ({ page, browserName }) => {

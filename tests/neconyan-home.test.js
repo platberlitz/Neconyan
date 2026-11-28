@@ -789,7 +789,7 @@ describe('Home template parsing and the moving cat', () => {
 
     test.each([
         ['the system Reduce Motion setting', { osReduced: true }],
-        ['the app Reduced motion setting', { appReduced: true }],
+        ['the app Reduced Motion setting', { appReduced: true }],
     ])('under %s Home never fetches the moving cat, and its listeners still work once inserted', async (_label, options) => {
         const home = createHome(options);
         await home.render();
