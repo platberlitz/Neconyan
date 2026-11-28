@@ -18,7 +18,7 @@ function extractDeclaration(source, name) {
     return match[1];
 }
 
-test.use({ viewport: { width: 390, height: 844 }, userAgent: safariUA, hasTouch: true, reducedMotion: 'reduce' });
+test.use({ viewport: { width: 390, height: 844 }, userAgent: safariUA, hasTouch: true, contextOptions: { reducedMotion: 'reduce' } });
 
 // An iPhone home-screen app: status bar above, home indicator below.
 async function mountFixture(page) {

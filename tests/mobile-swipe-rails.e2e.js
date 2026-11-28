@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, openReadyChat, settleCssTransitions } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(120000);
 test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'wait' }));
 

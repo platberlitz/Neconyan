@@ -34,7 +34,7 @@ async function checkIconSidebar(page, phone) {
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} sidebar sections`, () => {
         const mode = phone ? 'mobile' : 'desktop';
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test('saved shortcuts, editing, section keyboard toggles and remembered state', async ({ page }, info) => {
             test.setTimeout(240000);
             let stored = '{}';

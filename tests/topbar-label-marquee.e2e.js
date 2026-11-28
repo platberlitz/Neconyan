@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'no-preference' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'no-preference' } });
 
 const longLabel = 'The Midnight Library on the Far Side of the Moon';
 

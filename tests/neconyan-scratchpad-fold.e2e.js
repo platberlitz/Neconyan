@@ -18,7 +18,7 @@ async function openScratchpad(page, phone) {
 
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} Scratchpad details`, () => {
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test('fold away, give the space to the conversation and stay folded after a reload', async ({ page }) => {
             test.setTimeout(120000);
             let stored = JSON.stringify({ layout: 'beside', collapsed: false });

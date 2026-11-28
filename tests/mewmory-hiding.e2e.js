@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(240000);
 // eslint-disable-next-line playwright/no-skipped-test -- This test writes chats, Mewmory state and shared settings.

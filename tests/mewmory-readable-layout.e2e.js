@@ -5,7 +5,7 @@ import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-test.use({ hasTouch: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ hasTouch: true, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(90_000);
 
 test.beforeEach(async ({ page }) => {

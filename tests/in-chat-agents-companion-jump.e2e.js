@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, openReadyChat } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(120000);
 
 const LONG_NOTE = Array.from({ length: 14 }, (_, index) => `Line ${index + 1} of the watch report.`).join('\n\n');

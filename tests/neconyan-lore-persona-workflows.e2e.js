@@ -5,7 +5,7 @@ import { openPersonaEditor, trackNavigationErrors } from './chat-scroll-regressi
 import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.describe.configure({ mode: 'serial' });
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(90000);
 
 async function appApi(page, route, body = {}) {

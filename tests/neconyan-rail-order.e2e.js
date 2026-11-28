@@ -149,7 +149,7 @@ async function checkPhoneScrolling(page, phone) {
 
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} sidebar order`, () => {
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test('collapsed desktop preference preserves phone editing', async ({ page }, info) => {
             if (phone) await installIPhoneSafari(page.context(), { standalone: true });
             await storeOrder(page, { enabled: false }, true);
@@ -214,6 +214,8 @@ for (const phone of [false, true]) {
             for (const [name, defaults] of Object.entries(groups)) {
                 await drag(page, name, phone);
                 await expect.poll(() => order(page, name)).toEqual([defaults[1], defaults[0], ...defaults.slice(2)]);
+                // Scroll anchoring is off only while a grip is held.
+                expect(await page.locator('.neconyan-rail-scroll').evaluate(element => element.style.overflowAnchor)).toBe('');
                 const first = page.locator(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-${name === 'modes' ? 'chat-mode' : 'route'}="${defaults[1]}"]`);
                 await first.focus();
                 await first.press('Alt+ArrowUp');

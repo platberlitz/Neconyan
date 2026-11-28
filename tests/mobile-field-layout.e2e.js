@@ -4,7 +4,7 @@
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { test, expect } from '@playwright/test';
 
-test.use({ hasTouch: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ hasTouch: true, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(90_000);
 
 test.beforeEach(async ({ page }) => {

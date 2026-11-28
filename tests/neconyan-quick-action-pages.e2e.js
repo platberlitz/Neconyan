@@ -48,7 +48,7 @@ async function openCatelierShortcut(page, shortcut) {
 
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} searchable Quick Actions`, () => {
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test('Simple Mode keeps editing, collapsing and saved page shortcuts including Catelier', async ({ page }) => {
             test.setTimeout(180000);
             const mode = phone ? 'mobile' : 'desktop';

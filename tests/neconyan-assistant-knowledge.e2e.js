@@ -6,7 +6,7 @@ import { refreshedKnowledgeCases } from './neconyan-assistant-knowledge-cases.js
 import { fillSource, revealNotebookOptions, revealNoteTools } from './notebooks-browser-fixture.js';
 import { requestJson } from './roleplay-browser-fixture.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.describe.configure({ mode: 'default' });
 test.setTimeout(120000);
 test.afterEach(async ({ page }) => {

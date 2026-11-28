@@ -8,7 +8,7 @@ const viewport = { width: 393, height: 852 };
 const title = 'Night watch';
 const source = '# Night watch\n\nKeep the lantern lit.';
 
-test.use({ ...IPHONE_SAFARI_CONTEXT, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ ...IPHONE_SAFARI_CONTEXT, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.beforeEach(async ({ context }) => installIPhoneSafari(context, { standalone: true }));
 test.afterEach(async ({ page }) => page.unrouteAll({ behavior: 'wait' }));
 

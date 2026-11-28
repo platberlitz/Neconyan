@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneApp, IPHONE_APP_CONTEXT, IPHONE_APP_USER_AGENT } from './ios-safari-emulation.js';
 
-test.use({ hasTouch: true, isMobile: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ hasTouch: true, isMobile: true, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 
 async function openChat(page) {
     await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));

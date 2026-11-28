@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 const ANDROID_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14; SM-F966B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 const INTERRUPTED_TEXT = 'The browser or another app stopped the sound while you were away, so Android may reload Neconyan.';
 
-test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true, userAgent: ANDROID_USER_AGENT, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true, userAgent: ANDROID_USER_AGENT, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(180000);
 
 test.beforeEach(async ({ context }) => {

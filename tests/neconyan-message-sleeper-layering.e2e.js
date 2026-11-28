@@ -5,7 +5,7 @@ import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.setTimeout(120000);
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 
 async function openSleeperChat(page) {
     const store = createMockRoleplayStore(() => page.evaluate(async () =>

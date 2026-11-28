@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 // Popup animations are off, as in connection-profile-scroll.e2e.js, so the 500ms fallback decides when the dialog is removed
 // and `closing` is set synchronously. Playwright cannot drive the operating system's file picker, so the test dispatches the
 // same bubbling `cancel` event a file input fires when the picker is dismissed.
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120000);
 

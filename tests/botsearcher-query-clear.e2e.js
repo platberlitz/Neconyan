@@ -41,7 +41,7 @@ for (const [name, options] of [
     ['iPhone emulation', IPHONE_SAFARI_CONTEXT],
 ]) {
     test.describe(`${name}`, () => {
-        test.use({ ...options, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ ...options, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test.setTimeout(90_000);
 
         test.beforeEach(async ({ page, context }) => {

@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { acknowledgeSettingsSave, openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 test.setTimeout(60000);
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 
 const SAMPLE = '{{Sub}} {{pverb::is::are}} sure {{sub}} saw {{poss}} cat.';
 

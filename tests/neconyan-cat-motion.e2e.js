@@ -4,7 +4,7 @@ import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'no-preference' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'no-preference' } });
 test.setTimeout(60000);
 test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'wait' });
