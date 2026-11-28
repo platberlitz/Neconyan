@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle, PointerEvent */
+/* global document, window, getComputedStyle, PointerEvent, MouseEvent */
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { applyIOSOnlyCss, installIPhoneSafari } from './ios-safari-emulation.js';
@@ -658,3 +658,144 @@ test.describe('phone touch that never gets its touchend', () => {
         await page.unrouteAll({ behavior: 'ignoreErrors' });
     });
 });
+
+// Grip and row boxes on staging before grips refused menus and selection,
+// as [x offset from the row, y offset from the row, width, height].
+const railGeometry = {
+    phone: { off: [295, 44], on: [295, 46], grip: [250, 1, 44, 44] },
+    desktop: { off: [219, 36.8], on: [219, 46], grip: [174, 1, 44, 44] },
+};
+
+// Measures the first Workspace row and grip, and the styles that decide
+// whether a long press scrolls, selects text or opens the phone's menu.
+async function gripLook(page) {
+    return page.evaluate(() => {
+        const row = document.querySelector('[data-neconyan-primary-nav] > .neconyan-rail-button');
+        const grip = row.querySelector('.neconyan-rail-grip');
+        const look = element => {
+            const style = getComputedStyle(element);
+            return { touchAction: style.touchAction, userSelect: style.userSelect || style.webkitUserSelect, webkitUserSelect: style.webkitUserSelect };
+        };
+        const round = value => Math.round(value * 10) / 10;
+        const rowBox = row.getBoundingClientRect();
+        const gripBox = grip.getBoundingClientRect();
+        return {
+            grip: look(grip),
+            row: look(row),
+            label: look(row.querySelector('span:not([class])')),
+            scroller: look(document.querySelector('.neconyan-rail-scroll')),
+            row_box: [round(rowBox.width), round(rowBox.height)],
+            grip_box: [round(gripBox.left - rowBox.left), round(gripBox.top - rowBox.top), round(gripBox.width), round(gripBox.height)],
+        };
+    });
+}
+
+// Sends the menu and selection events a phone sends after a long press, at
+// the point under the finger, and says whether the page refused each one.
+async function phoneMenuAt(page, target) {
+    await page.locator(target).first().scrollIntoViewIfNeeded();
+    return page.locator(target).first().evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        const under = document.elementFromPoint(x, y);
+        const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 });
+        const select = new Event('selectstart', { bubbles: true, cancelable: true });
+        under.dispatchEvent(menu);
+        under.dispatchEvent(select);
+        return { under: under === element || element.contains(under), menu: menu.defaultPrevented, select: select.defaultPrevented };
+    });
+}
+
+// Holds the first Workspace grip well past the 750 ms phone delay, lets the
+// phone ask for its menu and selection, then drags the row below the next.
+async function longPressDrag(page, phone, browserName) {
+    const grip = page.locator('[data-neconyan-primary-nav] button .neconyan-rail-grip').first();
+    await grip.scrollIntoViewIfNeeded();
+    const source = await grip.boundingBox();
+    const target = await page.locator('[data-neconyan-primary-nav] > button').nth(1).boundingBox();
+    const x = source.x + source.width / 2;
+    const y = source.y + source.height / 2;
+    const end = target.y + target.height * 0.8;
+    const cdp = phone && browserName === 'chromium' ? await page.context().newCDPSession(page) : null;
+    const move = async (type, pointY) => {
+        if (cdp) return cdp.send('Input.dispatchTouchEvent', { type: { touchstart: 'touchStart', touchmove: 'touchMove', touchend: 'touchEnd' }[type], touchPoints: type === 'touchend' ? [] : [{ x, y: pointY }] });
+        if (phone) return touch(page, type, x, pointY);
+        if (type === 'touchstart') {
+            await page.mouse.move(x, pointY);
+            return page.mouse.down();
+        }
+        if (type === 'touchmove') return page.mouse.move(x, pointY);
+        return page.mouse.up();
+    };
+    await move('touchstart', y);
+    await pause(1000);
+    const menu = await phoneMenuAt(page, '[data-neconyan-primary-nav] button .neconyan-rail-grip');
+    const selection = await page.evaluate(() => window.getSelection().toString());
+    for (let step = 1; step <= 8; step++) await move('touchmove', y + (end - y) * step / 8);
+    await move('touchend', end);
+    await cdp?.detach();
+    return { menu, selection };
+}
+
+for (const phone of [false, true]) {
+    for (const reducedMotion of ['reduce', 'no-preference']) {
+        test.describe(`${phone ? 'phone' : 'desktop'} grip long press, ${reducedMotion} motion`, () => {
+            test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', contextOptions: { reducedMotion } });
+            test('a long press on a grip opens no menu or selection and still drags', async ({ page, browserName }, info) => {
+                test.setTimeout(120000);
+                const expected = railGeometry[phone ? 'phone' : 'desktop'];
+                const state = await openEditing(page, phone);
+                await page.evaluate(() => {
+                    window.railGripCancels = [];
+                    for (const type of ['touchcancel', 'pointercancel', 'dragstart']) window.addEventListener(type, () => window.railGripCancels.push(type), true);
+                });
+
+                // -webkit-touch-callout only takes effect on iPhones and Android,
+                // so neither test browser keeps it; check the shipped rule instead.
+                const css = await page.evaluate(async () => (await fetch(document.querySelector('link[href*="css/neconyan.css"]').href)).text());
+                const rule = css.match(/body\.neconyan \.neconyan-rail-reordering \.neconyan-rail-grip \{([^}]*)\}/)?.[1] ?? '';
+                expect(rule).toMatch(/touch-action: none;/);
+                expect(rule).toMatch(/(^|[\s;])user-select: none;/);
+                expect(rule).toMatch(/-webkit-user-select: none;/);
+                expect(rule).toMatch(/-webkit-touch-callout: none;/);
+
+                const editing = await gripLook(page);
+                expect(editing.grip).toEqual({ touchAction: 'none', userSelect: 'none', webkitUserSelect: 'none' });
+                for (const part of ['row', 'label', 'scroller']) {
+                    expect(editing[part].touchAction, part).not.toBe('none');
+                    expect(editing[part].userSelect, part).not.toBe('none');
+                }
+                expect(editing.row_box).toEqual(expected.on);
+                expect(editing.grip_box).toEqual(expected.grip);
+
+                const press = await longPressDrag(page, phone, browserName);
+                expect(press.menu).toEqual({ under: true, menu: true, select: true });
+                expect(press.selection).toBe('');
+                await expect.poll(() => order(page, 'primary')).toEqual(swapFirstTwo(groups.primary));
+                await expect.poll(() => primaryOf(state.stored)).toEqual(swapFirstTwo(groups.primary));
+                expect(await pressState(page)).toEqual(putBack);
+                expect(await page.evaluate(() => window.railGripCancels)).toEqual([]);
+                expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
+                await page.screenshot({ path: info.outputPath('after-long-press.png') });
+
+                // Rows themselves still offer their menu, and the list still scrolls.
+                expect(await phoneMenuAt(page, '[data-neconyan-primary-nav] > button > span:not([class])')).toEqual({ under: true, menu: false, select: false });
+                if (browserName === 'chromium') await checkPhoneScrolling(page, phone);
+
+                await page.evaluate(() => window.NeconyanWelcome.setRailReordering(false));
+                const browsing = await gripLook(page);
+                expect(browsing.row_box).toEqual(expected.off);
+                expect(browsing.row.touchAction).not.toBe('none');
+                expect(await phoneMenuAt(page, '[data-neconyan-primary-nav] > button > span:not([class])')).toEqual({ under: true, menu: false, select: false });
+                const hiddenGrip = await page.evaluate(() => {
+                    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+                    document.querySelector('[data-neconyan-primary-nav] .neconyan-rail-grip').dispatchEvent(menu);
+                    return menu.defaultPrevented;
+                });
+                expect(hiddenGrip).toBe(false);
+                await page.unrouteAll({ behavior: 'ignoreErrors' });
+            });
+        });
+    }
+}

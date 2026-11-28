@@ -308,6 +308,7 @@ body.neconyan #neconyan-workspace-rail :not(.neconyan-rail-reordering) > [data-n
 body.neconyan .neconyan-rail-reordering .neconyan-rail-grip {
     display: flex; align-items: center; justify-content: center; flex: 0 0 44px; height: 44px;
     margin: -7px -10px -7px auto; cursor: grab; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 body.neconyan #neconyan-workspace-rail .neconyan-rail-placeholder { border: 1px dashed var(--neco-ginger); }
 body.neconyan [data-sb-rail-order-reset] { min-height: 44px; }
