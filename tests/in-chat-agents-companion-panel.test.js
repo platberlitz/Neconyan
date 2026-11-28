@@ -1807,9 +1807,13 @@ describe('companion tracker panel', () => {
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
         expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check your connection, then try again.');
 
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error' }, { status: 'done', lastRunError: 'x' }, { status: 'error' }]);
         await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
         expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('3 companions failed again. Check your connection, then try again.');
+        expect(warn).toHaveBeenCalledWith('[InChatAgents] Companion retry failed again:',
+            [{ status: 'error', error: null }, { status: 'done', error: 'x' }, { status: 'error', error: null }]);
+        warn.mockRestore();
 
         expect(translatedKeys).toEqual(expect.arrayContaining([
             '1 companion failed again. Check your connection, then try again.',

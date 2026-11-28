@@ -1479,6 +1479,22 @@ test('stopping the host generation cancels the accepted workflow instead of leav
     await pending;
 });
 
+test('a stop request that cannot reach the server writes the reason to the console before its toast', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const failure = new Error('offline');
+    cancelJob.mockRejectedValueOnce(failure);
+    const controller = new AbortController();
+    const pending = workflows.runNativeRoleplayGeneration('regenerate', { committed: true, signal: controller.signal });
+    await settle();
+    controller.abort();
+    await settle();
+    expect(warn).toHaveBeenCalledWith('Roleplay stop request failed:', failure);
+    expect(globalThis.toastr.warning).toHaveBeenCalledWith('Stop could not reach the server. Try again.');
+    await observers.get('job-1').onStop('cancelled');
+    await pending;
+    warn.mockRestore();
+});
+
 test('a call site the host will not serve keeps the browser path', async () => {
     nativeEligible = false;
     expect(await workflows.runNativeRoleplayGeneration('normal')).toBeNull();
@@ -2083,6 +2099,27 @@ describe('an image refusal on the solo and group routes', () => {
         await workflows.runNativeRoleplayGeneration('normal');
         expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringContaining('refused (502)'), 'Nothing was generated');
         expect(refusalEvents()).toHaveLength(0);
+    });
+
+    test('a refused or failed start writes the error to the console as well as the toast', async () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        submitHandler = async () => response(400, { error: 'Refused' });
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('Refused', 'Nothing was generated');
+        expect(warn).toHaveBeenCalledWith('Roleplay reply could not be started:', expect.objectContaining({ message: 'Refused' }));
+        expect(warn).toHaveBeenCalledWith('[Roleplay] Reply ended:', expect.objectContaining({ state: 'refused', message: 'Refused' }));
+        warn.mockRestore();
+    });
+
+    test('a reply job that fails with unmapped provider text still writes that text to the console', async () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const pending = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'Upstream said no.', code: 'JOB_FAILED', status: 502 } });
+        await pending;
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('Upstream said no.', 'Reply failed');
+        expect(warn).toHaveBeenCalledWith('[Roleplay] Reply ended:', { state: 'failed', code: 'JOB_FAILED', message: 'Upstream said no.' });
+        warn.mockRestore();
     });
 
     test('a group turn refused for an image dispatches once through the same function, and the error still carries the reply for the caller', async () => {

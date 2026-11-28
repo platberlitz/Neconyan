@@ -1440,6 +1440,7 @@ export async function pingServer() {
         });
 
         if (!result.ok) {
+            console.warn(`Server ping failed: HTTP ${result.status} ${result.statusText}`.trim());
             return false;
         }
 
@@ -11829,7 +11830,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 unblockGeneration(type, { emitGenerationEnded: false });
                 streamingProcessor = null;
             }
-            console.log(exception);
+            console.warn('Reply generation failed:', exception);
             noteReportedGenerationFailure(exception);
             throw exception;
         }

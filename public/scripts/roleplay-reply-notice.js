@@ -78,7 +78,8 @@ export function roleplayReplyNotice(error, state, { kept = false } = {}) {
         message = t`The chat changed while the reply was being written, so the reply was not saved. Try again.`;
     }
     if (!message && STORAGE_TERMS.test(raw)) message = t`The reply could not be finished, and nothing in your chat was changed. Try again.`;
-    if (message && raw && message !== raw) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw });
+    // Logged whether the toast rewords the error or shows unmapped provider text as it is, so the console always has it.
+    if (raw || code) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw });
     return { title: stateTitle(state), message: message || raw };
 }
 

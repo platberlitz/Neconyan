@@ -734,7 +734,8 @@ async function probeServerReplyCapability(key, account) {
 }
 
 function requestRoleplayStop(jobId, account) {
-    void cancelJob(jobId, { account, reason: 'user_cancelled' }).catch(() => {
+    void cancelJob(jobId, { account, reason: 'user_cancelled' }).catch(error => {
+        console.warn('Roleplay stop request failed:', error);
         if (account === getCurrentUserHandle()) globalThis.toastr?.warning?.('Stop could not reach the server. Try again.');
     });
 }
@@ -1624,6 +1625,7 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
             override = choice === POPUP_RESULT.CUSTOM1 ? 'reply' : undefined;
         }
     } catch (error) {
+        console.warn('Roleplay reply could not be started:', error);
         // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
         if (!isImageInputIssue(error)) {
             const notice = roleplayReplyNotice(error?.message ? error : 'The reply could not be started.', 'refused');

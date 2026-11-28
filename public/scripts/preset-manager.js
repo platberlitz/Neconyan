@@ -933,7 +933,7 @@ class PresetManager {
         if (!response.ok) {
             if (response.status === 409 && expectedPreset !== undefined) throw new Error(t`This preset changed elsewhere. Reload it and review the suggestion again.`);
             if (!quiet) toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
-            console.error('Preset could not be saved', response);
+            console.error(`Preset could not be saved: HTTP ${response.status} ${response.statusText}`.trim(), response);
             throw new Error('Preset could not be saved');
         }
 
