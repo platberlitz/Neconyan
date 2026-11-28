@@ -5339,7 +5339,7 @@ test('recall documents are built only for the pool recall can rank, and the pass
     }
 });
 
-test('cache budgets count estimated heap, never evict the entry just inserted, and empty under memory pressure', t => {
+test('cache budgets count estimated heap and empty under memory pressure', t => {
     const { directories } = disk(t, bulkMessages());
     reclaimMemory();
     assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
@@ -5351,14 +5351,62 @@ test('cache budgets count estimated heap, never evict the entry just inserted, a
     assert.ok(usage.sharedJson.bytes >= 5 * fs.statSync(archive).size && usage.sharedJson.bytes % 5 === 0);
     assert.equal(usage.writtenStates.bytes, 2 * fs.readFileSync(archive, 'utf8').length, 'saved text is counted at two bytes a character');
     assert.ok(usage.writtenStates.max <= 48 * 1024 * 1024 && usage.sharedJson.max === usage.chatRead.max);
-    const big = path.join(directories.root, 'big.json');
-    fs.writeFileSync(big, JSON.stringify({ blob: 'x'.repeat(Math.ceil(usage.sharedJson.max / 5) + 1024) }));
-    const parsed = readJsonShared(big, null);
-    assert.ok(cacheUsage().sharedJson.bytes > usage.sharedJson.max, 'one entry may exceed the budget');
-    assert.equal(readJsonShared(big, null), parsed, 'and it is still cached for the next reader');
     reclaimMemory();
     assert.deepEqual(Object.values(cacheUsage()).map(entry => entry.bytes), [0, 0, 0]);
 });
+
+for (const profile of ['standard', 'Termux']) for (const reader of ['state', 'chat']) {
+    test(`oversized cache admission: ${reader} on ${profile}`, t => {
+        const previousTermux = process.env.TERMUX_VERSION;
+        if (profile === 'Termux') process.env.TERMUX_VERSION = '0.118.1';
+        else delete process.env.TERMUX_VERSION;
+        t.after(() => {
+            reclaimMemory();
+            if (previousTermux === undefined) delete process.env.TERMUX_VERSION;
+            else process.env.TERMUX_VERSION = previousTermux;
+        });
+        const { directories } = disk(t, []);
+        const largeLocator = { ...locator, chat: 'Large' };
+        const cache = reader === 'state' ? 'sharedJson' : 'chatRead';
+        const threshold = (profile === 'Termux' ? 16 : 64) * 1024 * 1024;
+        const filename = reader === 'state' ? statePath(directories, largeLocator) : chatPath(directories, largeLocator);
+        fs.mkdirSync(path.dirname(filename), { recursive: true });
+        const read = target => reader === 'state' ? readStateShared(directories, target) : readChatShared(directories, target);
+        if (reader === 'state') {
+            const small = statePath(directories, locator);
+            fs.mkdirSync(path.dirname(small), { recursive: true });
+            fs.writeFileSync(small, JSON.stringify(newState(locator)));
+        }
+        const writeLarge = size => {
+            const prefix = reader === 'state'
+                ? JSON.stringify({ ...newState(largeLocator), padding: '' }).slice(0, -2)
+                : '{"chat_metadata":{}}\n{"mes":"';
+            const suffix = reader === 'state' ? '"}' : '"}';
+            fs.writeFileSync(filename, prefix + 'x'.repeat(size - Buffer.byteLength(prefix + suffix)) + suffix);
+            assert.equal(fs.statSync(filename).size, size);
+        };
+        const checkContent = value => {
+            if (reader === 'state') assert.equal(value.padding.length, threshold + 1 - Buffer.byteLength(JSON.stringify({ ...newState(largeLocator), padding: '' })));
+            else assert.ok(value.messages[0].mes.startsWith('x'));
+        };
+        reclaimMemory();
+        const warm = read(locator);
+        const before = cacheUsage()[cache];
+        writeLarge(threshold + 1);
+        const first = read(largeLocator);
+        checkContent(first);
+        const second = read(largeLocator);
+        checkContent(second);
+        assert.notEqual(first, second, 'oversized reads are not retained');
+        assert.equal(read(locator), warm, 'oversized reads preserve the warm entry');
+        assert.deepEqual(cacheUsage()[cache], before, 'oversized reads do not change accounting');
+        writeLarge(threshold);
+        const exact = read(largeLocator);
+        assert.equal(read(largeLocator), exact, 'an entry exactly at the limit is retained');
+        assert.notEqual(read(locator), warm, 'the exact-limit entry evicts the older small entry');
+        assert.ok(cacheUsage()[cache].bytes <= cacheUsage()[cache].max);
+    });
+}
 
 test('constrained mobile runtimes lower Mewmory cache caps while keeping the active entry cached', t => {
     const previousTermux = process.env.TERMUX_VERSION;
