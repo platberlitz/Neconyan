@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const shellSource = readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
 const shellStyles = [...shellSource.match(/const NN_THEMES = Object.freeze\(\[([\s\S]*?)\]\);/)[1].matchAll(/id: '([^']+)'/g)].map(match => match[1]);
 
-test.use({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 
 // A port number is not proof that the server is disposable. The release runner
 // sets this explicit opt-in after preparing an owned fixture, so a preview or

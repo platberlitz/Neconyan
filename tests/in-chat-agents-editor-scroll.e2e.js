@@ -9,7 +9,7 @@ const families = [
     { key: 'companion', templateId: 'tpl-directors-commentary-companion', lower: '#ica--editor-prompt' },
 ];
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(180000);
 

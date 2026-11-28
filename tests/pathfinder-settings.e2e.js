@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { acknowledgeSettingsSave, dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce', hasTouch: true });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' }, hasTouch: true });
 test.setTimeout(120000);
 
 const MANUAL_BOOK = 'Pathfinder test memory';

@@ -20,7 +20,7 @@ function extractDeclaration(source, name) {
     return match[1];
 }
 
-test.use({ viewport: { width: 390, height: 844 }, userAgent: safariUA, reducedMotion: 'reduce' });
+test.use({ viewport: { width: 390, height: 844 }, userAgent: safariUA, contextOptions: { reducedMotion: 'reduce' } });
 
 async function mountFixture(page, { platform = 'iPhone', userAgent = safariUA, movingUI = true } = {}) {
     const errors = [];

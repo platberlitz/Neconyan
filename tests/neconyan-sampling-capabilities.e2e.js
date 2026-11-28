@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce', hasTouch: true });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' }, hasTouch: true });
 test.setTimeout(120000);
 
 const models = {

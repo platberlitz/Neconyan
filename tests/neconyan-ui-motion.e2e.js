@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'no-preference' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'no-preference' } });
 test.setTimeout(90000);
 
 const enableReducedMotion = {

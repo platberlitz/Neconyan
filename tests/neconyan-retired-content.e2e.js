@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(120000);
 let safety;
 test.beforeEach(async ({ page }) => {

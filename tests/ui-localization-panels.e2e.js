@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(120000);
 
 const readLocale = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));

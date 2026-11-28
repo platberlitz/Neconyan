@@ -86,7 +86,7 @@ for (const [name, options] of [
     ['desktop', { viewport: { width: 1280, height: 900 }, hasTouch: true }],
 ]) {
     test.describe(`${name}`, () => {
-        test.use({ ...options, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test.use({ ...options, serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
         test.setTimeout(240_000);
 
         test.beforeEach(async ({ page }) => {

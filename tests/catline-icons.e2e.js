@@ -3,7 +3,7 @@ import { chromium, firefox, webkit, expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 
 test('every cat and neutral SVG loads, paints and follows its compatible class', async ({ page }) => {
     test.setTimeout(120000);

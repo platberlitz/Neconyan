@@ -1,7 +1,7 @@
 /* global document, window */
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120000);
 // eslint-disable-next-line playwright/no-skipped-test -- These tests change the saved Mewmory configuration.

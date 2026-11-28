@@ -1,7 +1,7 @@
 /* global document, window, MutationObserver, requestAnimationFrame */
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 // A cold full-app load can consume two minutes on a shared runner. The
 // assertions below still have their normal, short action deadlines.
 test.setTimeout(240000);

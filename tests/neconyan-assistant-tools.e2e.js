@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { trackNavigationErrors } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(180000);
 
 async function ready(page, navigate) {

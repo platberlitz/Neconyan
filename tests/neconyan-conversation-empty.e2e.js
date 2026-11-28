@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(180000);
 
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {

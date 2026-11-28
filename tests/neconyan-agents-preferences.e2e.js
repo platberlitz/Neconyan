@@ -17,7 +17,7 @@ async function openAgents(page, reload = false) {
 
 for (const width of [393, 1280]) {
     test.describe(`Agents preferences at ${width}px`, () => {
-        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393, reducedMotion: 'reduce' });
+        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393, contextOptions: { reducedMotion: 'reduce' } });
 
         test('keeps Pinned, workspace and collapsed categories across reloads', async ({ page }, info) => {
             page.setDefaultTimeout(15000);

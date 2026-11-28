@@ -109,7 +109,7 @@ async function addMember(page, name) {
 for (const [name, phone] of [['desktop', false], ['phone', true]]) {
     test.describe(`${name}`, () => {
         test.use({ serviceWorkers: 'block', viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
-            hasTouch: phone, isMobile: phone, reducedMotion: 'reduce' });
+            hasTouch: phone, isMobile: phone, contextOptions: { reducedMotion: 'reduce' } });
         test.setTimeout(120000);
         test('Expressions Agent chooses each persona from its own set without delaying Send', async ({ page }) => {
             const state = await fixture(page);

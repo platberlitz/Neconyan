@@ -1,7 +1,7 @@
 /* global document, window */
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', contextOptions: { reducedMotion: 'reduce' } });
 test.setTimeout(120000);
 
 async function ready(page) {
