@@ -20125,5 +20125,12 @@
   "This Agent change has no new text.": "В этом изменении агента нет нового текста.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "Готовые заметки компаньонов к общим сообщениям (трекеры, Сюжетный компас, Осколки памяти)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "В Neconyan много кнопок. Правда, очень много. **Простой режим** оставляет чат, ваших персонажей и персону, поиск персонажей, краткую страницу подключений, память, пресеты, лорбуки, агентов, блокноты и Scratchpad, а остальное прячет.",
-  "Agents are still loading. Try again in a moment.": "Агенты ещё загружаются. Попробуйте снова через мгновение."
+  "Agents are still loading. Try again in a moment.": "Агенты ещё загружаются. Попробуйте снова через мгновение.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "Найдите своего замурчательного собеседника~! Выберите персонажа, который у вас уже есть, найдите нового онлайн или начните временный чат!",
+  "Find characters": "Поиск персонажей",
+  "Find characters online": "Найти персонажей онлайн",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Ищите на Chub, JannyAI и других сайтах с картами и добавляйте в одно касание.",
+  "Import a character": "Импортировать персонажа",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "Из файла или по ссылке. Поиска по JanitorAI здесь нет, но ссылки оттуда работают.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Карты загружаются со сторонних сайтов. Простой режим добавляет эту карту и сразу открывает чат, без отчёта о её содержимом."
 }

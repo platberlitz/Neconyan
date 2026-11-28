@@ -21007,5 +21007,12 @@
   "This Agent change has no new text.": "Este cambio de agente no tiene texto nuevo.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "Notas de compañero completadas en los mensajes compartidos (rastreadores, Brújula de la trama, Fragmentos de memoria)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan tiene un montón de botones. Pero un montón. El **Modo simple** mantiene el chat, tus personajes y Persona, Buscar personajes, una página de Conexiones corta, Memoria, preajustes, lorebooks, Agentes, Cuadernos y Scratchpad, y esconde el resto.",
-  "Agents are still loading. Try again in a moment.": "Los agentes aún se están cargando. Inténtalo de nuevo en un momento."
+  "Agents are still loading. Try again in a moment.": "Los agentes aún se están cargando. Inténtalo de nuevo en un momento.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "¡Encuentra a tu amigo de chat miauravilloso~! ¡Elige un personaje que ya tengas, busca uno nuevo en línea o inicia un chat temporal!",
+  "Find characters": "Buscar personajes",
+  "Find characters online": "Buscar personajes en línea",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Busca en Chub, JannyAI y otros sitios de tarjetas, y luego añade una con un toque.",
+  "Import a character": "Importar un personaje",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "Desde un archivo o un enlace. Aquí no se puede buscar en JanitorAI, pero sus enlaces funcionan.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Las tarjetas proceden de sitios de terceros. El Modo simple añade esta tarjeta y abre su chat de inmediato, sin un informe de su contenido."
 }

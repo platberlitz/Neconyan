@@ -22077,5 +22077,12 @@
   "This Agent change has no new text.": "Esta alteração de Agente não tem texto novo.",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "Notas de companions concluídas em mensagens compartilhadas (rastreadores, Bússola da Trama, Fragmentos de Memória)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "O Neconyan tem muitos botões. Tipo, muitos mesmo. O **Modo simples** mantém o chat, seus personagens e a Persona, Buscar personagens, uma página curta de Conexões, a Memória, os presets, os lorebooks, os Agentes, os Cadernos e o Scratchpad, e esconde o resto.",
-  "Agents are still loading. Try again in a moment.": "Os Agentes ainda estão carregando. Tente novamente em instantes."
+  "Agents are still loading. Try again in a moment.": "Os Agentes ainda estão carregando. Tente novamente em instantes.",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "Encontre uma companhia miauravilhosa para bater papo~! Escolha um personagem que você já tem, encontre um novo online ou inicie um chat temporário!",
+  "Find characters": "Encontrar personagens",
+  "Find characters online": "Encontrar personagens online",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "Pesquise no Chub, no JannyAI e em outros sites de cards e adicione com um toque.",
+  "Import a character": "Importar um personagem",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "De um arquivo ou link. O JanitorAI não tem busca aqui, mas os links dele funcionam.",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "Os cards vêm de sites de terceiros. O Modo simples adiciona este e abre o chat dele na hora, sem um relatório de conteúdo."
 }

@@ -21260,5 +21260,12 @@
   "This Agent change has no new text.": "การเปลี่ยนเอเจนต์นี้ไม่มีข้อความใหม่",
   "Completed Companion notes on shared messages (trackers, Plot Compass, Memory Shards)": "โน้ตเพื่อนร่วมทางที่เสร็จแล้วบนข้อความที่แชร์ (ตัวติดตาม เข็มทิศโครงเรื่อง เศษเสี้ยวความทรงจำ)",
   "Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters and Persona, Find characters, a short Connections page, Memory, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.": "Neconyan มีปุ่มเยอะมาก เยอะจริง ๆ **โหมดแบบง่าย** เก็บแชท ตัวละครและเพอร์โซนาของคุณ ค้นหาตัวละคร หน้าการเชื่อมต่อแบบสั้น ความทรงจำ พรีเซ็ต Lorebook เอเจนต์ สมุดบันทึก และ Scratchpad ไว้ แล้วซ่อนที่เหลือ",
-  "Agents are still loading. Try again in a moment.": "เอเจนต์ยังโหลดอยู่ ลองอีกครั้งในอีกสักครู่"
+  "Agents are still loading. Try again in a moment.": "เอเจนต์ยังโหลดอยู่ ลองอีกครั้งในอีกสักครู่",
+  "Find your purrfect chat pal~! Pick a character you already have, find a new one online, or start a temporary chat!": "ตามหาเพื่อนคุยที่เหมียวที่สุด~! เลือกตัวละครที่คุณมีอยู่แล้ว ค้นหาตัวละครใหม่ทางออนไลน์ หรือเริ่มแชทชั่วคราวได้เลย!",
+  "Find characters": "ค้นหาตัวละคร",
+  "Find characters online": "ค้นหาตัวละครออนไลน์",
+  "Search Chub, JannyAI and other card sites, then add one in a tap.": "ค้นหาจาก Chub, JannyAI และเว็บไซต์การ์ดอื่น ๆ แล้วเพิ่มได้ในแตะเดียว",
+  "Import a character": "นำเข้าตัวละคร",
+  "From a file or a link. JanitorAI has no search here, but its links work.": "จากไฟล์หรือลิงก์ ค้นหาจาก JanitorAI ที่นี่ไม่ได้ แต่ใช้ลิงก์ได้",
+  "Cards come from third-party sites. Simple Mode adds this one and opens its chat straight away, without a report of its contents.": "การ์ดมาจากเว็บไซต์ภายนอก โหมดแบบง่ายจะเพิ่มการ์ดนี้และเปิดแชททันที โดยไม่มีรายงานเนื้อหาข้างใน"
 }
