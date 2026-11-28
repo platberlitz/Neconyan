@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import express from 'express';
 import { beginServerWork } from './android-wake.js';
+import { isEventStreamContentType, startSseKeepAlive } from './sse-keep-alive.js';
 
 /**
  * Neconyan: generation replies that outlive the client connection.
@@ -121,6 +122,10 @@ export class ResumableGeneration {
         this.subscribers = new Set();
         /** @type {{ resolve: () => void }[]} */
         this.headerWaiters = [];
+        /** @type {ReturnType<typeof startSseKeepAlive>|null} */
+        this.keepAlive = null;
+        /** @type {{ response: import('express').Response, write: (comment: string) => void }|null} */
+        this.commentTarget = null;
     }
 
     get done() {
@@ -216,11 +221,58 @@ export class ResumableGeneration {
         }
     }
 
+    /**
+     * Keeps a quiet event-stream reply open through proxies for whoever reads it, the original
+     * client or a resume reader. The comment is written through the mirrored response, so resume
+     * byte offsets still match what each reader received.
+     */
+    startKeepAlive() {
+        if (this.keepAlive || !this.commentTarget || this.done || this.cancelled || this.overflowed) {
+            return;
+        }
+        this.keepAlive = startSseKeepAlive({
+            write: this.commentTarget.write,
+            isOpen: () => !this.done && !this.cancelled && !this.overflowed,
+        });
+    }
+
+    /**
+     * Starts the keep-alive before the first byte when `response` is this reply's own event stream,
+     * so a provider that thinks quietly before answering does not leave a proxy waiting for headers.
+     * @param {unknown} response Response the provider stream is written to
+     */
+    keepEventStreamAlive(response) {
+        const target = this.commentTarget?.response;
+        if (target && target === response && isEventStreamContentType(target.getHeader('content-type'))) {
+            this.startKeepAlive();
+        }
+    }
+
+    /**
+     * @param {unknown} chunk Bytes just written
+     * @param {unknown} encoding String encoding
+     */
+    touchKeepAlive(chunk, encoding) {
+        if (this.done || this.cancelled || this.overflowed) {
+            return;
+        }
+        if (!this.keepAlive && isEventStreamContentType(this.contentType)) {
+            this.startKeepAlive();
+        }
+        this.keepAlive?.touch(chunk, typeof encoding === 'string' ? encoding : undefined);
+    }
+
+    stopKeepAlive() {
+        this.keepAlive?.stop();
+        this.keepAlive = null;
+    }
+
     end() {
         if (this.done) {
             return;
         }
         this.finishedAt = Date.now();
+        this.stopKeepAlive();
         this.endWork();
         this.cancelHooks.clear();
         this.releaseHeaderWaiters();
@@ -277,6 +329,7 @@ export class ResumableGeneration {
             return false;
         }
         this.cancelled = true;
+        this.stopKeepAlive();
         // A reply the user stopped on purpose must not come back as a recovered message.
         const hooks = [...this.cancelHooks];
         this.cancelHooks.clear();
@@ -549,6 +602,15 @@ function attachResponse(request, response, generation) {
     const detach = observeResponseDisconnect(request, response, () => {
         generation.attached = false;
     });
+    generation.commentTarget = {
+        response,
+        write: comment => {
+            // Nobody is reading: skip the comment rather than grow the stored reply.
+            if (generation.attached || generation.subscribers.size > 0) {
+                response.write(comment);
+            }
+        },
+    };
 
     response.write = function (chunk, encoding, callback) {
         if (typeof encoding === 'function') {
@@ -557,6 +619,7 @@ function attachResponse(request, response, generation) {
         }
         generation.captureHeaders(this);
         generation.write(chunk, encoding);
+        generation.touchKeepAlive(chunk, encoding);
         if (!generation.attached || this.destroyed || this.writableEnded) {
             if (typeof callback === 'function') {
                 callback();
@@ -709,6 +772,8 @@ router.post('/resume', async (request, response) => {
 
     response.status(200);
     response.setHeader('Cache-Control', 'no-store, no-transform');
+    // A proxy that buffers the replay would hold a live reply back until it finished.
+    response.setHeader('X-Accel-Buffering', 'no');
     response.setHeader('X-Generation-Status', String(generation.statusCode));
     const statusText = generation.statusMessage.replace(/[^\x20-\x7E]/g, '').slice(0, 200);
     if (statusText) {

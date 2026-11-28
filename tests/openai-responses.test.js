@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { setConfigFilePath } from '../src/util.js';
 import { CHAT_COMPLETION_SOURCES } from '../src/constants.js';
 import { resumableGenerationMiddleware, router as resumableRouter, testExports } from '../src/resumable-generations.js';
+import { SSE_KEEP_ALIVE_COMMENT, testExports as keepAliveTestExports } from '../src/sse-keep-alive.js';
 import { MockServer } from './util/mock-server.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
@@ -534,5 +535,46 @@ describe('OpenAI Responses integration', () => {
         );
 
         errorSpy.mockRestore();
+    });
+
+    test.each([
+        ['a plain stream', {}],
+        ['a resumable stream', { 'X-Generation-Id': 'responses-keep-alive-1' }],
+    ])('a quiet Responses reply in %s is unbuffered and kept alive between events', async (_label, extraHeaders) => {
+        const interval = keepAliveTestExports.intervalMs;
+        keepAliveTestExports.intervalMs = 50;
+        try {
+            const response = await fetch('http://127.0.0.1:3010/api/backends/chat-completions/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...extraHeaders },
+                body: JSON.stringify({
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES,
+                    reverse_proxy: 'http://127.0.0.1:3001/v1/',
+                    proxy_password: 'test-key',
+                    model: 'gpt-5.4-slow',
+                    stream: true,
+                    temperature: 1,
+                    max_tokens: 32,
+                    top_p: 1,
+                    messages: [
+                        { role: 'user', content: 'Think quietly first.' },
+                    ],
+                }),
+            });
+
+            expect(response.status).toBe(200);
+            expect(response.headers.get('content-type')).toBe('text/event-stream');
+            expect(response.headers.get('cache-control')).toBe('no-cache, no-transform');
+            expect(response.headers.get('x-accel-buffering')).toBe('no');
+            const text = await response.text();
+            expect(text).toContain(SSE_KEEP_ALIVE_COMMENT);
+            expect(text.endsWith('data: [DONE]\n\n')).toBe(true);
+            for (const event of text.split('\n\n').slice(0, -1)) {
+                expect(event === ': keep-alive' || event.startsWith('data: ')).toBe(true);
+            }
+            expect(text.replaceAll(SSE_KEEP_ALIVE_COMMENT, '')).toContain('Slow stream.');
+        } finally {
+            keepAliveTestExports.intervalMs = interval;
+        }
     });
 });
