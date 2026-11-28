@@ -19,6 +19,7 @@
 - The **Missing lorebook links** notice waits for a character that's still loading, so it no longer leaves out the reminder to import the card's embedded lorebook.
 - With reduced motion turned on in your device settings, the cat on the **Session expired** page now stands still instead of backflipping, just like the one on **Not found**.
 - With reduced motion turned on, either in your device settings or with Neconyan's own **Reduced Motion** setting, the cat at the top of the **In-Chat Agents Glossary** now rests instead of backflipping and the page stays still, and the waving kitty on the loading screen stops as soon as your settings load.
+- Reopening the **Companion Panel** after a server reply finishes its **Agents** now takes you back to the card you were reading instead of dropping you near the bottom, and opening it in a different chat starts at the top.
 
 ### Merged Staging PRs
 - PR #1009 (2026-11-27) `feat(config): switch host checking on once for older configs`
@@ -37,6 +38,7 @@
 - PR #1022 (2026-11-27) `fix(lorebooks): wait for a loading card before naming missing links`
 - PR #1023 (2026-11-27) `fix(pages): keep the session and sign-in cats still under reduced motion`
 - PR #1024 (2026-11-28) `fix(docs): keep the docs reader cat still under reduced motion`
+- PR #1025 (2026-11-28) `fix(companions): keep the panel's place when a server reply finishes`
 
 ## v1.6.0
 
