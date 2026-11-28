@@ -7297,6 +7297,8 @@
   "Agent output hit the Max Response Tokens limit and was cut off; original message preserved. Raise Max Response Tokens in this agent’s settings.": "Agent output hit the Max Response Tokens limit and was cut off; original message preserved. Raise Max Response Tokens in this agent’s settings.",
   "Agent returned a refusal or repeated thinking instead of the requested reply; original message preserved.": "Agent returned a refusal or repeated thinking instead of the requested reply; original message preserved.",
   "The provider blocked an Agent request. Any successful parallel Agent edits were kept.": "The provider blocked an Agent request. Any successful parallel Agent edits were kept.",
+  "${0} Agents failed: ${1}.": "${0} Agents failed: ${1}.",
+  "Check the connection each one uses, then try again.": "Check the connection each one uses, then try again.",
   "Pawthfinder disabled.": "Pawthfinder disabled.",
   "Pawthfinder retrieval cancelled because generation stopped.": "Pawthfinder retrieval cancelled because generation stopped.",
   "Continued": "Continued",

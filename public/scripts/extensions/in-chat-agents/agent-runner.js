@@ -109,6 +109,7 @@ import { buildThinkingRecoveryMessages, cleanThinkingRecoveryOutput, formatToolR
 import { isStreamCompleted, setContinuationEmptyMarker } from '../../stream-completion.js';
 import { runAgentActionOnServer } from './server-agent-actions.js';
 import { setAgentWorkProbe } from './agent-work-state.js';
+import { mapWithConcurrency, PARALLEL_AGENT_REQUEST_LIMIT } from './request-concurrency.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const AUTHORS_NOTE_PROMPT_KEY = '2_floating_prompt';
@@ -326,6 +327,8 @@ const messageEditRevisions = new WeakMap();
 /** Message -> streaming processor and generation type whose regex snapshot is already stored. */
 const streamRegexSnapshots = new WeakMap();
 const postProcessingInterruptionWarned = new WeakSet();
+// Agent failures already shown for a reply; its automatic retries do not show them again.
+const agentFailureToastsShown = new WeakMap();
 let chatLoadRevision = 0;
 
 export function getAgentPostProcessingTarget(message) {
@@ -406,7 +409,11 @@ function invalidateMessageTarget(message) {
 // A silent stop is indistinguishable from "the agents did nothing", which is what makes an
 // interrupted pipeline feel random. Tell the user once per reply when their reply is untouched.
 function warnPostProcessingInterrupted(message, detail = '') {
-    if (!message || postProcessingInterruptionWarned.has(message)) {
+    if (!message) {
+        return;
+    }
+    console.warn('[InChatAgents] Agent work was interrupted before it finished.', detail || '');
+    if (postProcessingInterruptionWarned.has(message)) {
         return;
     }
     postProcessingInterruptionWarned.add(message);
@@ -580,8 +587,16 @@ function abortActiveAgentRequests(reason = 'Agent generation cancelled.') {
     activeAgentRequestAbortControllers.clear();
 }
 
+// Matches isStoppedRequest in text-backend-failures.js: a timeout or a dropped connection is a
+// failure to report, not a Stop the user pressed.
 function isAbortSignalTriggered(error, signal = null) {
-    return Boolean(signal?.aborted || error?.name === 'AbortError');
+    if (signal?.aborted) {
+        return signal.reason?.name !== 'TimeoutError';
+    }
+    if (error?.name === 'TimeoutError' || error?.code === 'GENERATION_CONNECTION_LOST') {
+        return false;
+    }
+    return error?.name === 'AbortError';
 }
 
 function abortActivePathfinderRetrieval(reason = 'Pawthfinder retrieval cancelled.') {
@@ -3128,6 +3143,41 @@ function showPromptTransformResultToast(agent, result) {
     }
 }
 
+function showAgentFailureSummaryToast(failures) {
+    const names = failures.map(({ agent, result }) => agent?.name || result?.agentName || 'In-Chat Agent').join(', ');
+    const reasons = new Set(failures.map(({ result }) => (result?.code === 'GENERATION_BLOCKED'
+        ? t`The provider blocked this Agent request.`
+        : String(result?.error ?? '').trim())));
+    const [reason] = reasons;
+    const detail = reasons.size === 1 && reason ? reason : t`Check the connection each one uses, then try again.`;
+    toastr.error(`${t`${failures.length} Agents failed: ${names}.`} ${detail}`, 'In-Chat Agents', {
+        timeOut: 10000,
+        extendedTimeOut: 12000,
+    });
+}
+
+/**
+ * Agents that run together report their failures as one toast once the pass ends.
+ * `shown` remembers failures already reported for this reply, so a retry does not repeat them.
+ */
+function createAgentFailureNotices({ deferred = false, shown = null } = {}) {
+    const pending = [];
+    return {
+        add(agent, result) {
+            const key = JSON.stringify([agent?.id ?? result?.agentId ?? '', result?.code ?? '', result?.error ?? '']);
+            if (shown?.has(key)) return;
+            shown?.add(key);
+            if (deferred) pending.push({ agent, result });
+            else showPromptTransformResultToast(agent, result);
+        },
+        flush() {
+            const failures = pending.splice(0);
+            if (failures.length === 1) showPromptTransformResultToast(failures[0].agent, failures[0].result);
+            else if (failures.length > 1) showAgentFailureSummaryToast(failures);
+        },
+    };
+}
+
 function updatePromptTransformRuns(message, runs) {
     message.extra ??= {};
 
@@ -4259,16 +4309,18 @@ async function runThinkingRecoveryAgent(agent, message, generationType, reasonin
             } else if (String(response.output ?? '').trim()) {
                 toastr.warning('Agent returned a refusal or repeated thinking instead of the requested reply; original message preserved.', escapeToastHtml(agent.name), { timeOut: 7000 });
             } else {
-                showPromptTransformResultToast(agent, { status: 'empty-response' });
+                showPromptTransformResultToast(agent, { ...runBase, status: 'empty-response' });
             }
         }
         return { ...runBase, status: finalStatus, text };
     } catch (error) {
+        console.warn(`[InChatAgents] Thinking recovery failed in agent "${agent.name}":`, error);
         const errorMessage = describeAgentError(error);
+        const failed = { ...base, status: 'error', text: '', error: errorMessage, ...(error?.code ? { code: error.code } : {}) };
         if (showNotifications && cancelRevision === agentGenerationCancelRevision) {
-            showPromptTransformResultToast(agent, { status: 'error', error: errorMessage, errorCode: error?.code });
+            showPromptTransformResultToast(agent, failed);
         }
-        return { ...base, status: 'error', text: '', error: errorMessage };
+        return failed;
     } finally {
         clearPromptTransformRunningToast(runningToast);
     }
@@ -4497,7 +4549,8 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             };
 
             if (showNotifications && !(options.stopOnBlocked && result.code === 'GENERATION_BLOCKED')) {
-                showPromptTransformResultToast(agent, result);
+                if (options.failureNotices) options.failureNotices.add(agent, result);
+                else showPromptTransformResultToast(agent, result);
             }
 
             return result;
@@ -4507,7 +4560,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnBlocked = false, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnBlocked = false, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode, failureNotices = null } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
@@ -4533,6 +4586,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                     runtimeAgents,
                     cancelRevision,
                     recentChatEndIndex,
+                    failureNotices,
                 });
                 results.push(result);
                 if (isCancelled() || result.status === 'cancelled' || (stopOnBlocked && result.code === 'GENERATION_BLOCKED')) {
@@ -4557,34 +4611,33 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
             }
         }
     } else {
-        results = await Promise.all(
-            agents.map(async (agent) => {
-                try {
-                    return await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
-                        applyToMessage: false,
-                        stopOnBlocked,
-                        runtimeAgents,
-                        cancelRevision,
-                        recentChatEndIndex,
-                    });
-                } catch (error) {
-                    return {
-                        agentId: agent.id,
-                        agentName: agent.name,
-                        changed: false,
-                        status: 'error',
-                        mode: getPromptTransformMode(agent),
-                        error: describeAgentError(error),
-                        ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
-                        runner: 'error',
-                        timestamp: new Date().toISOString(),
-                        outputText: '',
-                        nextMessageText: currentMessageText,
-                        beforeText: currentMessageText,
-                    };
-                }
-            }),
-        );
+        results = await mapWithConcurrency(agents, PARALLEL_AGENT_REQUEST_LIMIT, async (agent) => {
+            try {
+                return await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
+                    applyToMessage: false,
+                    stopOnBlocked,
+                    runtimeAgents,
+                    cancelRevision,
+                    recentChatEndIndex,
+                    failureNotices,
+                });
+            } catch (error) {
+                return {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: 'error',
+                    mode: getPromptTransformMode(agent),
+                    error: describeAgentError(error),
+                    ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
+                    runner: 'error',
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+            }
+        });
     }
 
     if (isCancelled() || results.some(result => result?.status === 'cancelled')) {
@@ -4613,8 +4666,9 @@ function isRefusedPromptTransformRun(run) {
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together every agent request starts together.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, stopOnBlocked = false, stopOnFailureStatuses = null, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, stopOnBlocked = false, stopOnFailureStatuses = null, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode, failureToastsShown = null } = {}) {
     const promptRuns = [];
+    const failureNotices = createAgentFailureNotices({ deferred: executionMode !== 'sequential', shown: failureToastsShown });
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
@@ -4657,6 +4711,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                     stopOnBlocked,
                     runtimeAgents,
                     recentChatEndIndex,
+                    failureNotices,
                     ...(cancelRevision !== null ? { cancelRevision } : {}),
                 });
             } catch (error) {
@@ -4685,7 +4740,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             return { text: result.nextMessageText };
         },
         runAppend: async (batchAgents, body) => {
-            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, stopOnBlocked, recentChatEndIndex, executionMode });
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, stopOnBlocked, recentChatEndIndex, executionMode, failureNotices });
             promptRuns.push(...batch.results);
             if (batch.cancelled || isCancelled()) {
                 outcome.cancelled = true;
@@ -4707,7 +4762,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             const synthesisAgent = { ...agent, name: 'Combined reply', postProcess: { ...agent.postProcess,
                 promptTransformMaxTokens: Math.max(...rewrites.map(item => normalizePromptTransformMaxTokens(item.agent.postProcess?.promptTransformMaxTokens))) } };
             const result = await runPromptTransformAgent(synthesisAgent, message, generationType, original, messageIndex, {
-                applyToMessage: false, stopOnBlocked, runtimeAgents: [...runtimeAgents, ...agents.filter(isAgentRuntimeAllowed)], recentChatEndIndex,
+                applyToMessage: false, stopOnBlocked, runtimeAgents: [...runtimeAgents, ...agents.filter(isAgentRuntimeAllowed)], recentChatEndIndex, failureNotices,
                 ...(cancelRevision !== null ? { cancelRevision } : {}),
                 promptMessages: buildPromptTransformSynthesisMessages(original, rewrites, draft),
             });
@@ -4719,7 +4774,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             if (!['changed', 'unchanged'].includes(result.status)) throw new Error('The combined Agent reply was empty or cut short. The original reply was kept.');
             return { text: result.nextMessageText };
         },
-    });
+    }).finally(() => failureNotices.flush());
 
     // Runs finish in any order when agents run together; list them in agent Order.
     const agentOrder = new Map(agents.map((agent, index) => [agent.id, index]));
@@ -5228,6 +5283,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
     const isOperationCurrent = () => !messageAutomaticGenerationSuppressed(message) && !automaticGenerationSuppressed(getAgentGenerationContext()) && agentGenerationCancelRevision === operationCancelRevision
         && postProcessingTarget.valid && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex);
     postProcessingTargets.set(message, postProcessingTarget);
+    if (retryAttempt === 0 || !agentFailureToastsShown.has(message)) agentFailureToastsShown.set(message, new Set());
     let pipelineCompleted = false;
     let alreadyProcessed = false;
     let failureDetail = '';
@@ -5393,6 +5449,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             cancelRevision: operationCancelRevision,
             stopOnBlocked: true,
             isCurrent: isOperationCurrent,
+            failureToastsShown: agentFailureToastsShown.get(message),
         });
         const promptRuns = promptTransformResult.promptRuns;
         if (promptTransformResult.staleTarget || !isOperationCurrent()) return;
@@ -7179,6 +7236,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
 
 function reportServerTrackerFix(messageIndex, remote) {
     if (remote.state !== 'completed') {
+        console.warn('[InChatAgents] Tracker repair did not finish on the server.', remote.error || remote.state);
         toastr.warning(remote.error || t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`, 'Tracker repair incomplete');
         return;
     }
@@ -7191,6 +7249,7 @@ function reportServerTrackerFix(messageIndex, remote) {
     if (trackerRepairs > 0) parts.push(trackerRepairs > 1 ? t`${trackerRepairs} trackers repaired` : t`1 tracker repaired`);
     if (changedRuns > 0) parts.push(changedRuns > 1 ? t`${changedRuns} prompt transforms applied` : t`1 prompt transform applied`);
     if (errorRuns > 0) {
+        console.warn('[InChatAgents] Tracker repair failed for some Agents on the server.', promptRuns.filter(run => run?.status === 'error'));
         parts.push(errorRuns > 1
             ? t`${errorRuns} errors. Some trackers could not be repaired. Check the connection the agent uses, then try again.`
             : t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`);
@@ -7430,6 +7489,7 @@ async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
     if (regexSnapshotChanged) parts.push(t`regex snapshot updated`);
 
     if (errorRuns > 0) {
+        console.warn('[InChatAgents] Tracker repair finished with errors.', { failedRuns, trackerRepairErrors, unsafeTrackerRepairs });
         let errors;
         if (unsafeTrackerRepairs > 0) {
             errors = errorRuns > 1
@@ -7857,6 +7917,8 @@ async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancel
         || promptRuns.some(run => RERUN_AGENT_FAILURE_STATUSES.has(String(run?.status ?? ''))
             && !(executionMode !== 'sequential' && isRefusedPromptTransformRun(run)));
     if (promptRunsFailed) {
+        console.warn('[InChatAgents] Rerun agents left the reply unchanged because an Agent did not finish.',
+            promptRuns.filter(run => RERUN_AGENT_FAILURE_STATUSES.has(String(run?.status ?? ''))));
         warnRerunIncomplete();
         return null;
     }

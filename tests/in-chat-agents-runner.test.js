@@ -1991,6 +1991,37 @@ describe('in-chat agent post-processing runner', () => {
             await new Promise(resolve => setTimeout(resolve, 80));
         });
 
+        test.each([
+            ['an ordinary error', new Error('Provider is busy'), /^prompt rewrite failed via profile "Recovery profile": Provider is busy/],
+            ['a provider block', Object.assign(new Error('Blocked by the provider'), { code: 'GENERATION_BLOCKED' }), /^The provider blocked this Agent request\.$/],
+        ])('a failed recovery with %s is logged and its toast names the connection it used', async (_label, failure, expected) => {
+            globalSettings.promptTransformShowNotifications = true;
+            const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            enabledAgents = [{
+                ...recoveryAgent(),
+                connectionProfile: 'profile-recovery',
+                postProcess: { ...recoveryAgent().postProcess, promptTransformShowNotifications: true },
+            }];
+            connectionManagerRequestService = {
+                getProfile: jest.fn(() => ({ name: 'Recovery profile', model: 'm' })),
+                sendRequest: jest.fn(async () => { throw failure; }),
+            };
+            const runner = await loadRunner();
+            const extra = { reasoning: REASONING, generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } };
+            chat.push({ name: 'Assistant', mes: '', is_user: false, extra, swipe_id: 0, swipes: [''], swipe_info: [{ extra: { ...extra } }] });
+            await runner.runAgentOnMessage('tpl-thinking-reply-recovery', 0);
+
+            expect(connectionManagerRequestService.sendRequest).toHaveBeenCalled();
+            const errors = globalThis.toastr.error.mock.calls.filter(([, title]) => title === 'Thinking Reply Recovery');
+            expect(errors).toHaveLength(1);
+            expect(errors[0][0]).toMatch(expected);
+            expect(errors[0][0]).not.toContain('the main model');
+            expect(warn.mock.calls.some(([text, error]) => String(text).includes('Thinking recovery failed in agent "Thinking Reply Recovery"') && error === failure)).toBe(true);
+            expect(chat[0].extra.inChatAgentThinkingRecovery).toMatchObject({ status: 'error', failed: true, ...(failure.code ? { code: failure.code } : {}) });
+            warn.mockRestore();
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
+
         test('with concurrent Companions the recovered reply is written before any Companion starts', async () => {
             enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
             modelAnswers();
@@ -2318,6 +2349,53 @@ describe('in-chat agent post-processing runner', () => {
             await running;
             expect(runtime.getCompanionResults(chat[0])[agent.id].content).toBe('Last successful note');
             expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        });
+
+        test('a same-chat reload does not mark a still-running Companion as interrupted', async () => {
+            const agent = createCompanionAgent();
+            const runtime = await setup([agent]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime(runtime);
+            runner.initAgentRunner();
+            runtime.setCompanionResult(chat[0], agent, { status: 'done', content: 'Last successful note' });
+            let release;
+            generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+            const running = runtime.runCompanionAgentOnMessage(agent.id, 0);
+            await waitFor(() => Boolean(release));
+            await eventSource.emit(eventTypes.CHAT_CHANGED);
+            expect(runtime.recoverInterruptedCompanionRuns()).toBe(false);
+            expect(runtime.getCompanionResults(chat[0])[agent.id]).toMatchObject({ status: 'pending' });
+            release('Fresh note');
+            await running;
+            // The reload stopped the run, so it puts the last good note back itself.
+            expect(runtime.getCompanionResults(chat[0])[agent.id]).toMatchObject({ status: 'done', content: 'Last successful note' });
+            expect(runtime.getCompanionResults(chat[0])[agent.id].lastRunError).not.toBe('Interrupted before completion.');
+            expect(runtime.getCompanionResults(chat[0])[agent.id].previousResult).toBeUndefined();
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        });
+
+        test('parallel Companions send at most four requests at a time', async () => {
+            globalSettings.companionExecutionMode = 'parallel';
+            const agents = ['A', 'B', 'C', 'D', 'E', 'F'].map(id => createCompanionAgent({ id: `companion-${id}`, name: `Companion ${id}`, prompt: `Task ${id}` }));
+            const runtime = await setup(agents);
+            const releases = [];
+            generateQuietPrompt.mockImplementation(({ quietPrompt }) => new Promise(resolve => {
+                releases.push(() => resolve(`Note ${quietPrompt.match(/Task ([A-F])/)[1]}`));
+            }));
+            const running = runtime.runCompanionsOnMessage(0);
+            await waitFor(() => releases.length === 4);
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(4);
+            releases[0]();
+            await waitFor(() => releases.length === 5);
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(5);
+            for (const release of releases.slice(1)) release();
+            await waitFor(() => releases.length === 6);
+            releases[5]();
+            await running;
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(6);
+            const results = runtime.getCompanionResults(chat[0]);
+            for (const agent of agents) expect(results[agent.id]).toMatchObject({ status: 'done', content: `Note ${agent.id.slice(-1)}` });
         });
 
         test('history preferences apply to inactive swipes and survive unhiding', async () => {
@@ -2875,6 +2953,73 @@ describe('in-chat agent post-processing runner', () => {
             const interruptedWarnings = globalThis.toastr.warning.mock.calls
                 .filter(call => call[1] === 'In-Chat Agents');
             expect(interruptedWarnings).toHaveLength(0);
+        }, 20000);
+
+        test('an automatic retry does not show the same Agent failure again', async () => {
+            const agent = {
+                id: 'agent-retry-failing',
+                name: 'Failing Rewriter',
+                category: 'content',
+                phase: 'post',
+                prompt: 'Rewrite the assistant reply to be more polished without changing its meaning.',
+                injection: { position: 0, depth: 4, scan: false, role: 0, order: 100 },
+                postProcess: {
+                    enabled: false,
+                    type: 'extract',
+                    promptTransformEnabled: true,
+                    promptTransformMode: 'rewrite',
+                    promptTransformMaxTokens: 1024,
+                    promptTransformShowNotifications: true,
+                },
+                conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+            };
+            globalSettings.promptTransformShowNotifications = true;
+            jest.spyOn(console, 'warn').mockImplementation(() => {});
+            const runtime = await setup([agent]);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime({
+                runCompanionStage: runtime.runCompanionStage,
+                injectCompanionFeedbackPrompts: runtime.injectCompanionFeedbackPrompts,
+                stripAuxiliaryTrackerEchoes: runtime.stripAuxiliaryTrackerEchoes,
+                runCompanionAgentOnMessage: runtime.runCompanionAgentOnMessage,
+                applyAgentPostPassesToCompanionResult: runtime.applyAgentPostPassesToCompanionResult,
+            });
+            runner.initAgentRunner();
+
+            generateQuietPrompt.mockImplementation(async () => { throw new Error('Provider is busy'); });
+
+            await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+            chat.push({ name: 'You', mes: 'Continue.', is_user: true, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            chat.push({ name: 'Assistant', mes: 'The reply.', is_user: false, extra: {} });
+            const messageIndex = chat.length - 1;
+            const messageElement = { id: `message-${messageIndex}` };
+            document.querySelector = jest.fn(selector => selector === `.mes[mesid="${messageIndex}"]` ? messageElement : null);
+            const message = chat[messageIndex];
+            // Saving the failed run throws once, so the whole pass is retried automatically.
+            let saveFailed = false;
+            saveChatDebounced.mockImplementation(() => {
+                if (saveFailed || !(message.extra?.inChatAgentPromptRuns ?? []).length) return;
+                saveFailed = true;
+                throw new Error('Transient save failure');
+            });
+
+            const generationContext = runner.getAgentGenerationContext();
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            const deadline = Date.now() + 8000;
+            while (generateQuietPrompt.mock.calls.length < 2 && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 25));
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(saveFailed).toBe(true);
+            expect(generateQuietPrompt.mock.calls.length).toBeGreaterThanOrEqual(2);
+            const failureToasts = globalThis.toastr.error.mock.calls.filter(([, title]) => title === 'Failing Rewriter');
+            expect(failureToasts).toHaveLength(1);
+            expect(failureToasts[0][0]).toContain('Provider is busy');
+            console.warn.mockRestore();
         }, 20000);
     });
 
@@ -8463,6 +8608,98 @@ describe('in-chat agent post-processing runner', () => {
         expect(prompts[3]).toContain('Both improvements');
         expect(message.mes).toBe('Les deux améliorations');
         expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+    });
+
+    function useParallelAppendAgents(count, { notify = false } = {}) {
+        useManualTransformAgents();
+        const [template] = enabledAgents;
+        enabledAgents = Array.from({ length: count }, (_, index) => {
+            const agent = structuredClone(template);
+            const letter = String.fromCharCode(65 + index);
+            return Object.assign(agent, {
+                id: `agent-append-${letter.toLowerCase()}`,
+                name: `Append ${letter}`,
+                prompt: `Append as ${letter}`,
+                injection: { order: 100 + index },
+            });
+        });
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        globalSettings.promptTransformShowNotifications = notify;
+        for (const agent of enabledAgents) {
+            Object.assign(agent.postProcess, { enabled: true, promptTransformMode: 'append', promptTransformShowNotifications: notify });
+        }
+        return enabledAgents;
+    }
+
+    test('parallel append Agents send at most four requests at a time', async () => {
+        useParallelAppendAgents(6);
+        const releases = [];
+        generateQuietPrompt.mockImplementation(request => new Promise(resolve => {
+            const letter = request.quietPrompt.match(/Append as ([A-F])/)[1];
+            releases.push(() => resolve(`Block ${letter}`));
+        }));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const pending = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => releases.length === 4);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(4);
+        releases[0]();
+        await waitFor(() => releases.length === 5);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(5);
+        releases[1]();
+        await waitFor(() => releases.length === 6);
+        for (const release of releases.slice(2)) release();
+        await pending;
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(6);
+        for (const letter of ['A', 'B', 'C', 'D', 'E', 'F']) expect(message.mes).toContain(`Block ${letter}`);
+        expect(message.mes.indexOf('Block A')).toBeLessThan(message.mes.indexOf('Block F'));
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('several failed parallel Agents share one toast and each failure is still logged', async () => {
+        useParallelAppendAgents(4, { notify: true });
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        generateQuietPrompt.mockImplementation(request => (request.quietPrompt.includes('Append as B')
+            ? Promise.resolve('Block B')
+            : Promise.reject(new Error('Provider is busy'))));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        const [text, title] = globalThis.toastr.error.mock.calls[0];
+        expect(title).toBe('In-Chat Agents');
+        expect(text).toContain('3 Agents failed: Append A, Append C, Append D.');
+        expect(text).toContain('Provider is busy');
+        const failureLogs = warn.mock.calls.filter(([line]) => /failed in agent "Append [ACD]"/.test(String(line)));
+        expect(failureLogs).toHaveLength(3);
+        expect(message.mes).toContain('Block B');
+        warn.mockRestore();
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('one failed parallel Agent keeps its own toast with the target and the error', async () => {
+        useParallelAppendAgents(2, { notify: true });
+        jest.spyOn(console, 'warn').mockImplementation(() => {});
+        generateQuietPrompt.mockImplementation(request => (request.quietPrompt.includes('Append as A')
+            ? Promise.reject(new Error('Provider is busy'))
+            : Promise.resolve('Block B')));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        const [text, title] = globalThis.toastr.error.mock.calls[0];
+        expect(title).toBe('Append A');
+        expect(text).toMatch(/failed via the main model: .*Provider is busy/);
+        expect(message.mes).toContain('Block B');
+        console.warn.mockRestore();
+        await new Promise(resolve => setTimeout(resolve, 5));
     });
 
     async function blockedCallerError() {
